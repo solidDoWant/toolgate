@@ -1,0 +1,61 @@
+# toolgate documentation
+
+For: anyone who wants to find the right page. You need to know nothing yet.
+
+toolgate has four kinds of readers. Each page is for one of them. This page says who the readers are, which pages are theirs, and what each page covers.
+
+## Who reads these docs
+
+| Reader | Who they are | What they already know | What they need |
+|---|---|---|---|
+| User | A person who runs Claude Code on a laptop, in a Coder workspace, in a pod or in CI. | Claude Code. | How to install the plugin, sign in, use servers and set secrets, and what a refusal means. |
+| Admin | A person who deploys toolgate and writes its catalog and rules. | Kubernetes, Helm, Flux, OIDC and PostgreSQL. | How to deploy and configure toolgate, how to write templates and rules, the limits of the security model, and how to operate it. |
+| Developer | A person who changes the code. | Go and MCP. Not this codebase. | The architecture, the packages, how to test and how to release. |
+| Agent | The AI agents that build this project. | Everything in `CLAUDE.md`. | Exact rules. Their pages in `docs/agents/` and `.claude/` do not follow the style rules for people. |
+
+The owner reads the acceptance checklists, the release notes and the status reports. These pages are for a user and an admin together, in plain English.
+
+## Where each reader starts
+
+- User: [`docs/user/`](user/README.md).
+- Admin: [`docs/admin/`](admin/README.md).
+- Developer: [`docs/dev/`](dev/README.md). [`SPEC.md`](../SPEC.md) has the full rules of the system.
+- Agent: `CLAUDE.md`, then [`docs/agents/`](agents/planner.md).
+
+## The tree
+
+Every page under `docs/` is listed here. `make docs-check` fails when a page is missing from this list.
+
+```
+README.md                  The front door: what toolgate is and its status.
+SPEC.md                    The rules of the system. For developers and agents.
+
+docs/README.md             This page.
+
+docs/user/
+  README.md                What the user pages will cover.
+
+docs/admin/
+  README.md                What the admin pages will cover.
+
+docs/dev/
+  README.md                What the developer pages will cover.
+
+docs/acceptance/
+  phase-1.md               The owner's checklist for phase 1: the core gateway.
+  phase-2.md               The owner's checklist for phase 2: the security model and the web UI.
+  phase-3.md               The owner's checklist for phase 3: remote servers and telemetry.
+
+docs/design/
+  phase-1.md               The design for phase 1: who does what, state, and the interaction table.
+
+docs/agents/               Instructions for the agents (not for people).
+  planner.md               The planner's playbook.
+```
+
+## Rules for writing the pages
+
+- Write one page for one reader. Put each fact on the page for the reader who acts on it, and link to it from other pages.
+- Write in plain English. Agents load the `simple-english` skill before they write a page for people.
+- Generate reference tables (configuration, chart values, metrics) from the code when they exist, so that they stay correct.
+- `make docs-check` checks the links and this list. It does not count words or score the style.

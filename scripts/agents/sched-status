@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Prints the agent scheduler's state: slots in use, running jobs and their
+# age, the head of the job queue with reasons, parked sessions, usage-limit
+# and backoff state, and the last planner run. Reads
+# .pm/scheduler/state.json; works whether or not the scheduler is running.
+#
+#   scripts/agents/sched-status          # once
+#   watch -n 30 scripts/agents/sched-status
+set -uo pipefail
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+py="$(command -v python3 || true)"
+if [ -z "$py" ]; then
+  # shellcheck disable=SC1091
+  py="$(source "$REPO_DIR/.pm/devenv.sh" >/dev/null 2>&1 && command -v python3)"
+fi
+exec "${py:?python3 not found (no dev shell env in .pm/devenv.sh)}" "$REPO_DIR/scripts/agents/scheduler.py" status "$@"

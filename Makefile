@@ -1,0 +1,116 @@
+SHELL = /usr/bin/env bash -o pipefail
+.SHELLFLAGS = -euc
+
+PROJECT_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+BIN_DIR := $(PROJECT_DIR)/bin
+CHART_DIR := deploy/charts/toolgate
+
+VERSION ?= 0.0.0-dev
+LDFLAGS := -s -w -X github.com/solidDoWant/toolgate/internal/version.version=$(VERSION)
+
+# The phase whose checklist `make acceptance` scores (docs/acceptance/phase-$(PHASE).md).
+PHASE ?= 1
+
+##@ General
+
+.PHONY: help
+help: ## Display this help.
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ Development
+
+.PHONY: fmt
+fmt: ## Format Go code (gofmt + goimports through golangci-lint).
+	golangci-lint fmt ./...
+
+.PHONY: lint
+lint: ## Run every linter and check (golangci-lint, go mod tidy, shellcheck, Python syntax, chart lint), then fail if any failed.
+	@failed=""; \
+	golangci-lint run ./... || failed="$$failed golangci-lint"; \
+	go mod tidy -diff || failed="$$failed go-mod-tidy"; \
+	shellcheck $$(git ls-files --cached --others --exclude-standard -- '*.sh' 'scripts/agents/sched-status') || failed="$$failed shellcheck"; \
+	./scripts/check-python.sh || failed="$$failed python"; \
+	$(MAKE) --no-print-directory chart-lint || failed="$$failed chart-lint"; \
+	if [ -n "$$failed" ]; then echo "lint failed:$$failed" >&2; exit 1; fi
+
+.PHONY: lint-fix
+lint-fix: ## Run golangci-lint and apply its fixes.
+	golangci-lint run --fix ./...
+
+.PHONY: test
+test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard and the acceptance scoreboard tests.
+	go test -race -count=1 ./...
+	./scripts/agents/scheduler_test.py
+	./scripts/agents/wait-ci_test.sh
+	./scripts/ci/test-guard_test.py
+	./scripts/acceptance-scoreboard_test.py
+
+.PHONY: test-guard
+test-guard: ## Fail if HEAD deletes or skips an [AC-N-nn] scenario test since its merge base with BASE (default origin/master; CI passes the PR labels).
+	./scripts/ci/test-guard.py --base $(or $(BASE),origin/master)
+
+.PHONY: test-integration
+test-integration: ## Run the integration-tagged tests (PostgreSQL and S3 in Docker; they skip cleanly without Docker).
+	timeout 30m go test -race -count=1 -tags integration -timeout 25m ./...
+
+.PHONY: test-e2e
+test-e2e: ## Run the e2e-tagged tests on kind (Flux, the gateway image, the fake IdP and the test MCP server).
+	./scripts/test-e2e.sh
+
+.PHONY: acceptance
+acceptance: ## Run every [AC-…] test and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/).
+	PHASE=$(PHASE) ./scripts/acceptance.sh
+
+.PHONY: docs-check
+docs-check: ## Check the human-facing Markdown: links and anchors (lychee, offline), agent-prose tells, every docs/ page listed in docs/README.md.
+	./scripts/docs/check.sh
+
+.PHONY: docs-style-report
+docs-style-report: ## Print the advisory style counts for the human-facing pages changed since origin/master. Never fails.
+	./scripts/docs/style_report.sh
+
+.PHONY: vulncheck
+vulncheck: ## Report known vulnerabilities in Go dependencies and the standard library.
+	govulncheck ./...
+
+##@ Code Generation
+
+.PHONY: generate
+generate: ## Regenerate committed generated code (CRDs and deepcopy with controller-gen, queries with sqlc) for the inputs that exist.
+	./scripts/generate.sh
+
+.PHONY: check-generate
+check-generate: ## Fail if `make generate` changes the tree (committed generated code is stale).
+	./scripts/check-generate.sh
+
+##@ Build
+
+.PHONY: build
+build: ## Build bin/toolgate.
+	@mkdir -p "$(BIN_DIR)"
+	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o "$(BIN_DIR)/toolgate" ./cmd/toolgate
+
+.PHONY: clean
+clean: ## Remove build artifacts.
+	rm -rf "$(BIN_DIR)" build
+
+##@ Helm
+
+.PHONY: chart-lint
+chart-lint: ## Lint the Helm chart in deploy/charts/toolgate (skipped until the chart exists).
+	@if [ -d "$(CHART_DIR)" ]; then helm lint --strict "$(CHART_DIR)"; else echo "chart-lint: no chart in $(CHART_DIR) yet; nothing to lint"; fi
+
+##@ Release
+
+.PHONY: release
+release: ## Release VERSION (dry run unless PUSH_ALL=true): image, chart, CLI binaries and a GitHub release with the CHANGELOG section as notes. Not implemented yet.
+	@echo "release: not implemented yet (the release tooling is built for the phase 1 release, AC-1-30); nothing was done for VERSION=$(VERSION)" >&2
+	@exit 1
+
+##@ Dependencies
+
+.PHONY: update-dependencies
+update-dependencies: ## Update the Nix flake inputs and Go modules.
+	nix flake update
+	go get -u ./...
+	go mod tidy

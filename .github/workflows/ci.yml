@@ -1,0 +1,165 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read # dorny/paths-filter lists PR files via the API
+
+# One group per branch. PRs: a newer push cancels the older run. master: the
+# running run always finishes, and of the commits merged meanwhile only the
+# newest waits. A cancelled *pending* master run is expected, not a failure.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # Decides whether anything that can affect build or test results changed.
+  # Docs-only and agent-playbook-only changes skip every test job; the
+  # required `checks` job below still runs and passes.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!*.md'
+              - '!docs/**'
+              - '!.claude/**'
+              - '!LICENSE'
+              - '!.github/renovate.json5'
+              - '!.github/renovate/**'
+            docs:
+              - '{**/*.md,scripts/docs/**}'
+
+  # The test tiers run as parallel jobs, inside the flake's dev shell, so CI
+  # uses exactly the toolchain developers and agents use.
+  lint:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/nix-dev-shell
+      - name: Lint
+        run: nix develop -c make lint
+      - name: Generated code is current
+        run: nix develop -c make check-generate
+
+  unit:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The test guard's own tests run it against this repository's history.
+          fetch-depth: 0
+      - uses: ./.github/actions/nix-dev-shell
+      - name: Unit tests
+        run: nix develop -c make test
+      - name: Build
+        run: nix develop -c make build
+
+  integration:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/nix-dev-shell
+      - name: Integration tests
+        run: nix develop -c make test-integration
+
+  # kind on the runner's Docker (kind and kubectl come from the dev shell).
+  e2e:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/nix-dev-shell
+      - name: e2e tests
+        run: nix develop -c make test-e2e
+
+  # The human-facing Markdown: links and anchors, agent-prose tells and the
+  # page index fail the job; the style report is advisory and only goes to
+  # the job summary.
+  docs:
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge base with the PR's base branch, for the style report.
+          fetch-depth: 0
+      - uses: ./.github/actions/nix-dev-shell
+      - name: Links, agent prose and page index
+        run: nix develop -c make docs-check
+      - name: Style report (advisory)
+        if: always() && github.event_name == 'pull_request'
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: nix develop -c ./scripts/docs/style_report.sh "$BASE" >> "$GITHUB_STEP_SUMMARY"
+
+  # Fails a pull request that deletes or skips a checklist scenario test
+  # (scripts/ci/test-guard.py), for every change, docs-only included. Plain
+  # runner Python, no Nix: it takes seconds. The labels are read when the job
+  # runs, so after the owner adds test-removal-approved, re-running this job
+  # picks it up.
+  test-guard:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The merge base with the PR's base branch.
+          fetch-depth: 0
+      - name: No scenario test removed or skipped
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          TEST_GUARD_PR_LABELS="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(",")')"
+          export TEST_GUARD_PR_LABELS
+          make test-guard
+
+  # The single required status check. It always runs, so docs-only changes
+  # still produce a passing `checks`; it fails if any job failed or was
+  # cancelled, and passes when each succeeded or was skipped.
+  checks:
+    needs: [changes, lint, unit, integration, e2e, docs, test-guard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: All jobs passed or were skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "a required job ended with: $result" >&2; exit 1 ;;
+            esac
+          done

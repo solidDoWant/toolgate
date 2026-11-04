@@ -1,0 +1,34 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  description: "Approval gates, version holds and reminders for what Renovate can't regenerate",
+  packageRules: [
+    // First: later rules match on the overridden (docker.io/...) name.
+    {
+      description: "mirror.gcr.io lists only cached tags; look up Docker Hub (same digests)",
+      matchDatasources: ["docker"],
+      matchPackageNames: ["/^mirror\\.gcr\\.io//"],
+      overridePackageName: "{{{replace '^mirror\\.gcr\\.io/' 'docker.io/' packageName}}}",
+    },
+    {
+      description: "Major updates wait for a Dependency Dashboard checkbox",
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+    {
+      description: "No digest pins: flake.lock already pins nixpkgs, and a preset ref can't carry both tag and SHA",
+      matchManagers: ["nix", "renovate-config"],
+      pinDigests: false,
+    },
+    {
+      description: "The Go toolchain comes from nixpkgs (flake.lock); a go/toolchain bump past it breaks the Nix build",
+      matchManagers: ["gomod"],
+      matchDepTypes: ["golang", "toolchain"],
+      enabled: false,
+    },
+    {
+      description: "controller-gen output changes with controller-tools; regenerate",
+      matchPackageNames: ["sigs.k8s.io/controller-tools"],
+      prBodyNotes: ["Run `make generate` and commit the result before merging (CI's check-generate step fails otherwise)."],
+    },
+  ],
+}

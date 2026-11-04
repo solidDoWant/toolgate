@@ -1,0 +1,10 @@
+/bin/
+/build/
+/result
+/result-*
+.direnv/
+
+# Planner and scheduler state, per-issue task scratch and agent worktrees (local only)
+/.pm/
+/.claude/tasks/
+/.claude/worktrees/

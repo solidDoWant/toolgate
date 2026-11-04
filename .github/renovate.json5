@@ -1,0 +1,64 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  // Managers: gomod (go.mod), github-actions, nix (flake.lock), and later
+  // helm-values and dockerfile/compose files as the repository grows.
+  // Policy is split by topic under .github/renovate/.
+  extends: [
+    "config:recommended",
+    ":semanticCommits",
+    ":timezone(America/Chicago)",
+    // Applied in this order, then the packageRules below. local> presets are
+    // read from the default branch.
+    "local>solidDoWant/toolgate//.github/renovate/safety.json5",
+    "local>solidDoWant/toolgate//.github/renovate/groups.json5",
+    "local>solidDoWant/toolgate//.github/renovate/labels.json5",
+  ],
+
+  // Hold new releases briefly (supply-chain safety, chained hotfix releases).
+  // timestamp-optional: registries without release timestamps would be held forever.
+  minimumReleaseAge: "3 days",
+  // cspell:words Behaviour
+  minimumReleaseAgeBehaviour: "timestamp-optional",
+  // Expected outcome of the above; keep it out of the repository-problems list.
+  logLevelRemap: [
+    {
+      matchMessage: "/did not have a releaseTimestamp, but as we're running with minimumReleaseAgeBehaviour=timestamp-optional/",
+      newLogLevel: "debug",
+    },
+  ],
+  suppressNotifications: ["prEditedNotification", "prIgnoreNotification"],
+  // Tags can be re-pushed; a digest pins the exact content.
+  pinDigests: true,
+
+  // Replaces config:recommended's list, so the defaults are repeated.
+  ignorePaths: [
+    "**/node_modules/**",
+    "**/bower_components/**",
+    ".claude/**",
+    "**/docs/**",
+  ],
+
+  // Off by default upstream. Locked flake inputs only move through
+  // lockFileMaintenance (`nix flake update`).
+  nix: { enabled: true, lockFileMaintenance: { enabled: true } },
+  // Opens only when ticked on the Dependency Dashboard, not every week.
+  lockFileMaintenance: { dependencyDashboardApproval: true },
+
+  postUpdateOptions: ["gomodTidy"],
+
+  packageRules: [
+    {
+      description: "~90k per-module tags: GitHub's GraphQL tags query 502s on every run, and releases are daily roll-ups, not per-module notes",
+      matchDatasources: ["go"],
+      matchPackageNames: ["github.com/aws/aws-sdk-go-v2", "github.com/aws/aws-sdk-go-v2/**"],
+      fetchChangeLogs: "off",
+    },
+    // Last so it overrides any preset rule. Renovate never merges by itself;
+    // the owner merges its PRs (the agent scheduler's renovate_prs is off).
+    {
+      description: "Automerge disabled for everything",
+      matchPackageNames: ["*"],
+      automerge: false,
+    },
+  ],
+}

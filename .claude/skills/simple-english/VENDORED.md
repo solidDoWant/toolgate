@@ -1,0 +1,1 @@
+Vendored from https://github.com/AminBlg/SimpleEnglish at commit a6fcb4f (skill version 2.1.1), under its MIT licence (LICENSE in this directory). Don't edit these files. To update, copy the new upstream `skills/simple-english/` over this directory and change the commit above. `scripts/docs/ste_lint.py` and `slop.tsv` come from the same commit (`evals/`).
