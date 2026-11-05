@@ -125,7 +125,21 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Client:    mgr.GetClient(),
 	}
 
-	if err := setupCatalog(mgr, options.catalog, options.rules, watched, cfg.SharedNamespace, logger); err != nil {
+	resolverConfigs := make([]runtime.ResolverConfig, 0, len(cfg.Resolvers))
+	for _, resolver := range cfg.Resolvers {
+		resolverConfigs = append(resolverConfigs, runtime.ResolverConfig{
+			Name: resolver.Name, URL: resolver.URL, Timeout: resolver.ResolverTimeout(), CAFile: resolver.CAFile,
+		})
+	}
+
+	resolvers, err := runtime.NewHTTPResolvers(resolverConfigs)
+	if err != nil {
+		return nil, err
+	}
+
+	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names()}
+
+	if err := setupCatalog(mgr, options.catalog, options.rules, watched, validator, logger); err != nil {
 		return nil, err
 	}
 
@@ -174,6 +188,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Client:           mgr.GetClient(),
 		Template:         options.catalog.Running,
 		Secrets:          runtime.BrokerSecrets(options.secrets),
+		Resolvers:        resolvers,
 		ListTools:        runtime.MCPToolLister,
 		GatewayNamespace: cfg.LeaseNamespace,
 		GatewayPodLabels: cfg.PodLabels(),
@@ -199,7 +214,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	queries := db.New(pool)
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
 		runtime.RowCleanup(queries, approvalExpirer.Pass(sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, teardown.Step, starter.Step, monitor.Step)))))))
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, teardown.Step, starter.Step, monitor.Step)))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
@@ -215,11 +230,11 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 // setupCatalog registers the catalog and rule reconcilers, which run on
 // every replica and write status only while it is leader, and the loader
 // that marks the catalog loaded.
-func setupCatalog(mgr manager.Manager, templates *catalog.Catalog, rules *policy.Rules, watched []string, sharedNamespace string, logger *slog.Logger) error {
+func setupCatalog(mgr manager.Manager, templates *catalog.Catalog, rules *policy.Rules, watched []string, validator catalog.Validator, logger *slog.Logger) error {
 	catalogReconciler := &catalog.Reconciler{
 		Client:     mgr.GetClient(),
 		Catalog:    templates,
-		Validator:  catalog.Validator{SharedNamespace: sharedNamespace},
+		Validator:  validator,
 		Log:        logger,
 		Elected:    mgr.Elected(),
 		Namespaces: watched,

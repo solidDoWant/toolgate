@@ -52,7 +52,7 @@ func TestPostgresStartStoreCompareAndSet(t *testing.T) {
 
 	startStore := runtime.PostgresStartStore{Pool: pool}
 
-	changed, err := startStore.MarkStarting(t.Context(), instanceID, 4)
+	changed, err := startStore.MarkStarting(t.Context(), instanceID, 4, time.Time{})
 	require.NoError(t, err)
 	assert.True(t, changed)
 	expectEvent(t, events)

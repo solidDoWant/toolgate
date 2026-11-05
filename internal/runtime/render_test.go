@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -32,13 +33,13 @@ func (f fakeSecrets) Secret(_ context.Context, name string) (string, error) {
 	return value, nil
 }
 
-func (f fakeSecrets) Resolve(_ context.Context, name string) (string, error) {
-	value, found := f.resolvers[name]
+func (f fakeSecrets) Resolve(_ context.Context, request runtime.ResolveRequest) (runtime.Resolved, error) {
+	value, found := f.resolvers[request.Resolver]
 	if !found {
-		return "", errNoSecret
+		return runtime.Resolved{}, errNoSecret
 	}
 
-	return value, nil
+	return runtime.Resolved{Value: value, ExpiresAt: time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)}, nil
 }
 
 // newTemplate returns a template named "echo" whose resources are the given
@@ -82,6 +83,7 @@ func newInput(t *testing.T, scope string, resources ...string) runtime.Input {
 			secrets:   map[string]string{"github-token": "ghp_secret"},
 			resolvers: map[string]string{"app-token": "resolved"},
 		},
+		Resolvers: fakeSecrets{resolvers: map[string]string{"app-token": "resolved"}},
 	}
 }
 

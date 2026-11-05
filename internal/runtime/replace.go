@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -37,7 +38,9 @@ type Replacer struct {
 	// AuditOutput receives the instance.stop events as JSON lines. Nil
 	// discards them; the rows are still written.
 	AuditOutput io.Writer
-	Log         *slog.Logger
+	// Now is the clock. Nil means time.Now.
+	Now func() time.Time
+	Log *slog.Logger
 }
 
 // Step replaces a live instance whose restart was requested. A new leader's
@@ -50,6 +53,32 @@ func (r *Replacer) Step(ctx context.Context, instance db.Instance) error {
 	_, err := r.Replace(ctx, instance, ReplaceReasonRestart, instance.RestartRequestedBy.String)
 
 	return err
+}
+
+// ResolverExpiryMargin is how close to its resolved value's expiry a live
+// instance is replaced.
+const ResolverExpiryMargin = 60 * time.Second
+
+// ExpiryStep replaces, with reason resolver-expiry, a live instance whose
+// earliest resolved value expires in less than ResolverExpiryMargin. The
+// replacement's render calls the resolvers again.
+func (r *Replacer) ExpiryStep(ctx context.Context, instance db.Instance) error {
+	if !isLive(instance) || !instance.ResolvedExpiresAt.Valid ||
+		!instance.ResolvedExpiresAt.Time.Before(r.now().Add(ResolverExpiryMargin)) {
+		return nil
+	}
+
+	_, err := r.Replace(ctx, instance, ReplaceReasonResolverExpiry, "")
+
+	return err
+}
+
+func (r *Replacer) now() time.Time {
+	if r.Now == nil {
+		return time.Now()
+	}
+
+	return r.Now()
 }
 
 // Replace replaces one live instance in one transaction: it takes the

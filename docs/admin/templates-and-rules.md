@@ -111,12 +111,31 @@ A variable is a value that toolgate puts into the template when it starts an ins
 | `${instance.namespace}` | The namespace of the instance. |
 | `${template.name}` | The name of the template. |
 | `${secret:NAME}` | The user's secret with that name. |
+| `${resolver:NAME}` | A value from the resolver with that name. [Resolvers](#resolvers) tells more. |
 
 To write a literal `${`, write `$${`. An unknown variable makes the start fail.
 
-You can use `${secret:NAME}` only in `stringData` or `data` of a `Secret`. If a user did not set the secret, the user gets a message with the command that sets it. [User secrets](user-secrets.md) tells how toolgate keeps them.
+You can use `${secret:NAME}` and `${resolver:NAME}` only in `stringData` or `data` of a `Secret`. If a user did not set the secret, the user gets a message with the command that sets it. [User secrets](user-secrets.md) tells how toolgate keeps them.
 
-A `shared` template cannot use `${secret:…}`, `${principal.*}`, `${workspace.*}` or `${session.*}`, because one instance serves all users.
+A `shared` template cannot use `${secret:…}`, `${resolver:…}`, `${principal.*}`, `${workspace.*}` or `${session.*}`, because one instance serves all users.
+
+## Resolvers
+
+A resolver is an HTTPS service that gives the gateway a short-lived value for one user, for example a GitHub App token. You list resolvers in the chart value `config.resolvers`. Each one has a `name`, an `https://` `url`, an `audience`, a `timeout` (default `10s`, at most `60s`) and an optional `caFile`. A `caFile` is a PEM file of the certificate authorities that sign the certificate of the resolver. Mount it into the gateway pods with `resources.persistence`. A template that names a resolver that is not in the list is not valid, and its `Valid` condition gives the reason.
+
+When the gateway starts an instance, it calls each resolver that the template names one time. The request is a `POST` with a JSON body:
+
+```json
+{"resolver": "github-app", "template": {"namespace": "...", "name": "..."}, "instance": "...",
+ "principal": {"id": "...", "email": "...", "name": "...", "groups": ["..."]},
+ "workspace": "...", "session": "..."}
+```
+
+The body has `workspace` and `session` only for a `per-session` template. The request has the header `Authorization: Bearer TOKEN`. The token is a Kubernetes service-account token of the gateway, with the `audience` of the resolver. The resolver must check the token with a TokenReview before it answers.
+
+The resolver must answer HTTP 200 with `{"value": "...", "expiresAt": "RFC 3339 time"}`. The value must not be empty, and `expiresAt` must be at least 2 minutes in the future. The answer must be 1 MiB or less. The gateway does not follow redirects. If the answer is not correct, the instance fails with a reason that names the resolver and the problem, but never the value.
+
+The gateway puts the value only into the Secret of the instance. It does not store the value anywhere else. When the earliest value of an instance is less than 60 seconds from `expiresAt`, the gateway replaces the instance with a new one, which calls the resolvers again.
 
 ## Where instances run
 
