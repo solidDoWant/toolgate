@@ -88,7 +88,7 @@ Every authenticated request has an **identity**:
 - **`user`:** a person signed in to the IdP, and the machine only describes itself.
 - Anything else is refused with 401.
 
-**Users and groups** come from the OIDC ID token or access token claims (`email`, `groups`). The claim names are configurable. Service accounts have no groups, but templates and rules can name them directly.
+**Users and groups** come from the OIDC ID token or access token claims (`email`, `groups`). The claim names are configurable. `email` is used only when the `email_verified` claim is `true`, because an unverified email is a claim the user chose. Service accounts have no groups, but templates and rules can name them directly.
 
 **Client sign-in (users):** the CLI runs the OAuth 2.0 device authorization grant against the IdP with PKCE, using `golang.org/x/oauth2`. It stores the refresh token in the OS keychain (`github.com/zalando/go-keyring`), with a 0600 file fallback when no keychain exists. `toolgate headers` prints a fresh access token. The gateway accepts the IdP's access tokens directly, checked against the IdP's JWKS with `github.com/coreos/go-oidc/v3`, the configured audience, and expiry. toolgate issues no tokens of its own in phase 1.
 
@@ -151,9 +151,9 @@ spec:
 - the default service account with `automountServiceAccountToken: false`;
 - labels naming the template, instance and owner principal (hashed).
 
-With `shared`, all instances go in one configured namespace and are told apart by labels and name prefixes. Deleting a per-instance namespace is the teardown.
+With `shared`, all instances go in one configured namespace and are told apart by labels and name prefixes. Only `scope: shared` templates may use it; for other scopes it is a validation error, so an instance holding one user's secrets always has its own namespace. Deleting a per-instance namespace is the teardown.
 
-**Resources** is a list of Kubernetes objects. Phase 1 allows these kinds: `Pod`, `Deployment`, `StatefulSet`, `Service`, `ConfigMap`, `Secret`, `ServiceAccount`, `NetworkPolicy`, `PersistentVolumeClaim`, and `CiliumNetworkPolicy` when that CRD exists. Phase 2 adds `helm.toolkit.fluxcd.io/v2 HelmRelease` and `source.toolkit.fluxcd.io/v1 OCIRepository` and `HelmRepository`. Cluster-scoped kinds, RBAC, webhooks, and anything else are a validation error. The gateway's RBAC only allows those kinds in instance namespaces. The chart also installs a ValidatingAdmissionPolicy that enforces the same list on objects carrying toolgate's instance label, so a compromised gateway can't do more.
+**Resources** is a list of Kubernetes objects. Phase 1 allows these kinds: `Pod`, `Deployment`, `StatefulSet`, `Service`, `ConfigMap`, `Secret`, `ServiceAccount`, `NetworkPolicy`, `PersistentVolumeClaim`, and `CiliumNetworkPolicy` when that CRD exists. Phase 2 adds `helm.toolkit.fluxcd.io/v2 HelmRelease` and `source.toolkit.fluxcd.io/v1 OCIRepository` and `HelmRepository`. Cluster-scoped kinds, RBAC, webhooks, and anything else are a validation error. The gateway needs a ClusterRole for those kinds, because instance namespaces are created on the fly, and it never reads Secrets. The chart also installs a ValidatingAdmissionPolicy that applies to every write by the gateway's service account: it denies kinds outside the list and any write outside namespaces labelled as toolgate's, so a compromised gateway can't do more. The exact rules are in `docs/design/phase-1.md`.
 
 **Rendering rules:**
 1. Parse the YAML first. Substitute variables only inside string scalars of the parsed tree. A value never adds keys or changes structure.
@@ -169,8 +169,9 @@ With `shared`, all instances go in one configured namespace and are told apart b
 
 **Stopping.**
 - A per-session instance stops when its last session disables it or ends.
-- A per-user instance stops after `idleStop` without calls.
-- A shared instance stops after `idleStop` without calls, or never if `idleStop` is `0`.
+- A per-user instance stops when none of its user's live sessions has it enabled and it had no calls for `idleStop`.
+- A shared instance stops when no live session has it enabled and it had no calls for `idleStop`, or never if `idleStop` is `0`.
+- Any instance stops when its template is deleted or its scope changes. An invalid template stops nothing (§8).
 
 Stopping deletes the namespace, or the labelled objects in a shared namespace. A gateway that restarts finds its instances from the labels and the database, and reconciles them.
 
@@ -200,7 +201,7 @@ spec:
   reason: No repository deletion from CI
   expires: 2026-12-31T00:00:00Z  # optional
 ```
-Rules only refuse. Grants never come from rules. A rule matching only claimed fields (a `claimed/…` workspace or a session) still applies, but the docs say plainly that a client can avoid it by claiming something else.
+In globs, `*` matches any run of characters, including `/`. Rules only refuse. Grants never come from rules. A rule matching only claimed fields (a `claimed/…` workspace or a session) still applies, but the docs say plainly that a client can avoid it by claiming something else.
 
 **When decisions run:** on `list_servers`, on `tools/list` (blocked tools are left out), on `enable_server` and on every call. A rule change reaches every open session within 5 seconds (`LISTEN/NOTIFY`, then `list_changed`).
 
@@ -214,7 +215,7 @@ Rules only refuse. Grants never come from rules. A rule matching only claimed fi
 ## 12. Audit and telemetry
 
 **Audit events** are JSON lines on stdout (`log/slog`) and rows in PostgreSQL:
-- `session.start`, `session.end`;
+- `session.start`, `session.end`, `auth.refuse` (rate-limited);
 - `server.enable`, `server.disable`, `instance.start`, `instance.ready`, `instance.fail`, `instance.stop`;
 - `tool.decision` (allow or refuse, with the deciding rule), `tool.result` (success or error, duration, sizes);
 - `rule.change`, `secret.set`, `secret.delete`;
@@ -288,7 +289,7 @@ PostgreSQL, accessed with `pgx/v5`, forward-only migrations embedded with `press
 - `audit_events`: partitioned by month.
 - Phase 2: `grants`, `approvals`, `temporary_blocks`, `ui_sessions`.
 
-Concurrency: instance creation for a scope key is serialized with a row lock, so two sessions enabling a per-user server at once share one instance.
+Concurrency: instance creation for a template and scope key is serialized with a transaction-level advisory lock, so two sessions enabling a per-user server at once share one instance. `docs/design/phase-1.md` gives the locks and the interaction rules.
 
 ## 16. Won't do
 
