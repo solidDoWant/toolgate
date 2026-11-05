@@ -115,7 +115,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	ruleView := &ruleLister{}
 
 	if cfg.UIEnabled() {
-		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), ruleView, broker, stdout, logger); err != nil {
+		engine.GrantURL = ui.GrantLink(cfg.PublicURL)
+
+		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), ruleView,
+			gateway.NewGrants(server.Database(), templates, stdout), broker, stdout, logger); err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
 			return 1
@@ -347,7 +350,7 @@ const maxClientSecretBytes = 4 << 10
 
 // registerUI serves the web UI under `/ui/` and `GET /`. It reads the UI
 // client's secret, when one is configured, before the gateway starts.
-func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, rules ui.RuleSource, broker *secrets.Broker, stdout io.Writer, logger *slog.Logger) error {
+func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, rules ui.RuleSource, grants ui.GrantSource, broker *secrets.Broker, stdout io.Writer, logger *slog.Logger) error {
 	var clientSecret string
 
 	if cfg.OIDCUIClientSecretFile != "" {
@@ -377,6 +380,7 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 			recorder: audit.NewRecorder(stdout, db.New(server.Database())),
 			logger:   logger,
 		},
+		Grants:          grants,
 		Logger:          logger,
 		Servers:         servers,
 		Pool:            server.Database(),

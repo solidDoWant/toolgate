@@ -85,6 +85,51 @@ func (q *Queries) InsertGrantWithinLimit(ctx context.Context, arg InsertGrantWit
 	return i, err
 }
 
+const listGrantsOfPrincipal = `-- name: ListGrantsOfPrincipal :many
+SELECT id, principal, template_ns, template_name, tool, session_id, created_at, expires_at, revoked_at, revoked_by FROM grants
+WHERE principal = $1
+ORDER BY created_at DESC, id DESC
+LIMIT $2::bigint
+`
+
+type ListGrantsOfPrincipalParams struct {
+	Principal string
+	MaxRows   int64
+}
+
+// Returns the principal's live grants and those that stopped being live
+// recently (the cleanup deletes them 7 days later), newest first.
+func (q *Queries) ListGrantsOfPrincipal(ctx context.Context, arg ListGrantsOfPrincipalParams) ([]Grant, error) {
+	rows, err := q.db.Query(ctx, listGrantsOfPrincipal, arg.Principal, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Grant{}
+	for rows.Next() {
+		var i Grant
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.Tool,
+			&i.SessionID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.RevokedAt,
+			&i.RevokedBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLiveGrantsOfPrincipal = `-- name: ListLiveGrantsOfPrincipal :many
 SELECT id, principal, template_ns, template_name, tool, session_id, created_at, expires_at, revoked_at, revoked_by FROM grants
 WHERE principal = $1 AND revoked_at IS NULL AND expires_at > now()
@@ -168,6 +213,38 @@ type RevokeGrantParams struct {
 // or was already revoked.
 func (q *Queries) RevokeGrant(ctx context.Context, arg RevokeGrantParams) (Grant, error) {
 	row := q.db.QueryRow(ctx, revokeGrant, arg.RevokedBy, arg.ID)
+	var i Grant
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.Tool,
+		&i.SessionID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+		&i.RevokedBy,
+	)
+	return i, err
+}
+
+const revokeGrantOfPrincipal = `-- name: RevokeGrantOfPrincipal :one
+UPDATE grants
+SET revoked_at = now(), revoked_by = $1
+WHERE id = $2 AND principal = $1 AND revoked_at IS NULL
+RETURNING id, principal, template_ns, template_name, tool, session_id, created_at, expires_at, revoked_at, revoked_by
+`
+
+type RevokeGrantOfPrincipalParams struct {
+	Principal pgtype.Text
+	ID        string
+}
+
+// Revokes the principal's own grant once. It returns no row when the grant
+// doesn't exist, belongs to someone else, or was already revoked.
+func (q *Queries) RevokeGrantOfPrincipal(ctx context.Context, arg RevokeGrantOfPrincipalParams) (Grant, error) {
+	row := q.db.QueryRow(ctx, revokeGrantOfPrincipal, arg.Principal, arg.ID)
 	var i Grant
 	err := row.Scan(
 		&i.ID,

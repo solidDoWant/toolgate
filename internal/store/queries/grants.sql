@@ -42,3 +42,19 @@ FROM (
     UNION ALL
     SELECT expires_at FROM temporary_blocks WHERE expires_at > now()
 ) AS live;
+
+-- name: ListGrantsOfPrincipal :many
+-- Returns the principal's live grants and those that stopped being live
+-- recently (the cleanup deletes them 7 days later), newest first.
+SELECT * FROM grants
+WHERE principal = @principal
+ORDER BY created_at DESC, id DESC
+LIMIT @max_rows::bigint;
+
+-- name: RevokeGrantOfPrincipal :one
+-- Revokes the principal's own grant once. It returns no row when the grant
+-- doesn't exist, belongs to someone else, or was already revoked.
+UPDATE grants
+SET revoked_at = now(), revoked_by = @principal
+WHERE id = @id AND principal = @principal AND revoked_at IS NULL
+RETURNING *;

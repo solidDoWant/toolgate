@@ -67,6 +67,22 @@ The navigation shows the Blocks link only to admins.
 
 The form takes a value in a text box or from a file, not both. A value is 4 MiB at most. Text from the box has its CRLF line breaks changed to LF, so a PEM key matches one set with the CLI. A file's bytes are kept as they are. The form never shows a value, and each action answers with a redirect back to the page.
 
+## The Grants page
+
+A grant lets a user use an `opt-in` server or tool from their own machine for a limited time. `/ui/grants` lists the live grants of the user and the grants that ended in the last 7 days. Each user sees only their own grants. A grant of another user gives 404, also to an admin.
+
+`/ui/grants/new` is the form that creates a grant. It needs a fresh sign-in (see "Fresh sign-in"). The gateway accepts a grant only when all of these conditions are true:
+
+- The grant is for the user who creates it.
+- The user has access to the server in the catalog.
+- For a grant on the whole server: the environment of the server or of one of its tools is `opt-in`.
+- For a grant on one tool: the environment of the server is `any` and the environment of the tool is `opt-in`. On an `opt-in` server, a user needs a grant on the whole server to turn the server on, so a grant on one tool is not useful there.
+- The grant lasts from 1 minute to 7 days.
+- The user has fewer than 100 live grants.
+- If the user picks a session, it is one of their open sessions. Then only that session can use the grant.
+
+When a call or an enable needs a grant, the refusal links to this form, filled with the server, the tool and the session. A user can revoke a grant at any time, without a fresh sign-in. The gateway writes the events `grant.create` and `grant.revoke`. When a grant ends, the tools of the server leave the tool list of the user's sessions within 5 seconds.
+
 ## The Audit page
 
 `/ui/audit` lists audit events, newest first, 100 on a page. A user sees only their own events. An admin sees all events.
