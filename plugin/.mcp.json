@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "toolgate": {
+      "type": "http",
+      "url": "${user_config.gateway_url}/mcp",
+      "headersHelper": "toolgate headers"
+    }
+  }
+}

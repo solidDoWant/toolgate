@@ -28,6 +28,7 @@ jobs:
       # runs the test jobs too.
       code: ${{ steps.filter.outputs.code == 'true' || steps.filter.outputs.acceptance == 'true' }}
       docs: ${{ steps.filter.outputs.docs }}
+      plugin: ${{ steps.filter.outputs.plugin }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: filter
@@ -47,6 +48,8 @@ jobs:
               - 'docs/acceptance/**'
             docs:
               - '{**/*.md,scripts/docs/**}'
+            plugin:
+              - '{plugin/**,.claude-plugin/**,scripts/plugin-check.sh,.github/workflows/ci.yml}'
 
   # The test tiers run as parallel jobs, inside the flake's dev shell, so CI
   # uses exactly the toolchain developers and agents use.
@@ -140,6 +143,22 @@ jobs:
           BASE: origin/${{ github.base_ref }}
         run: nix develop -c ./scripts/docs/style_report.sh "$BASE" >> "$GITHUB_STEP_SUMMARY"
 
+  # The Claude Code plugin and marketplace manifests (scripts/plugin-check.sh),
+  # checked with a pinned Claude Code from npm on the runner's Node, no Nix.
+  plugin:
+    needs: changes
+    if: needs.changes.outputs.plugin == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CLAUDE_CODE_VERSION: 2.1.318
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Claude Code
+        run: npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+      - name: Validate and install the plugin
+        run: make plugin-check
+
   # Fails a pull request that deletes or skips a checklist scenario test
   # (scripts/ci/test-guard.py), for every change, docs-only included. Plain
   # runner Python, no Nix: it takes seconds. The labels are read when the job
@@ -168,7 +187,7 @@ jobs:
   # still produce a passing `checks`; it fails if any job failed or was
   # cancelled, and passes when each succeeded or was skipped.
   checks:
-    needs: [changes, lint, unit, integration, e2e, docs, test-guard]
+    needs: [changes, lint, unit, integration, e2e, docs, plugin, test-guard]
     if: always()
     runs-on: ubuntu-latest
     steps:
