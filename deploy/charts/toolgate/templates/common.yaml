@@ -1,0 +1,55 @@
+{{- /*
+The gateway's Deployment, Services, ServiceAccount, PodDisruptionBudget and
+ServiceMonitor, rendered by the bjw-s common library from `resources`, after
+this template applies `tpl` to its string values and adds the gateway's
+settings from `config`.
+*/ -}}
+{{- with .Values.config }}
+{{- if not .database.existingSecret }}
+{{- fail "config.database.existingSecret is required: the name of a Secret that holds the PostgreSQL connection string" }}
+{{- end }}
+{{- if not .oidc.issuerURL }}
+{{- fail "config.oidc.issuerURL is required: the issuer URL of the OIDC identity provider" }}
+{{- end }}
+{{- if not .oidc.audience }}
+{{- fail "config.oidc.audience is required: the audience of users' access tokens" }}
+{{- end }}
+{{- end }}
+
+{{- $resources := mustDeepCopy .Values.resources -}}
+{{- include "toolgate.tplValues" (dict "map" $resources "root" .) -}}
+
+{{- /* The gateway's settings, ahead of any env the values add. */ -}}
+{{- $config := .Values.config -}}
+{{- $env := list
+  (dict "name" "TOOLGATE_LISTEN_ADDRESS" "value" ":8080")
+  (dict "name" "TOOLGATE_METRICS_LISTEN_ADDRESS" "value" ":9090")
+  (dict "name" "TOOLGATE_DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $config.database.existingSecret "key" $config.database.secretKey)))
+  (dict "name" "TOOLGATE_OIDC_ISSUER_URL" "value" $config.oidc.issuerURL)
+  (dict "name" "TOOLGATE_OIDC_AUDIENCE" "value" $config.oidc.audience)
+-}}
+{{- range $setting, $name := dict "emailClaim" "TOOLGATE_OIDC_EMAIL_CLAIM" "emailVerifiedClaim" "TOOLGATE_OIDC_EMAIL_VERIFIED_CLAIM" "groupsClaim" "TOOLGATE_OIDC_GROUPS_CLAIM" }}
+{{- with index $config.oidc $setting }}
+{{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- $env = append $env (dict "name" "TOOLGATE_LEASE_NAMESPACE" "value" .Release.Namespace) -}}
+{{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
+{{- with $config.otlpEndpoint }}
+{{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}
+{{- end }}
+{{- $env = append $env (dict "name" "POD_NAMESPACE" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.namespace"))) -}}
+{{- $gateway := index $resources "controllers" "gateway" "containers" "gateway" -}}
+{{- $_ := set $gateway "env" (concat $env ($gateway.env | default list) ($config.extraEnv | default list)) -}}
+
+{{- with $config.imagePullSecrets }}
+{{- $_ := set $resources.defaultPodOptions "imagePullSecrets" . }}
+{{- end }}
+
+{{- /* Merge the values into the layout the common library expects. */ -}}
+{{- $merged := omit (mustDeepCopy .Values) "resources" -}}
+{{- $merged = mustMergeOverwrite $merged $resources -}}
+{{- $_ := set . "Values" $merged }}
+
+{{- include "bjw-s.common.loader.init" . }}
+{{ include "bjw-s.common.loader.generate" . }}

@@ -6,7 +6,9 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -32,9 +34,24 @@ var chartDir = filepath.Join("..", "..", "deploy", "charts", "toolgate")
 
 // quickStartValues are the values docs/admin/quick-start.md installs with.
 var quickStartValues = []string{
-	"database.existingSecret=toolgate-database",
-	"oidc.issuerURL=https://idp.example.com/realms/main",
-	"oidc.audience=toolgate",
+	"config.database.existingSecret=toolgate-database",
+	"config.oidc.issuerURL=https://idp.example.com/realms/main",
+	"config.oidc.audience=toolgate",
+}
+
+// TestMain fetches the bjw-s common library chart the chart depends on, at
+// the version Chart.lock pins (scripts/chart-deps.sh), when helm is installed.
+func TestMain(m *testing.M) {
+	if _, err := exec.LookPath("helm"); err == nil {
+		output, err := exec.Command(filepath.Join("..", "..", "scripts", "chart-deps.sh")).CombinedOutput()
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "scripts/chart-deps.sh: %v\n%s", err, output)
+
+			os.Exit(1)
+		}
+	}
+
+	os.Exit(m.Run())
 }
 
 type manifest struct {
@@ -127,7 +144,7 @@ func find[T any](t *testing.T, manifests []manifest, kind string) T {
 }
 
 func TestChartRendersTheGateway(t *testing.T) {
-	manifests := renderQuickStart(t, "--include-crds")
+	manifests := renderQuickStart(t)
 
 	var crds []string
 
@@ -192,7 +209,7 @@ func TestChartRendersTheGateway(t *testing.T) {
 }
 
 func TestChartRequiresTheDatabaseAndTheIdentityProvider(t *testing.T) {
-	for _, required := range []string{"database.existingSecret", "oidc.issuerURL", "oidc.audience"} {
+	for _, required := range []string{"config.database.existingSecret", "config.oidc.issuerURL", "config.oidc.audience"} {
 		t.Run(required, func(t *testing.T) {
 			var set []string
 
@@ -288,7 +305,7 @@ func TestSharedNamespace(t *testing.T) {
 	})
 
 	t.Run("labelled as toolgate's", func(t *testing.T) {
-		manifests, err := render(t, append([]string{"sharedNamespace.name=toolgate-shared"}, quickStartValues...))
+		manifests, err := render(t, append([]string{"config.sharedNamespace.name=toolgate-shared"}, quickStartValues...))
 		require.NoError(t, err)
 
 		namespace := find[corev1.Namespace](t, manifests, "Namespace")
@@ -298,7 +315,7 @@ func TestSharedNamespace(t *testing.T) {
 	})
 
 	t.Run("not an instance namespace name", func(t *testing.T) {
-		_, err := render(t, append([]string{"sharedNamespace.name=tg-shared"}, quickStartValues...))
+		_, err := render(t, append([]string{"config.sharedNamespace.name=tg-shared"}, quickStartValues...))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must not start with tg-")
 	})

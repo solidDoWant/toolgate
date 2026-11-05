@@ -1,0 +1,14 @@
+{{- /*
+toolgate's CRDs, as templates rather than in crds/, so `helm upgrade` updates
+them. controller-gen writes them to config/crd/bases; rawCRDs links there.
+*/ -}}
+{{- if .Values.config.crds.enabled }}
+{{- range $path, $_ := .Files.Glob "rawCRDs/*.yaml" }}
+---
+{{- $crd := $.Files.Get $path | fromYaml -}}
+{{- if $.Values.config.crds.keep -}}
+{{- $crd = merge $crd (dict "metadata" (dict "annotations" (dict "helm.sh/resource-policy" "keep"))) -}}
+{{- end }}
+{{ $crd | toYaml }}
+{{- end }}
+{{- end }}

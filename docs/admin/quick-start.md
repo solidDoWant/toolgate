@@ -32,11 +32,12 @@ You need these items:
 3. Write the quick-start values to a file named `values.yaml`. Use the name of the Secret from step 2, and the issuer URL and audience of your identity provider:
 
    ```yaml
-   database:
-     existingSecret: toolgate-database
-   oidc:
-     issuerURL: https://idp.example.com/realms/main
-     audience: toolgate
+   config:
+     database:
+       existingSecret: toolgate-database
+     oidc:
+       issuerURL: https://idp.example.com/realms/main
+       audience: toolgate
    ```
 
 4. Install the chart with the release name `toolgate`:
@@ -57,4 +58,4 @@ The pods are ready when the gateway can connect to PostgreSQL. If they do not be
 ## Next steps
 
 - [The chart values reference](chart-values.md) lists every value of the chart.
-- [The gateway configuration reference](configuration.md) lists the settings of the gateway. Set them with the `extraEnv` chart value.
+- [The gateway configuration reference](configuration.md) lists the settings of the gateway. Set them with the `config.extraEnv` chart value.

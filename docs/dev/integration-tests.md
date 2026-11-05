@@ -30,7 +30,7 @@ Tokens from the device-code flow expire after 5 minutes. The provider issues no 
 
 envtest is the test environment of controller-runtime (`sigs.k8s.io/controller-runtime/pkg/envtest`). It runs `kube-apiserver` and `etcd` as local processes. The dev shell gets both programs from nixpkgs and sets `KUBEBUILDER_ASSETS` to the directory that holds them. The tests download nothing.
 
-`StartEnvtest` installs the toolgate CRDs from `deploy/charts/toolgate/crds`. It returns an `Envtest` value with the REST configuration, the scheme and a controller-runtime client. The client reads from the API server directly and has no cache. The helper stops the API server and etcd when the test ends.
+`StartEnvtest` installs the toolgate CRDs from `config/crd/bases`, the same files the chart installs. It returns an `Envtest` value with the REST configuration, the scheme and a controller-runtime client. The client reads from the API server directly and has no cache. The helper stops the API server and etcd when the test ends.
 
 To write an envtest test:
 

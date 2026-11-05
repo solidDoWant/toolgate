@@ -1,6 +1,6 @@
-{{- with .Values.sharedNamespace }}
+{{- with .Values.config.sharedNamespace }}
 {{- if hasPrefix "tg-" .name }}
-{{- fail "sharedNamespace.name must not start with tg-: that prefix is for instance namespaces" }}
+{{- fail "config.sharedNamespace.name must not start with tg-: that prefix is for instance namespaces" }}
 {{- end }}
 {{- if and .name .create }}
 # The namespace for instances of `namespace: shared` templates. The admission

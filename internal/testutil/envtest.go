@@ -29,19 +29,19 @@ type Envtest struct {
 	Client client.Client
 }
 
-// chartCRDDirectory returns the chart's crds/ directory, the files that
-// `make generate` writes and the chart installs.
-func chartCRDDirectory(tb testing.TB) string {
+// crdDirectory returns config/crd/bases, the CRD files that `make generate`
+// writes and the chart installs.
+func crdDirectory(tb testing.TB) string {
 	tb.Helper()
 
 	_, file, _, ok := runtime.Caller(0)
 	require.True(tb, ok, "cannot find the testutil source directory")
 
-	return filepath.Join(filepath.Dir(file), "..", "..", "deploy", "charts", "toolgate", "crds")
+	return filepath.Join(filepath.Dir(file), "..", "..", "config", "crd", "bases")
 }
 
 // StartEnvtest starts an API server and etcd from the binaries in
-// KUBEBUILDER_ASSETS, installs the chart's CRDs and waits until they are
+// KUBEBUILDER_ASSETS, installs the toolgate CRDs and waits until they are
 // served. It skips the test when KUBEBUILDER_ASSETS is unset (the dev shell
 // sets it) and stops the API server and etcd when the test ends.
 func StartEnvtest(tb testing.TB) *Envtest {
@@ -58,7 +58,7 @@ func StartEnvtest(tb testing.TB) *Envtest {
 	environment := &envtest.Environment{
 		Scheme: scheme,
 		CRDInstallOptions: envtest.CRDInstallOptions{
-			Paths:              []string{chartCRDDirectory(tb)},
+			Paths:              []string{crdDirectory(tb)},
 			ErrorIfPathMissing: true,
 		},
 	}
