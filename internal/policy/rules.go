@@ -9,6 +9,7 @@ import (
 
 	"github.com/gobwas/glob"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/clock"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/changes"
@@ -17,9 +18,19 @@ import (
 // Rules holds the valid ToolgateRule objects read from the watched
 // namespaces, with their globs compiled. A rule whose new generation is
 // invalid keeps its last valid generation. It is safe for concurrent use.
+//
+// Rules keeps a timer for the earliest future expires time of its valid
+// rules. When the timer fires, Rules signals its subscribers, because the
+// rules that apply have changed, and sets the timer for the next one.
 type Rules struct {
+	clock clock.WithDelayedExecution
+
 	mu      sync.RWMutex
 	entries map[types.NamespacedName]*ruleEntry
+	// expiry fires at expiryAt, the earliest future expires time, or is nil
+	// when no valid rule expires in the future.
+	expiry   clock.Timer
+	expiryAt time.Time
 
 	changes changes.Feed
 }
@@ -42,9 +53,15 @@ type compiledRule struct {
 	tools       []glob.Glob
 }
 
-// NewRules returns an empty rule set.
+// NewRules returns an empty rule set that times expiry with the real clock.
 func NewRules() *Rules {
-	return &Rules{entries: map[types.NamespacedName]*ruleEntry{}}
+	return NewRulesWithClock(clock.RealClock{})
+}
+
+// NewRulesWithClock returns an empty rule set that times expiry with the
+// given clock.
+func NewRulesWithClock(timing clock.WithDelayedExecution) *Rules {
+	return &Rules{clock: timing, entries: map[types.NamespacedName]*ruleEntry{}}
 }
 
 // Set records the latest generation of a rule. A rule with a glob that
@@ -69,6 +86,8 @@ func (r *Rules) Set(rule *v1alpha1.ToolgateRule) error {
 	}
 
 	current.valid = compiled
+
+	r.scheduleExpiryLocked()
 	r.mu.Unlock()
 
 	r.changes.Notify()
@@ -80,6 +99,7 @@ func (r *Rules) Set(rule *v1alpha1.ToolgateRule) error {
 func (r *Rules) Delete(key types.NamespacedName) {
 	r.mu.Lock()
 	delete(r.entries, key)
+	r.scheduleExpiryLocked()
 	r.mu.Unlock()
 
 	r.changes.Notify()
@@ -90,6 +110,55 @@ func (r *Rules) Delete(key types.NamespacedName) {
 // received are merged into one.
 func (r *Rules) Subscribe() (<-chan struct{}, func()) {
 	return r.changes.Subscribe()
+}
+
+// scheduleExpiryLocked sets the expiry timer to the earliest expires time
+// after now, or stops it when no valid rule expires in the future. The
+// caller holds r.mu.
+func (r *Rules) scheduleExpiryLocked() {
+	now := r.clock.Now()
+
+	var next time.Time
+
+	for _, current := range r.entries {
+		rule := current.valid
+		if rule == nil || rule.expires == nil || !rule.expires.After(now) {
+			continue
+		}
+
+		if next.IsZero() || rule.expires.Before(next) {
+			next = *rule.expires
+		}
+	}
+
+	if r.expiry != nil && next.Equal(r.expiryAt) {
+		return
+	}
+
+	if r.expiry != nil {
+		r.expiry.Stop()
+		r.expiry = nil
+	}
+
+	r.expiryAt = next
+	if next.IsZero() {
+		return
+	}
+
+	// The callback starts a goroutine because a clock may run it while
+	// holding a lock that Now and AfterFunc also take.
+	r.expiry = r.clock.AfterFunc(next.Sub(now), func() { go r.expired() })
+}
+
+// expired runs when the expiry timer fires: a rule has stopped applying.
+func (r *Rules) expired() {
+	r.mu.Lock()
+	r.expiry = nil
+	r.expiryAt = time.Time{}
+	r.scheduleExpiryLocked()
+	r.mu.Unlock()
+
+	r.changes.Notify()
 }
 
 // target is what a rule is matched against.

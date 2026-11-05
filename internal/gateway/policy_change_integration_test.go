@@ -129,6 +129,27 @@ func TestRuleChanges(t *testing.T) {
 		assert.Equal(t, "back", resultText(result))
 	})
 
+	t.Run("row 31: a rule reaching its expires time sends list_changed and brings the tools back", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		fixture.addEnableTemplate("github", "per-user", anyone)
+		fixture.startUpstream(t, "github")
+
+		client := fixture.connectObserved(t, alice())
+		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
+		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+
+		expires := time.Now().Add(2 * time.Second)
+		rule := blockServer("github")
+		rule.Spec.Expires = &metav1.Time{Time: expires}
+		require.NoError(t, fixture.rules.Set(rule))
+		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, ruleChangeBound, 10*time.Millisecond)
+		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
+
+		require.Eventually(t, func() bool { return client.listChangedCount() == 3 }, time.Until(expires)+ruleChangeBound, 10*time.Millisecond,
+			"no list_changed when the rule expired")
+		assert.ElementsMatch(t, append(metaToolNames, "github__echo"), toolNames(t, client.session))
+	})
+
 	t.Run("row 6: a rule added while a call is in flight lets the call finish, refuses the next call and sends list_changed", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
