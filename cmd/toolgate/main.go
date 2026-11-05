@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/version"
 )
@@ -15,6 +16,7 @@ const usage = `Usage: toolgate <command>
 Commands:
   login     Sign in (login [--gateway URL])
   headers   Print the request headers for Claude Code's headersHelper
+  hook      Run a Claude Code hook (hook session-start)
   logout    Remove the stored sign-in token
   serve     Run the gateway (serve --config FILE)
   admin     Admin commands (admin rewrap --config FILE)
@@ -23,11 +25,17 @@ Commands:
 `
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(runWithInput(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-// run executes one command and returns the process exit code.
+// run executes one command with no standard input and returns the process
+// exit code.
 func run(args []string, stdout, stderr io.Writer) int {
+	return runWithInput(args, strings.NewReader(""), stdout, stderr)
+}
+
+// runWithInput executes one command and returns the process exit code.
+func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, usage)
 
@@ -45,6 +53,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return status(stdout, stderr)
 	case "headers":
 		return printHeaders(args[1:], stdout, stderr)
+	case "hook":
+		return hook(args[1:], stdin, stdout, stderr)
 	case "logout":
 		return logout(stdout, stderr)
 	case "serve":

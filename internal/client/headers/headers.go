@@ -23,6 +23,7 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 	"golang.org/x/oauth2"
 
+	"github.com/solidDoWant/toolgate/internal/client/atomicfile"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 )
@@ -297,4 +298,20 @@ func normalise(value string) string {
 	}
 
 	return value
+}
+
+// WriteSessionFile writes session to the session file of the Claude Code
+// process pid in RuntimeDir, atomically. The directory gets mode 0700 and
+// the file 0600.
+func WriteSessionFile(pid int, session string) error {
+	if !headerValuePattern.MatchString(session) {
+		return errors.New("the session ID is invalid")
+	}
+
+	dir, err := RuntimeDir()
+	if err != nil {
+		return err
+	}
+
+	return atomicfile.Write(filepath.Join(dir, strconv.Itoa(pid)), []byte(session+"\n"), 0o600)
 }
