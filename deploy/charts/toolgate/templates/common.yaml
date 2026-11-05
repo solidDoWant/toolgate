@@ -33,6 +33,7 @@ settings from `config`.
 {{- $env = append $env (dict "name" $name "value" .) }}
 {{- end }}
 {{- end }}
+{{- $env = append $env (dict "name" "TOOLGATE_LEASE_NAMESPACE" "value" .Release.Namespace) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

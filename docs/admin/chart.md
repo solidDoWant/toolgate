@@ -44,7 +44,7 @@ The ClusterRole, the Role, their bindings and the admission policy are not in `r
 
 ## The pods
 
-Every gateway pod serves requests. Only one pod at a time runs the reconciler, the part of the gateway that creates and deletes the objects of MCP servers. The pods decide which pod that is with a Kubernetes Lease in the release namespace.
+Every gateway pod serves requests. Only one pod at a time runs the reconciler, the part of the gateway that creates and deletes the objects of MCP servers. The pods decide which pod that is with a Kubernetes Lease named `toolgate-runtime` in the release namespace. If that pod stops or loses the Lease, another pod takes it over within about 15 seconds.
 
 ## Why the gateway has a ClusterRole
 
