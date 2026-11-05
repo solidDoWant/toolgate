@@ -289,6 +289,19 @@ func connectGateway(t *testing.T, endpoint, user, session string) *gatewaySessio
 	return connectGatewayWithHeader(t, endpoint, user, session, nil)
 }
 
+// connectGatewayInWorkspace is connectGateway that also claims workspace,
+// unless it is empty.
+func connectGatewayInWorkspace(t *testing.T, endpoint, user, session, workspace string) *gatewaySession {
+	t.Helper()
+
+	extra := http.Header{}
+	if workspace != "" {
+		extra.Set(auth.WorkspaceHeader, workspace)
+	}
+
+	return connectGatewayWithHeader(t, endpoint, user, session, extra)
+}
+
 // connectGatewayWithHeader is connectGateway with extra headers on every
 // request.
 func connectGatewayWithHeader(t *testing.T, endpoint, user, session string, extra http.Header) *gatewaySession {
