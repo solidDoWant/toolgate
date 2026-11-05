@@ -61,20 +61,26 @@ logLevel: debug
 		OIDCCLIClientID:          "toolgate-cli",
 		OIDCCLIScopes:            []string{"openid", "email", "profile", "offline_access"},
 		ServiceAccountNamespaces: []string{"ci", "agents"},
+		InstanceLimitPerUser:     20,
+		InstanceLimit:            200,
 	}, cfg)
 }
 
 func TestLoadEnvironmentOnly(t *testing.T) {
 	cfg, err := config.Load("", envFrom(map[string]string{
-		"TOOLGATE_DATABASE_URL":           validDatabaseURL,
-		"TOOLGATE_METRICS_LISTEN_ADDRESS": "127.0.0.1:9100",
-		"TOOLGATE_SHUTDOWN_TIMEOUT":       "5s",
-		"TOOLGATE_LOG_LEVEL":              "warn",
-		"TOOLGATE_OIDC_ISSUER_URL":        "https://idp.example",
-		"TOOLGATE_OIDC_AUDIENCE":          "toolgate",
+		"TOOLGATE_DATABASE_URL":            validDatabaseURL,
+		"TOOLGATE_METRICS_LISTEN_ADDRESS":  "127.0.0.1:9100",
+		"TOOLGATE_SHUTDOWN_TIMEOUT":        "5s",
+		"TOOLGATE_LOG_LEVEL":               "warn",
+		"TOOLGATE_OIDC_ISSUER_URL":         "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":           "toolgate",
+		"TOOLGATE_INSTANCE_LIMIT_PER_USER": "1",
+		"TOOLGATE_INSTANCE_LIMIT":          "1",
 	}))
 	require.NoError(t, err)
 
+	assert.Equal(t, 1, cfg.InstanceLimitPerUser, "1 is the smallest instance limit")
+	assert.Equal(t, 1, cfg.InstanceLimit)
 	assert.Equal(t, "127.0.0.1:9100", cfg.MetricsListenAddress)
 	assert.Equal(t, config.Duration(5*time.Second), cfg.ShutdownTimeout)
 	assert.Equal(t, "warn", cfg.LogLevel)
@@ -176,6 +182,19 @@ shutdownTimeout: 0s
 				"shutdownTimeout: must be greater than zero",
 			},
 			wantAbsent: []string{"hunter2"},
+		},
+		{
+			name: "instance limits below 1",
+			file: `
+instanceLimitPerUser: 0
+instanceLimit: -1
+`,
+			wantProblems: []string{"instanceLimitPerUser: must be at least 1", "instanceLimit: must be at least 1"},
+		},
+		{
+			name:         "instance limit that isn't a number",
+			env:          map[string]string{"TOOLGATE_INSTANCE_LIMIT": "many"},
+			wantProblems: []string{`TOOLGATE_INSTANCE_LIMIT: "many" is not a whole number`},
 		},
 		{
 			name:         "unknown key in file",

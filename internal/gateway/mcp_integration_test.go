@@ -41,7 +41,7 @@ type mcpFixture struct {
 	server   *httptest.Server
 }
 
-func newMCPFixture(t *testing.T) *mcpFixture {
+func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFixture {
 	t.Helper()
 
 	postgres := testutil.StartPostgres(t)
@@ -69,12 +69,17 @@ func newMCPFixture(t *testing.T) *mcpFixture {
 
 	servers := catalog.New()
 	rules := policy.NewRules()
-	handler := gateway.NewMCPHandler(gateway.MCPOptions{
+	options := gateway.MCPOptions{
 		Database:  pool,
 		Catalog:   servers,
 		Policy:    &policy.Engine{Rules: rules},
 		Subscribe: listener.Subscribe,
-	})
+	}
+	for _, change := range configure {
+		change(&options)
+	}
+
+	handler := gateway.NewMCPHandler(options)
 
 	server := httptest.NewServer(authenticator.Middleware(handler, true))
 	t.Cleanup(server.Close)

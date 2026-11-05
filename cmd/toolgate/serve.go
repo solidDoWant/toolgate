@@ -99,6 +99,9 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		AuditOutput: stdout,
 		Logger:      logger,
 		Subscribe:   listener.Subscribe,
+
+		InstanceLimitPerUser: cfg.InstanceLimitPerUser,
+		InstanceLimit:        cfg.InstanceLimit,
 	}), true))
 
 	if err := server.Listen(); err != nil {
