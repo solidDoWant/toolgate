@@ -262,7 +262,7 @@ type GetApprovalOfPrincipalRow struct {
 }
 
 // Returns one approval only when it belongs to principal, with its
-// session's client session ID. expired is computed with PostgreSQL's
+// session's client session ID. past_expiry is computed with PostgreSQL's
 // clock.
 func (q *Queries) GetApprovalOfPrincipal(ctx context.Context, arg GetApprovalOfPrincipalParams) (GetApprovalOfPrincipalRow, error) {
 	row := q.db.QueryRow(ctx, getApprovalOfPrincipal, arg.ID, arg.Principal)
