@@ -339,6 +339,50 @@ func (q *Queries) ListLiveSessionsEnabling(ctx context.Context, arg ListLiveSess
 	return items, nil
 }
 
+const listOpenSessionsOfPrincipal = `-- name: ListOpenSessionsOfPrincipal :many
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at FROM sessions
+WHERE principal = $1 AND ended_at IS NULL
+ORDER BY last_seen_at DESC
+LIMIT $2::bigint
+`
+
+type ListOpenSessionsOfPrincipalParams struct {
+	Principal string
+	MaxRows   int64
+}
+
+func (q *Queries) ListOpenSessionsOfPrincipal(ctx context.Context, arg ListOpenSessionsOfPrincipalParams) ([]Session, error) {
+	rows, err := q.db.Query(ctx, listOpenSessionsOfPrincipal, arg.Principal, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.SessionID,
+			&i.Workspace,
+			&i.Attestation,
+			&i.Email,
+			&i.Name,
+			&i.Groups,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.EndedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionServers = `-- name: ListSessionServers :many
 SELECT session_pk, template_ns, template_name, enabled_at FROM session_servers WHERE session_pk = $1 ORDER BY template_ns, template_name
 `

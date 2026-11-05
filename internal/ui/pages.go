@@ -37,6 +37,8 @@ var pageTemplates = map[string]*template.Template{
 	"audit":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
 	"secrets":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/secrets.html")),
 	"audit_event": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
+	"grants":      template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/grants.html")),
+	"grant_new":   template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/grant_new.html")),
 }
 
 // page is what the layout renders around a page's content.

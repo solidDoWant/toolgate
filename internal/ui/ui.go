@@ -144,6 +144,8 @@ type Options struct {
 	// Secrets leaves the page out.
 	Secrets SecretStore
 	Auditor secrets.Recorder
+	// Grants backs the Grants pages. Nil leaves them out.
+	Grants GrantSource
 }
 
 // UI is the web UI. Create it with New.
@@ -215,6 +217,10 @@ func New(options Options, registrar Registrar) *UI {
 		u.Handle("GET /ui/secrets", User, http.HandlerFunc(u.secretsPage))
 		u.handle("POST /ui/secrets", User, MaxSecretFormBytes, http.HandlerFunc(u.setSecret))
 		u.Handle("POST /ui/secrets/{name}/delete", User, http.HandlerFunc(u.deleteSecret))
+	}
+
+	if options.Grants != nil {
+		u.registerGrants()
 	}
 
 	return u
