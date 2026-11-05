@@ -123,8 +123,8 @@ func TestAC1_27Attestation(t *testing.T) {
 		{name: "opt-in, attested", environments: "opt-in", identity: pod("ci"), allowed: true},
 		{name: "attested, user", environments: "attested", identity: laptopUser()},
 		{name: "attested, attested", environments: "attested", identity: pod("ci"), allowed: true},
-		{name: "omitted, user", environments: "", identity: laptopUser()},
-		{name: "omitted, attested", environments: "", identity: pod("ci"), allowed: true},
+		{name: "omitted means opt-in, user", environments: "", identity: laptopUser()},
+		{name: "omitted means opt-in, attested", environments: "", identity: pod("ci"), allowed: true},
 	}
 
 	for _, test := range tests {

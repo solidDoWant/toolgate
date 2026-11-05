@@ -55,9 +55,10 @@ spec:
                 description: Access lists who may see and enable the server.
                 properties:
                   environments:
+                    default: opt-in
                     description: |-
                       Environments says which attestation a request needs: any, opt-in
-                      or attested.
+                      or attested. It defaults to opt-in.
                     type: string
                     x-kubernetes-validations:
                     - message: environments must be one of any, opt-in, attested

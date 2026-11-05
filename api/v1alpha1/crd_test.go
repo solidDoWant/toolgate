@@ -65,3 +65,19 @@ func TestCRDsHaveStatusConditions(t *testing.T) {
 		})
 	}
 }
+
+func TestCRDDefaultsServerEnvironmentToOptIn(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join(crdDir, crdFiles["MCPServerTemplate"]))
+	require.NoError(t, err)
+
+	var crd map[string]any
+	require.NoError(t, yaml.Unmarshal(data, &crd))
+
+	spec := field(t, crd, "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "spec", "properties")
+
+	assert.Equal(t, "opt-in", field(t, spec, "access", "properties", "environments", "default"))
+
+	toolEnvironments, ok := field(t, spec, "tools", "additionalProperties", "properties", "environments").(map[string]any)
+	require.True(t, ok)
+	assert.NotContains(t, toolEnvironments, "default", "a tool's environments inherits the server's value")
+}

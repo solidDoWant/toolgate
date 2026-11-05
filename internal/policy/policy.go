@@ -170,13 +170,14 @@ func isServiceAccount(identity auth.Identity) bool {
 }
 
 // environmentAllows reports whether an attestation level satisfies an
-// environments value. In phase 1 there are no grants, so opt-in needs
-// attested. An omitted value is treated as attested, so a template that
-// doesn't say is never usable from an unattested machine.
+// environments value. An empty value is opt-in, the CRD's default. In phase 1
+// there are no grants, so opt-in needs attested.
 func environmentAllows(environment, attestation string) bool {
-	if environment == EnvironmentAny {
+	switch environment {
+	case EnvironmentAny:
 		return attestation == attestationUser || attestation == attestationAttested
+	default:
+		// attested, and opt-in (also when empty) without grants.
+		return attestation == attestationAttested
 	}
-
-	return attestation == attestationAttested
 }

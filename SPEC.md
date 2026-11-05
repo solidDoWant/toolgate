@@ -132,7 +132,7 @@ spec:
     users: []                   # OIDC subjects or emails
     groups: [dev]
     serviceAccounts: []         # system:serviceaccount:ns:name
-    environments: opt-in        # any | opt-in | attested
+    environments: opt-in        # any | opt-in (default) | attested
   tools:                        # optional per-tool overrides
     delete_repository: {environments: attested, approval: required}
     list_secrets: {blocked: true}
