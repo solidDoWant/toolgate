@@ -12,4 +12,6 @@ toolgate is in early development, and these pages are not written yet. They will
 
 The [gateway configuration reference](configuration.md) lists the settings of `toolgate serve`. The [quick start](quick-start.md) installs the chart. [The chart page](chart.md) tells you what the chart installs and what its permissions allow, and the [chart values reference](chart-values.md) lists its values.
 
+[Pod sign-in](pod-sign-in.md) tells how a pod signs in with a Kubernetes service-account token, and which permissions the gateway needs for it.
+
 Until then, [`SPEC.md`](../../SPEC.md) describes the system.
