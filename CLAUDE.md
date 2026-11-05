@@ -54,7 +54,7 @@ Run `make help` for the full list, and keep it and this section current as targe
 - `make test`: unit tests with `-race`.
 - `make generate` / `make check-generate`: regenerate CRDs, deepcopy and sqlc code, or fail on drift.
 - `make generate-docs`: regenerate the gateway configuration reference (`docs/admin/configuration.md`) from the doc comments in `internal/config`. `make generate` runs it too.
-- `make test-integration`: `integration`-tagged tests against PostgreSQL and S3 in Docker.
+- `make test-integration`: `integration`-tagged tests against PostgreSQL and S3 in Docker, and a local Kubernetes API server (envtest, binaries from the dev shell).
 - `make test-e2e`: a new kind cluster with Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server; deleted afterwards. Agents set `E2E_CLUSTER=toolgate-<issue>` (`docs/dev/e2e-tests.md`).
 - `make acceptance`: run every `[AC-…]` test on a new kind cluster (as `test-e2e`) and print the scoreboard for the current phase.
 - `make chart-lint`, `make docs-check`, `make release VERSION=x.y.z` (dry run only; releasing is the release-manager's job).
