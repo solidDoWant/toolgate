@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
+	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
 // serve runs the gateway until SIGTERM or SIGINT and returns the exit code.
@@ -79,6 +81,14 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 		broker, err = registerSecretsAPI(server, cfg, authenticator, stdout, logger)
 		if err != nil {
+			logger.Error("gateway failed to start", "error", err)
+
+			return 1
+		}
+	}
+
+	if cfg.UIEnabled() {
+		if err := registerUI(server, cfg, stdout, logger); err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
 			return 1
@@ -274,4 +284,65 @@ func newLogger(out io.Writer, level string) *slog.Logger {
 	_ = slogLevel.UnmarshalText([]byte(level))
 
 	return slog.New(slog.NewJSONHandler(out, &slog.HandlerOptions{Level: slogLevel}))
+}
+
+// maxClientSecretBytes bounds the web UI client secret file.
+const maxClientSecretBytes = 4 << 10
+
+// registerUI serves the web UI under `/ui/` and `GET /`. It reads the UI
+// client's secret, when one is configured, before the gateway starts.
+func registerUI(server *gateway.Server, cfg config.Config, stdout io.Writer, logger *slog.Logger) error {
+	var clientSecret string
+
+	if cfg.OIDCUIClientSecretFile != "" {
+		secret, err := readSmallFile(cfg.OIDCUIClientSecretFile, maxClientSecretBytes)
+		if err != nil {
+			return fmt.Errorf("oidcUIClientSecretFile: %w", err)
+		}
+
+		clientSecret = strings.TrimSpace(string(secret))
+		if clientSecret == "" {
+			return errors.New("oidcUIClientSecretFile: the file is empty")
+		}
+	}
+
+	webUI := ui.New(ui.Options{
+		Database:           server.Database(),
+		IssuerURL:          cfg.OIDCIssuerURL,
+		ClientID:           cfg.OIDCUIClientID,
+		ClientSecret:       clientSecret,
+		Scopes:             cfg.OIDCUIScopes,
+		PublicURL:          cfg.PublicURL,
+		AdminGroup:         cfg.AdminGroup,
+		EmailClaim:         cfg.OIDCEmailClaim,
+		EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
+		GroupsClaim:        cfg.OIDCGroupsClaim,
+		Recorder: refusalRecorder{
+			recorder: audit.NewRecorder(stdout, db.New(server.Database())),
+			logger:   logger,
+		},
+		Logger: logger,
+	}, server)
+
+	return server.RegisterMetrics(webUI.DroppedRefusals())
+}
+
+// readSmallFile reads a file of at most limit bytes.
+func readSmallFile(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = file.Close() }()
+
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil {
+		return nil, err
+	}
+
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("%s is larger than %d bytes", path, limit)
+	}
+
+	return data, nil
 }

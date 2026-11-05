@@ -39,6 +39,7 @@ docs/admin/
   README.md                The list of admin pages.
   configuration.md         The gateway configuration reference (generated).
   pod-sign-in.md           How pods sign in with service-account tokens, and the permissions it needs.
+  web-ui.md                How to turn on the web UI: its OIDC client, sessions and admins.
   quick-start.md           Install the chart with the smallest set of values.
   chart.md                 What the chart installs, and why its permissions are safe.
   chart-values.md          The chart values reference (generated).

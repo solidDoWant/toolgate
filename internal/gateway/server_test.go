@@ -19,6 +19,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/testutil"
+	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
 // unreachableDatabase points at a port nothing listens on.
@@ -301,9 +302,10 @@ func TestClientMetadataIsRateLimitedPerAddress(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, status)
 }
 
-// The probes and the client metadata document are the only routes on the
-// main port that answer without authentication; metrics are on their own port.
-func TestOnlyProbesAndClientMetadataArePublic(t *testing.T) {
+// The probes, the client metadata document and the web UI's sign-in routes
+// and static files are the only routes on the main port that answer without
+// authentication; metrics are on their own port.
+func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
 	t.Parallel()
 
 	server, err := gateway.New(t.Context(), testConfig(), slog.New(slog.DiscardHandler))
@@ -313,5 +315,16 @@ func TestOnlyProbesAndClientMetadataArePublic(t *testing.T) {
 		"GET /healthz",
 		"GET /readyz",
 		"GET /.well-known/toolgate-client",
-	}, server.PublicRoutes())
+	}, server.PublicRoutes(), "without the web UI")
+
+	ui.New(ui.Options{IssuerURL: "https://idp.invalid", ClientID: "toolgate-ui", PublicURL: "https://toolgate.example"}, server)
+
+	assert.ElementsMatch(t, []string{
+		"GET /healthz",
+		"GET /readyz",
+		"GET /.well-known/toolgate-client",
+		"GET /ui/login",
+		"GET /ui/auth/callback",
+		"GET /ui/static/",
+	}, server.PublicRoutes(), "with the web UI")
 }

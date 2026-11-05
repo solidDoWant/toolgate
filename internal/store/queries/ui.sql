@@ -27,3 +27,7 @@ VALUES (@state_hash, @nonce, @pkce_verifier, @return_to, @step_up, sqlc.narg(ui_
 DELETE FROM ui_logins
 WHERE state_hash = @state_hash AND created_at > now() - interval '10 minutes'
 RETURNING *;
+
+-- name: CountUILogins :one
+-- Counts the sign-ins in progress, to refuse new ones over the limit.
+SELECT count(*) FROM ui_logins;

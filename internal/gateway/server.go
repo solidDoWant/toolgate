@@ -76,7 +76,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 	health.Register(server.mux, logger, health.Check{Name: "postgresql", Run: database.Ping})
 	server.publicRoutes = append(server.publicRoutes, "GET /healthz", "GET /readyz")
 
-	server.handlePublic("GET "+wellknown.Path, wellknown.Handler(wellknown.ClientMetadata{
+	server.HandlePublic("GET "+wellknown.Path, wellknown.Handler(wellknown.ClientMetadata{
 		Issuer:     cfg.OIDCIssuerURL,
 		ClientID:   cfg.OIDCCLIClientID,
 		Scopes:     cfg.OIDCCLIScopes,
@@ -86,10 +86,11 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 	return server, nil
 }
 
-// handlePublic registers handler for pattern on the main port without
-// authentication. Only the probes and the client metadata document are
-// public (docs/design/phase-1.md §8).
-func (s *Server) handlePublic(pattern string, handler http.Handler) {
+// HandlePublic registers handler for pattern on the main port without
+// authentication. Only the probes, the client metadata document
+// (docs/design/phase-1.md §8) and the web UI's sign-in routes and static
+// files (docs/design/phase-2.md §5) are public.
+func (s *Server) HandlePublic(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, handler)
 	s.publicRoutes = append(s.publicRoutes, pattern)
 }

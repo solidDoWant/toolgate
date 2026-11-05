@@ -43,6 +43,9 @@ logLevel: debug
 		"TOOLGATE_OIDC_GROUPS_CLAIM":          "roles",
 		"TOOLGATE_OIDC_CLI_CLIENT_ID":         "toolgate-cli",
 		"TOOLGATE_SERVICE_ACCOUNT_NAMESPACES": "ci, agents,",
+		"TOOLGATE_PUBLIC_URL":                 "https://toolgate.example",
+		"TOOLGATE_OIDC_UI_CLIENT_ID":          "toolgate-ui",
+		"TOOLGATE_ADMIN_GROUP":                "toolgate-admins",
 	}))
 	require.NoError(t, err)
 
@@ -64,6 +67,10 @@ logLevel: debug
 		InstanceLimitPerUser:     20,
 		InstanceLimit:            200,
 		SessionIdleTimeout:       config.Duration(2 * time.Hour),
+		PublicURL:                "https://toolgate.example",
+		OIDCUIClientID:           "toolgate-ui",
+		OIDCUIScopes:             []string{"openid", "email", "profile"},
+		AdminGroup:               "toolgate-admins",
 	}, cfg)
 }
 
@@ -120,6 +127,57 @@ oidcCLIScopes: []
 				"oidcCLIScopes: must not be empty",
 			},
 			wantAbsent: []string{"oidcEmailVerifiedClaim"},
+		},
+		{
+			name: "web UI without public URL",
+			file: `
+oidcUIClientID: toolgate-ui
+`,
+			wantProblems: []string{"publicURL: required with oidcUIClientID"},
+		},
+		{
+			name: "web UI with plain http public URL",
+			file: `
+oidcUIClientID: toolgate-ui
+publicURL: "http://toolgate.example.com"
+`,
+			wantProblems: []string{`publicURL: "http://toolgate.example.com" must be https://`},
+		},
+		{
+			name: "public URL with a path",
+			file: `
+publicURL: "https://toolgate.example.com/gateway"
+`,
+			wantProblems: []string{`publicURL: "https://toolgate.example.com/gateway" is not a URL with only a scheme, host and port`},
+		},
+		{
+			name: "web UI with https public URL",
+			file: `
+oidcUIClientID: toolgate-ui
+publicURL: "https://toolgate.example.com"
+`,
+			wantAbsent: []string{"publicURL"},
+		},
+		{
+			name: "web UI on localhost",
+			file: `
+oidcUIClientID: toolgate-ui
+publicURL: "http://localhost:8080"
+`,
+			wantAbsent: []string{"publicURL"},
+		},
+		{
+			name: "web UI on 127.0.0.1",
+			file: `
+oidcUIClientID: toolgate-ui
+publicURL: "http://127.0.0.1:8080"
+`,
+			wantAbsent: []string{"publicURL"},
+		},
+		{
+			name:       "web UI off without public URL",
+			file:       "adminGroup: admins\n",
+			wantAbsent: []string{"publicURL"},
 		},
 		{
 			name: "invalid service-account namespace",
