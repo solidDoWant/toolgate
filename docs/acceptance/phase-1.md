@@ -38,7 +38,7 @@ Each automated scenario has a test tagged `[AC-1-nn]`, run by `make acceptance` 
 - **AC-1-21 User secret.** After `toolgate secret set github-token`, enabling a template that uses `${secret:github-token}` gives the test server the value through a Secret object. The value is in no other object, in no log line and in no audit event. `toolgate secret list` shows the name and date only.
 - **AC-1-22 Missing secret.** Enabling a template whose secret the user hasn't set fails with a message naming the secret and the command to set it.
 - **AC-1-23 Secrets only in Secrets.** A template that uses `${secret:…}` outside a Secret is invalid, with the reason in its status.
-- **AC-1-24 Allowed kinds only.** A template containing a cluster-scoped kind or RBAC object is invalid. The admission policy rejects such an object carrying toolgate's instance label even when it is applied with the gateway's own service account.
+- **AC-1-24 Namespaced kinds only.** A template containing a cluster-scoped kind, or a kind whose CRD isn't installed, is invalid. The admission policy rejects any write by the gateway's own service account outside namespaces labelled `toolgate.soliddowant.dev/writable: "true"` with Pod Security `restricted`, including a cluster-scoped object carrying toolgate's instance label, whatever RBAC the service account holds.
 
 ## Rules
 
