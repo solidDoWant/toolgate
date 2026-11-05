@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -72,9 +74,13 @@ type listServersInput struct{}
 
 // metaTools implements the toolgate_* tools.
 type metaTools struct {
-	database *pgxpool.Pool
-	catalog  *catalog.Catalog
-	policy   *policy.Engine
+	database    *pgxpool.Pool
+	catalog     *catalog.Catalog
+	policy      *policy.Engine
+	auditOutput io.Writer
+	subscribe   func() (<-chan store.Event, func())
+	// sessionTools returns the proxied tool set of an MCP session.
+	sessionTools func(mcpSessionID string) (*sessionTools, bool)
 }
 
 func (m *metaTools) register(server *mcp.Server) {
@@ -86,12 +92,12 @@ func (m *metaTools) register(server *mcp.Server) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        ToolEnableServer,
 		Description: "Start a server from the catalog, or reuse its running instance, and add its tools to this session.",
-	}, m.notAvailable)
+	}, m.enableServer)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        ToolDisableServer,
 		Description: "Remove a server's tools from this session.",
-	}, m.notAvailable)
+	}, m.disableServer)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        ToolServerStatus,
@@ -170,10 +176,6 @@ func (m *metaTools) serverStatus(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	return nil, result, nil
-}
-
-func (m *metaTools) notAvailable(context.Context, *mcp.CallToolRequest, ServerNameInput) (*mcp.CallToolResult, any, error) {
-	return nil, nil, errors.New("This gateway version can't enable or disable servers yet.") //nolint:staticcheck // A sentence for the model.
 }
 
 var errNoIdentity = errors.New("Sign in again: run `toolgate login`.") //nolint:staticcheck // A sentence for the model.

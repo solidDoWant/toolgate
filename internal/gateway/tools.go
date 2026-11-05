@@ -1,0 +1,200 @@
+package gateway
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"sort"
+	"sync"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"k8s.io/apimachinery/pkg/types"
+
+	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/store/db"
+)
+
+// toolSeparator joins a server name and an upstream tool name into the name
+// a session sees.
+const toolSeparator = "__"
+
+// ProxiedToolName is the name a session sees for tool of server.
+func ProxiedToolName(server, tool string) string {
+	return server + toolSeparator + tool
+}
+
+// sessionTools is the set of proxied tools one MCP session's server
+// currently offers. Each MCP session has its own mcp.Server, so changing the
+// set sends `notifications/tools/list_changed` to that session only.
+type sessionTools struct {
+	server *mcp.Server
+
+	mu sync.Mutex
+	// offered maps each proxied tool name to its JSON definition.
+	offered map[string][]byte
+}
+
+func newSessionTools(server *mcp.Server) *sessionTools {
+	return &sessionTools{server: server, offered: make(map[string][]byte)}
+}
+
+// apply makes the server offer exactly wanted. Unchanged tools are left
+// alone, so a sync that changes nothing sends no list_changed.
+func (s *sessionTools) apply(wanted map[string]*mcp.Tool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var removed []string
+
+	for name := range s.offered {
+		if _, keep := wanted[name]; !keep {
+			removed = append(removed, name)
+			delete(s.offered, name)
+		}
+	}
+
+	if len(removed) > 0 {
+		s.server.RemoveTools(removed...)
+	}
+
+	for name, tool := range wanted {
+		encoded, err := json.Marshal(tool)
+		if err != nil {
+			return fmt.Errorf("encode tool %s: %w", name, err)
+		}
+
+		if bytes.Equal(s.offered[name], encoded) {
+			continue
+		}
+
+		s.server.AddTool(tool, callNotAvailable)
+		s.offered[name] = encoded
+	}
+
+	return nil
+}
+
+// callNotAvailable answers a call of a proxied tool. This gateway version
+// lists proxied tools but forwards no calls, so it refuses every call
+// before anything reaches the upstream server.
+func callNotAvailable(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return &mcp.CallToolResult{
+		IsError: true,
+		Content: []mcp.Content{&mcp.TextContent{Text: "This gateway version doesn't forward tool calls yet."}},
+	}, nil
+}
+
+// proxiedTools returns the proxied tools the session should see, keyed by
+// their names: for each enabled server with a ready live instance, its tools
+// minus those the policy refuses for this identity. byServer lists the names
+// for each server.
+func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (tools map[string]*mcp.Tool, byServer map[string][]string, err error) {
+	queries := db.New(m.database)
+
+	rows, err := queries.ListSessionServers(ctx, current.session.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read enabled servers: %w", err)
+	}
+
+	tools = make(map[string]*mcp.Tool)
+	byServer = make(map[string][]string)
+
+	for _, row := range rows {
+		template, found := m.catalog.Running(types.NamespacedName{Namespace: row.TemplateNs, Name: row.TemplateName})
+		if !found {
+			continue
+		}
+
+		if !m.policy.Decide(policy.Request{Identity: current.identity, Template: template}).Allowed {
+			continue
+		}
+
+		instance, err := queries.GetLiveInstance(ctx, db.GetLiveInstanceParams{
+			TemplateNs: template.Namespace, TemplateName: template.Name,
+			ScopeKey: scopeKey(template.Spec.Scope, current.identity),
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+
+		if err != nil {
+			return nil, nil, fmt.Errorf("read live instance: %w", err)
+		}
+
+		if instance.Status != statusReady {
+			continue
+		}
+
+		var upstream []*mcp.Tool
+		if err := json.Unmarshal(instance.Tools, &upstream); err != nil {
+			return nil, nil, fmt.Errorf("decode tools of instance %s: %w", instance.ID, err)
+		}
+
+		for _, tool := range upstream {
+			if tool == nil || !m.policy.Decide(policy.Request{Identity: current.identity, Template: template, Tool: tool.Name}).Allowed {
+				continue
+			}
+
+			proxied := *tool
+			proxied.Name = ProxiedToolName(template.Name, tool.Name)
+
+			if proxied.InputSchema == nil {
+				proxied.InputSchema = map[string]any{"type": "object"}
+			}
+
+			tools[proxied.Name] = &proxied
+			byServer[template.Name] = append(byServer[template.Name], proxied.Name)
+		}
+
+		sort.Strings(byServer[template.Name])
+	}
+
+	return tools, byServer, nil
+}
+
+// syncSession brings the proxied tools of the MCP session session up to
+// date for current, and returns the proxied tool names of each server.
+func (m *metaTools) syncSession(ctx context.Context, session *mcp.ServerSession, current requestContext) (map[string][]string, error) {
+	tools, byServer, err := m.proxiedTools(ctx, current)
+	if err != nil {
+		return nil, err
+	}
+
+	if session == nil {
+		return byServer, nil
+	}
+
+	offered, found := m.sessionTools(session.ID())
+	if !found {
+		return byServer, nil
+	}
+
+	if err := offered.apply(tools); err != nil {
+		return nil, err
+	}
+
+	return byServer, nil
+}
+
+// syncOnList is receiving middleware that brings the session's proxied tools
+// up to date before the go-sdk answers `tools/list`.
+func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
+		if method == "tools/list" {
+			session, _ := request.GetSession().(*mcp.ServerSession)
+
+			if extra := request.GetExtra(); extra != nil && extra.TokenInfo != nil {
+				if current, ok := extra.TokenInfo.Extra[requestContextKey].(requestContext); ok {
+					if _, err := m.syncSession(ctx, session, current); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+
+		return next(ctx, method, request)
+	}
+}

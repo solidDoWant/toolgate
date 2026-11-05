@@ -41,10 +41,11 @@ type runtimeOptions struct {
 	secrets         runtime.SecretGetter
 	registerMetrics func(...prometheus.Collector) error
 	logger          *slog.Logger
+	// listener delivers the PostgreSQL notifications. serve runs it.
+	listener *store.Listener
 }
 
-// startRuntime starts the PostgreSQL notification listener and the
-// controller-runtime manager. On every replica the manager runs the catalog
+// startRuntime starts the controller-runtime manager. On every replica the manager runs the catalog
 // and rule reconcilers, which write status only on the leader. On the
 // replica holding the Lease it runs the runtime reconciler and the health
 // monitor. It registers the runtime metrics with registerMetrics. The
@@ -99,7 +100,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
 
-	listener := store.NewListener(pool, logger)
+	listener := options.listener
 
 	reconciler := &runtime.Reconciler{
 		Subscribe: listener.Subscribe,
@@ -171,8 +172,6 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
-
-	go func() { _ = listener.Run(ctx) }()
 
 	result := make(chan error, 1)
 
