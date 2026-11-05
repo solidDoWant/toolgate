@@ -4,13 +4,12 @@ package e2e
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"os"
 	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -22,49 +21,21 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
-	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/testutil"
 )
 
-// uiPort is the local port the chart's web UI public URL points at.
-func uiPort(t *testing.T) int {
-	t.Helper()
-
-	port, err := strconv.Atoi(os.Getenv("TOOLGATE_E2E_UI_PORT"))
-	if err != nil {
-		t.Skip("TOOLGATE_E2E_UI_PORT is not set (run through scripts/e2e/run.sh)")
-	}
-
-	return port
-}
-
-// secureJar keeps and sends `Secure` cookies over plain HTTP, as browsers do
-// for 127.0.0.1, so the web UI's `__Host-` cookies work in the e2e install.
-type secureJar struct{ jar *cookiejar.Jar }
-
-func asHTTPS(target *url.URL) *url.URL {
-	secure := *target
-	secure.Scheme = "https"
-
-	return &secure
-}
-
-func (s secureJar) SetCookies(target *url.URL, cookies []*http.Cookie) {
-	s.jar.SetCookies(asHTTPS(target), cookies)
-}
-
-func (s secureJar) Cookies(target *url.URL) []*http.Cookie {
-	return s.jar.Cookies(asHTTPS(target))
-}
-
-// uiBrowser is an HTTP client with cookies that follows redirects.
+// uiBrowser is an HTTP client with cookies that follows redirects. It
+// trusts any certificate, because webUI's TLS proxy has a throwaway one.
 func uiBrowser(t *testing.T) *http.Client {
 	t.Helper()
 
 	jar, err := cookiejar.New(nil)
 	require.NoError(t, err)
 
-	return &http.Client{Jar: secureJar{jar: jar}, Timeout: 30 * time.Second}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // The e2e proxy's certificate is self-signed.
+
+	return &http.Client{Jar: jar, Transport: transport, Timeout: 30 * time.Second}
 }
 
 func readPage(t *testing.T, response *http.Response) string {
@@ -140,7 +111,6 @@ func callText(result *mcp.CallToolResult) string {
 
 func TestAC2_12ApprovalOnThePage(t *testing.T) {
 	image := mcpServerImage(t)
-	port := uiPort(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
 
@@ -160,8 +130,8 @@ func TestAC2_12ApprovalOnThePage(t *testing.T) {
 	t.Cleanup(func() { _ = kube.Delete(context.WithoutCancel(t.Context()), template) })
 	requireTemplateValid(t, kube, name)
 
-	endpoint := forwardToGatewayOn(t, admin, gatewayPods(t, admin)[0], port)
-	gatewayURL := strings.TrimSuffix(endpoint, gateway.MCPPath)
+	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
+	gatewayURL := webUI(t, endpoint)
 
 	alice := connectGateway(t, endpoint, "alice", "e2e-"+rand.String(8))
 	enable(t, alice, name)
