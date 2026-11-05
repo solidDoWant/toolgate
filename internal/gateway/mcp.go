@@ -54,6 +54,10 @@ type MCPOptions struct {
 	// InstanceLimit is the most live instances the gateway runs. Zero means
 	// 200.
 	InstanceLimit int
+	// SharedNamespace is the namespace that instances of `namespace: shared`
+	// templates are applied in. The catalog refuses such templates when it
+	// is empty.
+	SharedNamespace string
 }
 
 // The instance limits when MCPOptions sets none (docs/design/phase-1.md §7).
@@ -147,6 +151,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 
 		instanceLimitPerUser: valueOr(options.InstanceLimitPerUser, defaultInstanceLimitPerUser),
 		instanceLimit:        valueOr(options.InstanceLimit, defaultInstanceLimit),
+		sharedNamespace:      options.SharedNamespace,
 	}
 
 	endpoint.newServer = func() *mcp.Server {

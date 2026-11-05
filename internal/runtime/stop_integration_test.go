@@ -161,6 +161,80 @@ func (f *stopFixture) instance(t *testing.T, template *v1alpha1.MCPServerTemplat
 	return f.get(t, id)
 }
 
+// sharedInstance inserts a failed instance row in the shared namespace,
+// creating the namespace once, and gives it a labelled ConfigMap and
+// Service. It returns the row.
+func (f *stopFixture) sharedInstance(t *testing.T, template *v1alpha1.MCPServerTemplate, status string) db.Instance {
+	t.Helper()
+
+	err := f.kube.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: sharedNamespace, Labels: map[string]string{runtime.LabelManagedBy: runtime.ManagedByValue},
+	}})
+	if !apierrors.IsAlreadyExists(err) {
+		require.NoError(t, err)
+	}
+
+	id := fmt.Sprintf("%032x", f.counter.Add(1))
+	_, err = f.queries.InsertInstance(t.Context(), db.InsertInstanceParams{
+		ID: id, TemplateNs: template.Namespace, TemplateName: template.Name, TemplateUid: string(template.UID),
+		Generation: template.Generation, Scope: template.Spec.Scope, ScopeKey: "shared", Namespace: sharedNamespace,
+	})
+	require.NoError(t, err)
+
+	_, err = f.queries.SetInstanceStarting(t.Context(), db.SetInstanceStartingParams{ID: id, Generation: template.Generation})
+	require.NoError(t, err)
+
+	switch status {
+	case "ready":
+		_, err = f.queries.SetInstanceReady(t.Context(), db.SetInstanceReadyParams{ID: id, Tools: []byte(`[]`)})
+	case "failed":
+		_, err = f.queries.SetInstanceFailed(t.Context(), db.SetInstanceFailedParams{ID: id, Reason: "boom", FromStatus: "starting"})
+	}
+	require.NoError(t, err)
+
+	f.createSharedObjects(t, id)
+
+	return f.get(t, id)
+}
+
+// createSharedObjects creates a ConfigMap and a Service labelled for the
+// instance id in the shared namespace.
+func (f *stopFixture) createSharedObjects(t *testing.T, id string) {
+	t.Helper()
+
+	labels := map[string]string{runtime.LabelInstance: id, runtime.LabelManagedBy: runtime.ManagedByValue}
+	require.NoError(t, f.kube.Create(t.Context(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+		Namespace: sharedNamespace, Name: "settings-" + id, Labels: labels,
+	}}))
+	require.NoError(t, f.kube.Create(t.Context(), &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+		Namespace: sharedNamespace, Name: "server-" + id, Labels: labels,
+	}}))
+}
+
+// sharedObjectNames returns the names of the ConfigMaps and Services in the
+// shared namespace.
+func (f *stopFixture) sharedObjectNames(t *testing.T) []string {
+	t.Helper()
+
+	var names []string
+
+	configMaps := &corev1.ConfigMapList{}
+	require.NoError(t, f.kube.List(t.Context(), configMaps, client.InNamespace(sharedNamespace)))
+
+	for _, configMap := range configMaps.Items {
+		names = append(names, "ConfigMap/"+configMap.Name)
+	}
+
+	services := &corev1.ServiceList{}
+	require.NoError(t, f.kube.List(t.Context(), services, client.InNamespace(sharedNamespace)))
+
+	for _, service := range services.Items {
+		names = append(names, "Service/"+service.Name)
+	}
+
+	return names
+}
+
 func (f *stopFixture) get(t *testing.T, id string) db.Instance {
 	t.Helper()
 
@@ -417,6 +491,32 @@ func TestTeardown(t *testing.T) {
 		current := fixture.get(t, instance.ID)
 		require.Equal(t, "stopping", current.Status)
 		require.Contains(t, current.Reason, "isn't deleted")
+	})
+
+	t.Run("an instance in the shared namespace is torn down by its labelled objects", func(t *testing.T) {
+		template := fixture.template("shared-objects", "shared", 0, everyone)
+		instance := fixture.sharedInstance(t, template, "failed")
+		neighbour := fixture.sharedInstance(t, fixture.template("shared-neighbour", "shared", 0, everyone), "ready")
+
+		// A labelled object of the instance that isn't toolgate's stays.
+		require.NoError(t, fixture.kube.Create(t.Context(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+			Namespace: sharedNamespace, Name: "foreign", Labels: map[string]string{runtime.LabelInstance: instance.ID},
+		}}))
+
+		fixture.pass(t)
+		require.Equal(t, "stopping", fixture.get(t, instance.ID).Status)
+		assert.ElementsMatch(t, []string{
+			"ConfigMap/foreign", "ConfigMap/settings-" + neighbour.ID, "Service/server-" + neighbour.ID,
+		}, fixture.sharedObjectNames(t), "only the instance's own objects are deleted")
+		require.True(t, fixture.namespaceExists(t, sharedNamespace), "the shared namespace stays")
+
+		fixture.pass(t)
+		require.Equal(t, "stopped", fixture.get(t, instance.ID).Status)
+		require.True(t, fixture.namespaceExists(t, sharedNamespace), "the shared namespace stays")
+		fixture.requireRunning(t, neighbour)
+
+		err := fixture.kube.Get(t.Context(), types.NamespacedName{Name: "tg-" + instance.ID}, &corev1.Namespace{})
+		require.True(t, apierrors.IsNotFound(err), "no tg-<id> namespace is involved, got %v", err)
 	})
 
 	t.Run("a namespace Terminating for more than 10 minutes is reported", func(t *testing.T) {

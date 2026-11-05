@@ -14,6 +14,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -123,6 +125,10 @@ func (t *Teardown) Advance(ctx context.Context, instance db.Instance) (bool, err
 		return false, nil
 	}
 
+	if !hasOwnNamespace(instance) {
+		return false, t.deleteSharedObjects(ctx, instance)
+	}
+
 	var namespace corev1.Namespace
 
 	err := t.Reader.Get(ctx, types.NamespacedName{Name: instance.Namespace}, &namespace)
@@ -165,6 +171,82 @@ func (t *Teardown) Advance(ctx context.Context, instance db.Instance) (bool, err
 	}
 
 	return true, t.setReason(ctx, instance, reason)
+}
+
+// deleteSharedObjects deletes the objects labelled with the instance in the
+// namespace it shares with other instances, never the namespace. Once none
+// is left, the row is stopped.
+func (t *Teardown) deleteSharedObjects(ctx context.Context, instance db.Instance) error {
+	objects, err := listInstanceObjects(ctx, t.Reader, instance.Namespace, client.MatchingLabels{LabelInstance: instance.ID})
+	if err != nil {
+		return fmt.Errorf("instance %s: %w", instance.ID, err)
+	}
+
+	if len(objects) == 0 {
+		_, err := t.write(ctx, instance.ID, func(queries *db.Queries) (int64, error) {
+			return queries.SetInstanceStopped(ctx, instance.ID)
+		})
+
+		return err
+	}
+
+	var problems []error
+
+	for _, object := range objects {
+		if object.GetDeletionTimestamp() != nil {
+			continue
+		}
+
+		uid := object.GetUID()
+		if err := t.Deleter.Delete(ctx, object, client.Preconditions{UID: &uid}); err != nil &&
+			!apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			problems = append(problems, err)
+		}
+	}
+
+	return errors.Join(problems...)
+}
+
+// sharedNamespaceKinds are the kinds of instance objects found by their
+// labels in a shared namespace: the allowed kinds the gateway may list.
+// Secrets are left out because the gateway never reads Secrets.
+var sharedNamespaceKinds = []schema.GroupVersionKind{
+	{Version: "v1", Kind: "Pod"},
+	{Group: "apps", Version: "v1", Kind: "Deployment"},
+	{Group: "apps", Version: "v1", Kind: "StatefulSet"},
+	{Version: "v1", Kind: "Service"},
+	{Version: "v1", Kind: "ConfigMap"},
+	{Version: "v1", Kind: "ServiceAccount"},
+	{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"},
+	{Version: "v1", Kind: "PersistentVolumeClaim"},
+}
+
+// listInstanceObjects lists the objects of sharedNamespaceKinds in namespace
+// that carry toolgate's label and match selector.
+func listInstanceObjects(ctx context.Context, reader client.Reader, namespace string, selector client.ListOption) ([]*unstructured.Unstructured, error) {
+	var objects []*unstructured.Unstructured
+
+	for _, kind := range sharedNamespaceKinds {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))
+
+		if err := reader.List(ctx, list, client.InNamespace(namespace),
+			client.MatchingLabels{LabelManagedBy: ManagedByValue}, selector); err != nil {
+			return nil, fmt.Errorf("list %s in %s: %w", kind.Kind, namespace, err)
+		}
+
+		for index := range list.Items {
+			objects = append(objects, &list.Items[index])
+		}
+	}
+
+	return objects, nil
+}
+
+// hasOwnNamespace reports whether the instance runs in the `tg-<id>`
+// namespace made for it, rather than in the shared namespace.
+func hasOwnNamespace(instance db.Instance) bool {
+	return instance.Namespace == NamespacePrefix+instance.ID
 }
 
 // DeleteExpired deletes stopped rows older than StoppedRetention.

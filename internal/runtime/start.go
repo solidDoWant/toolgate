@@ -137,7 +137,7 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return s.fail(ctx, instance, StatusPending, "The template didn't render: "+err.Error())
 	}
 
-	if instance.Namespace == NamespacePrefix+instance.ID {
+	if hasOwnNamespace(instance) {
 		if err := s.prepareNamespace(ctx, instance, template); err != nil {
 			return err
 		}
@@ -495,7 +495,15 @@ func (s *Starter) fail(ctx context.Context, instance db.Instance, from, reason s
 
 func endpointURL(instance db.Instance, template *v1alpha1.MCPServerTemplate) string {
 	endpoint := template.Spec.Endpoint
-	host := net.JoinHostPort(endpoint.Service+"."+instance.Namespace+".svc", strconv.Itoa(int(endpoint.Port)))
+
+	service, err := RenderEndpointService(template, Instance{ID: instance.ID, Namespace: instance.Namespace})
+	if err != nil {
+		// A name that doesn't render can't be reached; the start timeout
+		// reports it.
+		service = endpoint.Service
+	}
+
+	host := net.JoinHostPort(service+"."+instance.Namespace+".svc", strconv.Itoa(int(endpoint.Port)))
 
 	path := endpoint.Path
 	if !strings.HasPrefix(path, "/") {

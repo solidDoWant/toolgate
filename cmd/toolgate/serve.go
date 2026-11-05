@@ -102,6 +102,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 		InstanceLimitPerUser: cfg.InstanceLimitPerUser,
 		InstanceLimit:        cfg.InstanceLimit,
+		SharedNamespace:      cfg.SharedNamespace,
 	}), true))
 
 	if err := server.Listen(); err != nil {

@@ -29,11 +29,12 @@ func (f *stopFixture) sweep(t *testing.T, reader client.Reader) {
 	fence.holds.Store(true)
 
 	sweep := &runtime.Sweep{
-		Pool:      f.pool,
-		Reader:    reader,
-		Deleter:   &runtime.Reconciler{Fence: fence, Client: f.kube},
-		Templates: f.catalog,
-		Log:       slog.New(slog.NewTextHandler(f.logs, nil)),
+		Pool:            f.pool,
+		Reader:          reader,
+		Deleter:         &runtime.Reconciler{Fence: fence, Client: f.kube},
+		Templates:       f.catalog,
+		SharedNamespace: sharedNamespace,
+		Log:             slog.New(slog.NewTextHandler(f.logs, nil)),
 	}
 	require.NoError(t, sweep.Run(t.Context()))
 }
@@ -101,6 +102,25 @@ func TestRestartRecovery(t *testing.T) {
 		assert.False(t, fixture.namespaceExists(t, stopped.Namespace), "a namespace of a stopped row is deleted")
 		assert.True(t, fixture.namespaceExists(t, live.Namespace), "a live instance's namespace stays")
 		assert.True(t, fixture.namespaceExists(t, "shared-instances"), "a namespace without the instance label stays")
+		fixture.requireRunning(t, live)
+	})
+
+	t.Run("[row 17] orphaned objects in the shared namespace are deleted, and the namespace stays", func(t *testing.T) {
+		live := fixture.sharedInstance(t, fixture.template("shared-sweep-live", "shared", 0, everyone), "ready")
+		fixture.createSharedObjects(t, "0000000000000000000000000000eeee")
+
+		// The shared namespace is kept even if someone labelled it like an
+		// instance namespace.
+		var namespace corev1.Namespace
+		require.NoError(t, fixture.kube.Get(t.Context(), types.NamespacedName{Name: sharedNamespace}, &namespace))
+		namespace.Labels[runtime.LabelInstance] = "0000000000000000000000000000eeee"
+		require.NoError(t, fixture.kube.Update(t.Context(), &namespace))
+
+		fixture.sweep(t, fixture.kube)
+
+		assert.ElementsMatch(t, []string{"ConfigMap/settings-" + live.ID, "Service/server-" + live.ID}, fixture.sharedObjectNames(t),
+			"the orphan's objects are deleted and the live instance's stay")
+		assert.True(t, fixture.namespaceExists(t, sharedNamespace), "the shared namespace is never deleted")
 		fixture.requireRunning(t, live)
 	})
 

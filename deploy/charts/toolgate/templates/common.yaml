@@ -44,6 +44,9 @@ settings from `config`.
 {{- with $config.catalogNamespaces }}
 {{- $env = append $env (dict "name" "TOOLGATE_CATALOG_NAMESPACES" "value" (join "," .)) }}
 {{- end }}
+{{- with $config.sharedNamespace.name }}
+{{- $env = append $env (dict "name" "TOOLGATE_SHARED_NAMESPACE" "value" .) }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_LIMIT_PER_USER" "value" (toString (int $config.limits.instancesPerUser))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_LIMIT" "value" (toString (int $config.limits.instances))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}

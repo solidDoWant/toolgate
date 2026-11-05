@@ -198,6 +198,7 @@ func TestChartRendersTheGateway(t *testing.T) {
 	assert.Equal(t, releaseNamespace, values["TOOLGATE_LEASE_NAMESPACE"], "the leader Lease lives in the release namespace")
 	assert.NotContains(t, values, "TOOLGATE_OIDC_EMAIL_CLAIM", "an empty claim value keeps the gateway's default")
 	assert.NotContains(t, values, "TOOLGATE_CATALOG_NAMESPACES", "no catalog namespaces keeps the gateway's default")
+	assert.NotContains(t, values, "TOOLGATE_SHARED_NAMESPACE", "no shared namespace by default")
 
 	podLabels, err := labels.ConvertSelectorToLabelsMap(values["TOOLGATE_GATEWAY_POD_LABELS"])
 	require.NoError(t, err)
@@ -320,6 +321,22 @@ func TestSharedNamespace(t *testing.T) {
 		assert.Equal(t, "toolgate-shared", namespace.Name)
 		assert.Equal(t, "toolgate", namespace.Labels["app.kubernetes.io/managed-by"])
 		assert.NotContains(t, namespace.Labels, "toolgate.soliddowant.dev/instance")
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{Name: "TOOLGATE_SHARED_NAMESPACE", Value: "toolgate-shared"},
+			"the gateway learns the shared namespace's name")
+	})
+
+	t.Run("passed to the gateway when the namespace exists already", func(t *testing.T) {
+		manifests, err := render(t, append([]string{
+			"config.sharedNamespace.name=toolgate-shared", "config.sharedNamespace.create=false",
+		}, quickStartValues...))
+		require.NoError(t, err)
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{Name: "TOOLGATE_SHARED_NAMESPACE", Value: "toolgate-shared"})
 	})
 
 	t.Run("not an instance namespace name", func(t *testing.T) {

@@ -118,7 +118,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Client:    mgr.GetClient(),
 	}
 
-	if err := setupCatalog(mgr, options.catalog, options.rules, watched, logger); err != nil {
+	if err := setupCatalog(mgr, options.catalog, options.rules, watched, cfg.SharedNamespace, logger); err != nil {
 		return nil, err
 	}
 
@@ -138,11 +138,12 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// The sweep deletes namespaces that belong to no live instance on every
 	// pass, starting with the pass on gaining the Lease.
 	sweep := &runtime.Sweep{
-		Pool:      pool,
-		Reader:    mgr.GetAPIReader(),
-		Deleter:   reconciler,
-		Templates: options.catalog,
-		Log:       logger,
+		Pool:            pool,
+		Reader:          mgr.GetAPIReader(),
+		Deleter:         reconciler,
+		Templates:       options.catalog,
+		SharedNamespace: cfg.SharedNamespace,
+		Log:             logger,
 	}
 
 	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger}
@@ -193,10 +194,11 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 // setupCatalog registers the catalog and rule reconcilers, which run on
 // every replica and write status only while it is leader, and the loader
 // that marks the catalog loaded.
-func setupCatalog(mgr manager.Manager, templates *catalog.Catalog, rules *policy.Rules, watched []string, logger *slog.Logger) error {
+func setupCatalog(mgr manager.Manager, templates *catalog.Catalog, rules *policy.Rules, watched []string, sharedNamespace string, logger *slog.Logger) error {
 	catalogReconciler := &catalog.Reconciler{
 		Client:     mgr.GetClient(),
 		Catalog:    templates,
+		Validator:  catalog.Validator{SharedNamespace: sharedNamespace},
 		Log:        logger,
 		Elected:    mgr.Elected(),
 		Namespaces: watched,

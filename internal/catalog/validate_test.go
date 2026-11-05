@@ -163,6 +163,89 @@ func TestValidate(t *testing.T) {
 			wantProblem: "namespace: shared is allowed only with scope: shared",
 		},
 		{
+			name:      "a shared-namespace template that tells its instances apart is valid",
+			template:  sharedNamespaceTemplate(),
+			validator: catalog.Validator{SharedNamespace: "toolgate-shared"},
+		},
+		{
+			name:        "a shared-namespace template without a configured shared namespace is invalid",
+			template:    sharedNamespaceTemplate(),
+			wantProblem: "The gateway has no shared namespace configured (`config.sharedNamespace.name`).",
+		},
+		{
+			name: "a shared-namespace object whose name lacks the instance ID is invalid",
+			template: sharedNamespaceTemplate(func(resources []string) []string {
+				return append(resources, `{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"settings"}}`)
+			}),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "`ConfigMap/settings`: `metadata.name` must contain `${instance.id}` in a shared namespace.",
+		},
+		{
+			name: "a shared-namespace endpoint Service without the instance ID is invalid",
+			template: func() *v1alpha1.MCPServerTemplate {
+				template := sharedNamespaceTemplate()
+				template.Spec.Endpoint.Service = "mcp"
+
+				return template
+			}(),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "`endpoint.service` must contain `${instance.id}` in a shared namespace.",
+		},
+		{
+			name: "a shared-namespace Service selector without the instance label is invalid",
+			template: sharedNamespaceTemplate(func(resources []string) []string {
+				resources[0] = `{"apiVersion":"v1","kind":"Service","metadata":{"name":"mcp-${instance.id}"},"spec":{"selector":{"app":"mcp"}}}`
+
+				return resources
+			}),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "`Service/mcp-${instance.id}`: `spec.selector` must contain `toolgate.soliddowant.dev/instance: ${instance.id}`",
+		},
+		{
+			name: "a shared-namespace Deployment selector without the instance label is invalid",
+			template: sharedNamespaceTemplate(func(resources []string) []string {
+				resources[1] = sharedDeployment(`{"app":"mcp"}`, `{"toolgate.soliddowant.dev/instance":"${instance.id}"}`)
+
+				return resources
+			}),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "`Deployment/mcp-${instance.id}`: `spec.selector.matchLabels` must contain",
+		},
+		{
+			name: "a shared-namespace Deployment pod template without the instance label is invalid",
+			template: sharedNamespaceTemplate(func(resources []string) []string {
+				resources[1] = sharedDeployment(`{"toolgate.soliddowant.dev/instance":"${instance.id}"}`, `{"toolgate.soliddowant.dev/instance":"fixed"}`)
+
+				return resources
+			}),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "`Deployment/mcp-${instance.id}`: `spec.template.metadata.labels` must contain",
+		},
+		{
+			name: "a shared-namespace StatefulSet selector without the instance label is invalid",
+			template: sharedNamespaceTemplate(func(resources []string) []string {
+				return append(resources, `{"apiVersion":"apps/v1","kind":"StatefulSet","metadata":{"name":"db-${instance.id}"},"spec":{"selector":{"matchLabels":{"app":"db"}},"template":{"metadata":{"labels":{"toolgate.soliddowant.dev/instance":"${instance.id}"}}}}}`)
+			}),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "`StatefulSet/db-${instance.id}`: `spec.selector.matchLabels` must contain",
+		},
+		{
+			name: "a shared-namespace NetworkPolicy selector without the instance label is invalid",
+			template: sharedNamespaceTemplate(func(resources []string) []string {
+				return append(resources, `{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"np-${instance.id}"},"spec":{"podSelector":{}}}`)
+			}),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "`NetworkPolicy/np-${instance.id}`: `spec.podSelector.matchLabels` must contain",
+		},
+		{
+			name: "a CiliumNetworkPolicy in a shared namespace is invalid",
+			template: sharedNamespaceTemplate(func(resources []string) []string {
+				return append(resources, `{"apiVersion":"cilium.io/v2","kind":"CiliumNetworkPolicy","metadata":{"name":"cnp-${instance.id}"}}`)
+			}),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared", CiliumNetworkPolicy: true},
+			wantProblem: "`CiliumNetworkPolicy/cnp-${instance.id}`: a CiliumNetworkPolicy is not allowed in a shared namespace",
+		},
+		{
 			name:        "a name that is no server name is invalid",
 			template:    newTemplate("GitHub", catalog.ScopePerUser),
 			wantProblem: "must match ^[a-z][a-z0-9-]{0,30}$",
@@ -188,6 +271,34 @@ func TestValidate(t *testing.T) {
 			assert.Contains(t, catalog.Reason(problems), test.wantProblem)
 		})
 	}
+}
+
+// sharedNamespaceTemplate returns a valid `namespace: shared` template: its
+// names, endpoint and selectors all carry ${instance.id}. Each change edits
+// its resources.
+func sharedNamespaceTemplate(changes ...func(resources []string) []string) *v1alpha1.MCPServerTemplate {
+	instanceLabels := `{"toolgate.soliddowant.dev/instance":"${instance.id}"}`
+	resources := []string{
+		`{"apiVersion":"v1","kind":"Service","metadata":{"name":"mcp-${instance.id}"},"spec":{"selector":` + instanceLabels + `}}`,
+		sharedDeployment(instanceLabels, instanceLabels),
+		`{"apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy","metadata":{"name":"mcp-${instance.id}"},"spec":{"podSelector":{"matchLabels":` + instanceLabels + `}}}`,
+		`{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"settings-${instance.id}"}}`,
+	}
+
+	for _, change := range changes {
+		resources = change(resources)
+	}
+
+	template := newTemplate("github", catalog.ScopeShared, resources...)
+	template.Spec.Namespace = catalog.NamespaceShared
+	template.Spec.Endpoint.Service = "mcp-${instance.id}"
+
+	return template
+}
+
+func sharedDeployment(matchLabels, podLabels string) string {
+	return `{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"name":"mcp-${instance.id}"},"spec":{"selector":{"matchLabels":` + matchLabels +
+		`},"template":{"metadata":{"labels":` + podLabels + `},"spec":{"containers":[{"name":"mcp","image":"mcp:1"}]}}}}`
 }
 
 func allowedKindResources() []string {

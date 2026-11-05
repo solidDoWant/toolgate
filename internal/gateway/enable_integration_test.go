@@ -324,6 +324,22 @@ func TestEnableServer(t *testing.T) {
 		assert.Equal(t, "allow", events[0]["decision"])
 	})
 
+	t.Run("a namespace: shared template's instance is in the configured shared namespace", func(t *testing.T) {
+		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.SharedNamespace = "toolgate-shared" })
+		template := fixture.addEnableTemplate("shared-ns", "shared", anyone)
+		template.Spec.Namespace = "shared"
+		fixture.catalog.Set(template, nil)
+
+		client := fixture.connectObserved(t, alice())
+		results := startEnable(t, client.session, "shared-ns")
+
+		instance := fixture.awaitInstance(t, fixture.catalogTemplate(t, "shared-ns"), "shared")
+		assert.Equal(t, "toolgate-shared", instance.Namespace, "not a tg-<id> namespace")
+
+		fixture.markReady(t, instance.ID, "search")
+		require.Empty(t, awaitEnable(t, results).err)
+	})
+
 	t.Run("[AC-1-22] a missing secret fails naming the secret and the command, and writes nothing", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
