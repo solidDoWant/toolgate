@@ -43,9 +43,11 @@ func TestApprovalExpiry(t *testing.T) {
 
 		rows, err := fixture.pool.Query(t.Context(), `SELECT details->>'approval' FROM audit_events WHERE type = 'approval.expire' ORDER BY id`)
 		require.NoError(t, err)
+
 		defer rows.Close()
 
 		var ids []string
+
 		for rows.Next() {
 			var id string
 			require.NoError(t, rows.Scan(&id))
@@ -57,6 +59,7 @@ func TestApprovalExpiry(t *testing.T) {
 
 	overdue := "00000000000000000000000000000001"
 	recent := "00000000000000000000000000000002"
+
 	insert(t, overdue, time.Minute+5*time.Second)
 	insert(t, recent, 30*time.Second)
 

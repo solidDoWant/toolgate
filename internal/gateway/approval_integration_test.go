@@ -4,6 +4,7 @@ package gateway_test
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -38,12 +39,12 @@ func newApprovalFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *a
 
 	fixture := newMCPFixture(t, configure...)
 	template := fixture.addEnableTemplate("github", "per-user", v1alpha1.Access{Users: []string{"alice", "bob"}, Environments: "any"})
-	template.Spec.Tools = map[string]v1alpha1.ToolOverride{"echo": {Approval: "required"}}
+	template.Spec.Tools = map[string]v1alpha1.ToolOverride{"echo": {Approval: "required"}, "raw": {Approval: "required"}}
 	fixture.catalog.Set(template, nil)
 	fixture.startUpstream(t, "github")
 
 	client := fixture.connectObserved(t, alice())
-	instance := fixture.enableWithTools(t, client, "github", "user:alice", "echo")
+	instance := fixture.enableWithTools(t, client, "github", "user:alice", "echo", "raw")
 
 	return &approvalFixture{mcpFixture: fixture, client: client, template: template, instance: instance}
 }
@@ -152,6 +153,31 @@ func TestApprovalRequest(t *testing.T) {
 		assert.Equal(t, id, decisions[1].Details["approval"])
 		assert.Equal(t, fixture.instance.ID, decisions[1].Details["instance"])
 		assert.Len(t, fixture.auditRows(t, "tool.result"), 1)
+	})
+
+	t.Run("the upstream receives exactly the canonical bytes that were hashed", func(t *testing.T) {
+		fixture := newApprovalFixture(t, withApprovalURL)
+
+		arguments := json.RawMessage(`{"text": "a", "n": 1.50, "text": "b"}`)
+		canonical := `{"n":1.50,"text":"b"}`
+
+		call := func() *mcp.CallToolResult {
+			result, err := fixture.client.session.CallTool(t.Context(), &mcp.CallToolParams{Name: "github__raw", Arguments: arguments})
+			require.NoError(t, err)
+
+			return result
+		}
+
+		require.True(t, call().IsError)
+
+		approval := fixture.approvals(t)[0]
+		sum := sha256.Sum256([]byte(canonical))
+		assert.Equal(t, sum[:], approval.ArgumentsSha256)
+		fixture.approve(t, approval.ID)
+
+		result := call()
+		require.False(t, result.IsError, resultText(result))
+		assert.Equal(t, canonical, resultText(result))
 	})
 
 	t.Run("row 47: a used approval lets no second call through; that call gets a new pending approval", func(t *testing.T) {
@@ -365,11 +391,13 @@ func TestApprovalUseRechecks(t *testing.T) {
 			decisions := fixture.auditRows(t, "tool.decision")
 			last := decisions[len(decisions)-1]
 			assert.Equal(t, "refuse", last.Details["decision"])
+
 			if test.step != "" {
 				assert.Equal(t, test.step, last.Details["step"])
 			} else {
 				assert.Equal(t, test.reason, last.Details["reason"])
 			}
+
 			assert.Equal(t, id, last.Details["approval"])
 			assert.Empty(t, fixture.auditRows(t, "tool.result"))
 		})

@@ -78,6 +78,11 @@ func (f *mcpFixture) startUpstream(t *testing.T, server string) *upstreamServer 
 		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "slow done"}}}, nil
 	})
 
+	// raw returns the arguments' bytes as the upstream received them.
+	mcpServer.AddTool(&mcp.Tool{Name: "raw", InputSchema: schema}, func(_ context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(request.Params.Arguments)}}}, nil
+	})
+
 	mcpServer.AddTool(&mcp.Tool{Name: "fails", InputSchema: schema}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: "upstream says no"}}}, nil
 	})

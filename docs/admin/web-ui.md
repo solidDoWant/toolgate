@@ -29,3 +29,11 @@ A failed sign-in writes an `auth.refuse` event to the audit log. The gateway wri
 ## Admins
 
 Set `config.ui.adminGroup` to the group whose members are admins in the UI. If it is empty, nobody is an admin. The UI reads the groups at sign-in. If you remove a user from the group, the change takes effect at the latest when the user's 8-hour session ends.
+
+## Approvals
+
+A template can mark a tool with `approval: required`. Then each call of the tool needs the approval of the user who made the call. The gateway refuses the call and gives a link to the approval page under `/ui/approvals/`. The user approves the request on that page and calls the tool again with the same arguments. An approval lets exactly one call through.
+
+If the web UI is off, nobody can approve a call, so each call of such a tool fails. A service account cannot sign in to the UI, so its calls of such a tool always fail.
+
+Set `config.ui.approvalTimeout` to the time that a request waits for approval, from `1m` to `1h`. The default is `10m`. An approved request also stays usable for this time. The gateway marks a waiting request expired 1 minute after this time. A user can have at most 100 requests waiting.
