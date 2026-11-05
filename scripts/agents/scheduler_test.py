@@ -93,6 +93,17 @@ class DefaultsTest(unittest.TestCase):
         self.assertFalse(CFG["renovate_prs"])
         self.assertEqual(CFG["critical_parents"], [])
         self.assertEqual(CFG["role_models"]["merge-fixer"], {"model": "sonnet", "effort": "low"})
+        self.assertEqual(CFG["role_models"]["issue-worker"], {"model": "sonnet", "effort": "medium"})
+        self.assertEqual(CFG["label_models"], {"model:opus": {"model": "opus"}})
+
+    def test_model_override_by_role_and_label(self):
+        sn = snap([issue(1), issue(2, labels=["model:opus"])])
+        worker = lambda n: s.Job(f"worker:{n}", "issue-worker", 5, (), "", "", issue=n)
+        self.assertEqual(s.model_override(CFG, worker(1), sn), {"model": "sonnet", "effort": "medium"})
+        # The label replaces the role's entry whole: Opus at its default effort.
+        self.assertEqual(s.model_override(CFG, worker(2), sn), {"model": "opus"})
+        fixer = s.Job("fixer:pr-9", "merge-fixer", 2, (), "", "", issue=2, pr=9)
+        self.assertEqual(s.model_override(CFG, fixer, sn), {"model": "sonnet", "effort": "low"})
 
 
 class PlanTest(unittest.TestCase):

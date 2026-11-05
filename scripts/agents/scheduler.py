@@ -82,7 +82,14 @@ DEFAULT_CONFIG = {
     "poll_interval_s": 60,
     "model": "opus",
     # Per-role overrides of the model and reasoning effort ({role: {"model", "effort"}}).
-    "role_models": {"merge-fixer": {"model": "sonnet", "effort": "low"}},
+    "role_models": {
+        "merge-fixer": {"model": "sonnet", "effort": "low"},
+        # Owner 2026-11-05: Sonnet costs half of Opus, so workers default to it.
+        "issue-worker": {"model": "sonnet", "effort": "medium"},
+    },
+    # Issue labels that override an issue-worker's model and effort. The
+    # planner tags security- and concurrency-critical issues `model:opus`.
+    "label_models": {"model:opus": {"model": "opus"}},
     # false: no pr-reviewer stage. Workers self-check and arm auto-merge; the
     # scheduler arms a finished PR they left unarmed, sends conflicts to the
     # cheap merge-fixer and CI failures to the worker. Phase-end security review
@@ -329,6 +336,19 @@ query($owner: String!, $name: String!, $cursor: String) {
     }
   }
 }"""
+
+
+def model_override(cfg: dict, job: "Job", snap: "Snapshot") -> dict:
+    """The model and effort for a job: its role's entry in role_models, replaced
+    whole by the first label_models entry whose label the job's issue carries
+    (issue-workers only)."""
+    override = dict(cfg.get("role_models", {}).get(job.role, {}))
+    issue = snap.issues.get(job.issue) if job.role == "issue-worker" and job.issue else None
+    if issue:
+        for label, by_label in cfg.get("label_models", {}).items():
+            if label in issue.labels:
+                return dict(by_label)
+    return override
 
 
 def parse_issue(node: dict) -> Issue:
@@ -1519,7 +1539,7 @@ class Scheduler:
         session_id = sess["session_id"] if mode == "resume" else str(uuid.uuid4())
         cmd = [self.claude, "-p", prompt, "--dangerously-skip-permissions", "--output-format", "stream-json",
                "--verbose", "--model", self.cfg["model"], "--name", marker]
-        override = self.cfg.get("role_models", {}).get(job.role, {})
+        override = model_override(self.cfg, job, snap)
         if override.get("model"):
             cmd[cmd.index("--model") + 1] = override["model"]
         if override.get("effort"):
