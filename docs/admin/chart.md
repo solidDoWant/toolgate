@@ -84,6 +84,8 @@ rbac:
       verbs: ["create", "patch", "delete", "get", "list", "watch"]
 ```
 
+An instance with a HelmRelease is ready when Flux reports the HelmRelease ready and the server answers MCP requests. If the install fails, the instance fails. The reason is the message of the `Ready` condition of the HelmRelease. The same rule applies to every kind with a `Ready` condition. When the instance stops, the gateway deletes its namespace. Kubernetes keeps the namespace until helm-controller uninstalls the chart. If the uninstall cannot finish, the namespace stays in `Terminating`.
+
 Flux's helm-controller installs the chart with its own service account, not with the service account of the gateway. This service account often has `cluster-admin`. So a template with a HelmRelease can install anything that helm-controller can install. This is also true if an attacker controls the gateway. You decide if you trust this.
 
 To limit helm-controller, start it with `--default-service-account` and `--no-cross-namespace-refs` (Flux multi-tenancy). Then grant the gateway `rolebindings` with the six verbs above. Each template then contains a RoleBinding for the helm service account in its own namespace. Kubernetes lets the gateway grant only the permissions that the gateway has itself. toolgate does not set or check `spec.serviceAccountName` of a HelmRelease.

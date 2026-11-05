@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: mcp}
+  template:
+    metadata:
+      labels: {app: mcp}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: mcp
+          image: {{ required "the value image is required" .Values.image | quote }}
+          imagePullPolicy: Never
+          env:
+            - {name: MCPSERVER_TOOLS, value: {{ .Values.tools | quote }}}
+          ports:
+            - {name: mcp, containerPort: 8080}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            tcpSocket: {port: 8080}
+            periodSeconds: 1

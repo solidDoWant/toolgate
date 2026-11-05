@@ -1,0 +1,8 @@
+# A chart that runs the test MCP server. scripts/e2e/run.sh pushes it to the
+# OCI registry in the e2e cluster, for templates made of an OCIRepository and
+# a HelmRelease.
+apiVersion: v2
+name: mcpserver
+description: The toolgate test MCP server, for e2e tests.
+type: application
+version: 0.1.0

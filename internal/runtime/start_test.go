@@ -21,6 +21,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -756,4 +757,104 @@ func TestStarterReachesSharedNamespaceInstanceAtRenderedService(t *testing.T) {
 	status, reason, _, _ := fixture.store.snapshot()
 	assert.Equal(t, "ready", status, reason)
 	assert.Equal(t, []string{"http://server-" + instanceID + "." + sharedNamespace + ".svc:8080/mcp"}, fixture.listed)
+}
+
+const helmReleaseResource = `{"apiVersion":"helm.toolkit.fluxcd.io/v2","kind":"HelmRelease","metadata":{"name":"server"},"spec":{"interval":"10m"}}`
+
+// helmRelease returns a HelmRelease of the instance at generation 2 with the
+// given status.
+func helmRelease(observedGeneration int64, conditions ...map[string]any) *unstructured.Unstructured {
+	release := &unstructured.Unstructured{}
+	release.SetAPIVersion("helm.toolkit.fluxcd.io/v2")
+	release.SetKind("HelmRelease")
+	release.SetName("server")
+	release.SetNamespace(instanceNamespace)
+	release.SetLabels(instanceLabels())
+	release.SetGeneration(2)
+
+	items := make([]any, 0, len(conditions))
+	for _, condition := range conditions {
+		items = append(items, condition)
+	}
+
+	release.Object["status"] = map[string]any{"observedGeneration": observedGeneration, "conditions": items}
+
+	return release
+}
+
+func condition(kind, status, reason, message string) map[string]any {
+	return map[string]any{
+		"type": kind, "status": status, "reason": reason, "message": message,
+		"lastTransitionTime": "2026-11-05T12:00:00Z",
+	}
+}
+
+func TestStarterReadyConditionRule(t *testing.T) {
+	installFailed := condition("Ready", "False", "InstallFailed", "Helm install failed for release tg/server: context deadline exceeded")
+
+	staleCondition := condition("Ready", "False", "InstallFailed", "old failure")
+	staleCondition["observedGeneration"] = int64(1)
+
+	tests := []struct {
+		name       string
+		release    *unstructured.Unstructured
+		wantStatus string
+		wantReason string
+	}{
+		{
+			name:       "Ready False at the current generation fails with the Ready message",
+			release:    helmRelease(2, installFailed),
+			wantStatus: "failed",
+			wantReason: "HelmRelease server failed: Helm install failed for release tg/server: context deadline exceeded",
+		},
+		{
+			name:       "Ready False while Reconciling waits",
+			release:    helmRelease(2, condition("Reconciling", "True", "Progressing", "installing"), installFailed),
+			wantStatus: "starting",
+		},
+		{
+			name:       "Ready False at an older observedGeneration waits",
+			release:    helmRelease(1, installFailed),
+			wantStatus: "starting",
+		},
+		{
+			name:       "Ready False whose condition is from an older generation waits",
+			release:    helmRelease(2, staleCondition),
+			wantStatus: "starting",
+		},
+		{
+			name:       "Ready True becomes ready",
+			release:    helmRelease(2, condition("Ready", "True", "InstallSucceeded", "installed")),
+			wantStatus: "ready",
+		},
+		{
+			name:       "Stalled fails by kstatus",
+			release:    helmRelease(2, condition("Stalled", "True", "RetriesExceeded", "out of retries"), condition("Ready", "Unknown", "Progressing", "retrying")),
+			wantStatus: "failed",
+			wantReason: "HelmRelease server failed: out of retries",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "starting", readyPod(), test.release)
+
+			require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+			status, reason, _, _ := fixture.store.snapshot()
+			assert.Equal(t, test.wantStatus, status)
+			assert.Equal(t, test.wantReason, reason)
+		})
+	}
+}
+
+func TestStarterReadyFailsOnReadyConditionRule(t *testing.T) {
+	release := helmRelease(2, condition("Ready", "False", "UpgradeFailed", "Helm upgrade failed"))
+	fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "ready", readyPod(), release)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Equal(t, "HelmRelease server failed: Helm upgrade failed", reason)
 }
