@@ -28,4 +28,10 @@ if [[ -f deploy/charts/toolgate/values.yaml ]]; then
 	./scripts/chart-values-docs.sh
 	ran=1
 fi
+if [[ -f internal/ui/static/SHA256SUMS ]]; then
+	# The vendored htmx is not regenerated; a file that differs from its
+	# recorded hash fails here, so `make check-generate` fails too.
+	(cd internal/ui/static && sha256sum --check --quiet SHA256SUMS)
+	ran=1
+fi
 [[ "$ran" == 1 ]] || echo "generate: no generator inputs yet (api/, sqlc.yaml); nothing to generate"

@@ -48,3 +48,9 @@ If you set `PUSH_ALL=true`, the script publishes the release. Before it builds, 
 The tag starts the `release` workflow (`.github/workflows/release.yml`). The workflow uses its own `GITHUB_TOKEN` to push the image `ghcr.io/soliddowant/toolgate:x.y.z` and the chart `oci://ghcr.io/soliddowant/charts/toolgate`. For a final version, it also tags the image `latest`. Only the release-manager agent publishes releases.
 
 `scripts/release_test.sh` tests the script in a copy of the repository with a local remote and a stub for `gh`. `make test` runs it.
+
+## The vendored htmx
+
+The web UI uses htmx 2.0.7. The file `internal/ui/static/htmx-2.0.7.min.js` is in the repository and is embedded in the binary. There is no JavaScript build step.
+
+`make vendor-htmx` downloads the package from the npm registry. It compares the package with the registry's `integrity` value, writes the file, and writes its SHA-256 to `internal/ui/static/SHA256SUMS`. `make check-generate` fails when the file and `SHA256SUMS` do not match. The version is in the file name, so a browser never uses an old copy from its cache with new pages. To change the version, change it in `scripts/vendor-htmx.sh`, in the file name in the layout template and in the tests.

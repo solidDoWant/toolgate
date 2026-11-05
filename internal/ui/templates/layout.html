@@ -1,0 +1,31 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · toolgate</title>
+<link rel="stylesheet" href="/ui/static/toolgate.css">
+<script src="/ui/static/htmx-2.0.7.min.js" defer></script>
+</head>
+<body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
+<nav>
+<a href="/ui/servers">Servers</a>
+<a href="/ui/sessions">Sessions</a>
+<a href="/ui/grants">Grants</a>
+<a href="/ui/approvals">Approvals</a>
+<a href="/ui/secrets">Secrets</a>
+<a href="/ui/audit">Audit</a>
+{{if .Admin}}<a href="/ui/blocks">Blocks</a>
+{{end}}<form method="post" action="/ui/logout" class="logout">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<span>{{.User}}</span>
+<button type="submit">Sign out</button>
+</form>
+</nav>
+<main>
+<h1>{{.Title}}</h1>
+{{template "content" .}}
+</main>
+</body>
+</html>
+{{end}}

@@ -103,3 +103,11 @@ UPDATE instances SET last_used_at = now() WHERE id = @id;
 
 -- name: DeleteStoppedInstancesBefore :execrows
 DELETE FROM instances WHERE status = 'stopped' AND updated_at < @before;
+
+-- name: ListLiveInstancesForUI :many
+-- The live instances the web UI's Servers page shows: those owned by a
+-- principal and, for admins, the shared ones.
+SELECT * FROM instances
+WHERE ((owner_principal = @owner_principal AND owner_principal <> '') OR (@include_shared::boolean AND scope = 'shared'))
+  AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
+ORDER BY template_name, template_ns, created_at, id;

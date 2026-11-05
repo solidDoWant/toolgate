@@ -94,14 +94,6 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if cfg.UIEnabled() {
-		if err := registerUI(server, cfg, stdout, logger); err != nil {
-			logger.Error("gateway failed to start", "error", err)
-
-			return 1
-		}
-	}
-
 	payloads, err := newAuditPayloads(ctx, cfg, server)
 	if err != nil {
 		logger.Error("gateway failed to start", "error", err)
@@ -116,10 +108,20 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	// reconciler.
 	listener := store.NewListener(server.Database(), logger)
 
+	engine := &policy.Engine{Rules: rules}
+
+	if cfg.UIEnabled() {
+		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), stdout, logger); err != nil {
+			logger.Error("gateway failed to start", "error", err)
+
+			return 1
+		}
+	}
+
 	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
 		Database:      server.Database(),
 		Catalog:       templates,
-		Policy:        &policy.Engine{Rules: rules},
+		Policy:        engine,
 		AuditOutput:   stdout,
 		AuditPayloads: payloads,
 		Logger:        logger,
@@ -331,7 +333,7 @@ const maxClientSecretBytes = 4 << 10
 
 // registerUI serves the web UI under `/ui/` and `GET /`. It reads the UI
 // client's secret, when one is configured, before the gateway starts.
-func registerUI(server *gateway.Server, cfg config.Config, stdout io.Writer, logger *slog.Logger) error {
+func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, stdout io.Writer, logger *slog.Logger) error {
 	var clientSecret string
 
 	if cfg.OIDCUIClientSecretFile != "" {
@@ -361,7 +363,8 @@ func registerUI(server *gateway.Server, cfg config.Config, stdout io.Writer, log
 			recorder: audit.NewRecorder(stdout, db.New(server.Database())),
 			logger:   logger,
 		},
-		Logger: logger,
+		Logger:  logger,
+		Servers: servers,
 	}, server)
 
 	return server.RegisterMetrics(webUI.DroppedRefusals())

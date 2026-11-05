@@ -72,6 +72,7 @@ type uiEnv struct {
 	replicas []replica
 	target   atomic.Int32
 	refusals *refusals
+	servers  *fakeServers
 }
 
 func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
@@ -84,7 +85,7 @@ func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
 	t.Cleanup(pool.Close)
 	require.NoError(t, store.Migrate(t.Context(), pool))
 
-	env := &uiEnv{pool: pool, refusals: &refusals{}}
+	env := &uiEnv{pool: pool, refusals: &refusals{}, servers: &fakeServers{}}
 
 	env.idp = toolgatetest.StartOIDCProvider(t, toolgatetest.OIDCOptions{
 		UIRedirectURIs: []string{"https://127.0.0.1:*/ui/auth/callback"},
@@ -108,6 +109,7 @@ func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
 			PublicURL:  env.server.URL,
 			AdminGroup: adminGroup,
 			Recorder:   env.refusals,
+			Servers:    env.servers,
 		}, registrar)
 
 		webUI.Handle("GET "+whoamiPath, ui.User, http.HandlerFunc(whoami))
@@ -480,6 +482,12 @@ func (e *uiEnv) insertSession(t *testing.T, cookieValue string, groups []string)
 	return browser
 }
 
+// csrfTokenOf is the CSRF token forms carry for the session insertSession
+// stored under cookieValue.
+func csrfTokenOf(cookieValue string) string {
+	return ui.Session{CSRFToken: hashOf("csrf-" + cookieValue)}.CSRFTokenValue()
+}
+
 func hashOf(value string) []byte {
 	sum := sha256.Sum256([]byte(value))
 
@@ -566,7 +574,7 @@ func TestAdminRoutes(t *testing.T) {
 			response := get(t, browser, env.server.URL+"/ui/admin-only")
 			assert.Equal(t, test.wantStatus, response.StatusCode)
 
-			response = post(t, browser, env.server.URL+"/ui/admin-only", url.Values{})
+			response = post(t, browser, env.server.URL+"/ui/admin-only", url.Values{ui.CSRFField: {csrfTokenOf("admin-session")}})
 			assert.Equal(t, test.wantStatus, response.StatusCode)
 
 			response = get(t, browser, env.server.URL+whoamiPath)
@@ -583,7 +591,7 @@ func TestLogoutDeletesSession(t *testing.T) {
 	assert.Equal(t, http.StatusSeeOther, response.StatusCode)
 	assert.Equal(t, ui.HomePath, response.Header.Get("Location"))
 
-	response = post(t, browser, env.server.URL+ui.LogoutPath, url.Values{})
+	response = post(t, browser, env.server.URL+ui.LogoutPath, url.Values{ui.CSRFField: {csrfTokenOf("logout-session")}})
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	_, _ = io.Copy(io.Discard, response.Body)
 

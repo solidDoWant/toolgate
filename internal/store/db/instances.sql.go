@@ -296,6 +296,66 @@ func (q *Queries) ListInstancesNotStopped(ctx context.Context) ([]Instance, erro
 	return items, nil
 }
 
+const listLiveInstancesForUI = `-- name: ListLiveInstancesForUI :many
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at FROM instances
+WHERE ((owner_principal = $1 AND owner_principal <> '') OR ($2::boolean AND scope = 'shared'))
+  AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
+ORDER BY template_name, template_ns, created_at, id
+`
+
+type ListLiveInstancesForUIParams struct {
+	OwnerPrincipal string
+	IncludeShared  bool
+}
+
+// The live instances the web UI's Servers page shows: those owned by a
+// principal and, for admins, the shared ones.
+func (q *Queries) ListLiveInstancesForUI(ctx context.Context, arg ListLiveInstancesForUIParams) ([]Instance, error) {
+	rows, err := q.db.Query(ctx, listLiveInstancesForUI, arg.OwnerPrincipal, arg.IncludeShared)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Instance{}
+	for rows.Next() {
+		var i Instance
+		if err := rows.Scan(
+			&i.ID,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.TemplateUid,
+			&i.Generation,
+			&i.Scope,
+			&i.ScopeKey,
+			&i.OwnerPrincipal,
+			&i.RenderSession,
+			&i.Desired,
+			&i.Status,
+			&i.Reason,
+			&i.Namespace,
+			&i.Tools,
+			&i.SecretsUsed,
+			&i.CreatedAt,
+			&i.AttemptStartedAt,
+			&i.ReadyAt,
+			&i.FailedAt,
+			&i.LastUsedAt,
+			&i.UpdatedAt,
+			&i.TraceContext,
+			&i.RestartRequestedAt,
+			&i.RestartRequestedBy,
+			&i.ResolvedExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockInstanceInsert = `-- name: LockInstanceInsert :exec
 SELECT pg_advisory_xact_lock(hashtextextended('toolgate-instance-insert', 0))
 `

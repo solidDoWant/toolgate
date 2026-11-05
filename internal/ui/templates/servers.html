@@ -1,0 +1,30 @@
+{{define "content"}}
+<h2>Catalog</h2>
+{{if .Data.Servers}}
+<table id="catalog">
+<thead><tr><th>Server</th><th>Description</th><th>Scope</th><th>Status</th><th>Reason</th></tr></thead>
+<tbody>
+{{range .Data.Servers}}<tr>
+<td>{{.Name}}</td><td>{{.Description}}</td><td>{{.Scope}}</td><td>{{.Status}}</td><td>{{.Reason}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+{{else}}
+<p>No servers are offered to you.</p>
+{{end}}
+<h2>Running instances</h2>
+{{if .Data.Instances}}
+<table id="instances">
+<thead><tr><th>Server</th><th>Scope</th><th>Owner</th><th>Status</th><th>Reason</th><th>Ready since</th><th>Version</th></tr></thead>
+<tbody>
+{{range .Data.Instances}}<tr>
+<td>{{.Server}}</td><td>{{.Scope}}</td><td>{{if .Owner}}{{.Owner}}{{else}}shared{{end}}</td><td>{{.Status}}</td><td>{{.Reason}}</td>
+<td>{{with .ReadyAt}}{{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td>
+<td>{{if .Outdated}}outdated{{else}}current{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table>
+{{else}}
+<p>You have no running instances.</p>
+{{end}}
+{{end}}

@@ -29,3 +29,23 @@ A failed sign-in writes an `auth.refuse` event to the audit log. The gateway wri
 ## Admins
 
 Set `config.ui.adminGroup` to the group whose members are admins in the UI. If it is empty, nobody is an admin. The UI reads the groups at sign-in. If you remove a user from the group, the change takes effect at the latest when the user's 8-hour session ends.
+
+## The Servers page
+
+`/ui/servers` is the first page after a sign-in. It shows two lists:
+
+- The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason.
+- The running instances of the user. An admin also sees the shared instances. Each instance shows its status and if it runs an old version of its template.
+
+The navigation shows the Blocks link only to admins.
+
+## Protection of the pages
+
+Each request to the UI that changes something must come from a UI page. The gateway does two checks:
+
+1. It uses `net/http.CrossOriginProtection` from Go. This check refuses a request that a page on another site sends, by the `Sec-Fetch-Site` and `Origin` headers. Your ingress must not remove these headers.
+2. It compares a token in the form with the token of the user's session. A form from another site does not know this token.
+
+If one check fails, the gateway answers 403 and changes nothing.
+
+Each UI response has the header `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`. Thus the pages load scripts and styles only from the gateway, and no other site can show them in a frame. Pages have `Cache-Control: no-store`. A form body can be at most 64 KiB.
