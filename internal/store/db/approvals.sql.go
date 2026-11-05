@@ -117,6 +117,105 @@ func (q *Queries) ExpireApproval(ctx context.Context, id string) (Approval, erro
 	return i, err
 }
 
+const findPendingApproval = `-- name: FindPendingApproval :one
+SELECT id, principal, session_pk, workspace, template_ns, template_name, tool, arguments_sha256, status, created_at, expires_at, decided_at, decided_by, used_at FROM approvals
+WHERE principal = $1 AND session_pk = $2
+  AND template_ns = $3 AND template_name = $4
+  AND tool = $5 AND arguments_sha256 = $6
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1
+`
+
+type FindPendingApprovalParams struct {
+	Principal       string
+	SessionPk       int64
+	TemplateNs      string
+	TemplateName    string
+	Tool            string
+	ArgumentsSha256 []byte
+}
+
+// Returns the oldest pending approval of one exact call that hasn't
+// expired.
+func (q *Queries) FindPendingApproval(ctx context.Context, arg FindPendingApprovalParams) (Approval, error) {
+	row := q.db.QueryRow(ctx, findPendingApproval,
+		arg.Principal,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.Tool,
+		arg.ArgumentsSha256,
+	)
+	var i Approval
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.Tool,
+		&i.ArgumentsSha256,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
+const findUsableApproval = `-- name: FindUsableApproval :one
+SELECT id, principal, session_pk, workspace, template_ns, template_name, tool, arguments_sha256, status, created_at, expires_at, decided_at, decided_by, used_at FROM approvals
+WHERE principal = $1 AND session_pk = $2
+  AND template_ns = $3 AND template_name = $4
+  AND tool = $5 AND arguments_sha256 = $6
+  AND status = 'approved' AND used_at IS NULL AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1
+`
+
+type FindUsableApprovalParams struct {
+	Principal       string
+	SessionPk       int64
+	TemplateNs      string
+	TemplateName    string
+	Tool            string
+	ArgumentsSha256 []byte
+}
+
+// Returns the oldest usable approved approval of one exact call.
+func (q *Queries) FindUsableApproval(ctx context.Context, arg FindUsableApprovalParams) (Approval, error) {
+	row := q.db.QueryRow(ctx, findUsableApproval,
+		arg.Principal,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.Tool,
+		arg.ArgumentsSha256,
+	)
+	var i Approval
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.Tool,
+		&i.ArgumentsSha256,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
 const getApproval = `-- name: GetApproval :one
 SELECT id, principal, session_pk, workspace, template_ns, template_name, tool, arguments_sha256, status, created_at, expires_at, decided_at, decided_by, used_at FROM approvals WHERE id = $1
 `
@@ -139,6 +238,64 @@ func (q *Queries) GetApproval(ctx context.Context, id string) (Approval, error) 
 		&i.DecidedAt,
 		&i.DecidedBy,
 		&i.UsedAt,
+	)
+	return i, err
+}
+
+const getMatchingApproval = `-- name: GetMatchingApproval :one
+SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at,
+       (status = 'approved' AND used_at IS NULL AND expires_at > now())::boolean AS usable
+FROM approvals
+WHERE id = $1 AND principal = $2 AND session_pk = $3
+  AND template_ns = $4 AND template_name = $5
+  AND tool = $6 AND arguments_sha256 = $7
+`
+
+type GetMatchingApprovalParams struct {
+	ID              string
+	Principal       string
+	SessionPk       int64
+	TemplateNs      string
+	TemplateName    string
+	Tool            string
+	ArgumentsSha256 []byte
+}
+
+type GetMatchingApprovalRow struct {
+	Approval Approval
+	Usable   bool
+}
+
+// Returns the approval with this ID only when every field of the call
+// matches, so a client-sent ID can't name another call's approval. usable
+// is computed with PostgreSQL's clock.
+func (q *Queries) GetMatchingApproval(ctx context.Context, arg GetMatchingApprovalParams) (GetMatchingApprovalRow, error) {
+	row := q.db.QueryRow(ctx, getMatchingApproval,
+		arg.ID,
+		arg.Principal,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.Tool,
+		arg.ArgumentsSha256,
+	)
+	var i GetMatchingApprovalRow
+	err := row.Scan(
+		&i.Approval.ID,
+		&i.Approval.Principal,
+		&i.Approval.SessionPk,
+		&i.Approval.Workspace,
+		&i.Approval.TemplateNs,
+		&i.Approval.TemplateName,
+		&i.Approval.Tool,
+		&i.Approval.ArgumentsSha256,
+		&i.Approval.Status,
+		&i.Approval.CreatedAt,
+		&i.Approval.ExpiresAt,
+		&i.Approval.DecidedAt,
+		&i.Approval.DecidedBy,
+		&i.Approval.UsedAt,
+		&i.Usable,
 	)
 	return i, err
 }
@@ -199,6 +356,55 @@ func (q *Queries) InsertApprovalWithinLimit(ctx context.Context, arg InsertAppro
 		&i.UsedAt,
 	)
 	return i, err
+}
+
+const listOverdueApprovals = `-- name: ListOverdueApprovals :many
+SELECT a.id, a.principal, a.workspace, a.template_name, a.tool, s.session_id, s.attestation
+FROM approvals a
+JOIN sessions s ON s.id = a.session_pk
+WHERE a.status = 'pending' AND a.expires_at < now() - interval '1 minute'
+ORDER BY a.expires_at
+LIMIT 1000
+`
+
+type ListOverdueApprovalsRow struct {
+	ID           string
+	Principal    string
+	Workspace    string
+	TemplateName string
+	Tool         string
+	SessionID    string
+	Attestation  string
+}
+
+// Lists pending approvals whose expires_at is more than 1 minute past, with
+// their session's client session ID, for the leader's pass.
+func (q *Queries) ListOverdueApprovals(ctx context.Context) ([]ListOverdueApprovalsRow, error) {
+	rows, err := q.db.Query(ctx, listOverdueApprovals)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOverdueApprovalsRow{}
+	for rows.Next() {
+		var i ListOverdueApprovalsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.Workspace,
+			&i.TemplateName,
+			&i.Tool,
+			&i.SessionID,
+			&i.Attestation,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const lockPrincipalApprovals = `-- name: LockPrincipalApprovals :exec

@@ -66,6 +66,9 @@ settings from `config`.
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_LIMIT_PER_USER" "value" (toString (int $config.limits.instancesPerUser))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_LIMIT" "value" (toString (int $config.limits.instances))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_SESSION_IDLE_TIMEOUT" "value" $config.sessionIdleTimeout) -}}
+{{- with $config.ui.approvalTimeout }}
+{{- $env = append $env (dict "name" "TOOLGATE_APPROVAL_TIMEOUT" "value" .) }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

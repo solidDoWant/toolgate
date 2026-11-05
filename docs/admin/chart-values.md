@@ -44,6 +44,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.sharedNamespace.create | bool | `true` | Create the shared namespace with toolgate's labels. If false, the namespace must exist and carry the labels `toolgate.soliddowant.dev/writable: "true"` and `pod-security.kubernetes.io/enforce: restricted`. |
 | config.sharedNamespace.name | string | `""` | Name of the namespace for instances of `namespace: shared` templates. Empty means the chart creates none. It must not start with `tg-`. |
 | config.ui.adminGroup | string | `""` | Group whose members are web UI admins. Empty means nobody is an admin. |
+| config.ui.approvalTimeout | string | `"10m"` | How long a call that needs approval waits for a person, and how long an approved request stays usable, as a Go duration from `1m` to `1h`. |
 | config.ui.clientID | string | `""` | OIDC client ID of the web UI. The web UI is on only when this is set. The identity provider must allow the redirect URI `config.ui.publicURL` + `/ui/auth/callback`. |
 | config.ui.clientSecretFile | string | `""` | Path of a file that holds the web UI client's secret, mounted from a Secret with `persistence`. Empty means a public client. |
 | config.ui.publicURL | string | `""` | URL where users open the gateway in a browser, such as `https://toolgate.example.com`. Required when `config.ui.clientID` is set. It must be `https://`. |

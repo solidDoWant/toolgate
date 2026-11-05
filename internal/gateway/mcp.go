@@ -75,6 +75,12 @@ type MCPOptions struct {
 	// request in progress or an open stream before this replica releases
 	// it. Zero means 30 minutes.
 	MCPSessionIdleTimeout time.Duration
+	// ApprovalURL returns the web UI link of an approval. Nil means the
+	// gateway has no web UI, so a tool that needs approval can't be called.
+	ApprovalURL func(id string) string
+	// ApprovalTimeout is how long an approval waits for a person and stays
+	// usable once approved. Zero means DefaultApprovalTimeout.
+	ApprovalTimeout time.Duration
 }
 
 // defaultMCPSessionIdleTimeout is the MCPSessionIdleTimeout when MCPOptions
@@ -88,7 +94,7 @@ const (
 	defaultInstanceLimit        = 200
 )
 
-func valueOr(value, fallback int) int {
+func valueOr[T int | time.Duration](value, fallback T) T {
 	if value == 0 {
 		return fallback
 	}
@@ -202,6 +208,8 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		instanceLimitPerUser: valueOr(options.InstanceLimitPerUser, defaultInstanceLimitPerUser),
 		instanceLimit:        valueOr(options.InstanceLimit, defaultInstanceLimit),
 		sharedNamespace:      options.SharedNamespace,
+		approvalURL:          options.ApprovalURL,
+		approvalTimeout:      valueOr(options.ApprovalTimeout, DefaultApprovalTimeout),
 	}
 
 	endpoint.callTool = tools.callTool

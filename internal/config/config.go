@@ -193,6 +193,13 @@ type Config struct {
 	// the 8-hour UI session ends. If it is empty, nobody is an admin.
 	AdminGroup string `json:"adminGroup" env:"TOOLGATE_ADMIN_GROUP"`
 
+	// How long a call that needs approval waits for a person to approve it,
+	// and how long an approved request stays usable. The gateway marks a
+	// waiting request expired 1 minute after this time has passed. Write it
+	// as a Go duration, such as `10m`. It must be from 1 minute to 1 hour.
+	// The chart sets it from `config.ui.approvalTimeout`.
+	ApprovalTimeout Duration `json:"approvalTimeout" env:"TOOLGATE_APPROVAL_TIMEOUT"`
+
 	// Whether the gateway stores audit payloads: the arguments of each tool
 	// call and approval request, and each tool result. A payload under 64 KiB
 	// (65,536 bytes) is stored in its audit row in PostgreSQL. A larger one
@@ -275,6 +282,7 @@ func Default() Config {
 		InstanceLimitPerUser:   20,
 		InstanceLimit:          200,
 		SessionIdleTimeout:     Duration(2 * time.Hour),
+		ApprovalTimeout:        Duration(10 * time.Minute),
 	}
 }
 
@@ -534,6 +542,10 @@ func (c Config) Validate() []error {
 
 	if c.SessionIdleTimeout <= 0 {
 		problems = append(problems, errors.New("sessionIdleTimeout: must be greater than zero"))
+	}
+
+	if c.ApprovalTimeout < Duration(time.Minute) || c.ApprovalTimeout > Duration(time.Hour) {
+		problems = append(problems, errors.New("approvalTimeout: must be from 1m to 1h"))
 	}
 
 	problems = append(problems, c.validateUI()...)
