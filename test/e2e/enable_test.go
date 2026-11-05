@@ -286,11 +286,23 @@ func (g *gatewaySession) record(event string) {
 func connectGateway(t *testing.T, endpoint, user, session string) *gatewaySession {
 	t.Helper()
 
+	return connectGatewayInWorkspace(t, endpoint, user, session, "")
+}
+
+// connectGatewayInWorkspace is connectGateway that also claims workspace,
+// unless it is empty.
+func connectGatewayInWorkspace(t *testing.T, endpoint, user, session, workspace string) *gatewaySession {
+	t.Helper()
+
 	header := http.Header{}
 	header.Set("Authorization", "Bearer "+oidcProvider(t).MintAccessToken(t, testutil.TokenClaims{
 		Subject: user, Email: user + "@example.com", EmailVerified: true,
 	}))
 	header.Set(auth.SessionHeader, session)
+
+	if workspace != "" {
+		header.Set(auth.WorkspaceHeader, workspace)
+	}
 
 	observed := &gatewaySession{}
 	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "toolgate-e2e", Version: "0"}, &mcp.ClientOptions{
