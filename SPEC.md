@@ -331,6 +331,7 @@ A phase's design (`docs/design/phase-N.md`, with its interaction table) is revie
 cmd/toolgate/            main: serve + client commands
 internal/                gateway and client packages
 api/v1alpha1/            CRD Go types (controller-gen)
+config/crd/bases/        generated CRD manifests (the chart renders them)
 deploy/charts/toolgate/  Helm chart (CRDs, RBAC, admission policy)
 plugin/                  Claude Code plugin + marketplace manifest
 test/                    e2e harness, test MCP server, fixtures
