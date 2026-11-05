@@ -129,7 +129,8 @@ func TestFindSession(t *testing.T) {
 			assert.NoError(t, os.WriteFile(filepath.Join(dir, strconv.Itoa(os.Getppid())), []byte("late"), 0o600))
 		}()
 
-		session, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid(), Wait: time.Minute})
+		session, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid(), Wait: 10 * time.Second})
+
 		<-written
 		require.NoError(t, err)
 		assert.Equal(t, "late", session)
