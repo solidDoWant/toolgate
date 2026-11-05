@@ -8,6 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.7
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-jose/go-jose/v4 v4.1.8
+	github.com/gobwas/glob v0.2.3
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/moby/moby/client v0.6.2
 	github.com/pressly/goose/v3 v3.29.0

@@ -96,8 +96,9 @@ type Access struct {
 	ServiceAccounts []string `json:"serviceAccounts,omitempty"`
 
 	// Environments says which attestation a request needs: any, opt-in
-	// or attested.
+	// or attested. It defaults to opt-in.
 	// +optional
+	// +kubebuilder:default=opt-in
 	// +kubebuilder:validation:XValidation:rule="self in ['any', 'opt-in', 'attested']",message="environments must be one of any, opt-in, attested"
 	Environments string `json:"environments,omitempty"`
 }
