@@ -57,6 +57,7 @@ Run `make help` for the full list, and keep it and this section current as targe
 - `make test-integration`: `integration`-tagged tests against PostgreSQL and S3 in Docker, and a local Kubernetes API server (envtest, binaries from the dev shell).
 - `make test-e2e`: a new kind cluster with Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server; deleted afterwards. Agents set `E2E_CLUSTER=toolgate-<issue>` (`docs/dev/e2e-tests.md`).
 - `make acceptance`: run every `[AC-…]` test on a new kind cluster (as `test-e2e`) and print the scoreboard for the current phase.
+- `make plugin-check`: `claude plugin validate --strict` on the plugin and marketplace, then install them into a throwaway Claude Code config and check the result (needs the `claude` CLI; CI pins its version).
 - `make chart-lint`, `make docs-check`, `make release VERSION=x.y.z` (dry run only; releasing is the release-manager's job).
 
 ## Dev Tools

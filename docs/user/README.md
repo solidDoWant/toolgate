@@ -2,13 +2,53 @@
 
 For: people who use Claude Code with a toolgate gateway.
 
-toolgate is in early development, and these pages are not written yet. They will tell you how to:
+toolgate is in early development, and some of these pages are not written yet. They will tell you how to:
 
 - install the toolgate plugin for Claude Code and set the address of your gateway;
 - sign in with `toolgate login`;
 - list, turn on and turn off MCP servers in a session;
 - set the secrets that your servers need with `toolgate secret set`;
 - read a refusal, and find out which rule refused a call.
+
+## Install the plugin
+
+The toolgate plugin connects Claude Code to your gateway. A plugin marketplace is a list of plugins that Claude Code can install. This repository is a marketplace with one plugin, `toolgate`.
+
+Before you start, install the `toolgate` command and make sure that it is on your `PATH`. The plugin runs it. Your admin gives you the URL of your gateway.
+
+1. In Claude Code, run `/plugin marketplace add solidDoWant/toolgate`.
+2. Run `/plugin install toolgate@toolgate`.
+3. When Claude Code asks for the "Gateway URL", type the URL of your gateway, for example `https://toolgate.example.com`. Do not add `/mcp` at the end.
+4. Restart Claude Code.
+
+You can also install the plugin from a shell, outside Claude Code:
+
+```
+claude plugin marketplace add solidDoWant/toolgate
+claude plugin install toolgate@toolgate
+```
+
+After the install from a shell, set the gateway URL with `/plugin configure toolgate@toolgate` in Claude Code. To change the URL later, use the same command.
+
+The plugin adds three things to Claude Code:
+
+- An MCP server with the name `toolgate`, at the gateway URL followed by `/mcp`. Claude Code runs `toolgate headers` to get the headers for each connection.
+- A hook that runs `toolgate hook session-start` when a session starts.
+- A skill that tells Claude how to use the gateway: list the servers first, turn on only the servers that the task needs, and turn them off when the task is done.
+
+## Make sure that the plugin works
+
+Do these steps after you install the plugin and sign in with `toolgate login`.
+
+1. Start a new Claude Code session.
+2. Run `/mcp`. Make sure that the `toolgate` server shows as connected and has four tools: `toolgate_list_servers`, `toolgate_enable_server`, `toolgate_disable_server` and `toolgate_server_status`.
+3. Ask Claude to list the toolgate servers. Make sure that Claude calls `toolgate_list_servers`.
+4. Ask Claude to turn on one of the servers and to use one of its tools. Make sure that Claude calls `toolgate_enable_server`, and then calls a tool with a name that starts with the server name, for example `test__echo`.
+5. Ask Claude to turn the server off. Make sure that Claude calls `toolgate_disable_server`.
+6. Run `/status` and write down the session ID.
+7. Ask your admin to find these calls in the audit log of the gateway. Make sure that the audit log shows the same session ID.
+
+If the `toolgate` server shows as failed in step 2, run `toolgate status` in a shell to make sure that you are signed in. Then make sure that the gateway URL in `/plugin configure toolgate@toolgate` is correct.
 
 ## Sign in
 

@@ -107,6 +107,10 @@ clean: ## Remove build artifacts.
 
 ##@ Helm
 
+.PHONY: plugin-check
+plugin-check: ## Check the Claude Code plugin and marketplace: claude plugin validate --strict, then install into a throwaway config and check the MCP server, hook, gateway URL option and skill. Needs the claude CLI.
+	./scripts/plugin-check.sh
+
 .PHONY: chart-lint
 chart-lint: ## Lint the Helm chart without a cluster: helm lint, the rendered-manifest tests in test/chart, and a check that docs/admin/chart-values.md is current.
 	./scripts/chart-lint.sh

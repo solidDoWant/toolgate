@@ -1,0 +1,16 @@
+{
+  "name": "toolgate",
+  "owner": {
+    "name": "solidDoWant"
+  },
+  "metadata": {
+    "description": "The toolgate plugin for Claude Code: connects Claude Code to a toolgate MCP gateway."
+  },
+  "plugins": [
+    {
+      "name": "toolgate",
+      "source": "./plugin",
+      "description": "Connects Claude Code to a toolgate MCP gateway, which starts MCP servers on demand and checks every tool call against policy."
+    }
+  ]
+}
