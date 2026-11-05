@@ -499,6 +499,14 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 		if err := s.apply(ctx, object); err != nil {
 			span.SetStatus(codes.Error, "apply")
 
+			// RBAC (or the admission policy) refusing an object won't change
+			// on a retry: the instance fails with the API server's message
+			// (docs/design/phase-2.md §7).
+			if apierrors.IsForbidden(err) {
+				return false, s.fail(ctx, instance, StatusPending, "The API server refused "+object.GetKind()+" "+
+					object.GetName()+": "+apiServerMessage(err))
+			}
+
 			return false, err
 		}
 	}
@@ -547,6 +555,17 @@ func (s *Starter) prepareAnchor(ctx context.Context, instance db.Instance, templ
 		UID:                anchor.UID,
 		BlockOwnerDeletion: ptr.To(false),
 	}, nil
+}
+
+// apiServerMessage returns the message of the API server's status in err,
+// or err's text when it carries none.
+func apiServerMessage(err error) string {
+	var status apierrors.APIStatus
+	if errors.As(err, &status) && status.Status().Message != "" {
+		return status.Status().Message
+	}
+
+	return err.Error()
 }
 
 // AnchorName is the name of the anchor ConfigMap that owns the objects of

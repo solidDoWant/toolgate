@@ -43,6 +43,7 @@ func newReconcilerFixture(t *testing.T, objects ...client.Object) reconcilerFixt
 		reconciler: &catalog.Reconciler{
 			Client:     kube,
 			Catalog:    templates,
+			Validator:  catalog.Validator{Mapper: testRESTMapper()},
 			Namespaces: []string{"catalog", "catalog-b"},
 		},
 	}
@@ -82,12 +83,12 @@ func TestReconcilerReportsInvalidTemplates(t *testing.T) {
 		{
 			name:     "[AC-1-24] cluster-scoped kind",
 			template: newTemplate("github", catalog.ScopePerSession, `{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"n"}}`),
-			reason:   "v1 Namespace is not an allowed kind",
+			reason:   "v1 Namespace is cluster-scoped",
 		},
 		{
-			name:     "[AC-1-24] RBAC kind",
-			template: newTemplate("github", catalog.ScopePerSession, `{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"name":"n"}}`),
-			reason:   "Role is an RBAC object",
+			name:     "[AC-1-24] kind whose CRD isn't installed",
+			template: newTemplate("github", catalog.ScopePerSession, `{"apiVersion":"example.com/v1","kind":"Widget","metadata":{"name":"n"}}`),
+			reason:   "example.com/v1 Widget is not installed in the cluster",
 		},
 		{
 			name:     "[AC-1-14] shared template using a principal",

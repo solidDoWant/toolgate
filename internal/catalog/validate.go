@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
@@ -32,32 +33,28 @@ const maxReasonLength = 1024
 // serverNamePattern is the pattern every server (template) name must match.
 var serverNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
 
-// allowedKinds are the kinds a phase 1 template may contain (SPEC.md §9).
-var allowedKinds = map[schema.GroupKind]bool{
-	{Group: "", Kind: "Pod"}:                                        true,
-	{Group: "apps", Kind: "Deployment"}:                             true,
-	{Group: "apps", Kind: "StatefulSet"}:                            true,
-	{Group: "", Kind: "Service"}:                                    true,
-	{Group: "", Kind: "ConfigMap"}:                                  true,
-	{Group: "", Kind: "Secret"}:                                     true,
-	{Group: "", Kind: "ServiceAccount"}:                             true,
-	{Group: "networking.k8s.io", Kind: "NetworkPolicy"}:             true,
-	{Group: "", Kind: "PersistentVolumeClaim"}:                      true,
-	{Group: CiliumNetworkPolicy.Group, Kind: "CiliumNetworkPolicy"}: true,
+// sharedNamespaceKinds are the kinds whose names and selectors toolgate can
+// check, the only kinds a `namespace: shared` template may contain
+// (docs/design/phase-1.md §7).
+var sharedNamespaceKinds = map[schema.GroupKind]bool{
+	{Group: "", Kind: "Pod"}:                            true,
+	{Group: "apps", Kind: "Deployment"}:                 true,
+	{Group: "apps", Kind: "StatefulSet"}:                true,
+	{Group: "", Kind: "Service"}:                        true,
+	{Group: "", Kind: "ConfigMap"}:                      true,
+	{Group: "", Kind: "Secret"}:                         true,
+	{Group: "", Kind: "ServiceAccount"}:                 true,
+	{Group: "networking.k8s.io", Kind: "NetworkPolicy"}: true,
+	{Group: "", Kind: "PersistentVolumeClaim"}:          true,
 }
-
-// CiliumNetworkPolicy is the kind allowed only when its CRD exists in the
-// cluster.
-var CiliumNetworkPolicy = schema.GroupKind{Group: "cilium.io", Kind: "CiliumNetworkPolicy"}
-
-// rbacGroup is the API group of RBAC objects, which templates may never hold.
-const rbacGroup = "rbac.authorization.k8s.io"
 
 // Validator checks templates beyond the CRD's CEL rules.
 type Validator struct {
-	// CiliumNetworkPolicy allows CiliumNetworkPolicy objects. Set it when
-	// the CiliumNetworkPolicy CRD exists in the cluster.
-	CiliumNetworkPolicy bool
+	// Mapper maps a template's kinds to their REST mappings. A kind it
+	// can't map, or maps to a cluster-scoped resource, is invalid, because
+	// teardown deletes only the instance namespace. When it is nil, every
+	// kind is invalid.
+	Mapper meta.RESTMapper
 	// SharedNamespace is the gateway's shared namespace. When it is empty,
 	// every `namespace: shared` template is invalid.
 	SharedNamespace string
@@ -134,13 +131,8 @@ func (v Validator) validateResource(scope string, index int, raw []byte) []strin
 
 	var problems []string
 
-	switch {
-	case groupKind.Group == rbacGroup:
-		problems = append(problems, fmt.Sprintf("%s: %s is an RBAC object, which templates may not contain", where, describeKind(apiVersion, kind)))
-	case groupKind == CiliumNetworkPolicy && !v.CiliumNetworkPolicy:
-		problems = append(problems, fmt.Sprintf("%s: %s is allowed only when the CiliumNetworkPolicy CRD exists in the cluster", where, describeKind(apiVersion, kind)))
-	case !allowedKinds[groupKind]:
-		problems = append(problems, fmt.Sprintf("%s: %s is not an allowed kind; templates may contain only the namespaced kinds Pod, Deployment, StatefulSet, Service, ConfigMap, Secret, ServiceAccount, NetworkPolicy, PersistentVolumeClaim and CiliumNetworkPolicy", where, describeKind(apiVersion, kind)))
+	if problem := v.scopeProblem(groupKind, groupVersion.Version); problem != "" {
+		problems = append(problems, fmt.Sprintf("%s: %s %s", where, describeKind(apiVersion, kind), problem))
 	}
 
 	isSecret := groupKind == schema.GroupKind{Group: "", Kind: "Secret"}
@@ -169,6 +161,25 @@ func (v Validator) validateResource(scope string, index int, raw []byte) []strin
 	slices.Sort(variableProblems)
 
 	return append(problems, variableProblems...)
+}
+
+// scopeProblem returns why a template may not contain groupKind at version,
+// or "" when it is a namespaced kind the cluster serves.
+func (v Validator) scopeProblem(groupKind schema.GroupKind, version string) string {
+	if v.Mapper == nil {
+		return "is not installed in the cluster"
+	}
+
+	mapping, err := v.Mapper.RESTMapping(groupKind, version)
+	if err != nil {
+		return "is not installed in the cluster; a CRD installed after the gateway started needs a gateway restart"
+	}
+
+	if mapping.Scope.Name() != meta.RESTScopeNameNamespace {
+		return "is cluster-scoped; templates may contain only namespaced kinds"
+	}
+
+	return ""
 }
 
 // instanceIDVariable is the variable that tells instances apart in the shared
@@ -205,8 +216,8 @@ func validateSharedNames(template *v1alpha1.MCPServerTemplate) []string {
 
 		groupKind := schema.GroupKind{Group: groupVersion.Group, Kind: kind}
 
-		if groupKind == CiliumNetworkPolicy {
-			problems = append(problems, where+": a CiliumNetworkPolicy is not allowed in a shared namespace, because toolgate can't check its selectors.")
+		if !sharedNamespaceKinds[groupKind] {
+			problems = append(problems, where+": a "+kind+" is not allowed in a shared namespace, because toolgate can't check its names and selectors.")
 
 			continue
 		}
