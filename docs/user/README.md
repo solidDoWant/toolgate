@@ -62,7 +62,11 @@ Your admin can mark a server or a tool as `opt-in`. To use it from your own mach
 4. Click "Create grant".
 5. Ask Claude to try again.
 
-The page `/ui/grants` lists your grants. To stop a grant early, click "Revoke".
+The refusal that sends you here says that the server or tool "needs a grant on a signed-in user's machine", and gives the link to the form. A grant that you create for one session works only in that session. A grant without a session works in all your sessions. Creating a grant needs a fresh sign-in. Revoking one does not.
+
+The page `/ui/grants` lists your grants. To stop a grant early, click "Revoke". The tools of the server leave Claude's tool list a few seconds after a grant ends.
+
+If the grant form says that you have no access, or the grant does not match you, your admin must check that the web UI and `toolgate login` give you the same subject (`sub`). See [The web UI](../admin/web-ui.md#make-the-oidc-client).
 
 ## Tool calls
 
@@ -85,6 +89,8 @@ Your admin can mark a tool so that each call needs your approval. When Claude ca
 3. If you signed in more than 4 minutes ago, click "Sign in again to continue" first.
 4. Click Approve to let the call through, or click Deny to refuse it.
 5. Ask Claude to call the tool again with the same arguments.
+
+If your client does not support URL elicitation (a request from the gateway to open a web page), the call fails at once with this message, and you open the address yourself. If the gateway has no web UI, the message says "needs approval, but this gateway has no web UI. Ask an admin." If you do not decide in time, the request expires and the call fails. Ask Claude to call the tool again to make a new request.
 
 An approval lets one call through. It stays usable for the approval timeout that your admin set, 10 minutes by default. The page `/ui/approvals` lists all your requests that wait for approval. Only you can see and decide your own requests.
 
@@ -195,6 +201,8 @@ toolgate checks each request. If it refuses a request, Claude gets a short messa
 | Server "NAME" can be used only from an attested environment, not from a signed-in user's machine. | The server works only from pods in Kubernetes, not from your computer. The message can also name one tool. | Use the server from an allowed pod, or ask your admin. |
 | Tool "NAME" is blocked by the server's template. | Your admin turned off this tool for all users. | Do the task in a different way. |
 | Refused by rule NAMESPACE/NAME: REASON | A rule of your admin refused the call. The message gives the name of the rule and the reason that your admin wrote. | If you think that the rule is wrong, give your admin the name of the rule. |
+| NAME needs a grant on a signed-in user's machine. Create one at URL, then try again. | Your admin marked the server or tool `opt-in`. | Create a grant. See [Grants](#grants). |
+| Tool `NAME` needs approval. Approve request `ID` at URL, then call the tool again with the same arguments. | Each call of this tool needs your approval. | See [Approve a tool call](#approve-a-tool-call). |
 | Secret `NAME` isn't set. Run `toolgate secret set NAME`. | The server needs a secret from you. | Run the command, and then turn on the server again. See [Set your secrets](#set-your-secrets). |
 | You already have 20 servers running, the limit for each user. | You reached the number of servers that one user can run. | Turn off servers that you do not use, or wait until idle servers stop. |
 | The gateway is already running its limit of 200 servers. | The gateway runs as many servers as it can. | Try again later, or ask your admin. |
