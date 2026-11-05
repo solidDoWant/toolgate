@@ -372,8 +372,11 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 			recorder: audit.NewRecorder(stdout, db.New(server.Database())),
 			logger:   logger,
 		},
-		Logger:  logger,
-		Servers: servers,
+		Logger:          logger,
+		Servers:         servers,
+		ApprovalTimeout: time.Duration(cfg.ApprovalTimeout),
+		AuditPayloads:   cfg.AuditPayloads,
+		AuditOutput:     stdout,
 	}
 
 	// A gateway without a secrets keyset has no Secrets page.

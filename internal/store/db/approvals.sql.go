@@ -242,6 +242,52 @@ func (q *Queries) GetApproval(ctx context.Context, id string) (Approval, error) 
 	return i, err
 }
 
+const getApprovalOfPrincipal = `-- name: GetApprovalOfPrincipal :one
+SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at, s.session_id,
+       (approvals.expires_at <= now())::boolean AS past_expiry
+FROM approvals
+JOIN sessions s ON s.id = approvals.session_pk
+WHERE approvals.id = $1 AND approvals.principal = $2
+`
+
+type GetApprovalOfPrincipalParams struct {
+	ID        string
+	Principal string
+}
+
+type GetApprovalOfPrincipalRow struct {
+	Approval   Approval
+	SessionID  string
+	PastExpiry bool
+}
+
+// Returns one approval only when it belongs to principal, with its
+// session's client session ID. past_expiry is computed with PostgreSQL's
+// clock.
+func (q *Queries) GetApprovalOfPrincipal(ctx context.Context, arg GetApprovalOfPrincipalParams) (GetApprovalOfPrincipalRow, error) {
+	row := q.db.QueryRow(ctx, getApprovalOfPrincipal, arg.ID, arg.Principal)
+	var i GetApprovalOfPrincipalRow
+	err := row.Scan(
+		&i.Approval.ID,
+		&i.Approval.Principal,
+		&i.Approval.SessionPk,
+		&i.Approval.Workspace,
+		&i.Approval.TemplateNs,
+		&i.Approval.TemplateName,
+		&i.Approval.Tool,
+		&i.Approval.ArgumentsSha256,
+		&i.Approval.Status,
+		&i.Approval.CreatedAt,
+		&i.Approval.ExpiresAt,
+		&i.Approval.DecidedAt,
+		&i.Approval.DecidedBy,
+		&i.Approval.UsedAt,
+		&i.SessionID,
+		&i.PastExpiry,
+	)
+	return i, err
+}
+
 const getMatchingApproval = `-- name: GetMatchingApproval :one
 SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at,
        (status = 'approved' AND used_at IS NULL AND expires_at > now())::boolean AS usable
@@ -396,6 +442,58 @@ func (q *Queries) ListOverdueApprovals(ctx context.Context) ([]ListOverdueApprov
 			&i.Tool,
 			&i.SessionID,
 			&i.Attestation,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingApprovalsOfPrincipal = `-- name: ListPendingApprovalsOfPrincipal :many
+SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at, s.session_id
+FROM approvals
+JOIN sessions s ON s.id = approvals.session_pk
+WHERE approvals.principal = $1 AND approvals.status = 'pending' AND approvals.expires_at > now()
+ORDER BY approvals.created_at DESC, approvals.id DESC
+LIMIT 100
+`
+
+type ListPendingApprovalsOfPrincipalRow struct {
+	Approval  Approval
+	SessionID string
+}
+
+// Lists a principal's pending approvals that haven't expired, newest
+// first, with their session's client session ID, for the Approvals page.
+func (q *Queries) ListPendingApprovalsOfPrincipal(ctx context.Context, principal string) ([]ListPendingApprovalsOfPrincipalRow, error) {
+	rows, err := q.db.Query(ctx, listPendingApprovalsOfPrincipal, principal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPendingApprovalsOfPrincipalRow{}
+	for rows.Next() {
+		var i ListPendingApprovalsOfPrincipalRow
+		if err := rows.Scan(
+			&i.Approval.ID,
+			&i.Approval.Principal,
+			&i.Approval.SessionPk,
+			&i.Approval.Workspace,
+			&i.Approval.TemplateNs,
+			&i.Approval.TemplateName,
+			&i.Approval.Tool,
+			&i.Approval.ArgumentsSha256,
+			&i.Approval.Status,
+			&i.Approval.CreatedAt,
+			&i.Approval.ExpiresAt,
+			&i.Approval.DecidedAt,
+			&i.Approval.DecidedBy,
+			&i.Approval.UsedAt,
+			&i.SessionID,
 		); err != nil {
 			return nil, err
 		}

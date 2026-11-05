@@ -92,3 +92,23 @@ FROM approvals
 WHERE id = @id AND principal = @principal AND session_pk = @session_pk
   AND template_ns = @template_ns AND template_name = @template_name
   AND tool = @tool AND arguments_sha256 = @arguments_sha256;
+
+-- name: ListPendingApprovalsOfPrincipal :many
+-- Lists a principal's pending approvals that haven't expired, newest
+-- first, with their session's client session ID, for the Approvals page.
+SELECT sqlc.embed(approvals), s.session_id
+FROM approvals
+JOIN sessions s ON s.id = approvals.session_pk
+WHERE approvals.principal = @principal AND approvals.status = 'pending' AND approvals.expires_at > now()
+ORDER BY approvals.created_at DESC, approvals.id DESC
+LIMIT 100;
+
+-- name: GetApprovalOfPrincipal :one
+-- Returns one approval only when it belongs to principal, with its
+-- session's client session ID. past_expiry is computed with PostgreSQL's
+-- clock.
+SELECT sqlc.embed(approvals), s.session_id,
+       (approvals.expires_at <= now())::boolean AS past_expiry
+FROM approvals
+JOIN sessions s ON s.id = approvals.session_pk
+WHERE approvals.id = @id AND approvals.principal = @principal;

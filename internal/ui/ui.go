@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -144,6 +145,14 @@ type Options struct {
 	// Secrets leaves the page out.
 	Secrets SecretStore
 	Auditor secrets.Recorder
+	// ApprovalTimeout is how long an approved call stays usable
+	// (`approvalTimeout`). Zero means DefaultApprovalTimeout.
+	ApprovalTimeout time.Duration
+	// AuditPayloads reports whether audit payloads are on.
+	AuditPayloads bool
+	// AuditOutput receives the audit lines of approval decisions. Nil
+	// discards them; the rows are written either way.
+	AuditOutput io.Writer
 }
 
 // UI is the web UI. Create it with New.
@@ -217,6 +226,8 @@ func New(options Options, registrar Registrar) *UI {
 		u.Handle("POST /ui/secrets/{name}/delete", User, http.HandlerFunc(u.deleteSecret))
 	}
 
+	u.registerApprovals()
+
 	return u
 }
 
@@ -243,11 +254,18 @@ func (u *UI) Routes() []Route {
 // redirected to sign-in and anything else gets 401. An Admin handler gives
 // 403 to a session outside the admin group.
 func (u *UI) Handle(pattern string, access Access, handler http.Handler) {
-	u.handle(pattern, access, MaxFormBytes, handler)
+	u.route(pattern, access, MaxFormBytes, nil, handler)
 }
 
 // handle is Handle with a body limit of limit bytes.
 func (u *UI) handle(pattern string, access Access, limit int64, handler http.Handler) {
+	u.route(pattern, access, limit, nil, handler)
+}
+
+// route registers a route with a body limit of limit bytes. A GET without a
+// session is sent to signIn(request), or to a normal sign-in that returns to
+// the page when signIn is nil.
+func (u *UI) route(pattern string, access Access, limit int64, signIn func(*http.Request) string, handler http.Handler) {
 	u.mu.Lock()
 	u.routes = append(u.routes, Route{Pattern: pattern, Access: access})
 	u.mu.Unlock()
@@ -256,7 +274,7 @@ func (u *UI) handle(pattern string, access Access, limit int64, handler http.Han
 	case Public:
 		u.registrar.HandlePublic(pattern, protect(handler, limit))
 	case User, Admin:
-		u.registrar.Handle(pattern, protect(u.requireSession(access, requireCSRFToken(handler)), limit))
+		u.registrar.Handle(pattern, protect(u.requireSession(access, signIn, requireCSRFToken(handler)), limit))
 	default:
 		panic(fmt.Sprintf("ui: route %s has an unknown access level %d", pattern, access))
 	}
@@ -288,12 +306,17 @@ func SessionFrom(ctx context.Context) (Session, bool) {
 	return session, ok
 }
 
-func (u *UI) requireSession(access Access, next http.Handler) http.Handler {
+func (u *UI) requireSession(access Access, signIn func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		session, err := u.loadSession(request)
 		if errors.Is(err, errNoSession) {
 			if request.Method == http.MethodGet || request.Method == http.MethodHead {
-				http.Redirect(writer, request, LoginPath+"?"+url.Values{"return_to": {request.URL.RequestURI()}}.Encode(), http.StatusSeeOther)
+				target := LoginPath + "?" + url.Values{"return_to": {request.URL.RequestURI()}}.Encode()
+				if signIn != nil {
+					target = signIn(request)
+				}
+
+				http.Redirect(writer, request, target, http.StatusSeeOther)
 
 				return
 			}
