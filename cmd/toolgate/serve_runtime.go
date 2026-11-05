@@ -89,11 +89,21 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, re
 		Metrics: metrics,
 	}
 
+	// The sweep deletes namespaces that belong to no live instance on every
+	// pass, starting with the pass on gaining the Lease.
+	sweep := &runtime.Sweep{
+		Pool:    pool,
+		Reader:  mgr.GetAPIReader(),
+		Deleter: reconciler,
+		Log:     logger,
+	}
+
 	// This process doesn't read the template catalog yet, and judging
 	// instances against an empty catalog would stop them all, so it makes
-	// no stop decisions. Failed instances are still torn down.
+	// no stop decisions and sends no instance back to pending. Failed
+	// instances are still torn down.
 	queries := db.New(pool)
-	reconciler.Pass = teardown.Pass(queries, runtime.FullPass(queries, logger, teardown.Step))
+	reconciler.Pass = sweep.Pass(teardown.Pass(queries, runtime.FullPass(queries, logger, teardown.Step)))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

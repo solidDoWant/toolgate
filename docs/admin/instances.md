@@ -23,6 +23,16 @@ toolgate deletes the namespace `tg-<instance id>` of the instance. Kubernetes th
 
 A failed instance is removed at once. The database keeps the record of a stopped instance for 7 days, and then deletes it.
 
+## Recovery after a restart or a leader change
+
+The replica that holds the leader Lease compares Kubernetes with the database every 30 seconds. It does this also when it takes the Lease after a restart or after the previous holder stopped. It lists the instance namespaces first, and then reads the instance records:
+
+- If a namespace has the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/instance`, but no running instance has that ID, toolgate deletes the namespace.
+- If the namespace of a starting or ready instance is missing, toolgate starts the instance again from the current version of its template.
+- If an instance was stopping, toolgate deletes its namespace again.
+
+Do not put the label `toolgate.soliddowant.dev/instance` on namespaces that you make yourself. toolgate deletes them.
+
 ## Metrics
 
 The gateway serves these metrics on its metrics port. Only the replica that holds the leader Lease sets them. The other replicas report `0`.
