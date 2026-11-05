@@ -13,6 +13,11 @@ permissions:
 # One group per branch. PRs: a newer push cancels the older run. master: the
 # running run always finishes, and of the commits merged meanwhile only the
 # newest waits. A cancelled *pending* master run is expected, not a failure.
+# The acceptance phases the e2e-scoreboard job scores: every phase up to the
+# current one. Add a phase here when it starts.
+env:
+  ACCEPTANCE_PHASES: "1 2"
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
