@@ -243,7 +243,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 | `toolgate admin rewrap` | 1 | §11 |
 | `toolgate audit tail`, `toolgate sessions` | 3 | |
 
-**Workspace ID (user attestation):** `toolgate headers` sends `TOOLGATE_WORKSPACE` if set. Otherwise it sends `<hostname>/<git remote repo name or directory name>`, normalised to the header pattern.
+**Workspace ID (user attestation):** `toolgate headers` sends `TOOLGATE_WORKSPACE` if set. Otherwise it sends `<hostname>/<git remote repo name or directory name>`, normalised to the header pattern: each character outside `[A-Za-z0-9._-]` becomes `-`, and the value is cut to 128 characters. The repo name is the last path element of the remote `origin`, without `.git`.
 
 **Session ID:** from a file the SessionStart hook writes. Claude Code doesn't give the session ID to a `headersHelper`: `CLAUDE_CODE_SESSION_ID` isn't in its environment. It gives it to a SessionStart hook, on standard input (`session_id`) and in `CLAUDE_CODE_SESSION_ID`. Evidence: [`docs/dev/claude-code-integration.md`](docs/dev/claude-code-integration.md). So `toolgate hook session-start` writes the session ID to `$XDG_RUNTIME_DIR/toolgate/<claude pid>` (or a directory under the user cache directory when that variable isn't set) before anything else, and `toolgate headers` reads it by walking its parent processes to the Claude Code process. Claude Code runs the hook and the helper at the same time, so `toolgate headers` waits up to 5 s for the file to appear. The design gives the details (`docs/design/phase-1.md` §8).
 

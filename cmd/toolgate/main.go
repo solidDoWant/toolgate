@@ -14,6 +14,7 @@ const usage = `Usage: toolgate <command>
 
 Commands:
   login     Sign in (login [--gateway URL])
+  headers   Print the request headers for Claude Code's headersHelper
   logout    Remove the stored sign-in token
   serve     Run the gateway (serve --config FILE)
   admin     Admin commands (admin rewrap --config FILE)
@@ -42,6 +43,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return signIn(args[1:], stdout, stderr)
 	case "status":
 		return status(stdout, stderr)
+	case "headers":
+		return printHeaders(args[1:], stdout, stderr)
 	case "logout":
 		return logout(stdout, stderr)
 	case "serve":

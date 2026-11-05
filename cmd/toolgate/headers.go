@@ -1,0 +1,95 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+
+	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/client/headers"
+	"github.com/solidDoWant/toolgate/internal/client/login"
+	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
+)
+
+// noSessionMessage is printed when no Claude Code session is found.
+const noSessionMessage = "No Claude Code session found. Start Claude Code with the toolgate plugin, or set TOOLGATE_SESSION."
+
+// printHeaders runs `toolgate headers`: it prints the headers for Claude
+// Code's headersHelper as a JSON object and returns the exit code.
+func printHeaders(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "toolgate headers: unexpected argument %q\n", args[0])
+
+		return 2
+	}
+
+	values, err := buildHeaders(context.Background())
+	if errors.Is(err, headers.ErrNoSession) {
+		_, _ = fmt.Fprintln(stderr, noSessionMessage)
+
+		return 1
+	}
+
+	if errors.Is(err, login.ErrNotSignedIn) || errors.Is(err, tokenstore.ErrNotFound) {
+		_, _ = fmt.Fprintln(stderr, "toolgate headers: not signed in. Run toolgate login.")
+
+		return 1
+	}
+
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "toolgate headers: %v\n", err)
+
+		return 1
+	}
+
+	if err := json.NewEncoder(stdout).Encode(values); err != nil {
+		_, _ = fmt.Fprintf(stderr, "toolgate headers: %v\n", err)
+
+		return 1
+	}
+
+	return 0
+}
+
+func buildHeaders(ctx context.Context) (map[string]string, error) {
+	// The session is looked up first: without one, no headers are printed
+	// and the IdP is not asked for a token.
+	session, err := headers.FindSession(ctx, headers.SessionOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	dir, err := configDir()
+	if err != nil {
+		return nil, err
+	}
+
+	settings, err := login.LoadSettings(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := headers.AccessToken(ctx, nil, settings, tokenstore.New(dir))
+	if err != nil {
+		return nil, err
+	}
+
+	workingDir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("read the working directory: %w", err)
+	}
+
+	workspace, err := headers.Workspace(ctx, workingDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]string{
+		"Authorization":      "Bearer " + accessToken,
+		auth.SessionHeader:   session,
+		auth.WorkspaceHeader: workspace,
+	}, nil
+}

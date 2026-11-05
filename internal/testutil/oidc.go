@@ -128,9 +128,11 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 	}
 
 	config := &op.Config{
-		CryptoKey:          sha256.Sum256([]byte("toolgate fake OIDC provider")),
-		CodeMethodS256:     true,
-		SupportedUILocales: []language.Tag{language.English},
+		CryptoKey:      sha256.Sum256([]byte("toolgate fake OIDC provider")),
+		CodeMethodS256: true,
+		// The CLI keeps a refresh token and gets each access token with it.
+		GrantTypeRefreshToken: true,
+		SupportedUILocales:    []language.Tag{language.English},
 		DeviceAuthorization: op.DeviceAuthorizationConfig{
 			Lifetime:     5 * time.Minute,
 			PollInterval: time.Second,
@@ -383,6 +385,33 @@ func (s *oidcStorage) GetClientByClientID(_ context.Context, clientID string) (o
 
 	return s.client, nil
 }
+
+// TokenRequestByRefreshToken names the device client in the refresh token's
+// request. The example storage records no client for tokens issued by the
+// device grant, and the provider refuses a refresh whose request names a
+// different client from the caller.
+func (s *oidcStorage) TokenRequestByRefreshToken(ctx context.Context, refreshToken string) (op.RefreshTokenRequest, error) {
+	request, err := s.Storage.TokenRequestByRefreshToken(ctx, refreshToken)
+	if err != nil {
+		return nil, err
+	}
+
+	if request.GetClientID() != "" {
+		return request, nil
+	}
+
+	return deviceRefreshRequest{RefreshTokenRequest: request, clientID: s.client.id}, nil
+}
+
+// deviceRefreshRequest is a refresh token's request with the device client
+// as its client.
+type deviceRefreshRequest struct {
+	op.RefreshTokenRequest
+
+	clientID string
+}
+
+func (r deviceRefreshRequest) GetClientID() string { return r.clientID }
 
 func (s *oidcStorage) AuthorizeClientIDSecret(context.Context, string, string) error {
 	return errors.New("the device client is public and has no secret")
