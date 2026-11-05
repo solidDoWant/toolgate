@@ -59,6 +59,9 @@ config:
     # -- Group whose members are web UI admins. Empty means nobody is an
     # admin.
     adminGroup: ""
+    # -- How long a call that needs approval waits for a person, and how long
+    # an approved request stays usable, as a Go duration from `1m` to `1h`.
+    approvalTimeout: 10m
 
   # -- Namespaces whose `MCPServerTemplate` and `ToolgateRule` objects the
   # gateway reads, such as `[toolgate-catalog]`. Empty means the release

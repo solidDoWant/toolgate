@@ -91,6 +91,10 @@ type metaTools struct {
 	instanceLimitPerUser int
 	instanceLimit        int
 	sharedNamespace      string
+	// approvalURL returns the web UI link of an approval; nil means the
+	// gateway has no web UI.
+	approvalURL     func(id string) string
+	approvalTimeout time.Duration
 }
 
 func (m *metaTools) register(server *mcp.Server) {

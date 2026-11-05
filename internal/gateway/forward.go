@@ -224,6 +224,10 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
 	}
 
+	if decision.NeedsApproval {
+		return m.callWithApproval(ctx, current, request, template, tool)
+	}
+
 	// Step 4: the allow is committed before anything is forwarded. With
 	// payloads on, the arguments are stored first; a call whose arguments
 	// can't be stored is refused.
@@ -243,9 +247,18 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return nil, fmt.Errorf("The call wasn't forwarded: the gateway can't record it. Try again later. (%w)", err) //nolint:staticcheck // A sentence for the model.
 	}
 
+	return m.forwardAndRecord(ctx, current, instance, template, tool, request.Params.Arguments)
+}
+
+// forwardAndRecord is phase 1 call steps 5 and 6: it forwards an allowed
+// call to instance and writes tool.result.
+func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, error) {
+	server := template.Name
+	recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
+
 	// Step 5.
 	started := time.Now()
-	result, outcome := m.forward(ctx, instance, template, tool, request.Params.Arguments)
+	result, outcome := m.forward(ctx, instance, template, tool, arguments)
 
 	// Step 6. A result that can't be stored is still returned; the row
 	// records why its payload is missing.
