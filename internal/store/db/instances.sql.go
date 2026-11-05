@@ -345,7 +345,7 @@ func (q *Queries) SetInstanceFailed(ctx context.Context, arg SetInstanceFailedPa
 
 const setInstancePending = `-- name: SetInstancePending :execrows
 UPDATE instances
-SET status = 'pending', generation = $1, updated_at = now()
+SET status = 'pending', generation = $1, attempt_started_at = now(), updated_at = now()
 WHERE id = $2 AND status = $3
 `
 
@@ -356,7 +356,8 @@ type SetInstancePendingParams struct {
 }
 
 // Sends a starting or ready instance whose objects are missing back to
-// pending, at the template's current generation.
+// pending, at the template's current generation. The start attempt begins
+// again, so startTimeout is measured from now.
 func (q *Queries) SetInstancePending(ctx context.Context, arg SetInstancePendingParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setInstancePending, arg.Generation, arg.ID, arg.FromStatus)
 	if err != nil {
