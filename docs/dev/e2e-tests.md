@@ -98,6 +98,7 @@ The chart is in the registry of the cluster at `TOOLGATE_E2E_CHART_REPOSITORY`, 
 - `TOOLGATE_E2E_OIDC_LISTEN` and `TOOLGATE_E2E_OIDC_ISSUER`: the listen address and the issuer URL of the fake identity provider.
 - `TOOLGATE_E2E_OTLP_LISTEN`: the listen address of the test OTLP receiver. The test process runs it and collects the spans that the gateway sends. The chart's `config.otlpEndpoint` points to it.
 - `TOOLGATE_E2E_S3_ENDPOINT`: the URL of the S3 server in the cluster.
+- `TOOLGATE_E2E_UI_LISTEN`: a loopback address. The chart's `config.ui.publicURL` is `https://` and this address, and `config.ui.clientID` is `toolgate-ui`. A browser test calls `webUI(t, endpoint)`, which serves a TLS proxy to a gateway pod at this address. The fake identity provider allows the callback on `https://127.0.0.1:*`.
 - `TOOLGATE_E2E_WORKLOAD_NAMESPACE`: a namespace for test pods. The gateway accepts the service account tokens of pods in this namespace, so a test can connect as an attested workload.
 - `TOOLGATE_E2E_CHART_REPOSITORY`: the OCI repository of the test chart, as Flux in the cluster reaches it.
 

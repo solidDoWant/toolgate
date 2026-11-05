@@ -85,6 +85,43 @@ func (q *Queries) GetInstance(ctx context.Context, id string) (Instance, error) 
 	return i, err
 }
 
+const getInstanceForUpdate = `-- name: GetInstanceForUpdate :one
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at FROM instances WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetInstanceForUpdate(ctx context.Context, id string) (Instance, error) {
+	row := q.db.QueryRow(ctx, getInstanceForUpdate, id)
+	var i Instance
+	err := row.Scan(
+		&i.ID,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.TemplateUid,
+		&i.Generation,
+		&i.Scope,
+		&i.ScopeKey,
+		&i.OwnerPrincipal,
+		&i.RenderSession,
+		&i.Desired,
+		&i.Status,
+		&i.Reason,
+		&i.Namespace,
+		&i.Tools,
+		&i.SecretsUsed,
+		&i.CreatedAt,
+		&i.AttemptStartedAt,
+		&i.ReadyAt,
+		&i.FailedAt,
+		&i.LastUsedAt,
+		&i.UpdatedAt,
+		&i.TraceContext,
+		&i.RestartRequestedAt,
+		&i.RestartRequestedBy,
+		&i.ResolvedExpiresAt,
+	)
+	return i, err
+}
+
 const getLiveInstance = `-- name: GetLiveInstance :one
 SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at FROM instances
 WHERE template_ns = $1 AND template_name = $2 AND scope_key = $3
@@ -214,6 +251,80 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 		arg.RenderSession,
 		arg.Namespace,
 		arg.TraceContext,
+	)
+	var i Instance
+	err := row.Scan(
+		&i.ID,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.TemplateUid,
+		&i.Generation,
+		&i.Scope,
+		&i.ScopeKey,
+		&i.OwnerPrincipal,
+		&i.RenderSession,
+		&i.Desired,
+		&i.Status,
+		&i.Reason,
+		&i.Namespace,
+		&i.Tools,
+		&i.SecretsUsed,
+		&i.CreatedAt,
+		&i.AttemptStartedAt,
+		&i.ReadyAt,
+		&i.FailedAt,
+		&i.LastUsedAt,
+		&i.UpdatedAt,
+		&i.TraceContext,
+		&i.RestartRequestedAt,
+		&i.RestartRequestedBy,
+		&i.ResolvedExpiresAt,
+	)
+	return i, err
+}
+
+const insertReplacementInstance = `-- name: InsertReplacementInstance :one
+INSERT INTO instances (
+    id, template_ns, template_name, template_uid, generation, scope, scope_key,
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7,
+    $8, $9, $10, $11, now(), $12
+)
+RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at
+`
+
+type InsertReplacementInstanceParams struct {
+	ID             string
+	TemplateNs     string
+	TemplateName   string
+	TemplateUid    string
+	Generation     int64
+	Scope          string
+	ScopeKey       string
+	OwnerPrincipal string
+	RenderSession  pgtype.Int8
+	Namespace      string
+	TraceContext   string
+	LastUsedAt     pgtype.Timestamptz
+}
+
+// Inserts the pending row that replaces an instance. last_used_at is carried
+// over from the old row, so a replacement doesn't count as use.
+func (q *Queries) InsertReplacementInstance(ctx context.Context, arg InsertReplacementInstanceParams) (Instance, error) {
+	row := q.db.QueryRow(ctx, insertReplacementInstance,
+		arg.ID,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.TemplateUid,
+		arg.Generation,
+		arg.Scope,
+		arg.ScopeKey,
+		arg.OwnerPrincipal,
+		arg.RenderSession,
+		arg.Namespace,
+		arg.TraceContext,
+		arg.LastUsedAt,
 	)
 	var i Instance
 	err := row.Scan(
@@ -382,6 +493,27 @@ type LockInstanceScopeParams struct {
 func (q *Queries) LockInstanceScope(ctx context.Context, arg LockInstanceScopeParams) error {
 	_, err := q.db.Exec(ctx, lockInstanceScope, arg.TemplateNs, arg.TemplateName, arg.ScopeKey)
 	return err
+}
+
+const requestInstanceRestart = `-- name: RequestInstanceRestart :execrows
+UPDATE instances
+SET restart_requested_at = now(), restart_requested_by = $1, updated_at = now()
+WHERE id = $2 AND desired = 'running' AND status = 'ready'
+`
+
+type RequestInstanceRestartParams struct {
+	RequestedBy pgtype.Text
+	ID          string
+}
+
+// Records a restart request from the web UI. Only a live, ready instance
+// matches; the reconciler replaces it.
+func (q *Queries) RequestInstanceRestart(ctx context.Context, arg RequestInstanceRestartParams) (int64, error) {
+	result, err := q.db.Exec(ctx, requestInstanceRestart, arg.RequestedBy, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setInstanceDesiredStopped = `-- name: SetInstanceDesiredStopped :execrows

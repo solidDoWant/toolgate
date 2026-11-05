@@ -40,7 +40,12 @@ func run(m *testing.M) int {
 			return 1
 		}
 
-		identityProvider, err = testutil.NewOIDCProvider(testutil.OIDCOptions{Listener: listener, Issuer: issuer})
+		identityProvider, err = testutil.NewOIDCProvider(testutil.OIDCOptions{
+			Listener: listener, Issuer: issuer,
+			// The gateway's web UI, behind the test's TLS proxy, and the
+			// browser harness's direct port-forward.
+			UIRedirectURIs: []string{"https://127.0.0.1:*/ui/auth/callback", testutil.DefaultOIDCUIRedirectURI},
+		})
 		if err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "e2e: fake identity provider: %v\n", err)
 

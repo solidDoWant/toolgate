@@ -49,6 +49,10 @@ Set `config.ui.adminGroup` to the group whose members are admins in the UI. If i
 - The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason.
 - The running instances of the user. An admin also sees the shared instances. Each instance shows its status and if it runs an old version of its template.
 
+An instance is outdated when it runs an old version of its template. A ready, outdated instance has a Restart button. The owner of the instance can use it. For a shared instance, only an admin can use it. The gateway then starts a new instance from the current version of the template and stops the old one. Sessions keep the server enabled. The tools of the server leave the tool list while the new instance starts, and come back when it is ready. The audit log gets an `instance.stop` event with the reason `restart` and the user who asked for it.
+
+If the instance stopped or changed before the request arrived, the page tells the user and shows the current list. If the template was deleted, or the owner lost access, or the instance is idle with no session that uses it, the gateway stops the instance and does not start a new one.
+
 The navigation shows the Blocks link only to admins.
 
 ## The Audit page
