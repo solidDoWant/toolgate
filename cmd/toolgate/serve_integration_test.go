@@ -21,6 +21,9 @@ import (
 // startServe runs `toolgate serve` against the database at databaseURL,
 // with a fake identity provider. It returns the gateway's output and
 // its exit code channel, once the gateway logged that it started.
+// Several tests here run serve, and so its controllers, in this one process.
+func init() { skipControllerNameValidation = true }
+
 func startServe(t *testing.T, databaseURL string) (*lockedBuffer, *lockedBuffer, chan int) {
 	t.Helper()
 	clearConfigEnv(t)
