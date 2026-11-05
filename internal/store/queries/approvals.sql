@@ -112,3 +112,19 @@ SELECT sqlc.embed(approvals), s.session_id,
 FROM approvals
 JOIN sessions s ON s.id = approvals.session_pk
 WHERE approvals.id = @id AND approvals.principal = @principal;
+
+-- name: GetApprovalForWait :one
+-- Returns an approval and whether its expires_at has passed, by
+-- PostgreSQL's clock, for a call waiting on it.
+SELECT sqlc.embed(approvals), (expires_at <= now())::boolean AS overdue
+FROM approvals
+WHERE id = @id;
+
+-- name: ExpireDueApproval :one
+-- Marks a pending approval expired once its expires_at has passed. It
+-- returns no row when the approval isn't pending any more or hasn't
+-- expired yet.
+UPDATE approvals
+SET status = 'expired'
+WHERE id = @id AND status = 'pending' AND expires_at <= now()
+RETURNING *;

@@ -115,13 +115,18 @@ func (m *metaTools) callWithApproval(ctx context.Context, current requestContext
 	// Step 6 starts again at step 1 once when another call used the
 	// approval first.
 	for attempt := 0; ; attempt++ {
-		approval, usable, result, err := m.findOrRequestApproval(ctx, call)
+		found, result, err := m.findOrRequestApproval(ctx, call)
 		if result != nil || err != nil {
 			return result, err
 		}
 
-		if !usable {
-			return m.awaitApproval(ctx, call, approval)
+		approval := found.approval
+
+		if !found.usable {
+			approval, result, err = m.awaitApproval(ctx, call, found)
+			if result != nil || err != nil {
+				return result, err
+			}
 		}
 
 		result, used, err := m.useApproval(ctx, call, approval)
@@ -136,21 +141,30 @@ func (m *metaTools) callWithApproval(ctx context.Context, current requestContext
 	}
 }
 
-// awaitApproval is steps 3 to 5 of docs/design/phase-2.md §4 for an
-// approval that isn't usable yet. Without elicitation, it is step 3: the
-// call fails with a link to the approval, which stays pending for a retry.
-func (m *metaTools) awaitApproval(ctx context.Context, call approvalCall, approval db.Approval) (*mcp.CallToolResult, error) {
+// refusePending is step 3 of docs/design/phase-2.md §4: the call fails
+// with a link to the approval, which stays pending for a retry.
+func (m *metaTools) refusePending(ctx context.Context, call approvalCall, id string) (*mcp.CallToolResult, error) {
 	return m.refuseCall(ctx, call.current, call.server(), call.tool,
-		map[string]any{"reason": reasonApprovalPending, "approval": approval.ID},
+		map[string]any{"reason": reasonApprovalPending, "approval": id},
 		fmt.Sprintf("Tool `%s` needs approval. Approve request `%s` at %s, then call the tool again with the same arguments.",
-			call.proxiedName(), approval.ID, m.approvalURL(approval.ID)))
+			call.proxiedName(), id, m.approvalURL(id)))
+}
+
+// foundApproval is the approval step 1 of docs/design/phase-2.md §4 found
+// or inserted for a call.
+type foundApproval struct {
+	approval db.Approval
+	usable   bool
+	// inserted is true when step 1 inserted the approval, so the user
+	// hasn't seen it yet.
+	inserted bool
 }
 
 // findOrRequestApproval is step 1 of docs/design/phase-2.md §4: it finds
 // the call's approval, in the order the one named by RequestState, a usable
 // approved one, a pending one, or inserts a pending one. A non-nil result
 // ends the call.
-func (m *metaTools) findOrRequestApproval(ctx context.Context, call approvalCall) (db.Approval, bool, *mcp.CallToolResult, error) {
+func (m *metaTools) findOrRequestApproval(ctx context.Context, call approvalCall) (foundApproval, *mcp.CallToolResult, error) {
 	queries := db.New(m.database)
 
 	if id := call.request.Params.RequestState; id != "" {
@@ -161,14 +175,13 @@ func (m *metaTools) findOrRequestApproval(ctx context.Context, call approvalCall
 
 		switch {
 		case err == nil && row.Approval.Status == approvalExpired:
-			result, err := m.refuseCall(ctx, call.current, call.server(), call.tool,
-				map[string]any{"reason": reasonApprovalTimeout, "approval": id}, m.timeoutMessage(call, id))
+			result, err := m.refuseTimeout(ctx, call, id)
 
-			return db.Approval{}, false, result, err
+			return foundApproval{}, result, err
 		case err == nil && (row.Usable || row.Approval.Status == approvalPending):
-			return row.Approval, row.Usable, nil, nil
+			return foundApproval{approval: row.Approval, usable: row.Usable}, nil, nil
 		case err != nil && !errors.Is(err, pgx.ErrNoRows):
-			return db.Approval{}, false, nil, fmt.Errorf("read approval: %w", err)
+			return foundApproval{}, nil, fmt.Errorf("read approval: %w", err)
 		}
 	}
 
@@ -179,20 +192,20 @@ func (m *metaTools) findOrRequestApproval(ctx context.Context, call approvalCall
 
 	approval, err := queries.FindUsableApproval(ctx, find)
 	if err == nil {
-		return approval, true, nil, nil
+		return foundApproval{approval: approval, usable: true}, nil, nil
 	}
 
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return db.Approval{}, false, nil, fmt.Errorf("read approval: %w", err)
+		return foundApproval{}, nil, fmt.Errorf("read approval: %w", err)
 	}
 
 	approval, err = queries.FindPendingApproval(ctx, db.FindPendingApprovalParams(find))
 	if err == nil {
-		return approval, false, nil, nil
+		return foundApproval{approval: approval}, nil, nil
 	}
 
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return db.Approval{}, false, nil, fmt.Errorf("read approval: %w", err)
+		return foundApproval{}, nil, fmt.Errorf("read approval: %w", err)
 	}
 
 	return m.requestApproval(ctx, call)
@@ -204,10 +217,10 @@ var errApprovalLimit = errors.New("pending approval limit")
 
 // requestApproval inserts a pending approval and writes approval.request
 // with the canonical arguments as its payload, in one transaction.
-func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (db.Approval, bool, *mcp.CallToolResult, error) {
+func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (foundApproval, *mcp.CallToolResult, error) {
 	generated, err := uuid.NewV7()
 	if err != nil {
-		return db.Approval{}, false, nil, fmt.Errorf("approval ID: %w", err)
+		return foundApproval{}, nil, fmt.Errorf("approval ID: %w", err)
 	}
 
 	id := hex.EncodeToString(generated[:])
@@ -217,10 +230,10 @@ func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (db.
 		result, err := m.refuseCall(ctx, call.current, call.server(), call.tool,
 			map[string]any{"reason": reasonPayloadError, "payload_error": err.Error()}, messageNotRecorded)
 
-		return db.Approval{}, false, result, err
+		return foundApproval{}, result, err
 	}
 
-	var approval db.Approval
+	var found foundApproval
 
 	err = pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
 		queries := db.New(tx)
@@ -236,7 +249,7 @@ func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (db.
 			TemplateNs: call.template.Namespace, TemplateName: call.template.Name, Tool: call.tool, ArgumentsSha256: call.hash,
 		})
 		if err == nil {
-			approval = pending
+			found.approval = pending
 
 			return nil
 		}
@@ -245,7 +258,7 @@ func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (db.
 			return fmt.Errorf("read approval: %w", err)
 		}
 
-		approval, err = queries.InsertApprovalWithinLimit(ctx, db.InsertApprovalWithinLimitParams{
+		found.approval, err = queries.InsertApprovalWithinLimit(ctx, db.InsertApprovalWithinLimitParams{
 			ID: id, Principal: call.current.identity.Principal, SessionPk: call.current.session.ID,
 			Workspace: call.current.identity.Workspace, TemplateNs: call.template.Namespace, TemplateName: call.template.Name,
 			Tool: call.tool, ArgumentsSha256: call.hash,
@@ -260,6 +273,8 @@ func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (db.
 			return fmt.Errorf("insert approval: %w", err)
 		}
 
+		found.inserted = true
+
 		if err := audit.NewRecorder(m.auditOutput, queries).Record(ctx, event); err != nil {
 			return err
 		}
@@ -271,14 +286,14 @@ func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (db.
 		result, err := m.refuseCall(ctx, call.current, call.server(), call.tool, map[string]any{"reason": reasonApprovalLimit},
 			fmt.Sprintf("You have %d approvals waiting. Approve or deny some first.", PendingApprovalLimit))
 
-		return db.Approval{}, false, result, err
+		return foundApproval{}, result, err
 	}
 
 	if err != nil {
-		return db.Approval{}, false, nil, err
+		return foundApproval{}, nil, err
 	}
 
-	return approval, false, nil, nil
+	return found, nil, nil
 }
 
 // beforeApprovalUse, when set, runs before step 6 begins. Tests use it to
