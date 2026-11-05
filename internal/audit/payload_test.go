@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,8 @@ type fakeS3 struct {
 	locked     bool
 	putErr     error
 	puts       []*s3.PutObjectInput
+	// objects maps a key to its body, for GetObject.
+	objects map[string]string
 	// deleteRequests holds the keys of each DeleteObjects request.
 	deleteRequests [][]string
 	// deleteErrors maps a key to the error code S3 answers for it.
@@ -48,6 +51,18 @@ func (f *fakeS3) PutObject(_ context.Context, input *s3.PutObjectInput, _ ...fun
 	f.puts = append(f.puts, input)
 
 	return &s3.PutObjectOutput{}, nil
+}
+
+func (f *fakeS3) GetObject(_ context.Context, input *s3.GetObjectInput, _ ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	body, ok := f.objects[aws.ToString(input.Key)]
+	if !ok || aws.ToString(input.Bucket) != "audit" {
+		return nil, &types.NoSuchKey{}
+	}
+
+	return &s3.GetObjectOutput{Body: io.NopCloser(strings.NewReader(body))}, nil
 }
 
 func (f *fakeS3) DeleteObjects(_ context.Context, input *s3.DeleteObjectsInput, _ ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
@@ -261,4 +276,25 @@ func TestDeleteObjects(t *testing.T) {
 		require.Error(t, err)
 		assert.Equal(t, map[string]bool{"key-0": true, "key-1": true}, refused)
 	})
+}
+
+func TestOpenReadsTheObject(t *testing.T) {
+	payloads := newTestPayloads(t, &fakeS3{objects: map[string]string{"tg/payloads/x.json": `{"a":1}`}})
+
+	body, err := payloads.Open(t.Context(), "tg/payloads/x.json")
+	require.NoError(t, err)
+
+	defer func() { _ = body.Close() }()
+
+	content, err := io.ReadAll(body)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"a":1}`, string(content))
+
+	_, err = payloads.Open(t.Context(), "tg/payloads/missing.json")
+	require.Error(t, err)
+
+	var off *audit.Payloads
+
+	_, err = off.Open(t.Context(), "tg/payloads/x.json")
+	require.Error(t, err)
 }

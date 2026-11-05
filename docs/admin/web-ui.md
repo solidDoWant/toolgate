@@ -93,6 +93,8 @@ You can also set a time range. The default is the last 24 hours. A range can be 
 
 The link "Open" on a row shows one event at `/ui/audit/events/` followed by a key: the time in Unix microseconds, a hyphen, and the event ID. The event is shown to its principal and to admins. Anyone else gets 404, so the key tells them nothing.
 
+When audit payloads are on, the event page also shows the payload of the event. The gateway reads a payload from S3 itself and sends it to the browser. It makes no presigned URLs, so browsers do not need to reach S3. The page shows the first 1 MiB of the payload as text. Under it, "Download the payload" gives `/ui/audit/events/` followed by the key and `/payload`. That link downloads the whole payload as a JSON file. It has the headers `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`. The same people can open it as can open the event page.
+
 ## The Blocks page
 
 `/ui/blocks` is only for admins. A user who is not an admin gets 403.
@@ -131,4 +133,4 @@ Set `config.ui.approvalTimeout` to the time that a request waits for approval, f
 
 `/ui/approvals` lists the requests of the signed-in user that wait for approval, with the server, the tool, the session and the workspace. The list updates every 5 seconds. Each request has its own page, where the user approves or denies it. Approving needs a fresh sign-in. Denying does not, because it gives no access. Only the user who made the call can see or decide a request. Other users get 404, and admins also get 404. If a user opens an approval link without a UI session, the gateway sends the browser straight to a fresh sign-in.
 
-If two people or two browser tabs decide the same request, the first decision wins. The other page then shows the real status, for example "This approval expired." Each decision writes an `approval.approve` or `approval.deny` event to the audit log. When audit payloads are off, the approval page says "Arguments aren't shown because audit payloads are off."
+If two people or two browser tabs decide the same request, the first decision wins. The other page then shows the real status, for example "This approval expired." Each decision writes an `approval.approve` or `approval.deny` event to the audit log. When audit payloads are on, the approval page shows the arguments of the call, taken from the payload of the `approval.request` event. When audit payloads are off, the approval page says "Arguments aren't shown because audit payloads are off."

@@ -48,6 +48,14 @@ type auditEvent struct {
 	TraceID     string
 	RequestID   string
 	Details     string
+	// Payload is the first part of the payload, empty when there is none.
+	Payload string
+	// PayloadTruncated is true when Payload is not all of it.
+	PayloadTruncated bool
+	// PayloadNote explains a payload that can't be shown.
+	PayloadNote string
+	// HasPayload is true when the event has a payload to download.
+	HasPayload bool
 }
 
 // auditFilter is the form of the audit page.
@@ -296,5 +304,8 @@ func (u *UI) auditEventPage(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	u.render(writer, request, "audit_event", "Audit event", toAuditEvent(row))
+	event := toAuditEvent(row)
+	u.attachPayload(ctx, &event, occurredAt, id)
+
+	u.render(writer, request, "audit_event", "Audit event", event)
 }

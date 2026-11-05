@@ -10,7 +10,11 @@
 <dt>Expires</dt><dd>{{.Approval.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
 </dl>
 {{with .PayloadsOff}}<p class="note">{{.}}</p>
-{{end}}
+{{end}}{{with .ArgumentsNote}}<p class="note">{{.}}</p>
+{{end}}{{if .Arguments}}<h2>Arguments</h2>
+<pre id="arguments">{{.Arguments}}</pre>
+{{if .ArgumentsTruncated}}<p class="note">Only the first part of the arguments is shown.</p>
+{{end}}{{end}}
 {{if .Message}}<p class="status">{{.Message}}</p>
 {{else}}
 {{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>

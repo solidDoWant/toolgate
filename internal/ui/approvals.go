@@ -109,6 +109,12 @@ type approvalPage struct {
 	StepUpURL string
 	// PayloadsOff is the note shown in place of the arguments.
 	PayloadsOff string
+	// Arguments are the call's arguments from the approval.request payload.
+	Arguments string
+	// ArgumentsTruncated is true when Arguments is not all of them.
+	ArgumentsTruncated bool
+	// ArgumentsNote explains arguments that can't be shown.
+	ArgumentsNote string
 }
 
 // approvalDetail shows one of the user's approvals and, while it is
@@ -161,6 +167,9 @@ func (u *UI) renderApproval(writer http.ResponseWriter, request *http.Request, s
 
 	if !u.options.AuditPayloads {
 		data.PayloadsOff = payloadsOffMessage
+	} else {
+		shown := u.approvalArguments(request.Context(), row.Approval.ID, row.Approval.CreatedAt.Time)
+		data.Arguments, data.ArgumentsTruncated, data.ArgumentsNote = shown.text, shown.truncated, shown.note
 	}
 
 	u.renderStatus(writer, request, status, "approval", "Approval", data)

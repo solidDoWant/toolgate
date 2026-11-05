@@ -57,6 +57,35 @@ func (q *Queries) DeleteAuditEventsByKey(ctx context.Context, arg DeleteAuditEve
 	return result.RowsAffected(), nil
 }
 
+const getApprovalRequestPayload = `-- name: GetApprovalRequestPayload :one
+SELECT payload, payload_ref
+FROM audit_events
+WHERE type = 'approval.request'
+  AND occurred_at >= $1::timestamptz
+  AND details->>'approval' = $2::text
+ORDER BY occurred_at, id
+LIMIT 1
+`
+
+type GetApprovalRequestPayloadParams struct {
+	Since      pgtype.Timestamptz
+	ApprovalID string
+}
+
+type GetApprovalRequestPayloadRow struct {
+	Payload    []byte
+	PayloadRef string
+}
+
+// Returns the payload of the approval.request event of an approval. since
+// bounds the search to the partitions from when the approval was created.
+func (q *Queries) GetApprovalRequestPayload(ctx context.Context, arg GetApprovalRequestPayloadParams) (GetApprovalRequestPayloadRow, error) {
+	row := q.db.QueryRow(ctx, getApprovalRequestPayload, arg.Since, arg.ApprovalID)
+	var i GetApprovalRequestPayloadRow
+	err := row.Scan(&i.Payload, &i.PayloadRef)
+	return i, err
+}
+
 const getAuditEvent = `-- name: GetAuditEvent :one
 SELECT id, occurred_at, type, principal, workspace, session, attestation,
        server, tool, trace_id, request_id, details
@@ -102,6 +131,32 @@ func (q *Queries) GetAuditEvent(ctx context.Context, arg GetAuditEventParams) (G
 		&i.RequestID,
 		&i.Details,
 	)
+	return i, err
+}
+
+const getAuditEventPayload = `-- name: GetAuditEventPayload :one
+SELECT principal, payload, payload_ref
+FROM audit_events
+WHERE occurred_at = $1 AND id = $2
+`
+
+type GetAuditEventPayloadParams struct {
+	OccurredAt pgtype.Timestamptz
+	ID         int64
+}
+
+type GetAuditEventPayloadRow struct {
+	Principal  string
+	Payload    []byte
+	PayloadRef string
+}
+
+// Returns the payload of one audit event: inline JSON, or the S3 key in
+// payload_ref. Both are empty when the event has none.
+func (q *Queries) GetAuditEventPayload(ctx context.Context, arg GetAuditEventPayloadParams) (GetAuditEventPayloadRow, error) {
+	row := q.db.QueryRow(ctx, getAuditEventPayload, arg.OccurredAt, arg.ID)
+	var i GetAuditEventPayloadRow
+	err := row.Scan(&i.Principal, &i.Payload, &i.PayloadRef)
 	return i, err
 }
 

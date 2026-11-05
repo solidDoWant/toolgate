@@ -118,7 +118,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		engine.GrantURL = ui.GrantLink(cfg.PublicURL)
 
 		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), ruleView,
-			gateway.NewGrants(server.Database(), templates, stdout), broker, stdout, logger); err != nil {
+			gateway.NewGrants(server.Database(), templates, stdout), broker, payloads, stdout, logger); err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
 			return 1
@@ -350,7 +350,7 @@ const maxClientSecretBytes = 4 << 10
 
 // registerUI serves the web UI under `/ui/` and `GET /`. It reads the UI
 // client's secret, when one is configured, before the gateway starts.
-func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, rules ui.RuleSource, grants ui.GrantSource, broker *secrets.Broker, stdout io.Writer, logger *slog.Logger) error {
+func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, rules ui.RuleSource, grants ui.GrantSource, broker *secrets.Broker, payloads *audit.Payloads, stdout io.Writer, logger *slog.Logger) error {
 	var clientSecret string
 
 	if cfg.OIDCUIClientSecretFile != "" {
@@ -388,6 +388,11 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 		ApprovalTimeout: time.Duration(cfg.ApprovalTimeout),
 		AuditPayloads:   cfg.AuditPayloads,
 		AuditOutput:     stdout,
+	}
+
+	// A nil *audit.Payloads must not become a non-nil interface.
+	if payloads != nil {
+		options.Payloads = payloads
 	}
 
 	// A gateway without a secrets keyset has no Secrets page.

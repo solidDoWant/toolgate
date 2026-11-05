@@ -158,6 +158,9 @@ type Options struct {
 	ApprovalTimeout time.Duration
 	// AuditPayloads reports whether audit payloads are on.
 	AuditPayloads bool
+	// Payloads reads payload objects from S3 for the audit event and
+	// approval pages. Nil when payloads are off.
+	Payloads PayloadSource
 	// AuditOutput receives the audit lines of approval decisions. Nil
 	// discards them; the rows are written either way.
 	AuditOutput io.Writer
@@ -224,6 +227,7 @@ func New(options Options, registrar Registrar) *UI {
 	u.Handle("GET /ui/sessions/{id}", User, http.HandlerFunc(u.sessionPageHandler))
 	u.Handle("GET /ui/audit", User, http.HandlerFunc(u.audit))
 	u.Handle("GET /ui/audit/events/{key}", User, http.HandlerFunc(u.auditEventPage))
+	u.Handle("GET /ui/audit/events/{key}/payload", User, http.HandlerFunc(u.auditEventPayload))
 
 	if options.Servers != nil {
 		u.Handle("GET "+HomePath, User, http.HandlerFunc(u.servers))
