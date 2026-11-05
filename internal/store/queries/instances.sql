@@ -45,8 +45,9 @@ RETURNING *;
 SELECT * FROM instances WHERE status <> 'stopped' ORDER BY id;
 
 -- name: SetInstanceStarting :execrows
+-- Records the generation the objects were rendered and applied with.
 UPDATE instances
-SET status = 'starting', updated_at = now()
+SET status = 'starting', generation = @generation, updated_at = now()
 WHERE id = @id AND status = 'pending';
 
 -- name: SetInstanceReady :execrows

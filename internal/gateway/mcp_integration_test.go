@@ -207,7 +207,7 @@ func (f *mcpFixture) addInstance(t *testing.T, template *v1alpha1.MCPServerTempl
 
 	switch status {
 	case "ready":
-		_, err = queries.SetInstanceStarting(t.Context(), id)
+		_, err = queries.SetInstanceStarting(t.Context(), db.SetInstanceStartingParams{ID: id, Generation: generation})
 		require.NoError(t, err)
 		_, err = queries.SetInstanceReady(t.Context(), db.SetInstanceReadyParams{ID: id, Tools: []byte(`[]`)})
 		require.NoError(t, err)
