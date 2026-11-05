@@ -284,6 +284,27 @@ instanceLimit: -1
 			wantProblems: []string{`unknown field "listenAdress"`},
 		},
 		{
+			name:         "audit payloads without a bucket",
+			file:         "auditPayloads: true\n",
+			wantProblems: []string{"auditS3Bucket: required when auditPayloads is true"},
+		},
+		{
+			name:         "audit payloads with a bucket",
+			file:         "auditPayloads: true\nauditS3Bucket: audit\n",
+			wantAbsent:   []string{"auditS3Bucket"},
+			wantProblems: []string{"databaseURL: required"},
+		},
+		{
+			name:         "invalid audit S3 endpoint",
+			file:         "auditS3Endpoint: \"s3.example\"\n",
+			wantProblems: []string{`auditS3Endpoint: "s3.example" is not an http or https URL`},
+		},
+		{
+			name:         "invalid audit payloads flag",
+			env:          map[string]string{"TOOLGATE_AUDIT_PAYLOADS": "maybe"},
+			wantProblems: []string{`TOOLGATE_AUDIT_PAYLOADS: "maybe" is not true or false`},
+		},
+		{
 			name:         "missing file",
 			file:         "-",
 			wantProblems: []string{"configuration file"},
@@ -314,6 +335,30 @@ instanceLimit: -1
 			}
 		})
 	}
+}
+
+func TestLoadAuditPayloadSettings(t *testing.T) {
+	assert.False(t, config.Default().AuditPayloads, "payloads are off by default")
+
+	cfg, err := config.Load("", envFrom(map[string]string{
+		"TOOLGATE_DATABASE_URL":        validDatabaseURL,
+		"TOOLGATE_OIDC_ISSUER_URL":     "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":       "toolgate",
+		"TOOLGATE_AUDIT_PAYLOADS":      "true",
+		"TOOLGATE_AUDIT_S3_ENDPOINT":   "http://s3.example:9000",
+		"TOOLGATE_AUDIT_S3_REGION":     "eu-west-1",
+		"TOOLGATE_AUDIT_S3_BUCKET":     "audit",
+		"TOOLGATE_AUDIT_S3_PREFIX":     "toolgate/",
+		"TOOLGATE_AUDIT_S3_PATH_STYLE": "true",
+	}))
+	require.NoError(t, err)
+
+	assert.True(t, cfg.AuditPayloads)
+	assert.Equal(t, "http://s3.example:9000", cfg.AuditS3Endpoint)
+	assert.Equal(t, "eu-west-1", cfg.AuditS3Region)
+	assert.Equal(t, "audit", cfg.AuditS3Bucket)
+	assert.Equal(t, "toolgate/", cfg.AuditS3Prefix)
+	assert.True(t, cfg.AuditS3PathStyle)
 }
 
 func TestWatchedNamespacesAndPodLabels(t *testing.T) {

@@ -44,6 +44,10 @@ const (
 	reasonNotReady   = "not-ready"
 )
 
+// reasonPayloadError is the refusal reason of a call whose arguments
+// couldn't be stored as an audit payload.
+const reasonPayloadError = "payload-error"
+
 const tracerName = "github.com/solidDoWant/toolgate/internal/gateway"
 
 // tracer returns the tracer of the request's span, so the gateway's spans
@@ -215,10 +219,18 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
 	}
 
-	// Step 4: the allow is committed before anything is forwarded.
+	// Step 4: the allow is committed before anything is forwarded. With
+	// payloads on, the arguments are stored first; a call whose arguments
+	// can't be stored is refused.
+	allow := callEvent(current, "tool.decision", server, tool,
+		map[string]any{"decision": "allow", "instance": instance.ID})
+	if err := m.payloads.Attach(ctx, &allow, callArguments(request.Params.Arguments)); err != nil {
+		return m.refuseCall(ctx, current, server, tool,
+			map[string]any{"reason": reasonPayloadError, "payload_error": err.Error()}, messageNotRecorded)
+	}
+
 	recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
-	if err := recorder.Record(ctx, callEvent(current, "tool.decision", server, tool,
-		map[string]any{"decision": "allow", "instance": instance.ID})); err != nil {
+	if err := recorder.Record(ctx, allow); err != nil {
 		return nil, fmt.Errorf("The call wasn't forwarded: the gateway can't record it. Try again later. (%w)", err) //nolint:staticcheck // A sentence for the model.
 	}
 
@@ -226,10 +238,16 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	started := time.Now()
 	result, outcome := m.forward(ctx, instance, template, tool, request.Params.Arguments)
 
-	// Step 6.
-	if err := recorder.Record(ctx, callEvent(current, "tool.result", server, tool, map[string]any{
+	// Step 6. A result that can't be stored is still returned; the row
+	// records why its payload is missing.
+	resultEvent := callEvent(current, "tool.result", server, tool, map[string]any{
 		"outcome": outcome, "instance": instance.ID, "duration_ms": time.Since(started).Milliseconds(),
-	})); err != nil {
+	})
+	if err := m.payloads.Attach(ctx, &resultEvent, result); err != nil {
+		resultEvent.Details["payload_error"] = err.Error()
+	}
+
+	if err := recorder.Record(ctx, resultEvent); err != nil {
 		return nil, err
 	}
 
@@ -396,6 +414,20 @@ func callEvent(current requestContext, eventType, server, tool string, details m
 	event.Tool = tool
 
 	return event
+}
+
+// messageNotRecorded is the refusal of a call whose arguments couldn't be
+// stored (docs/design/phase-2.md §8).
+const messageNotRecorded = "The call couldn't be recorded. Try again later."
+
+// callArguments returns a call's arguments as an audit payload: nil when
+// the call has none.
+func callArguments(arguments json.RawMessage) any {
+	if len(arguments) == 0 {
+		return nil
+	}
+
+	return arguments
 }
 
 func errorResult(message string) *mcp.CallToolResult {

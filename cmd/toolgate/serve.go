@@ -95,6 +95,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	payloads, err := newAuditPayloads(ctx, cfg, server)
+	if err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
+
 	templates := catalog.New()
 	rules := policy.NewRules()
 
@@ -103,12 +110,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	listener := store.NewListener(server.Database(), logger)
 
 	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
-		Database:    server.Database(),
-		Catalog:     templates,
-		Policy:      &policy.Engine{Rules: rules},
-		AuditOutput: stdout,
-		Logger:      logger,
-		Subscribe:   listener.Subscribe,
+		Database:      server.Database(),
+		Catalog:       templates,
+		Policy:        &policy.Engine{Rules: rules},
+		AuditOutput:   stdout,
+		AuditPayloads: payloads,
+		Logger:        logger,
+		Subscribe:     listener.Subscribe,
 
 		InstanceLimitPerUser: cfg.InstanceLimitPerUser,
 		InstanceLimit:        cfg.InstanceLimit,
@@ -130,6 +138,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	defer cancel()
 
 	go func() { _ = listener.Run(ctx) }()
+
+	if err := startAuditRetention(ctx, server, payloads, logger); err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
 
 	var runtimeResult chan error
 

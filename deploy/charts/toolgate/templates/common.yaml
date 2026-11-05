@@ -23,6 +23,9 @@ settings from `config`.
 {{- fail (printf "config.limits.%s must be a whole number of at least 1" $setting) }}
 {{- end }}
 {{- end }}
+{{- if and .audit.payloads (not .audit.s3.bucket) }}
+{{- fail "config.audit.s3.bucket is required when config.audit.payloads is true" }}
+{{- end }}
 {{- end }}
 
 {{- $resources := mustDeepCopy .Values.resources -}}
@@ -66,6 +69,19 @@ settings from `config`.
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}
+{{- end }}
+{{- with $config.audit }}
+{{- $env = append $env (dict "name" "TOOLGATE_AUDIT_PAYLOADS" "value" (toString .payloads)) }}
+{{- range $setting, $name := dict "endpoint" "TOOLGATE_AUDIT_S3_ENDPOINT" "region" "TOOLGATE_AUDIT_S3_REGION" "bucket" "TOOLGATE_AUDIT_S3_BUCKET" "prefix" "TOOLGATE_AUDIT_S3_PREFIX" }}
+{{- with index $config.audit.s3 $setting }}
+{{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- $env = append $env (dict "name" "TOOLGATE_AUDIT_S3_PATH_STYLE" "value" (toString .s3.pathStyle)) }}
+{{- with .s3.existingSecret }}
+{{- $env = append $env (dict "name" "AWS_ACCESS_KEY_ID" "valueFrom" (dict "secretKeyRef" (dict "name" . "key" $config.audit.s3.accessKeyIDKey))) }}
+{{- $env = append $env (dict "name" "AWS_SECRET_ACCESS_KEY" "valueFrom" (dict "secretKeyRef" (dict "name" . "key" $config.audit.s3.secretAccessKeyKey))) }}
+{{- end }}
 {{- end }}
 {{- $env = append $env (dict "name" "POD_NAMESPACE" "valueFrom" (dict "fieldRef" (dict "fieldPath" "metadata.namespace"))) -}}
 {{- $gateway := index $resources "controllers" "gateway" "containers" "gateway" -}}

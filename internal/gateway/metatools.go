@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
@@ -78,8 +79,10 @@ type metaTools struct {
 	catalog     *catalog.Catalog
 	policy      *policy.Engine
 	auditOutput io.Writer
-	subscribe   func() (<-chan store.Event, func())
-	upstreams   *upstreams
+	// payloads stores call arguments and results; nil means off.
+	payloads  *audit.Payloads
+	subscribe func() (<-chan store.Event, func())
+	upstreams *upstreams
 	// sessionTools returns the proxied tool set of an MCP session.
 	sessionTools func(mcpSessionID string) (*sessionTools, bool)
 	// instanceLimitPerUser and instanceLimit bound the live instances of one

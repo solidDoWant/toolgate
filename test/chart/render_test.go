@@ -434,3 +434,60 @@ func TestWebUISettings(t *testing.T) {
 		assert.Contains(t, err.Error(), "config.ui.publicURL is required")
 	})
 }
+
+func TestAuditPayloadSettings(t *testing.T) {
+	gatewayEnv := func(t *testing.T, set ...string) map[string]corev1.EnvVar {
+		t.Helper()
+
+		manifests, err := render(t, append(append([]string{}, quickStartValues...), set...))
+		require.NoError(t, err)
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		values := map[string]corev1.EnvVar{}
+
+		for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+			values[variable.Name] = variable
+		}
+
+		return values
+	}
+
+	t.Run("payloads are off by default", func(t *testing.T) {
+		values := gatewayEnv(t)
+		assert.Equal(t, "false", values["TOOLGATE_AUDIT_PAYLOADS"].Value)
+		assert.NotContains(t, values, "TOOLGATE_AUDIT_S3_BUCKET")
+		assert.NotContains(t, values, "AWS_ACCESS_KEY_ID")
+	})
+
+	t.Run("the S3 settings and credentials come from config.audit", func(t *testing.T) {
+		values := gatewayEnv(t,
+			"config.audit.payloads=true",
+			"config.audit.s3.endpoint=https://s3.example.com",
+			"config.audit.s3.region=eu-west-1",
+			"config.audit.s3.bucket=audit",
+			"config.audit.s3.prefix=toolgate/",
+			"config.audit.s3.pathStyle=true",
+			"config.audit.s3.existingSecret=toolgate-s3",
+		)
+		assert.Equal(t, "true", values["TOOLGATE_AUDIT_PAYLOADS"].Value)
+		assert.Equal(t, "https://s3.example.com", values["TOOLGATE_AUDIT_S3_ENDPOINT"].Value)
+		assert.Equal(t, "eu-west-1", values["TOOLGATE_AUDIT_S3_REGION"].Value)
+		assert.Equal(t, "audit", values["TOOLGATE_AUDIT_S3_BUCKET"].Value)
+		assert.Equal(t, "toolgate/", values["TOOLGATE_AUDIT_S3_PREFIX"].Value)
+		assert.Equal(t, "true", values["TOOLGATE_AUDIT_S3_PATH_STYLE"].Value)
+
+		for name, key := range map[string]string{"AWS_ACCESS_KEY_ID": "accessKeyID", "AWS_SECRET_ACCESS_KEY": "secretAccessKey"} {
+			require.NotNil(t, values[name].ValueFrom, name)
+			require.NotNil(t, values[name].ValueFrom.SecretKeyRef, name)
+			assert.Equal(t, "toolgate-s3", values[name].ValueFrom.SecretKeyRef.Name)
+			assert.Equal(t, key, values[name].ValueFrom.SecretKeyRef.Key)
+			assert.Empty(t, values[name].Value, "the credential is never in the manifest")
+		}
+	})
+
+	t.Run("payloads on without a bucket is rejected", func(t *testing.T) {
+		_, err := render(t, append(append([]string{}, quickStartValues...), "config.audit.payloads=true"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "config.audit.s3.bucket is required when config.audit.payloads is true")
+	})
+}
