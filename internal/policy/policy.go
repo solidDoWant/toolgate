@@ -73,7 +73,7 @@ func (e *Engine) Decide(request Request) Decision {
 	template := request.Template
 	server := template.Name
 
-	if !hasAccess(identity, template.Spec.Access) {
+	if !HasAccess(identity, template.Spec.Access) {
 		return refuse(StepAccess, "", fmt.Sprintf("You don't have access to server %q.", server))
 	}
 
@@ -140,11 +140,12 @@ func proxiedName(server, tool string) string {
 	return server + "__" + tool
 }
 
-// hasAccess reports whether the identity is named by the access lists.
+// HasAccess reports whether the identity is named by the access lists, the
+// first step of a decision.
 // Service accounts match only serviceAccounts, and users only users and
 // groups, so an IdP subject that looks like a service account name can't
 // pass as one.
-func hasAccess(identity auth.Identity, access v1alpha1.Access) bool {
+func HasAccess(identity auth.Identity, access v1alpha1.Access) bool {
 	if isServiceAccount(identity) {
 		return slices.Contains(access.ServiceAccounts, identity.Principal)
 	}

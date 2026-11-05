@@ -9,6 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -23,9 +24,12 @@ import (
 
 // startRuntime starts the PostgreSQL notification listener and the
 // controller-runtime manager that runs the runtime reconciler on the
-// replica holding the Lease. The returned channel receives the manager's
+// replica holding the Lease, and registers the runtime metrics with
+// registerMetrics. The returned channel receives the manager's
 // result once ctx ends or the replica loses the Lease.
-func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, logger *slog.Logger) (<-chan error, error) {
+func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, registerMetrics func(...prometheus.Collector) error,
+	logger *slog.Logger,
+) (<-chan error, error) {
 	kubeLogger := logr.FromSlogHandler(logger.Handler())
 	ctrl.SetLogger(kubeLogger)
 
@@ -67,11 +71,29 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, lo
 	listener := store.NewListener(pool, logger)
 
 	reconciler := &runtime.Reconciler{
-		Pass:      runtime.FullPass(db.New(pool), logger),
 		Subscribe: listener.Subscribe,
 		Fence:     lease,
 		Client:    mgr.GetClient(),
 	}
+
+	metrics := runtime.NewMetrics()
+	if err := registerMetrics(metrics.Collectors()...); err != nil {
+		return nil, err
+	}
+
+	teardown := &runtime.Teardown{
+		Pool:    pool,
+		Reader:  mgr.GetClient(),
+		Deleter: reconciler,
+		Log:     logger,
+		Metrics: metrics,
+	}
+
+	// This process doesn't read the template catalog yet, and judging
+	// instances against an empty catalog would stop them all, so it makes
+	// no stop decisions. Failed instances are still torn down.
+	reconciler.Pass = runtime.FullPass(db.New(pool), logger, nil, teardown)
+
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
