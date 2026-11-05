@@ -43,6 +43,7 @@ docs/admin/
   chart.md                 What the chart installs, and why its permissions are safe.
   chart-values.md          The chart values reference (generated).
   user-secrets.md          How user secrets are encrypted, and how to rotate the key.
+  settings-profiles.md     How to give Claude Code settings to users with SettingsProfile objects.
 
 docs/dev/
   README.md                What the developer pages will cover.
