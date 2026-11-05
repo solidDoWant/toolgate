@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -238,6 +239,78 @@ type Config struct {
 	// S3-compatible servers need `true`. The chart sets it from
 	// `config.audit.s3.pathStyle`.
 	AuditS3PathStyle bool `json:"auditS3PathStyle" env:"TOOLGATE_AUDIT_S3_PATH_STYLE"`
+
+	// The HTTP services a template's `${resolver:<name>}` gets a value from.
+	// Set it in the YAML file only. Each item has a `name` (lowercase
+	// letters, digits and `-`, starting with a letter, at most 63
+	// characters), a `url` that must be `https://`, an `audience` for the
+	// service-account token the gateway sends, a `timeout` (a Go duration,
+	// default `10s`, at most `60s`) and an optional `caFile`, a PEM file of
+	// the certificate authorities that sign the resolver's certificate. The
+	// gateway reads the token from
+	// `/var/run/secrets/toolgate/resolvers/<name>/token` for each request.
+	// The chart sets it from `config.resolvers` and mounts each token.
+	Resolvers []Resolver `json:"resolvers"`
+}
+
+// Resolver is one entry of the resolvers setting.
+type Resolver struct {
+	Name     string   `json:"name"`
+	URL      string   `json:"url"`
+	Audience string   `json:"audience"`
+	Timeout  Duration `json:"timeout"`
+	CAFile   string   `json:"caFile"`
+}
+
+// Resolver limits (docs/design/phase-2.md §6).
+const (
+	DefaultResolverTimeout = Duration(10 * time.Second)
+	MaxResolverTimeout     = Duration(60 * time.Second)
+)
+
+// resolverNamePattern is the form of a resolver name.
+var resolverNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
+
+// ResolverTimeout returns the resolver's timeout, or the default when it is
+// not set.
+func (r Resolver) ResolverTimeout() time.Duration {
+	if r.Timeout == 0 {
+		return time.Duration(DefaultResolverTimeout)
+	}
+
+	return time.Duration(r.Timeout)
+}
+
+func (c Config) validateResolvers() []error {
+	var problems []error
+
+	seen := map[string]bool{}
+
+	for index, resolver := range c.Resolvers {
+		where := fmt.Sprintf("resolvers[%d]", index)
+
+		if !resolverNamePattern.MatchString(resolver.Name) {
+			problems = append(problems, fmt.Errorf("%s.name: %q must match %s", where, resolver.Name, resolverNamePattern))
+		} else if seen[resolver.Name] {
+			problems = append(problems, fmt.Errorf("%s.name: %q is listed twice", where, resolver.Name))
+		}
+
+		seen[resolver.Name] = true
+
+		if target, err := url.Parse(resolver.URL); err != nil || target.Scheme != "https" || target.Host == "" {
+			problems = append(problems, fmt.Errorf("%s.url: %q must be an https:// URL", where, resolver.URL))
+		}
+
+		if resolver.Audience == "" {
+			problems = append(problems, fmt.Errorf("%s.audience: required", where))
+		}
+
+		if resolver.Timeout < 0 || resolver.Timeout > MaxResolverTimeout {
+			problems = append(problems, fmt.Errorf("%s.timeout: must be at most 60s", where))
+		}
+	}
+
+	return problems
 }
 
 // WatchedNamespaces returns the namespaces whose catalog objects the gateway
@@ -549,6 +622,7 @@ func (c Config) Validate() []error {
 	}
 
 	problems = append(problems, c.validateUI()...)
+	problems = append(problems, c.validateResolvers()...)
 
 	if c.AuditPayloads && c.AuditS3Bucket == "" {
 		problems = append(problems, errors.New("auditS3Bucket: required when auditPayloads is true"))

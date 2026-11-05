@@ -58,6 +58,9 @@ type Validator struct {
 	// SharedNamespace is the gateway's shared namespace. When it is empty,
 	// every `namespace: shared` template is invalid.
 	SharedNamespace string
+	// Resolvers are the names of the configured resolvers. A template that
+	// names any other resolver is invalid.
+	Resolvers []string
 }
 
 // Validate returns every problem found in template, or nil when it is valid.
@@ -149,6 +152,10 @@ func (v Validator) validateResource(scope string, index int, raw []byte) []strin
 			inSecretData := isSecret && !isKey && isSecretDataValue(path)
 			if isSecretVariable(variable) && !inSecretData {
 				variableProblems = append(variableProblems, fmt.Sprintf("%s: ${%s} is allowed only in the data or stringData values of a Secret", location, variable))
+			}
+
+			if name, found := strings.CutPrefix(variable, "resolver:"); found && !slices.Contains(v.Resolvers, name) {
+				variableProblems = append(variableProblems, fmt.Sprintf("%s: resolver `%s` isn't configured", location, name))
 			}
 
 			if scope == ScopeShared && isPerUserVariable(variable) {

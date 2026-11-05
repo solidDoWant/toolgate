@@ -35,6 +35,11 @@
 #                                     URL (config.ui.publicURL, https) names;
 #                                     a test serves a TLS proxy to a gateway
 #                                     pod there
+#       TOOLGATE_E2E_RESOLVER_LISTEN  address the test process serves the test
+#                                     resolver on over HTTPS; the chart's
+#                                     resolver `test` points at it
+#       TOOLGATE_E2E_RESOLVER_CERT    its certificate, which the gateway trusts
+#       TOOLGATE_E2E_RESOLVER_KEY     its key
 #  6. deletes the cluster, also when a step fails. E2E_KEEP_CLUSTER=true
 #     keeps it for debugging.
 #
@@ -150,12 +155,23 @@ export TOOLGATE_E2E_OTLP_LISTEN="$host_address:$otlp_port"
 ui_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 export TOOLGATE_E2E_UI_LISTEN="127.0.0.1:$ui_port"
 
+# The test resolver runs in the test process too, over HTTPS with a
+# self-signed certificate the gateway trusts through the resolver's caFile.
+resolver_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
+mkdir -p "$work/resolver"
+go run ./test/resolver/cmd/resolver -write-cert "$work/resolver" -host "$host_address" >&2
+export TOOLGATE_E2E_RESOLVER_LISTEN="$host_address:$resolver_port"
+export TOOLGATE_E2E_RESOLVER_CERT="$work/resolver/cert.pem"
+export TOOLGATE_E2E_RESOLVER_KEY="$work/resolver/key.pem"
+
 log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 workload_namespace=toolgate-workloads
 kubectl create namespace "$workload_namespace" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-database \
 	--from-literal=url="postgres://toolgate:$postgres_password@postgres.$deps_namespace.svc:5432/toolgate?sslmode=disable" >&2
+kubectl -n "$release_namespace" create secret generic toolgate-resolver-ca \
+	--from-file=ca.pem="$TOOLGATE_E2E_RESOLVER_CERT" >&2
 ./scripts/chart-deps.sh >&2
 helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.image.repository="$gateway_repository" \
@@ -170,6 +186,8 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
 	--set "config.extraEnv[0].value=$workload_namespace" \
+	--set-json "config.resolvers=[{\"name\":\"test\",\"url\":\"https://$TOOLGATE_E2E_RESOLVER_LISTEN/resolve\",\"audience\":\"toolgate-resolver-test\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
+	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","globalMounts":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}' \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--wait --timeout 5m >&2
 

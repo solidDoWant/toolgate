@@ -633,18 +633,20 @@ func (q *Queries) SetInstanceSecretsUsed(ctx context.Context, arg SetInstanceSec
 
 const setInstanceStarting = `-- name: SetInstanceStarting :execrows
 UPDATE instances
-SET status = 'starting', generation = $1, updated_at = now()
-WHERE id = $2 AND status = 'pending'
+SET status = 'starting', generation = $1, resolved_expires_at = $2, updated_at = now()
+WHERE id = $3 AND status = 'pending'
 `
 
 type SetInstanceStartingParams struct {
-	Generation int64
-	ID         string
+	Generation        int64
+	ResolvedExpiresAt pgtype.Timestamptz
+	ID                string
 }
 
-// Records the generation the objects were rendered and applied with.
+// Records the generation the objects were rendered and applied with, and the
+// earliest expiresAt of the resolver values the render used (null for none).
 func (q *Queries) SetInstanceStarting(ctx context.Context, arg SetInstanceStartingParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setInstanceStarting, arg.Generation, arg.ID)
+	result, err := q.db.Exec(ctx, setInstanceStarting, arg.Generation, arg.ResolvedExpiresAt, arg.ID)
 	if err != nil {
 		return 0, err
 	}
