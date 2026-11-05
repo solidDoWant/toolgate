@@ -38,7 +38,7 @@ lint-fix: ## Run golangci-lint and apply its fixes.
 	golangci-lint run --fix ./...
 
 .PHONY: test
-test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, and the image build and release tests.
+test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, the e2e shard selection, and the image build and release tests.
 	go test -race -count=1 ./...
 	./scripts/build-images_test.sh
 	./scripts/release_test.sh
@@ -46,6 +46,7 @@ test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tes
 	./scripts/agents/wait-ci_test.sh
 	./scripts/ci/test-guard_test.py
 	./scripts/acceptance-scoreboard_test.py
+	./scripts/e2e/shard_test.py
 
 .PHONY: test-guard
 test-guard: ## Fail if HEAD deletes or skips an [AC-N-nn] scenario test since its merge base with BASE (default origin/master; CI passes the PR labels).
@@ -56,11 +57,11 @@ test-integration: ## Run the integration-tagged tests (PostgreSQL with TLS clien
 	timeout 30m go test -race -count=1 -tags integration -timeout 25m ./...
 
 .PHONY: test-e2e
-test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server), then delete it.
+test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server), then delete it. E2E_SHARD=i/n runs shard i of n only.
 	./scripts/e2e/run.sh ./scripts/test-e2e.sh
 
 .PHONY: acceptance
-acceptance: ## Run every [AC-…] test on a new kind cluster (as test-e2e) and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/).
+acceptance: ## Run every [AC-…] test on a new kind cluster (as test-e2e) and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/). E2E_SHARD=i/n runs shard i of n only.
 	PHASE=$(PHASE) ./scripts/e2e/run.sh ./scripts/acceptance.sh
 
 .PHONY: docs-check

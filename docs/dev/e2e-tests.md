@@ -24,7 +24,17 @@ Both targets use `scripts/e2e/run.sh`. The script does these steps:
 
 If you set `E2E_CLUSTER`, the script uses that cluster name. If you set `E2E_KEEP_CLUSTER=true`, the script keeps the cluster after the tests, so that you can look at it. You must then delete the cluster yourself with `kind delete cluster --name <name>`.
 
-In CI, the `e2e` job runs the e2e tests and then the acceptance scoreboard on one cluster. The job writes the scoreboard to the job summary. A failing e2e test fails the job.
+## Run one shard
+
+A shard is one part of the tests. If you set `E2E_SHARD=i/n`, `make test-e2e` and `make acceptance` run only shard `i` of `n` shards. For example, `E2E_SHARD=2/3 make test-e2e` runs the second of three shards. If you do not set `E2E_SHARD`, the targets run all the tests on one cluster.
+
+`scripts/e2e/shard.py` selects the tests of a shard. It gets the names of the top-level tests from `go test -list`. It puts each test in the shard that the SHA-256 hash of the test name gives, modulo `n`. Thus each test is in exactly one shard, and a new test goes into a shard automatically. You do not update a list.
+
+With `E2E_SHARD`, `make acceptance` writes the results to `build/acceptance/results/go-acceptance-shard-i.json`, and its scoreboard shows only the tests of that shard.
+
+## In CI
+
+In CI, the `e2e` job has three shards. Each shard runs on its own kind cluster. It runs its part of the e2e tests without the acceptance tests, then its part of the acceptance tests, so that each test runs one time. Then it uploads the acceptance results. A failing test fails the shard. Then the `e2e-scoreboard` job puts the results of all the shards together with `scripts/ci/e2e-scoreboard.sh`. It writes the scoreboard to the job summary. This scoreboard is the same as the scoreboard of one run of all the tests.
 
 ## The fake identity provider
 

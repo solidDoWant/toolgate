@@ -54,11 +54,33 @@ func (u *UI) login(writer http.ResponseWriter, request *http.Request) {
 	verifier := oauth2.GenerateVerifier()
 	stateHash := hashValue(state)
 
+	stepUp := request.URL.Query().Get("step_up") == "1"
+	authOptions := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce)}
+
+	// A step-up records the browser's session, so the callback updates it,
+	// and asks the IdP for a fresh sign-in.
+	var sessionHash []byte
+
+	if stepUp {
+		authOptions = append(authOptions,
+			oauth2.SetAuthURLParam("prompt", "login"), oauth2.SetAuthURLParam("max_age", "0"))
+
+		sessionHash, err = u.sessionHash(request)
+		if err != nil {
+			u.logger.ErrorContext(ctx, "cannot load the web UI session", "error", err)
+			http.Error(writer, "The gateway can't start a sign-in now. Try again later.", http.StatusInternalServerError)
+
+			return
+		}
+	}
+
 	err = u.queries.InsertUILogin(ctx, db.InsertUILoginParams{
-		StateHash:    stateHash,
-		Nonce:        nonce,
-		PkceVerifier: verifier,
-		ReturnTo:     ReturnTo(request.URL.Query().Get("return_to")),
+		StateHash:     stateHash,
+		Nonce:         nonce,
+		PkceVerifier:  verifier,
+		ReturnTo:      ReturnTo(request.URL.Query().Get("return_to")),
+		StepUp:        stepUp,
+		UiSessionHash: sessionHash,
 	})
 	if err != nil {
 		u.logger.ErrorContext(ctx, "cannot store the sign-in", "error", err)
@@ -79,8 +101,22 @@ func (u *UI) login(writer http.ResponseWriter, request *http.Request) {
 
 	writer.Header().Set("Cache-Control", "no-store")
 	http.Redirect(writer, request,
-		u.oauthConfig(provider).AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce)),
+		u.oauthConfig(provider).AuthCodeURL(state, authOptions...),
 		http.StatusSeeOther)
+}
+
+// sessionHash returns the ID hash of the request's valid UI session, or nil
+// when it has none.
+func (u *UI) sessionHash(request *http.Request) ([]byte, error) {
+	if _, err := u.loadSession(request); errors.Is(err, errNoSession) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	cookie, _ := request.Cookie(SessionCookie) // loadSession found it.
+
+	return hashValue(cookie.Value), nil
 }
 
 // ReturnTo returns where a sign-in goes when it ends: raw when it is a path
@@ -104,10 +140,12 @@ func loginCookieName(stateHash []byte) string {
 }
 
 // signInFailure is a failed sign-in: its reason goes into the auth.refuse
-// event and the page.
+// event and, unless message is set, the page.
 type signInFailure struct {
 	reason string
-	err    error
+	// message, if set, is the whole text of the page.
+	message string
+	err     error
 }
 
 func (f *signInFailure) Error() string { return f.reason }
@@ -123,7 +161,13 @@ func (u *UI) callback(writer http.ResponseWriter, request *http.Request) {
 	returnTo, failed := u.completeSignIn(writer, request)
 	if failed != nil {
 		u.refuse(request, failed)
-		http.Error(writer, "Sign-in failed: "+failed.reason+". Start again at "+LoginPath+".", http.StatusForbidden)
+
+		message := failed.message
+		if message == "" {
+			message = "Sign-in failed: " + failed.reason + ". Start again at " + LoginPath + "."
+		}
+
+		http.Error(writer, message, http.StatusForbidden)
 
 		return
 	}
@@ -201,10 +245,11 @@ func (u *UI) completeSignIn(writer http.ResponseWriter, request *http.Request) (
 	}
 
 	if login.StepUp {
-		// A fresh sign-in for a grant or an approval has its own checks
-		// (docs/design/phase-2.md §5, "Step-up"). Until they run here, a
-		// step-up sign-in fails closed.
-		return "", failure("a step-up sign-in can't be completed", nil)
+		if failed := u.completeStepUp(writer, request, login, identity); failed != nil {
+			return "", failed
+		}
+
+		return login.ReturnTo, nil
 	}
 
 	if failed := u.startSession(writer, request, identity); failed != nil {
@@ -212,6 +257,63 @@ func (u *UI) completeSignIn(writer http.ResponseWriter, request *http.Request) (
 	}
 
 	return login.ReturnTo, nil
+}
+
+// completeStepUp runs the step-up checks (docs/design/phase-2.md §5,
+// "Step-up") and records the fresh sign-in: on the session the step-up
+// started from, or on a new session when there was none.
+func (u *UI) completeStepUp(writer http.ResponseWriter, request *http.Request, login db.UiLogin, identity signedInIdentity) *signInFailure {
+	ctx := request.Context()
+
+	if !identity.authTime.Valid {
+		return &signInFailure{reason: "the ID token has no auth_time", message: missingAuthTimeMessage}
+	}
+
+	if err := checkStepUpAuthTime(identity.authTime.Time, login.CreatedAt.Time, time.Now()); err != nil {
+		return failure("the step-up sign-in is not fresh", err)
+	}
+
+	if login.UiSessionHash == nil {
+		return u.startSession(writer, request, identity)
+	}
+
+	session, err := u.queries.GetValidUISession(ctx, login.UiSessionHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		// The session ended while the user signed in again.
+		return u.startSession(writer, request, identity)
+	}
+
+	if err != nil {
+		return failure("the gateway can't load the session", err)
+	}
+
+	if session.Principal != identity.principal {
+		if err := u.queries.DeleteUISession(ctx, login.UiSessionHash); err != nil {
+			return failure("the gateway can't sign out the session", err)
+		}
+
+		http.SetCookie(writer, sessionCookie("", -1))
+
+		return &signInFailure{reason: "the step-up signed in as a different user", message: differentUserMessage}
+	}
+
+	updated, err := u.queries.UpdateUISessionSignIn(ctx, db.UpdateUISessionSignInParams{
+		Email:     identity.email,
+		Name:      identity.name,
+		Groups:    identity.groups,
+		AuthTime:  identity.authTime,
+		IDHash:    login.UiSessionHash,
+		Principal: identity.principal,
+	})
+	if err != nil {
+		return failure("the gateway can't update the session", err)
+	}
+
+	if updated == 0 {
+		return u.startSession(writer, request, identity)
+	}
+
+	return nil
 }
 
 // signedInIdentity is what a sign-in learned from the ID token.

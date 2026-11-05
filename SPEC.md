@@ -163,7 +163,7 @@ With `shared`, all instances go in one configured namespace and are told apart b
 5. Every rendered object gets the labels `toolgate.soliddowant.dev/instance`, `toolgate.soliddowant.dev/template` and `app.kubernetes.io/managed-by: toolgate`. Its namespace is forced to the instance namespace.
 6. Objects are applied with server-side apply, field manager `toolgate`.
 
-**Readiness.** An instance is `ready` when every object is current by kstatus (`sigs.k8s.io/cli-utils/pkg/kstatus`) and an MCP `initialize` against `endpoint` succeeds. It is `failed` when `startTimeout` passes or kstatus reports a failure, with the reason taken from the objects' conditions and events. One rule comes before kstatus: an object whose `Ready` condition is `False` at its current `observedGeneration`, and that isn't `Reconciling=True`, counts as failed, with the `Ready` message as the reason. This covers HelmReleases between helm-controller's retries.
+**Readiness.** An instance is `ready` when every object is current by kstatus (`sigs.k8s.io/cli-utils/pkg/kstatus`) and an MCP `initialize` against `endpoint` succeeds. It is `failed` when `startTimeout` passes or kstatus reports a failure, with the reason taken from the objects' conditions and events. One rule comes before kstatus: an object whose `Ready` condition has stayed `False` for 60 s at its current generation counts as failed, with the `Ready` message as the reason. This covers HelmReleases whose install keeps failing while helm-controller retries.
 
 **Template changes.** An instance keeps the template generation it was started with. A new generation applies to instances started afterwards. `toolgate_server_status` shows when an instance is older than its template. Phase 2 adds a restart action in the web UI.
 
