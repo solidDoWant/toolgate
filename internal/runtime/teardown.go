@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -198,7 +199,7 @@ func (t *Teardown) deleteSharedObjects(ctx context.Context, instance db.Instance
 		}
 
 		uid := object.GetUID()
-		if err := t.Deleter.Delete(ctx, object, client.Preconditions{UID: &uid}); err != nil &&
+		if err := t.Deleter.Delete(ctx, object, client.Preconditions{UID: &uid}, backgroundDeletion); err != nil &&
 			!apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 			problems = append(problems, err)
 		}
@@ -207,9 +208,16 @@ func (t *Teardown) deleteSharedObjects(ctx context.Context, instance db.Instance
 	return errors.Join(problems...)
 }
 
+// backgroundDeletion deletes an object at once and leaves its dependents to
+// Kubernetes' garbage collector. Deleting an instance's anchor ConfigMap so
+// removes the instance's Secrets in the shared namespace, which the gateway
+// can't list.
+var backgroundDeletion = client.PropagationPolicy(metav1.DeletePropagationBackground)
+
 // sharedNamespaceKinds are the kinds of instance objects found by their
 // labels in a shared namespace: the allowed kinds the gateway may list.
-// Secrets are left out because the gateway never reads Secrets.
+// Secrets are left out because the gateway never reads Secrets: they are
+// owned by the instance's anchor ConfigMap and deleted with it.
 var sharedNamespaceKinds = []schema.GroupVersionKind{
 	{Version: "v1", Kind: "Pod"},
 	{Group: "apps", Version: "v1", Kind: "Deployment"},

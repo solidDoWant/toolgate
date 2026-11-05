@@ -464,7 +464,28 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 		}
 	}
 
+	var owner *metav1.OwnerReference
+
+	if !hasOwnNamespace(instance) {
+		anchor, err := s.prepareAnchor(ctx, instance, template)
+		if err != nil {
+			span.SetStatus(codes.Error, "anchor")
+
+			return false, err
+		}
+
+		if anchor == nil {
+			return false, nil
+		}
+
+		owner = anchor
+	}
+
 	for _, object := range result.Objects {
+		if owner != nil {
+			object.SetOwnerReferences(append(object.GetOwnerReferences(), *owner))
+		}
+
 		if err := s.apply(ctx, object); err != nil {
 			span.SetStatus(codes.Error, "apply")
 
@@ -473,6 +494,55 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 	}
 
 	return true, nil
+}
+
+// prepareAnchor creates the anchor ConfigMap of an instance in the shared
+// namespace and returns an owner reference to it. Every object applied for
+// the instance is owned by the anchor, so deleting the anchor lets
+// Kubernetes' garbage collector delete them all, Secrets included, without
+// the gateway reading Secrets (docs/design/phase-1.md §7). It returns nil,
+// with no error, when the instance has failed because a ConfigMap of that
+// name exists without the instance's label.
+func (s *Starter) prepareAnchor(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*metav1.OwnerReference, error) {
+	anchor := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+		Namespace: instance.Namespace,
+		Name:      AnchorName(instance.ID),
+		Labels: map[string]string{
+			LabelManagedBy: ManagedByValue,
+			LabelInstance:  instance.ID,
+			LabelTemplate:  template.Name,
+		},
+	}}
+
+	if err := s.Client.Create(ctx, anchor); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return nil, fmt.Errorf("create ConfigMap %s/%s: %w", anchor.Namespace, anchor.Name, err)
+		}
+
+		if err := s.Client.Get(ctx, client.ObjectKeyFromObject(anchor), anchor); err != nil {
+			return nil, fmt.Errorf("get ConfigMap %s/%s: %w", anchor.Namespace, anchor.Name, err)
+		}
+
+		if anchor.Labels[LabelInstance] != instance.ID {
+			return nil, s.fail(ctx, instance, StatusPending, fmt.Sprintf(
+				"The ConfigMap %s/%s already exists and doesn't carry the label %s=%s, so toolgate won't use it.",
+				anchor.Namespace, anchor.Name, LabelInstance, instance.ID))
+		}
+	}
+
+	return &metav1.OwnerReference{
+		APIVersion:         "v1",
+		Kind:               "ConfigMap",
+		Name:               anchor.Name,
+		UID:                anchor.UID,
+		BlockOwnerDeletion: ptr.To(false),
+	}, nil
+}
+
+// AnchorName is the name of the anchor ConfigMap that owns the objects of
+// an instance in the shared namespace.
+func AnchorName(id string) string {
+	return NamespacePrefix + id
 }
 
 func (s *Starter) apply(ctx context.Context, object *unstructured.Unstructured) error {

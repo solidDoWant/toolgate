@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
@@ -648,6 +649,82 @@ func TestStarterPendingAppliesSharedNamespaceInstanceWithoutNamespace(t *testing
 	policies := &networkingv1.NetworkPolicyList{}
 	require.NoError(t, fixture.kube.List(t.Context(), policies))
 	assert.Empty(t, policies.Items, "the per-instance default-deny policy is not applied in the shared namespace")
+}
+
+func TestStarterOwnsSharedNamespaceObjectsByAnchor(t *testing.T) {
+	existing := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: sharedNamespace, Labels: map[string]string{runtime.LabelManagedBy: runtime.ManagedByValue},
+	}}
+	template := sharedNamespaceTemplate()
+	template.Spec.Resources = append(template.Spec.Resources, k8sruntime.RawExtension{
+		Raw: []byte(`{"apiVersion":"v1","kind":"Secret","metadata":{"name":"creds-${instance.id}"},"stringData":{"token":"x"}}`),
+	})
+	fixture := newStarterFixture(t, template, "pending", existing)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), sharedInstance(fixture.instance)))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	require.Equal(t, "starting", status, reason)
+
+	anchor := &corev1.ConfigMap{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: sharedNamespace, Name: "tg-" + instanceID}, anchor))
+	assert.Equal(t, map[string]string{
+		runtime.LabelManagedBy: runtime.ManagedByValue,
+		runtime.LabelInstance:  instanceID,
+		runtime.LabelTemplate:  template.Name,
+	}, anchor.Labels)
+
+	want := []metav1.OwnerReference{{
+		APIVersion: "v1", Kind: "ConfigMap", Name: anchor.Name, UID: anchor.UID, BlockOwnerDeletion: ptr.To(false),
+	}}
+
+	configMap := &corev1.ConfigMap{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: sharedNamespace, Name: "settings-" + instanceID}, configMap))
+	assert.Equal(t, want, configMap.OwnerReferences, "the ConfigMap is owned by the anchor")
+
+	secret := &corev1.Secret{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: sharedNamespace, Name: "creds-" + instanceID}, secret))
+	assert.Equal(t, want, secret.OwnerReferences, "the Secret is owned by the anchor, so deleting the anchor deletes it")
+}
+
+func TestStarterReusesOwnAnchorConfigMap(t *testing.T) {
+	existing := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: sharedNamespace, Labels: map[string]string{runtime.LabelManagedBy: runtime.ManagedByValue},
+	}}
+	own := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
+		Namespace: sharedNamespace, Name: "tg-" + instanceID, UID: "anchor-uid",
+		Labels: map[string]string{runtime.LabelInstance: instanceID},
+	}}
+	fixture := newStarterFixture(t, sharedNamespaceTemplate(), "pending", existing, own)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), sharedInstance(fixture.instance)))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	require.Equal(t, "starting", status, reason)
+
+	configMap := &corev1.ConfigMap{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: sharedNamespace, Name: "settings-" + instanceID}, configMap))
+	assert.Equal(t, []metav1.OwnerReference{{
+		APIVersion: "v1", Kind: "ConfigMap", Name: "tg-" + instanceID, UID: "anchor-uid", BlockOwnerDeletion: ptr.To(false),
+	}}, configMap.OwnerReferences)
+}
+
+func TestStarterRefusesForeignAnchorConfigMap(t *testing.T) {
+	existing := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: sharedNamespace, Labels: map[string]string{runtime.LabelManagedBy: runtime.ManagedByValue},
+	}}
+	foreign := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: sharedNamespace, Name: "tg-" + instanceID}}
+	fixture := newStarterFixture(t, sharedNamespaceTemplate(), "pending", existing, foreign)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), sharedInstance(fixture.instance)))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Contains(t, reason, "tg-"+instanceID)
+
+	configMap := &corev1.ConfigMap{}
+	err := fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: sharedNamespace, Name: "settings-" + instanceID}, configMap)
+	assert.True(t, apierrors.IsNotFound(err), "nothing is applied: %v", err)
 }
 
 func TestStarterReachesSharedNamespaceInstanceAtRenderedService(t *testing.T) {
