@@ -35,10 +35,14 @@ var templateFiles embed.FS
 var pageTemplates = map[string]*template.Template{
 	"servers":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/servers.html")),
 	"audit":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
+	"sessions":    template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/sessions.html")),
+	"session":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/session.html")),
 	"secrets":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/secrets.html")),
 	"audit_event": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
 	"grants":      template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/grants.html")),
 	"grant_new":   template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/grant_new.html")),
+	"approvals":   template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approvals.html")),
+	"approval":    template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approval.html")),
 }
 
 // page is what the layout renders around a page's content.
@@ -52,6 +56,11 @@ type page struct {
 
 // render writes a page for the request's session.
 func (u *UI) render(writer http.ResponseWriter, request *http.Request, name, title string, data any) {
+	u.renderStatus(writer, request, http.StatusOK, name, title, data)
+}
+
+// renderStatus is render with an HTTP status.
+func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, status int, name, title string, data any) {
 	session, _ := SessionFrom(request.Context())
 
 	user := session.Email
@@ -80,6 +89,7 @@ func (u *UI) render(writer http.ResponseWriter, request *http.Request, name, tit
 	}
 
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.WriteHeader(status)
 	_, _ = writer.Write(body.Bytes())
 }
 

@@ -55,6 +55,12 @@ If the instance stopped or changed before the request arrived, the page tells th
 
 The navigation shows the Blocks link only to admins.
 
+## The Sessions pages
+
+`/ui/sessions` lists the open sessions. A session is open until the gateway ends it. A user sees only their own sessions. An admin sees all of them.
+
+"Open" on a row shows `/ui/sessions/` followed by the session's number. The page shows the session's servers that are enabled and its 20 newest `tool.decision` events. Each event links to its audit page. A user who asks for another user's session, or for a session that has ended, gets 404. An admin can open any open session. You cannot end a session from the UI.
+
 ## The Secrets page
 
 `/ui/secrets` shows the signed-in user's secrets: each name with the dates it was created and last set. It needs the secrets keyset, like `/api/v1/secrets`, and is not offered without it. It uses the same secret broker as the API, so the CLI and the page show the same secrets. It writes the same `secret.set` and `secret.delete` audit events, with attestation `user` and no workspace or session.
@@ -105,3 +111,7 @@ A template can mark a tool with `approval: required`. Then each call of the tool
 If the web UI is off, nobody can approve a call, so each call of such a tool fails. A service account cannot sign in to the UI, so its calls of such a tool always fail.
 
 Set `config.ui.approvalTimeout` to the time that a request waits for approval, from `1m` to `1h`. The default is `10m`. An approved request also stays usable for this time. The gateway marks a waiting request expired 1 minute after this time. A user can have at most 100 requests waiting.
+
+`/ui/approvals` lists the requests of the signed-in user that wait for approval, with the server, the tool, the session and the workspace. The list updates every 5 seconds. Each request has its own page, where the user approves or denies it. Approving needs a fresh sign-in. Denying does not, because it gives no access. Only the user who made the call can see or decide a request. Other users get 404, and admins also get 404. If a user opens an approval link without a UI session, the gateway sends the browser straight to a fresh sign-in.
+
+If two people or two browser tabs decide the same request, the first decision wins. The other page then shows the real status, for example "This approval expired." Each decision writes an `approval.approve` or `approval.deny` event to the audit log. When audit payloads are off, the approval page says "Arguments aren't shown because audit payloads are off."

@@ -76,6 +76,18 @@ When Claude calls a tool of a server, for example `test__echo`, the gateway send
 
 The gateway records each call and each refusal in its audit log.
 
+## Approve a tool call
+
+Your admin can mark a tool so that each call needs your approval. When Claude calls such a tool, the call fails with a message like this: "Tool `github__delete_repository` needs approval. Approve request `ID` at `URL`, then call the tool again with the same arguments."
+
+1. Open the address from the message in a browser. If you are not signed in to the toolgate web UI, the browser goes to your identity provider first. Sign in there.
+2. Read the server, the tool, the session and the workspace of the call.
+3. If you signed in more than 4 minutes ago, click "Sign in again to continue" first.
+4. Click Approve to let the call through, or click Deny to refuse it.
+5. Ask Claude to call the tool again with the same arguments.
+
+An approval lets one call through. It stays usable for the approval timeout that your admin set, 10 minutes by default. The page `/ui/approvals` lists all your requests that wait for approval. Only you can see and decide your own requests.
+
 ## Sign in
 
 Your admin gives you the URL of your gateway. Run:
