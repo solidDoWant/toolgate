@@ -67,8 +67,10 @@ The ClusterRole alone lets the gateway write in every namespace. The admission p
 
 - An object of a kind that is not in the list above. So the gateway cannot create RBAC objects, webhooks or cluster-scoped objects, even if an RBAC rule allowed it.
 - An object in a namespace that does not have the label `app.kubernetes.io/managed-by: toolgate`.
-- A new namespace whose name does not start with `tg-`, or that does not have that label.
-- The deletion of a namespace that does not have that label.
+- An object in a namespace that does not have the label `pod-security.kubernetes.io/enforce: restricted`.
+- A new namespace whose name does not start with `tg-`, or that does not have both labels.
+- Any change to an existing namespace. The gateway only creates and deletes namespaces. So it cannot remove or change a Pod Security label.
+- The deletion of a namespace that does not have the label `app.kubernetes.io/managed-by: toolgate`.
 
 The policy has two exceptions, because the gateway needs them to work:
 
@@ -77,13 +79,15 @@ The policy has two exceptions, because the gateway needs them to work:
 
 The policy refuses a write when it cannot evaluate its rules (`failurePolicy: Fail`).
 
+Pod Security admission is a part of Kubernetes. It checks each pod in a namespace against the level in the namespace's `pod-security.kubernetes.io/enforce` label. The level `restricted` refuses privileged pods, pods in the node's network or process namespaces, and `hostPath` volumes. Every namespace that the gateway can write in has this level. So the gateway cannot start a pod that gets access to the node. This also applies to pods that a Deployment or a StatefulSet creates.
+
 So if an attacker controls the gateway, the attacker can write only in toolgate's own namespaces, and only the kinds that a template can contain. The attacker can still read and change the MCP servers that toolgate runs, and create Secrets in their namespaces. The labels on an object do not matter: the policy checks the label of the namespace, and only an admin or the gateway can label a namespace.
 
 Do not put the label `app.kubernetes.io/managed-by: toolgate` on namespaces that hold other workloads. The gateway can write in every namespace with that label.
 
 ## The shared namespace
 
-Templates with `namespace: shared` run in one shared namespace. Set its name in `config.sharedNamespace.name`. The chart then creates the namespace with toolgate's label. If the namespace exists already, set `config.sharedNamespace.create` to `false` and add the label `app.kubernetes.io/managed-by: toolgate` to it yourself. The name must not start with `tg-`. The chart gives the name to the gateway in the setting `sharedNamespace` (see [Configuration](configuration.md)).
+Templates with `namespace: shared` run in one shared namespace. Set its name in `config.sharedNamespace.name`. The chart then creates the namespace with the labels `app.kubernetes.io/managed-by: toolgate` and `pod-security.kubernetes.io/enforce: restricted`. If the namespace exists already, set `config.sharedNamespace.create` to `false` and add these two labels to it yourself. If a label is missing, the admission policy refuses every write of the gateway in the namespace. The name must not start with `tg-`. The chart gives the name to the gateway in the setting `sharedNamespace` (see [Configuration](configuration.md)).
 
 If `config.sharedNamespace.name` is empty, every `namespace: shared` template is invalid, and users do not see it.
 

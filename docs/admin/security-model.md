@@ -57,7 +57,7 @@ See [Pod sign-in](pod-sign-in.md).
 
 Each `per-session` or `per-user` instance runs in its own namespace. The namespace enforces the Pod Security level `restricted`, and denies all network traffic except DNS and connections from the gateway. So an instance that holds the secrets of one user cannot be reached by the instances of other users.
 
-The gateway can write only the kinds of objects that a template can contain, and only in namespaces with toolgate's label. An admission policy enforces this, so a gateway that an attacker controls cannot do more. [The chart page](chart.md) tells more about these permissions.
+The gateway can write only the kinds of objects that a template can contain, and only in namespaces with toolgate's label and the Pod Security level `restricted`. An admission policy enforces this, so a gateway that an attacker controls cannot do more. For example, it cannot start a privileged pod. [The chart page](chart.md) tells more about these permissions.
 
 ## Secrets
 

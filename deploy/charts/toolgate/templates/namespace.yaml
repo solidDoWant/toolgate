@@ -4,7 +4,7 @@
 {{- end }}
 {{- if and .name .create }}
 # The namespace for instances of `namespace: shared` templates. The admission
-# policy lets the gateway write only in namespaces with this label.
+# policy lets the gateway write only in namespaces with these labels.
 apiVersion: v1
 kind: Namespace
 metadata:

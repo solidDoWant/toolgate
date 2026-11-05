@@ -94,9 +94,10 @@ config:
     # templates. Empty means the chart creates none. It must not start with
     # `tg-`.
     name: ""
-    # -- Create the shared namespace with toolgate's label. If false, the
-    # namespace must exist and carry the label
-    # `app.kubernetes.io/managed-by: toolgate`.
+    # -- Create the shared namespace with toolgate's labels. If false, the
+    # namespace must exist and carry the labels
+    # `app.kubernetes.io/managed-by: toolgate` and
+    # `pod-security.kubernetes.io/enforce: restricted`.
     create: true
 
   crds:
