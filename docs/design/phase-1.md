@@ -44,11 +44,12 @@ Why: one actor on Kubernetes means two replicas can never race to create or dele
 
 ### Instances
 
-`instances(id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, attempt_started_at, ready_at, failed_at, last_used_at, updated_at)`.
+`instances(id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context)`.
 
 - `id` is a UUIDv7 (`github.com/google/uuid`) written as 32 lowercase hex characters, so `tg-<id>` is 35 characters.
 - `scope` is the template's scope when the instance was created. `scope_key` is `session:<principal>:<session_id>`, `user:<principal>` or `shared`. `owner_principal` is empty for shared instances. `render_session` is the `sessions.id` whose identity snapshot the reconciler renders with: the session whose enable created the row.
 - `desired` is `running` or `stopped`. `status` is one of `pending`, `starting`, `ready`, `failed`, `stopping`, `stopped`.
+- `trace_context` is the W3C trace context (`traceparent` and `tracestate`) of the enable request that inserted the row, or empty. It joins the reconciler's work to that request's trace (§7, "Traces").
 - `tools` holds the upstream tool list, written only by the reconciler. `secrets_used` maps each secret name the render used to that secret's `updated_at`.
 - **Live instance:** `desired = 'running' AND status NOT IN ('stopping', 'stopped')`. A partial unique index enforces at most one live instance per (template_ns, template_name, scope_key).
 - **One row per attempt.** A row never goes back to an earlier status. A retry after a failure, or a start after a stop, inserts a new row with a new ID and a new namespace. Leftover objects of a failed attempt are deleted with its namespace, and a late result for an old attempt can only touch the old row.
@@ -239,6 +240,12 @@ So a compromised gateway can't write outside toolgate's namespaces, whether or n
   - The database user in `database.existingSecret` must be allowed to create tables and indexes in its schema. `docs/admin/` says so.
   - During a rolling update, old replicas run against the new schema. So a migration only adds tables, columns with defaults, and indexes. A drop or rename waits for a later release, after the code stopped using the object.
   - A database whose version is newer than the binary's (a rollback) makes `serve` log a warning and start anyway. It never migrates down.
+- **Traces.** Spans follow `SPEC.md` §12. A request's spans are children of its incoming `traceparent`.
+  - Enable: `toolgate.policy` for each policy decision, and `toolgate.enable` around the whole wait.
+  - Call: `toolgate.policy` and `toolgate.forward`.
+  - Render and apply run later, in the leader's reconciler, possibly on another replica. So when enable inserts an instance row, it writes the request's trace context to `instances.trace_context` with the OpenTelemetry W3C propagator. When the reconciler starts that row, it extracts the context and starts `toolgate.render` and `toolgate.apply` as children of it. The reconciler's other work (health checks, stops, sweeps) uses its own root spans.
+  - An enable that reuses a live instance renders and applies nothing, so its trace has no render or apply spans. The AC-1-29 test enables a fresh instance.
+  - The column is added by an additive migration, as the "Database migrations" entry requires.
 - **Errors to the model** are short sentences naming what to do next, for example "Secret `github-token` isn't set. Run `toolgate secret set github-token`."
 - **Email claims:** `email` is used for matching and rendering only when the `email_verified` claim (name configurable) is `true`. Otherwise it is treated as absent: `access.users` and rules never match by it, and `${principal.email}` fails to render.
 - **Globs** in `ToolgateRule` (`workspaces`, `tools`, and the other list fields) are compiled with `github.com/gobwas/glob` with no separators. So `*` matches any run of characters, including `/`, and `k8s/ci/*` matches `k8s/ci/ReplicaSet/runner-abc`. A rule with a pattern that doesn't compile is invalid, with the reason in its status.
