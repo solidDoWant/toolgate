@@ -67,9 +67,10 @@ WHERE id = @id AND status = @from_status;
 
 -- name: SetInstancePending :execrows
 -- Sends a starting or ready instance whose objects are missing back to
--- pending, at the template's current generation.
+-- pending, at the template's current generation. The start attempt begins
+-- again, so startTimeout is measured from now.
 UPDATE instances
-SET status = 'pending', generation = @generation, updated_at = now()
+SET status = 'pending', generation = @generation, attempt_started_at = now(), updated_at = now()
 WHERE id = @id AND status = @from_status;
 
 -- name: SetInstanceSecretsUsed :execrows

@@ -4,16 +4,25 @@ package runtime_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/runtime"
@@ -172,6 +181,60 @@ func TestRestartRecovery(t *testing.T) {
 		assert.Equal(t, int64(1), current.Generation)
 	})
 
+	t.Run("[row 17] a long-ready instance sent back to pending becomes ready again when it answers", func(t *testing.T) {
+		template := fixture.template("long-ready", "shared", 0, everyone)
+		instance := fixture.longReadyInstanceWithoutObjects(t, template)
+
+		fixture.sweep(t, fixture.kube)
+		require.Equal(t, "pending", fixture.get(t, instance.ID).Status)
+
+		starter := fixture.restartStarter(nil, func(context.Context, string) ([]*mcp.Tool, error) {
+			return []*mcp.Tool{{Name: "search", InputSchema: map[string]any{"type": "object"}}}, nil
+		})
+		for range 2 {
+			require.NoError(t, starter.Step(t.Context(), fixture.get(t, instance.ID)))
+		}
+
+		current := fixture.get(t, instance.ID)
+		assert.Equal(t, "ready", current.Status, "reason: %s", current.Reason)
+	})
+
+	t.Run("[row 17] a long-ready instance sent back to pending fails once startTimeout has passed since the restart", func(t *testing.T) {
+		template := fixture.template("long-ready-silent", "shared", 0, everyone)
+		instance := fixture.longReadyInstanceWithoutObjects(t, template)
+
+		var beforeSweep time.Time
+		require.NoError(t, fixture.pool.QueryRow(t.Context(), `SELECT now()`).Scan(&beforeSweep))
+
+		fixture.sweep(t, fixture.kube)
+		restarted := fixture.get(t, instance.ID)
+		require.Equal(t, "pending", restarted.Status)
+		require.True(t, restarted.AttemptStartedAt.Valid)
+		require.False(t, restarted.AttemptStartedAt.Time.Before(beforeSweep),
+			"the attempt is measured from the restart, not from the first start")
+
+		var now atomic.Pointer[time.Time]
+
+		setNow := func(at time.Time) { now.Store(&at) }
+		setNow(restarted.AttemptStartedAt.Time)
+
+		starter := fixture.restartStarter(func() time.Time { return *now.Load() },
+			func(context.Context, string) ([]*mcp.Tool, error) { return nil, errors.New("connection refused") })
+		require.NoError(t, starter.Step(t.Context(), fixture.get(t, instance.ID)))
+		require.Equal(t, "starting", fixture.get(t, instance.ID).Status)
+
+		setNow(restarted.AttemptStartedAt.Time.Add(runtime.DefaultStartTimeout - time.Second))
+		require.NoError(t, starter.Step(t.Context(), fixture.get(t, instance.ID)))
+		require.Equal(t, "starting", fixture.get(t, instance.ID).Status, "startTimeout hasn't passed since the restart")
+
+		setNow(restarted.AttemptStartedAt.Time.Add(runtime.DefaultStartTimeout))
+		require.NoError(t, starter.Step(t.Context(), fixture.get(t, instance.ID)))
+
+		current := fixture.get(t, instance.ID)
+		assert.Equal(t, "failed", current.Status)
+		assert.Contains(t, current.Reason, "didn't become ready within 5m0s")
+	})
+
 	t.Run("[row 17] live rows with their namespace and pending rows without one are left alone", func(t *testing.T) {
 		template := fixture.template("intact", "shared", 0, everyone)
 		ready := fixture.instance(t, template, "shared", "", "ready")
@@ -199,4 +262,44 @@ func TestRestartRecovery(t *testing.T) {
 		assert.False(t, fixture.namespaceExists(t, instance.Namespace))
 		assert.Equal(t, "stopped", fixture.get(t, instance.ID).Status)
 	})
+}
+
+// longReadyInstanceWithoutObjects returns a ready instance whose attempt
+// started an hour ago, longer than the default startTimeout, and whose
+// namespace was deleted while the gateway was down.
+func (f *stopFixture) longReadyInstanceWithoutObjects(t *testing.T, template *v1alpha1.MCPServerTemplate) db.Instance {
+	t.Helper()
+
+	instance := f.instance(t, template, "shared", "", "ready")
+	_, err := f.pool.Exec(t.Context(), `UPDATE instances SET attempt_started_at = now() - interval '1 hour',
+		ready_at = now() - interval '55 minutes' WHERE id = $1`, instance.ID)
+	require.NoError(t, err)
+	require.NoError(t, f.kube.Delete(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instance.Namespace}}))
+
+	return instance
+}
+
+// restartStarter returns a Starter that applies instance objects to a new
+// fake cluster and lists tools with listTools.
+func (f *stopFixture) restartStarter(now func() time.Time, listTools func(context.Context, string) ([]*mcp.Tool, error)) *runtime.Starter {
+	scheme := k8sruntime.NewScheme()
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+
+	kube := clientfake.NewClientBuilder().WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{Apply: fakeApply}).WithReturnManagedFields().Build()
+
+	return &runtime.Starter{
+		Store:    runtime.PostgresStartStore{Pool: f.pool},
+		Client:   kube,
+		Template: f.catalog.Running,
+		Secrets: runtime.BrokerSecrets(func(context.Context, string, string) ([]byte, time.Time, error) {
+			return nil, time.Time{}, nil
+		}),
+		ListTools:        listTools,
+		GatewayNamespace: "toolgate",
+		GatewayPodLabels: map[string]string{"app.kubernetes.io/name": "toolgate"},
+		Now:              now,
+	}
 }
