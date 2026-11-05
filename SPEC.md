@@ -275,7 +275,7 @@ Pages:
 
 **Step-up.** Creating a grant or approving a call needs an authentication less than 5 minutes old. toolgate redirects to the IdP with `prompt=login` and `max_age=0`, and checks `auth_time`. The IdP's flow decides how the person signs in (the owner uses passkeys).
 
-**From inside a session.** When a call needs a grant or an approval, the gateway sends a URL-mode MCP elicitation linking to the right page. Claude Code opens it in the browser, and the call continues when the person acts, up to `approvalTimeout` (default 10 min). In sessions that can't show an elicitation (`-p`, CI), the call fails at once with an error naming the grant or approval needed.
+**From inside a session.** When a call needs an approval, the gateway sends a URL-mode MCP elicitation linking to the approval page. A call that needs a grant fails at once with a link to the Grants page. Claude Code opens it in the browser, and the call continues when the person acts, up to `approvalTimeout` (default 10 min). In sessions that can't show an elicitation (`-p`, CI), the call fails at once with an error naming the grant or approval needed.
 
 **Admins** are members of the configured admin group.
 
