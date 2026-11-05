@@ -4,7 +4,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -220,19 +219,29 @@ func TestAC1_21SecretCommands(t *testing.T) {
 		session := served.connectAs(t, "session-enable", "")
 
 		// envtest runs no pods, so the instance never becomes ready: the
-		// enable waits until the test has seen the Secret and cancels it.
-		enableCtx, cancelEnable := context.WithCancel(t.Context())
+		// enable waits until the test has seen the Secret and disables the
+		// server. Cancelling the call's context would not do: the client
+		// sends notifications/cancelled in the background, closing the
+		// session can drop it, and the gateway then keeps waiting and holds
+		// up its shutdown. The disable ends the wait on the gateway, and
+		// the enable's reply proves it ended.
 		enableDone := make(chan struct{})
 
 		go func() {
 			defer close(enableDone)
 
-			_, _ = session.CallTool(enableCtx, &mcp.CallToolParams{Name: gateway.ToolEnableServer, Arguments: map[string]any{"name": "github"}})
+			_, _ = session.CallTool(t.Context(), &mcp.CallToolParams{Name: gateway.ToolEnableServer, Arguments: map[string]any{"name": "github"}})
 		}()
 
 		defer func() {
-			cancelEnable()
-			<-enableDone
+			_, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: gateway.ToolDisableServer, Arguments: map[string]any{"name": "github"}})
+			assert.NoError(t, err, "disable the server to end the enable")
+
+			select {
+			case <-enableDone:
+			case <-time.After(time.Minute):
+				assert.Fail(t, "the enable did not end after the disable", "stderr: %s", served.stderr.String())
+			}
 		}()
 
 		var holders []string
