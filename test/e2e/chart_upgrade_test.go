@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +14,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -45,7 +45,9 @@ func helmCommand(t *testing.T, args ...string) []byte {
 
 	var stdout, stderr bytes.Buffer
 
-	command := exec.CommandContext(t.Context(), helm, args...)
+	// Not cancelled with the test, so a cleanup can restore the release; the
+	// --timeout flags bound each call.
+	command := exec.CommandContext(context.WithoutCancel(t.Context()), helm, args...)
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	require.NoError(t, command.Run(), "helm %v: %s", args, stderr.String())
@@ -66,13 +68,18 @@ func changedChart(t *testing.T) string {
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
 
-	var crd apiextensionsv1.CustomResourceDefinition
+	// Edit the manifest as plain data, so the copy differs from the original
+	// only in the added field.
+	var crd map[string]any
 	require.NoError(t, yaml.Unmarshal(raw, &crd))
 
-	for index := range crd.Spec.Versions {
-		spec := crd.Spec.Versions[index].Schema.OpenAPIV3Schema.Properties["spec"]
-		spec.Properties[upgradeMarker] = apiextensionsv1.JSONSchemaProps{Type: "string"}
-		crd.Spec.Versions[index].Schema.OpenAPIV3Schema.Properties["spec"] = spec
+	versions, ok := crd["spec"].(map[string]any)["versions"].([]any)
+	require.True(t, ok, "spec.versions is a list")
+
+	for _, version := range versions {
+		schema := version.(map[string]any)["schema"].(map[string]any)["openAPIV3Schema"].(map[string]any)
+		spec := schema["properties"].(map[string]any)["spec"].(map[string]any)
+		spec["properties"].(map[string]any)[upgradeMarker] = map[string]any{"type": "string"}
 	}
 
 	raw, err = yaml.Marshal(&crd)
