@@ -56,6 +56,9 @@ func (m *metaTools) waitForInstance(ctx context.Context, request *mcp.CallToolRe
 			return latest, nil
 		}
 
+		// A replacement moves the wait to the new live row.
+		instance.ID = latest.ID
+
 		if latest.Status != lastStatus {
 			lastStatus = latest.Status
 			progress.send(ctx, template.Name+" is "+latest.Status)
@@ -116,6 +119,20 @@ func (m *metaTools) readWait(ctx context.Context, current requestContext, templa
 
 	if err != nil {
 		return db.Instance{}, false, fmt.Errorf("read instance: %w", err)
+	}
+
+	if instance.Desired != "running" && !instance.FailedAt.Valid {
+		// A replaced instance has a new live row for the same template and
+		// scope key (docs/design/phase-2.md §6, "Restart"); wait on that.
+		replacement, err := queries.GetLiveInstance(ctx, db.GetLiveInstanceParams{
+			TemplateNs: template.Namespace, TemplateName: template.Name,
+			ScopeKey: scopeKey(template.Spec.Scope, current.identity),
+		})
+		if err == nil {
+			instance = replacement
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return db.Instance{}, false, fmt.Errorf("read the live instance: %w", err)
+		}
 	}
 
 	switch instance.Status {

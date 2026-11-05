@@ -37,6 +37,8 @@ const (
 	StaticPath   = "/ui/static/"
 	// HomePath is where `GET /` and a sign-in without a valid return_to go.
 	HomePath = "/ui/servers"
+	// RestartPath requests the restart of an outdated instance.
+	RestartPath = "/ui/instances/{id}/restart"
 
 	// SessionCookie holds the UI session's random ID.
 	SessionCookie = "__Host-toolgate"
@@ -198,6 +200,7 @@ func New(options Options, registrar Registrar) *UI {
 
 	if options.Servers != nil {
 		u.Handle("GET "+HomePath, User, http.HandlerFunc(u.servers))
+		u.Handle("POST "+RestartPath, User, http.HandlerFunc(u.restartInstance))
 	}
 
 	return u

@@ -29,6 +29,13 @@ type fakeServers struct {
 	mu            sync.Mutex
 	identities    []auth.Identity
 	includeShared []bool
+	restarts      []restartCall
+}
+
+// restartCall is one RequestRestart the fake was asked for.
+type restartCall struct {
+	id, principal string
+	admin         bool
 }
 
 func (f *fakeServers) Servers(_ context.Context, identity auth.Identity) ([]gateway.ServerEntry, error) {
@@ -55,6 +62,31 @@ func (f *fakeServers) LiveInstances(_ context.Context, principal string, include
 	}
 
 	return instances, nil
+}
+
+// RequestRestart answers by the instance ID: "gone" isn't found,
+// "changed" has changed, and any other ID is restarted.
+func (f *fakeServers) RequestRestart(_ context.Context, id, principal string, admin bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.restarts = append(f.restarts, restartCall{id: id, principal: principal, admin: admin})
+
+	switch id {
+	case "gone":
+		return gateway.ErrInstanceNotFound
+	case "changed":
+		return gateway.ErrInstanceChanged
+	default:
+		return nil
+	}
+}
+
+func (f *fakeServers) restartCalls() []restartCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]restartCall{}, f.restarts...)
 }
 
 func (f *fakeServers) last() (auth.Identity, bool) {
@@ -237,6 +269,51 @@ func TestServersPage(t *testing.T) {
 			assert.NotContains(t, body, "<script>", "no inline script")
 		})
 	}
+}
+
+func TestRestartInstance(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	browser := env.insertSession(t, "restart-session", []string{"admins"})
+	form := url.Values{ui.CSRFField: {csrfTokenOf("restart-session")}}
+
+	t.Run("the Servers page shows a restart button on an outdated ready instance only", func(t *testing.T) {
+		body := readBody(t, get(t, browser, env.server.URL+ui.HomePath))
+
+		assert.Contains(t, body, `<form method="post" action="/ui/instances/own/restart">`)
+		assert.NotContains(t, body, `/ui/instances/shared/restart`, "the shared instance is starting")
+	})
+
+	t.Run("a restart request redirects to the Servers page, which says it was requested", func(t *testing.T) {
+		response := post(t, browser, env.server.URL+"/ui/instances/own/restart", form)
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+		assert.Equal(t, restartCall{id: "own", principal: "dave", admin: true}, env.servers.restartCalls()[0])
+
+		body := readBody(t, get(t, browser, location(t, response).String()))
+		assert.Contains(t, body, "The restart was requested.")
+	})
+
+	t.Run("an instance that changed sends the user back to the Servers page, which says so", func(t *testing.T) {
+		response := post(t, browser, env.server.URL+"/ui/instances/changed/restart", form)
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+		target := location(t, response)
+		assert.Equal(t, ui.HomePath, target.Path)
+
+		body := readBody(t, get(t, browser, target.String()))
+		assert.Contains(t, body, "The instance changed before the restart request arrived.")
+	})
+
+	t.Run("an instance that isn't the user's is not found", func(t *testing.T) {
+		response := post(t, browser, env.server.URL+"/ui/instances/gone/restart", form)
+		assert.Equal(t, http.StatusNotFound, response.StatusCode)
+	})
+
+	t.Run("without a session the request is refused", func(t *testing.T) {
+		before := len(env.servers.restartCalls())
+		response := post(t, env.browser(t), env.server.URL+"/ui/instances/own/restart", form)
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
+		assert.Len(t, env.servers.restartCalls(), before)
+	})
 }
 
 // pageShows reports whether the browser's page text contains text. It is
