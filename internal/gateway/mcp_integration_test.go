@@ -69,12 +69,14 @@ func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFix
 
 	servers := catalog.New()
 	rules := policy.NewRules()
+
 	options := gateway.MCPOptions{
 		Database:  pool,
 		Catalog:   servers,
 		Policy:    &policy.Engine{Rules: rules},
 		Subscribe: listener.Subscribe,
 	}
+
 	for _, change := range configure {
 		change(&options)
 	}

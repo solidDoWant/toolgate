@@ -328,3 +328,43 @@ func TestSharedNamespace(t *testing.T) {
 		assert.Contains(t, err.Error(), "must not start with tg-")
 	})
 }
+
+func TestInstanceLimits(t *testing.T) {
+	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
+		t.Helper()
+
+		manifests, err := render(t, append(append([]string{}, quickStartValues...), set...))
+		require.NoError(t, err)
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		values := map[string]string{}
+
+		for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+			values[variable.Name] = variable.Value
+		}
+
+		return values
+	}
+
+	t.Run("the defaults are 20 per user and 200 in total", func(t *testing.T) {
+		values := gatewayEnv(t)
+		assert.Equal(t, "20", values["TOOLGATE_INSTANCE_LIMIT_PER_USER"])
+		assert.Equal(t, "200", values["TOOLGATE_INSTANCE_LIMIT"])
+	})
+
+	t.Run("1 is allowed", func(t *testing.T) {
+		values := gatewayEnv(t, "config.limits.instancesPerUser=1", "config.limits.instances=1")
+		assert.Equal(t, "1", values["TOOLGATE_INSTANCE_LIMIT_PER_USER"])
+		assert.Equal(t, "1", values["TOOLGATE_INSTANCE_LIMIT"])
+	})
+
+	for _, setting := range []string{"instancesPerUser", "instances"} {
+		for _, value := range []string{"0", "-1", "1.5", "many"} {
+			t.Run(setting+"="+value+" is rejected", func(t *testing.T) {
+				_, err := render(t, append(append([]string{}, quickStartValues...), "config.limits."+setting+"="+value))
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "config.limits."+setting+" must be a whole number of at least 1")
+			})
+		}
+	}
+}

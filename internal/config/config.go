@@ -132,16 +132,18 @@ type Config struct {
 	// labels. Required with `leaseNamespace`. The chart sets it.
 	GatewayPodLabels []string `json:"gatewayPodLabels" env:"TOOLGATE_GATEWAY_POD_LABELS"`
 
-	// The most MCP server instances that one user may have running at a
-	// time. Per-session and per-user instances count against the user who
-	// started them; shared instances don't. When a user is at the limit,
-	// enabling a server that would start a new instance fails. Enabling a
-	// server that already runs for the user still works. At least 1.
+	// The maximum number of MCP server instances that run for one user at
+	// the same time. Per-session and per-user instances count for the user
+	// who started them. Shared instances do not count. When a user is at the
+	// limit, an enable that must start a new instance fails. An enable of a
+	// server that already runs for the user still works. At least 1. The
+	// chart sets it from `config.limits.instancesPerUser`.
 	InstanceLimitPerUser int `json:"instanceLimitPerUser" env:"TOOLGATE_INSTANCE_LIMIT_PER_USER"`
 
-	// The most MCP server instances that the gateway runs at a time, for all
-	// users together and including shared instances. At the limit, enabling a
-	// server that would start a new instance fails. At least 1.
+	// The maximum number of MCP server instances that the gateway runs at the
+	// same time, for all users and shared instances together. At the limit,
+	// an enable that must start a new instance fails. At least 1. The chart
+	// sets it from `config.limits.instances`.
 	InstanceLimit int `json:"instanceLimit" env:"TOOLGATE_INSTANCE_LIMIT"`
 }
 

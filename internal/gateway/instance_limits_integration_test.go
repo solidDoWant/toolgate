@@ -142,6 +142,7 @@ func TestInstanceLimitInteractions(t *testing.T) {
 
 		assert.Equal(t, enableResult{tools: []string{winner + "__search"}}, results[winner])
 		assert.Equal(t, enableResult{err: "You already have 1 servers running, the limit for each user. Disable servers you no longer need, or wait for idle ones to stop."}, results[loser])
+
 		enabledBy := map[string]user{"github": alice(), "slack": secondUser}
 		fixture.requireLimitRefusal(t, enabledBy[loser], loser, "per-user")
 	})
