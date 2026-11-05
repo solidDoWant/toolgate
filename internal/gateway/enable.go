@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
@@ -21,6 +23,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/telemetry"
 )
 
 // MaxEnabledServers is the number of servers one session may have enabled
@@ -69,7 +72,7 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	// Step 1: policy, from this request's own identity.
-	decision := m.policy.Decide(policy.Request{Identity: current.identity, Template: template})
+	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template})
 	if !decision.Allowed {
 		if decision.Step == policy.StepAccess {
 			return nil, EnableResult{}, notInCatalog(input.Name)
@@ -108,7 +111,12 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	// Step 5.
-	instance, err = m.waitForInstance(ctx, request, current, template, instance)
+	waitCtx, enableSpan := tracer(ctx).Start(ctx, "toolgate.enable",
+		trace.WithAttributes(attribute.String("toolgate.server", template.Name)))
+	instance, err = m.waitForInstance(waitCtx, request, current, template, instance)
+
+	enableSpan.End()
+
 	if err != nil {
 		return nil, EnableResult{}, err
 	}
@@ -124,7 +132,7 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	// Step 6: decide again, now that the instance is ready.
-	decision = m.policy.Decide(policy.Request{Identity: current.identity, Template: template})
+	decision = m.decide(ctx, policy.Request{Identity: current.identity, Template: template})
 	if !decision.Allowed {
 		if err := m.disableInTransaction(ctx, current, template, decision); err != nil {
 			return nil, EnableResult{}, err
@@ -398,6 +406,7 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 		OwnerPrincipal: owner,
 		RenderSession:  pgtype.Int8{Int64: current.session.ID, Valid: true},
 		Namespace:      namespace,
+		TraceContext:   telemetry.EncodeContext(ctx),
 	})
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("insert instance: %w", err)

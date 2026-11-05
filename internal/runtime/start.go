@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -28,6 +32,7 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/telemetry"
 )
 
 // FieldManager is the server-side apply field manager of every object the
@@ -88,9 +93,22 @@ type Starter struct {
 	GatewayNamespace string
 	// GatewayPodLabels select the gateway's pods in GatewayNamespace.
 	GatewayPodLabels map[string]string
+	// TracerProvider makes the render and apply spans. Nil means no spans.
+	TracerProvider trace.TracerProvider
 	// Now is the clock. Nil means time.Now.
 	Now    func() time.Time
 	Logger *slog.Logger
+}
+
+// tracerName names the tracer of the reconciler's spans.
+const tracerName = "github.com/solidDoWant/toolgate/internal/runtime"
+
+func (s *Starter) tracer() trace.Tracer {
+	if s.TracerProvider == nil {
+		return noop.NewTracerProvider().Tracer(tracerName)
+	}
+
+	return s.TracerProvider.Tracer(tracerName)
 }
 
 // Step moves one instance row forward, if its status is one the start path
@@ -124,12 +142,26 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return err
 	}
 
+	// The render and apply spans are children of the enable request that
+	// inserted the row.
+	ctx = telemetry.DecodeContext(ctx, instance.TraceContext)
+	spanAttributes := trace.WithAttributes(attribute.String("toolgate.server", template.Name),
+		attribute.String("toolgate.instance", instance.ID))
+
+	_, renderSpan := s.tracer().Start(ctx, "toolgate.render", spanAttributes)
+
 	result, err := Render(ctx, Input{
 		Template: template,
 		Identity: identity,
 		Instance: Instance{ID: instance.ID, Namespace: instance.Namespace},
 		Secrets:  s.Secrets(identity.PrincipalID),
 	})
+	if err != nil {
+		renderSpan.SetStatus(codes.Error, "render")
+	}
+
+	renderSpan.End()
+
 	if err != nil {
 		if ctx.Err() != nil {
 			return err
@@ -138,17 +170,9 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return s.fail(ctx, instance, StatusPending, "The template didn't render: "+err.Error())
 	}
 
-	if hasOwnNamespace(instance) {
-		prepared, err := s.prepareNamespace(ctx, instance, template)
-		if err != nil || !prepared {
-			return err
-		}
-	}
-
-	for _, object := range result.Objects {
-		if err := s.apply(ctx, object); err != nil {
-			return err
-		}
+	applied, err := s.applyAll(ctx, instance, template, result, spanAttributes)
+	if err != nil || !applied {
+		return err
 	}
 
 	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation); err != nil {
@@ -391,6 +415,40 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 		unstructured.RemoveNestedField(content, "metadata", "creationTimestamp")
 
 		if err := s.apply(ctx, &unstructured.Unstructured{Object: content}); err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
+}
+
+// applyAll prepares the instance's own namespace, if it has one, and applies
+// the rendered objects inside a toolgate.apply span. It reports false,
+// with no error, when the namespace isn't prepared yet: the row then stays
+// pending.
+func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate,
+	result *Result, spanAttributes trace.SpanStartEventOption,
+) (bool, error) {
+	ctx, span := s.tracer().Start(ctx, "toolgate.apply", spanAttributes)
+	defer span.End()
+
+	if hasOwnNamespace(instance) {
+		prepared, err := s.prepareNamespace(ctx, instance, template)
+		if err != nil {
+			span.SetStatus(codes.Error, "namespace")
+
+			return false, err
+		}
+
+		if !prepared {
+			return false, nil
+		}
+	}
+
+	for _, object := range result.Objects {
+		if err := s.apply(ctx, object); err != nil {
+			span.SetStatus(codes.Error, "apply")
+
 			return false, err
 		}
 	}

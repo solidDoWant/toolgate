@@ -47,6 +47,7 @@ type Instance struct {
 	FailedAt         pgtype.Timestamptz
 	LastUsedAt       pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
+	TraceContext     string
 }
 
 type Session struct {

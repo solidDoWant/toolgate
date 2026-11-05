@@ -286,7 +286,19 @@ func (g *gatewaySession) record(event string) {
 func connectGateway(t *testing.T, endpoint, user, session string) *gatewaySession {
 	t.Helper()
 
-	header := http.Header{}
+	return connectGatewayWithHeader(t, endpoint, user, session, nil)
+}
+
+// connectGatewayWithHeader is connectGateway with extra headers on every
+// request.
+func connectGatewayWithHeader(t *testing.T, endpoint, user, session string, extra http.Header) *gatewaySession {
+	t.Helper()
+
+	header := extra.Clone()
+	if header == nil {
+		header = http.Header{}
+	}
+
 	header.Set("Authorization", "Bearer "+oidcProvider(t).MintAccessToken(t, testutil.TokenClaims{
 		Subject: user, Email: user + "@example.com", EmailVerified: true,
 	}))
