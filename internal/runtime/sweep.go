@@ -132,7 +132,7 @@ func (s *Sweep) Run(ctx context.Context) error {
 			slog.String("kind", object.GetKind()), slog.String("name", object.GetName()), slog.String("instance", id))
 
 		uid := object.GetUID()
-		if err := s.Deleter.Delete(ctx, object, client.Preconditions{UID: &uid}); err != nil &&
+		if err := s.Deleter.Delete(ctx, object, client.Preconditions{UID: &uid}, backgroundDeletion); err != nil &&
 			!apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
 			problems = append(problems, err)
 		}

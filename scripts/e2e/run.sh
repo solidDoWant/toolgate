@@ -134,6 +134,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.oidc.issuerURL="$TOOLGATE_E2E_OIDC_ISSUER" \
 	--set config.oidc.audience=toolgate \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
+	--set config.sharedNamespace.name=toolgate-shared \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"
