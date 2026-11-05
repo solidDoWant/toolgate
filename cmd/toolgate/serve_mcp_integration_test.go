@@ -208,4 +208,3 @@ func TestServeServesTheCatalogAndStartsInstances(t *testing.T) {
 		assert.Equal(t, "alice", settings.Data["owner"])
 	})
 }
-

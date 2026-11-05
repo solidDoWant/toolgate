@@ -70,16 +70,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	authenticator, err := newAuthenticator(ctx, cfg)
-	if err != nil {
-		logger.Error("gateway failed to start", "error", err)
-
-		return 1
-	}
+	authenticator := newAuthenticator(ctx, cfg, logger)
 
 	var broker *secrets.Broker
 
 	if cfg.SecretsKeysetFile != "" {
+		var err error
+
 		broker, err = registerSecretsAPI(server, cfg, authenticator, stdout, logger)
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)
@@ -187,21 +184,33 @@ func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logge
 }
 
 // newAuthenticator returns the authenticator of the gateway's user-facing
-// endpoints. It discovers the identity provider, so the gateway does not
-// start while the provider is unreachable.
-func newAuthenticator(ctx context.Context, cfg config.Config) (*auth.Authenticator, error) {
-	return auth.New(ctx, auth.Options{
-		IssuerURL:          cfg.OIDCIssuerURL,
-		Audience:           cfg.OIDCAudience,
-		EmailClaim:         cfg.OIDCEmailClaim,
-		EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
-		GroupsClaim:        cfg.OIDCGroupsClaim,
-	})
+// endpoints. It starts discovering the identity provider in the background;
+// requests are refused until discovery succeeds.
+func newAuthenticator(ctx context.Context, cfg config.Config, logger *slog.Logger) *lazyAuthenticator {
+	authenticator := &lazyAuthenticator{
+		ctx: context.WithoutCancel(ctx),
+		options: auth.Options{
+			IssuerURL:          cfg.OIDCIssuerURL,
+			Audience:           cfg.OIDCAudience,
+			EmailClaim:         cfg.OIDCEmailClaim,
+			EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
+			GroupsClaim:        cfg.OIDCGroupsClaim,
+		},
+		logger: logger,
+	}
+
+	go func() {
+		if _, err := authenticator.get(); err != nil {
+			logger.WarnContext(ctx, "cannot reach the identity provider yet", "error", err)
+		}
+	}()
+
+	return authenticator
 }
 
 // registerSecretsAPI serves `/api/v1/secrets` behind user authentication
 // and returns the secret broker.
-func registerSecretsAPI(server *gateway.Server, cfg config.Config, authenticator *auth.Authenticator, stdout io.Writer,
+func registerSecretsAPI(server *gateway.Server, cfg config.Config, authenticator *lazyAuthenticator, stdout io.Writer,
 	logger *slog.Logger,
 ) (*secrets.Broker, error) {
 	cipher, err := secrets.LoadKeyset(cfg.SecretsKeysetFile)

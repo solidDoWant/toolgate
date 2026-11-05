@@ -8,6 +8,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| config.catalogNamespaces | list | `[]` | Namespaces whose `MCPServerTemplate` and `ToolgateRule` objects the gateway reads, such as `[toolgate-catalog]`. Empty means the release namespace. |
 | config.crds.enabled | bool | `true` | Install toolgate's CRDs with the chart. `helm upgrade` updates them. If false, install them yourself. |
 | config.crds.keep | bool | `true` | Keep the CRDs, and so every template, rule and settings profile, when the release is uninstalled (`helm.sh/resource-policy: keep`). |
 | config.database.existingSecret | string | `""` | Name of an existing Secret in the release namespace that holds the PostgreSQL connection string. Required. |
