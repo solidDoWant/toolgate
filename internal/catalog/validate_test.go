@@ -57,8 +57,15 @@ func TestValidate(t *testing.T) {
 			template: newTemplate("github", catalog.ScopePerSession, serviceResource, secretWith("stringData", "${secret:github-token}"), podWithEnv("${principal.id} ${session.id}")),
 		},
 		{
-			name:     "a secret in data is valid",
-			template: newTemplate("github", catalog.ScopePerUser, secretWith("data", "${resolver:vault}")),
+			name:      "a secret in data is valid",
+			template:  newTemplate("github", catalog.ScopePerUser, secretWith("data", "${resolver:vault}")),
+			validator: catalog.Validator{Resolvers: []string{"vault"}},
+		},
+		{
+			name:        "a resolver that isn't configured is invalid",
+			template:    newTemplate("github", catalog.ScopePerUser, secretWith("data", "${resolver:other}")),
+			validator:   catalog.Validator{Resolvers: []string{"vault"}},
+			wantProblem: "resolver `other` isn't configured",
 		},
 		{
 			name:     "an escaped variable is not a variable",

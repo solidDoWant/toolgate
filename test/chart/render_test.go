@@ -514,3 +514,71 @@ func TestAuditPayloadSettings(t *testing.T) {
 		assert.Contains(t, err.Error(), "config.audit.s3.bucket is required when config.audit.payloads is true")
 	})
 }
+
+func TestResolverSettings(t *testing.T) {
+	resolverValues := filepath.Join(t.TempDir(), "resolvers.yaml")
+	require.NoError(t, os.WriteFile(resolverValues, []byte(`config:
+  resolvers:
+    - name: github-app
+      url: https://resolver.tools.svc/resolve
+      audience: toolgate-resolver-github-app
+      timeout: 20s
+    - name: vault
+      url: https://vault.example/resolve
+      audience: toolgate-resolver-vault
+`), 0o600))
+
+	t.Run("no resolvers means no configuration file", func(t *testing.T) {
+		deployment := find[appsv1.Deployment](t, renderQuickStart(t), "Deployment")
+		assert.Equal(t, []string{"serve"}, deployment.Spec.Template.Spec.Containers[0].Args)
+		assert.Empty(t, deployment.Spec.Template.Spec.Volumes)
+	})
+
+	t.Run("each resolver gets the configuration and its own token", func(t *testing.T) {
+		manifests := renderQuickStart(t, "--values", resolverValues)
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		pod := deployment.Spec.Template.Spec
+		container := pod.Containers[0]
+		assert.Equal(t, []string{"serve", "--config", "/etc/toolgate/config.yaml"}, container.Args)
+
+		configMap := find[corev1.ConfigMap](t, manifests, "ConfigMap")
+
+		var file struct {
+			Resolvers []map[string]string `json:"resolvers"`
+		}
+		require.NoError(t, yaml.UnmarshalStrict([]byte(configMap.Data["config.yaml"]), &file))
+		require.Len(t, file.Resolvers, 2)
+		assert.Equal(t, map[string]string{
+			"name": "github-app", "url": "https://resolver.tools.svc/resolve",
+			"audience": "toolgate-resolver-github-app", "timeout": "20s",
+		}, file.Resolvers[0])
+
+		volumes := map[string]corev1.Volume{}
+		for _, volume := range pod.Volumes {
+			volumes[volume.Name] = volume
+		}
+
+		mounts := map[string]corev1.VolumeMount{}
+		for _, mount := range container.VolumeMounts {
+			mounts[mount.Name] = mount
+		}
+
+		require.NotNil(t, volumes["config"].ConfigMap)
+		assert.Equal(t, configMap.Name, volumes["config"].ConfigMap.Name)
+		assert.Equal(t, "/etc/toolgate/config.yaml", mounts["config"].MountPath)
+
+		for name, audience := range map[string]string{"github-app": "toolgate-resolver-github-app", "vault": "toolgate-resolver-vault"} {
+			volume := volumes["resolver-"+name]
+			require.NotNil(t, volume.Projected, name)
+			require.Len(t, volume.Projected.Sources, 1, name)
+			token := volume.Projected.Sources[0].ServiceAccountToken
+			require.NotNil(t, token, name)
+			assert.Equal(t, audience, token.Audience)
+			require.NotNil(t, token.ExpirationSeconds)
+			assert.EqualValues(t, 600, *token.ExpirationSeconds)
+			assert.Equal(t, "token", token.Path)
+			assert.Equal(t, "/var/run/secrets/toolgate/resolvers/"+name, mounts["resolver-"+name].MountPath)
+			assert.True(t, mounts["resolver-"+name].ReadOnly)
+		}
+	})
+}

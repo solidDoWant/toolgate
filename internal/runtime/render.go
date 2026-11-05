@@ -7,10 +7,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -48,7 +50,9 @@ type Identity struct {
 	// PrincipalEmail is the verified email, or empty when there is none.
 	PrincipalEmail string
 	PrincipalName  string
-	WorkspaceID    string
+	// PrincipalGroups are the principal's groups, sent to resolvers.
+	PrincipalGroups []string
+	WorkspaceID     string
 	// Attested is true when the workspace was verified by the platform.
 	// Otherwise WorkspaceID is a claimed value.
 	Attested  bool
@@ -61,13 +65,11 @@ type Instance struct {
 	Namespace string
 }
 
-// SecretSource resolves ${secret:…} and ${resolver:…} for the identity being
-// rendered. The secrets package implements it.
+// SecretSource resolves ${secret:…} for the identity being rendered. The
+// secrets package implements it.
 type SecretSource interface {
 	// Secret returns the value of the user's secret name.
 	Secret(ctx context.Context, name string) (string, error)
-	// Resolve returns a value from the resolver name.
-	Resolve(ctx context.Context, name string) (string, error)
 }
 
 // Input is everything one render needs.
@@ -76,6 +78,9 @@ type Input struct {
 	Identity Identity
 	Instance Instance
 	Secrets  SecretSource
+	// Resolvers calls the resolvers ${resolver:…} names. Nil means none are
+	// configured.
+	Resolvers ResolverCaller
 }
 
 // Result is a rendered instance.
@@ -84,6 +89,9 @@ type Result struct {
 	Objects []*unstructured.Unstructured
 	// SecretsUsed are the names of the user secrets the render used, sorted.
 	SecretsUsed []string
+	// ResolvedExpiresAt is the earliest expiresAt of the resolver values
+	// the render used, or zero when it used none.
+	ResolvedExpiresAt time.Time
 }
 
 // VariableError is a variable that could not be rendered. Its message names
@@ -165,6 +173,12 @@ func Render(ctx context.Context, input Input) (*Result, error) {
 
 	slices.Sort(result.SecretsUsed)
 
+	for _, resolved := range renderer.resolved {
+		if result.ResolvedExpiresAt.IsZero() || resolved.ExpiresAt.Before(result.ResolvedExpiresAt) {
+			result.ResolvedExpiresAt = resolved.ExpiresAt
+		}
+	}
+
 	return result, nil
 }
 
@@ -193,14 +207,17 @@ func (noSecrets) Secret(context.Context, string) (string, error) {
 	return "", fmt.Errorf("no secrets here")
 }
 
-func (noSecrets) Resolve(context.Context, string) (string, error) {
-	return "", fmt.Errorf("no resolvers here")
-}
+// errNoResolvers is the error of ${resolver:…} when no resolvers are
+// configured.
+var errNoResolvers = errors.New("no resolvers are configured")
 
 type renderer struct {
 	ctx         context.Context
 	input       Input
 	secretsUsed map[string]bool
+	// resolved holds each resolver's value: each render calls each resolver
+	// it names once.
+	resolved map[string]Resolved
 }
 
 // node returns a copy of node with every string value rendered. path is the
@@ -329,15 +346,55 @@ func (r *renderer) variable(variable string, path []string) (string, error) {
 	}
 
 	if name, found := strings.CutPrefix(variable, "resolver:"); found {
-		value, err := r.input.Secrets.Resolve(r.ctx, name)
+		resolved, err := r.resolve(name)
 		if err != nil {
 			return "", fail("could not be resolved", err)
 		}
 
-		return value, nil
+		return resolved.Value, nil
 	}
 
 	return "", fail("is not a known variable", nil)
+}
+
+// resolve calls the resolver name once per render and returns its value.
+func (r *renderer) resolve(name string) (Resolved, error) {
+	if resolved, found := r.resolved[name]; found {
+		return resolved, nil
+	}
+
+	if r.input.Resolvers == nil {
+		return Resolved{}, errNoResolvers
+	}
+
+	identity := r.input.Identity
+	request := ResolveRequest{
+		Resolver: name,
+		Template: ResolveTemplate{Namespace: r.input.Template.Namespace, Name: r.input.Template.Name},
+		Instance: r.input.Instance.ID,
+		Principal: ResolvePrincipal{
+			ID: identity.PrincipalID, Email: identity.PrincipalEmail, Name: identity.PrincipalName,
+			Groups: identity.PrincipalGroups,
+		},
+	}
+
+	if r.input.Template.Spec.Scope == scopePerSession {
+		request.Workspace = identity.WorkspaceID
+		request.Session = identity.SessionID
+	}
+
+	resolved, err := r.input.Resolvers.Resolve(r.ctx, request)
+	if err != nil {
+		return Resolved{}, err
+	}
+
+	if r.resolved == nil {
+		r.resolved = map[string]Resolved{}
+	}
+
+	r.resolved[name] = resolved
+
+	return resolved, nil
 }
 
 // isPerIdentityVariable reports whether variable depends on a principal, a

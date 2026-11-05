@@ -109,6 +109,8 @@ type Starter struct {
 	Template func(key types.NamespacedName) (*v1alpha1.MCPServerTemplate, bool)
 	// Secrets returns the secret source for a principal's renders.
 	Secrets func(principal string) SecretSource
+	// Resolvers calls the configured resolvers. Nil means none.
+	Resolvers ResolverCaller
 	// ListTools reaches the instance over MCP.
 	ListTools ToolLister
 	// ToolListTimeout bounds each ListTools call. Zero means
@@ -177,10 +179,11 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 	_, renderSpan := s.tracer().Start(ctx, "toolgate.render", spanAttributes)
 
 	result, err := Render(ctx, Input{
-		Template: template,
-		Identity: identity,
-		Instance: Instance{ID: instance.ID, Namespace: instance.Namespace},
-		Secrets:  s.Secrets(identity.PrincipalID),
+		Template:  template,
+		Identity:  identity,
+		Instance:  Instance{ID: instance.ID, Namespace: instance.Namespace},
+		Secrets:   s.Secrets(identity.PrincipalID),
+		Resolvers: s.Resolvers,
 	})
 	if err != nil {
 		renderSpan.SetStatus(codes.Error, "render")
@@ -201,7 +204,7 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return err
 	}
 
-	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation); err != nil {
+	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, result.ResolvedExpiresAt); err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
 	}
 
@@ -340,12 +343,13 @@ func (s *Starter) identity(ctx context.Context, instance db.Instance) (Identity,
 	}
 
 	return Identity{
-		PrincipalID:    session.Principal,
-		PrincipalEmail: session.Email,
-		PrincipalName:  session.Name,
-		WorkspaceID:    session.Workspace,
-		Attested:       session.Attestation == auth.AttestationAttested,
-		SessionID:      session.SessionID,
+		PrincipalID:     session.Principal,
+		PrincipalEmail:  session.Email,
+		PrincipalName:   session.Name,
+		PrincipalGroups: session.Groups,
+		WorkspaceID:     session.Workspace,
+		Attested:        session.Attestation == auth.AttestationAttested,
+		SessionID:       session.SessionID,
 	}, nil
 }
 

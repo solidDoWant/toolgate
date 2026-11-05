@@ -52,6 +52,8 @@ type memoryStore struct {
 	tools      []byte
 	sessions   map[int64]db.Session
 	writes     int
+	// resolvedExpiresAt is what MarkStarting recorded.
+	resolvedExpiresAt time.Time
 }
 
 func (m *memoryStore) Session(_ context.Context, id int64) (db.Session, error) {
@@ -63,7 +65,7 @@ func (m *memoryStore) Session(_ context.Context, id int64) (db.Session, error) {
 	return session, nil
 }
 
-func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64) (bool, error) {
+func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64, resolvedExpiresAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -71,7 +73,7 @@ func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64
 		return false, nil
 	}
 
-	m.status, m.generation = "starting", generation
+	m.status, m.generation, m.resolvedExpiresAt = "starting", generation, resolvedExpiresAt
 	m.writes++
 
 	return true, nil

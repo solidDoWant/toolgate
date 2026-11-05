@@ -90,6 +90,32 @@ settings from `config`.
 {{- $gateway := index $resources "controllers" "gateway" "containers" "gateway" -}}
 {{- $_ := set $gateway "env" (concat $env ($gateway.env | default list) ($config.extraEnv | default list)) -}}
 
+{{- /*
+Resolvers are set in the configuration file only. The file is a ConfigMap
+mounted at /etc/toolgate/config.yaml, and each resolver gets its own
+projected service-account token with its audience.
+*/ -}}
+{{- with $config.resolvers }}
+{{- range $resolver := . }}
+{{- if not (regexMatch "^[a-z][a-z0-9-]{0,62}$" (toString $resolver.name)) }}
+{{- fail (printf "config.resolvers: name %q must be lowercase letters, digits and -, starting with a letter, at most 63 characters" (toString $resolver.name)) }}
+{{- end }}
+{{- if not $resolver.audience }}
+{{- fail (printf "config.resolvers: resolver %q needs an audience" $resolver.name) }}
+{{- end }}
+{{- end }}
+{{- $_ := set $gateway "args" (concat ($gateway.args | default list) (list "--config" "/etc/toolgate/config.yaml")) }}
+{{- $file := toYaml (dict "resolvers" .) }}
+{{- $_ := set $resources "configMaps" (merge ($resources.configMaps | default dict) (dict "config" (dict "data" (dict "config.yaml" $file)))) }}
+{{- $persistence := $resources.persistence | default dict }}
+{{- $_ := set $persistence "config" (dict "type" "configMap" "identifier" "config" "globalMounts" (list (dict "path" "/etc/toolgate/config.yaml" "subPath" "config.yaml" "readOnly" true))) }}
+{{- range $resolver := . }}
+{{- $token := dict "serviceAccountToken" (dict "audience" $resolver.audience "expirationSeconds" 600 "path" "token") }}
+{{- $_ := set $persistence (printf "resolver-%s" $resolver.name) (dict "type" "custom" "volumeSpec" (dict "projected" (dict "sources" (list $token))) "globalMounts" (list (dict "path" (printf "/var/run/secrets/toolgate/resolvers/%s" $resolver.name) "readOnly" true))) }}
+{{- end }}
+{{- $_ := set $resources "persistence" $persistence }}
+{{- end }}
+
 {{- with $config.imagePullSecrets }}
 {{- $_ := set $resources.defaultPodOptions "imagePullSecrets" . }}
 {{- end }}

@@ -121,6 +121,15 @@ config:
       # access key.
       secretAccessKeyKey: secretAccessKey
 
+  # -- Resolvers: HTTP services a template's `${resolver:<name>}` gets a
+  # value from. Each item has a `name`, an `https://` `url`, an `audience`,
+  # an optional `timeout` (default `10s`, at most `60s`) and an optional
+  # `caFile`. The chart writes them to the gateway's configuration file and
+  # mounts a service-account token with each resolver's audience at
+  # `/var/run/secrets/toolgate/resolvers/<name>/token`. Mount a `caFile`
+  # with `resources.persistence`.
+  resolvers: []
+
   # -- More environment variables for the gateway container, as a list of
   # Kubernetes `EnvVar` objects.
   extraEnv: []

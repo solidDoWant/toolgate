@@ -3,8 +3,10 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -19,8 +21,9 @@ type StartStore interface {
 	// is rendered with.
 	Session(ctx context.Context, id int64) (db.Session, error)
 	// MarkStarting moves a pending instance to starting and records the
-	// template generation its objects were applied with.
-	MarkStarting(ctx context.Context, id string, generation int64) (bool, error)
+	// template generation its objects were applied with and the earliest
+	// expiry of its resolved values (zero for none).
+	MarkStarting(ctx context.Context, id string, generation int64, resolvedExpiresAt time.Time) (bool, error)
 	// MarkReady moves a starting instance to ready with its tool list.
 	MarkReady(ctx context.Context, id string, tools []byte) (bool, error)
 	// MarkFailed moves an instance from status from to failed.
@@ -45,9 +48,12 @@ func (s PostgresStartStore) Session(ctx context.Context, id int64) (db.Session, 
 }
 
 // MarkStarting implements StartStore.
-func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generation int64) (bool, error) {
+func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generation int64, resolvedExpiresAt time.Time) (bool, error) {
 	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
-		return queries.SetInstanceStarting(ctx, db.SetInstanceStartingParams{ID: id, Generation: generation})
+		return queries.SetInstanceStarting(ctx, db.SetInstanceStartingParams{
+			ID: id, Generation: generation,
+			ResolvedExpiresAt: pgtype.Timestamptz{Time: resolvedExpiresAt, Valid: !resolvedExpiresAt.IsZero()},
+		})
 	})
 }
 
