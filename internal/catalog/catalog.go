@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/changes"
 )
 
 // ErrNotFound is returned for a server name no watched template has.
@@ -50,6 +51,8 @@ type Catalog struct {
 
 	loaded     chan struct{}
 	loadedOnce sync.Once
+
+	changes changes.Feed
 }
 
 type entry struct {
@@ -98,6 +101,8 @@ func (c *Catalog) IsLoaded() bool {
 func (c *Catalog) Set(template *v1alpha1.MCPServerTemplate, problems []string) []types.NamespacedName {
 	key := types.NamespacedName{Namespace: template.Namespace, Name: template.Name}
 
+	defer c.changes.Notify()
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -123,9 +128,18 @@ func (c *Catalog) Delete(key types.NamespacedName) []types.NamespacedName {
 		return nil
 	}
 
+	defer c.changes.Notify()
+
 	delete(c.entries, key)
 
 	return c.refresh(key.Name)
+}
+
+// Subscribe returns a channel that receives after a template is set or
+// deleted, and a function that ends the subscription. Signals not yet
+// received are merged into one.
+func (c *Catalog) Subscribe() (<-chan struct{}, func()) {
+	return c.changes.Subscribe()
 }
 
 // refresh updates the last valid generation of every template named name and

@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/changes"
 )
 
 // Rules holds the valid ToolgateRule objects read from the watched
@@ -19,6 +20,8 @@ import (
 type Rules struct {
 	mu      sync.RWMutex
 	entries map[types.NamespacedName]*ruleEntry
+
+	changes changes.Feed
 }
 
 type ruleEntry struct {
@@ -52,7 +55,6 @@ func (r *Rules) Set(rule *v1alpha1.ToolgateRule) error {
 	compiled, err := compile(key, rule)
 
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	current, found := r.entries[key]
 	if !found {
@@ -61,10 +63,15 @@ func (r *Rules) Set(rule *v1alpha1.ToolgateRule) error {
 	}
 
 	if err != nil {
+		r.mu.Unlock()
+
 		return err
 	}
 
 	current.valid = compiled
+	r.mu.Unlock()
+
+	r.changes.Notify()
 
 	return nil
 }
@@ -72,9 +79,17 @@ func (r *Rules) Set(rule *v1alpha1.ToolgateRule) error {
 // Delete forgets a rule.
 func (r *Rules) Delete(key types.NamespacedName) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	delete(r.entries, key)
+	r.mu.Unlock()
+
+	r.changes.Notify()
+}
+
+// Subscribe returns a channel that receives after the rules that apply
+// change, and a function that ends the subscription. Signals not yet
+// received are merged into one.
+func (r *Rules) Subscribe() (<-chan struct{}, func()) {
+	return r.changes.Subscribe()
 }
 
 // target is what a rule is matched against.

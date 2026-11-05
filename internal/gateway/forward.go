@@ -153,11 +153,15 @@ func (m *metaTools) dropUnlessReady(id string) {
 	m.upstreams.mu.Unlock()
 
 	entry.mu.Lock()
-	defer entry.mu.Unlock()
+	session := entry.session
+	entry.session = nil
+	entry.mu.Unlock()
 
-	if entry.session != nil {
-		_ = entry.session.Close()
-		entry.session = nil
+	// Close waits for the calls in flight on the session. They finish with
+	// whatever the upstream answers (row 12), and fan-out must not wait for
+	// them.
+	if session != nil {
+		go func() { _ = session.Close() }()
 	}
 }
 

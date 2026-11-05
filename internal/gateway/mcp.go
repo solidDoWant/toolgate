@@ -176,10 +176,24 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 
 	endpoint.callTool = tools.callTool
 
+	var (
+		events  <-chan store.Event
+		changed catalogChanges
+	)
+
 	if options.Subscribe != nil {
-		events, _ := options.Subscribe()
-		go endpoint.fanOut(tools, events)
+		events, _ = options.Subscribe()
 	}
+
+	if options.Policy != nil && options.Policy.Rules != nil {
+		changed.rules, _ = options.Policy.Rules.Subscribe()
+	}
+
+	if options.Catalog != nil {
+		changed.templates, _ = options.Catalog.Subscribe()
+	}
+
+	go endpoint.fanOut(tools, events, changed)
 
 	endpoint.newServer = func() *mcp.Server {
 		server := mcp.NewServer(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
