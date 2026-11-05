@@ -1,0 +1,18 @@
+name: go-cache-save
+description: >-
+  Save the Go build cache of this job, and the module cache when go.sum
+  changed, for later runs to restore through ./.github/actions/nix-dev-shell.
+  Call it as the last step of a Go job, only for pushes to master.
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/go-build
+        key: gobuild-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+    # Every Go job downloads the same modules: only `unit` saves them.
+    - if: github.job == 'unit' && env.TOOLGATE_GOMOD_CACHE_HIT != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/go/pkg/mod
+        key: gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}

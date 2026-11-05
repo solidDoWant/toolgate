@@ -1,9 +1,14 @@
 name: nix-dev-shell
 description: >-
   Install Nix and restore the caches every Linux CI job needs: the Nix store
-  (the flake's dev shell) and the Go module and build caches. Keyed on the
-  files that determine their contents, so an unchanged toolchain is a cache
-  hit instead of a fresh download in every job.
+  (the flake's dev shell) and, for Go jobs, the Go module and build caches.
+  Only restores the Go caches; jobs on master save them again with
+  ./.github/actions/go-cache-save, so pull requests never save caches of
+  their own and can't evict master's.
+inputs:
+  go:
+    description: Restore the Go module and build caches.
+    default: 'true'
 runs:
   using: composite
   steps:
@@ -12,10 +17,25 @@ runs:
       with:
         primary-key: nix-${{ runner.os }}-${{ hashFiles('flake.nix', 'flake.lock') }}
         restore-prefixes-first-match: nix-${{ runner.os }}-
-    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+    # Downloaded modules change only with go.sum.
+    - id: gomod
+      if: inputs.go == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        path: |
-          ~/go/pkg/mod
-          ~/.cache/go-build
-        key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'go.mod') }}
-        restore-keys: go-${{ runner.os }}-
+        path: ~/go/pkg/mod
+        key: gomod-${{ runner.os }}-${{ hashFiles('go.sum') }}
+        restore-keys: gomod-${{ runner.os }}-
+    # Compiled packages change with every commit and differ per job (-race,
+    # build tags, lint), so each job restores its own, from the newest master
+    # commit that saved one.
+    - if: inputs.go == 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/go-build
+        key: gobuild-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
+        restore-keys: gobuild-${{ runner.os }}-${{ github.job }}-
+    - if: inputs.go == 'true'
+      shell: bash
+      env:
+        GOMOD_HIT: ${{ steps.gomod.outputs.cache-hit }}
+      run: echo "TOOLGATE_GOMOD_CACHE_HIT=${GOMOD_HIT:-false}" >> "$GITHUB_ENV"

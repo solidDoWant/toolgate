@@ -1,0 +1,16 @@
+{{- with .Values.sharedNamespace }}
+{{- if hasPrefix "tg-" .name }}
+{{- fail "sharedNamespace.name must not start with tg-: that prefix is for instance namespaces" }}
+{{- end }}
+{{- if and .name .create }}
+# The namespace for instances of `namespace: shared` templates. The admission
+# policy lets the gateway write only in namespaces with this label.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .name }}
+  labels:
+    app.kubernetes.io/managed-by: toolgate
+    pod-security.kubernetes.io/enforce: restricted
+{{- end }}
+{{- end }}
