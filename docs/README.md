@@ -41,6 +41,7 @@ docs/admin/
 docs/dev/
   README.md                What the developer pages will cover.
   integration-tests.md     The dependencies that integration tests start: PostgreSQL, S3, fake OIDC.
+  claude-code-integration.md  How toolgate gets the Claude Code session ID, with the test evidence.
 
 docs/acceptance/
   phase-1.md               The owner's checklist for phase 1: the core gateway.
