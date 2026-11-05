@@ -367,6 +367,7 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 	}
 
 	namespaceLabels := maps.Clone(objectLabels)
+	namespaceLabels[LabelWritable] = "true"
 	namespaceLabels["pod-security.kubernetes.io/enforce"] = "restricted"
 	namespaceLabels["pod-security.kubernetes.io/warn"] = "restricted"
 	namespaceLabels["pod-security.kubernetes.io/audit"] = "restricted"

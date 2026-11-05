@@ -54,7 +54,7 @@ spec:
     - name: inToolgateNamespace
       expression: >-
         namespaceObject != null && has(namespaceObject.metadata.labels) &&
-        namespaceObject.metadata.labels[?"app.kubernetes.io/managed-by"].orValue("") == "toolgate"
+        namespaceObject.metadata.labels[?"toolgate.soliddowant.dev/writable"].orValue("") == "true"
     # Pod Security admission checks every pod in such a namespace, so the
     # gateway can't run a privileged, host-namespace or hostPath pod.
     - name: inRestrictedNamespace
@@ -69,7 +69,7 @@ spec:
       reason: Forbidden
     - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inToolgateNamespace
       messageExpression: >-
-        "toolgate's service account may write only in namespaces labelled app.kubernetes.io/managed-by=toolgate, not in " +
+        "toolgate's service account may write only in namespaces labelled toolgate.soliddowant.dev/writable=true, not in " +
         (variables.requestNamespace != "" ? variables.requestNamespace : "the cluster scope")
       reason: Forbidden
     - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inRestrictedNamespace
@@ -80,11 +80,11 @@ spec:
     - expression: >-
         !variables.isNamespace || request.operation != "CREATE" || (
         object.metadata.name.startsWith("tg-") && has(object.metadata.labels) &&
-        object.metadata.labels[?"app.kubernetes.io/managed-by"].orValue("") == "toolgate" &&
+        object.metadata.labels[?"toolgate.soliddowant.dev/writable"].orValue("") == "true" &&
         object.metadata.labels[?"pod-security.kubernetes.io/enforce"].orValue("") == "restricted")
       message: >-
         toolgate's service account may create only namespaces named tg-* and labelled
-        app.kubernetes.io/managed-by=toolgate and pod-security.kubernetes.io/enforce=restricted
+        toolgate.soliddowant.dev/writable=true and pod-security.kubernetes.io/enforce=restricted
       reason: Forbidden
     # The gateway only creates and deletes namespaces, so it can't remove or
     # weaken a Pod Security label.
@@ -94,8 +94,10 @@ spec:
     - expression: >-
         !variables.isNamespace || request.operation != "DELETE" || (
         has(oldObject.metadata.labels) &&
-        oldObject.metadata.labels[?"app.kubernetes.io/managed-by"].orValue("") == "toolgate")
-      message: toolgate's service account may delete only namespaces labelled app.kubernetes.io/managed-by=toolgate
+        oldObject.metadata.labels[?"toolgate.soliddowant.dev/instance"].orValue("") != "")
+      message: >-
+        toolgate's service account may delete only namespaces labelled toolgate.soliddowant.dev/instance,
+        so it can never delete the shared namespace
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

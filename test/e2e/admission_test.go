@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"maps"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -19,7 +20,15 @@ import (
 // toolgateLabels are the labels the admission policy requires on every
 // namespace the gateway writes to.
 var toolgateLabels = map[string]string{
-	"app.kubernetes.io/managed-by":       "toolgate",
+	"toolgate.soliddowant.dev/writable":  "true",
+	"pod-security.kubernetes.io/enforce": "restricted",
+}
+
+// helmLabels are the labels of a namespace the chart creates, as Helm 4
+// installs it: Helm replaces app.kubernetes.io/managed-by with its own value.
+var helmLabels = map[string]string{
+	"app.kubernetes.io/managed-by":       "Helm",
+	"toolgate.soliddowant.dev/writable":  "true",
 	"pod-security.kubernetes.io/enforce": "restricted",
 }
 
@@ -78,15 +87,24 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 	instance := "e2e" + suffix
 	instanceNamespace := "tg-" + instance
 	plainNamespace := "e2e-plain-" + suffix
+	helmNamespace := "e2e-helm-" + suffix
+	managedByNamespace := "e2e-managed-by-" + suffix
 
-	// The namespace carries toolgate's managed-by and Pod Security labels,
+	// The namespace carries toolgate's writable and Pod Security labels,
 	// which are all the admission policy looks at, but not the instance label: the orphan sweep
 	// deletes every namespace with that label and no live instance row behind
 	// it, and this namespace has none.
 	createNamespace(t, admin, instanceNamespace, toolgateLabels)
 	createNamespace(t, admin, plainNamespace, nil)
+	createNamespace(t, admin, helmNamespace, helmLabels)
+	createNamespace(t, admin, managedByNamespace, map[string]string{
+		"app.kubernetes.io/managed-by":       "toolgate",
+		"pod-security.kubernetes.io/enforce": "restricted",
+	})
 	grantAdmin(t, admin, instanceNamespace)
 	grantAdmin(t, admin, plainNamespace)
+	grantAdmin(t, admin, helmNamespace)
+	grantAdmin(t, admin, managedByNamespace)
 
 	t.Run("[AC-1-24] a ClusterRole is refused", func(t *testing.T) {
 		role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "e2e-" + suffix, Labels: instanceLabels(instance)}}
@@ -118,13 +136,31 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 		refusedWith("may write only in namespaces labelled")(t, err)
 	})
 
+	t.Run("an allowed kind in a namespace Helm labelled as its own is accepted", func(t *testing.T) {
+		_, err := gateway.CoreV1().ConfigMaps(helmNamespace).Create(t.Context(), configMap(helmNamespace), metav1.CreateOptions{})
+		require.NoError(t, err)
+
+		err = gateway.CoreV1().ConfigMaps(helmNamespace).Delete(t.Context(), "e2e", metav1.DeleteOptions{})
+		require.NoError(t, err)
+	})
+
+	t.Run("an allowed kind in a namespace with only toolgate's managed-by label is refused", func(t *testing.T) {
+		_, err := gateway.CoreV1().ConfigMaps(managedByNamespace).Create(t.Context(), configMap(managedByNamespace), metav1.CreateOptions{})
+		refusedWith("may write only in namespaces labelled toolgate.soliddowant.dev/writable=true")(t, err)
+	})
+
+	// No managed-by label, so the orphan sweep leaves the namespace alone; the
+	// instance label lets the gateway delete it again.
+	newInstanceLabels := maps.Clone(toolgateLabels)
+	newInstanceLabels["toolgate.soliddowant.dev/instance"] = instance
+
 	namespaceTests := []struct {
 		name         string
 		namespace    string
 		labels       map[string]string
 		errAssertion require.ErrorAssertionFunc
 	}{
-		{name: "an instance namespace is accepted", namespace: "tg-e2e-new-" + suffix, labels: toolgateLabels},
+		{name: "an instance namespace is accepted", namespace: "tg-e2e-new-" + suffix, labels: newInstanceLabels},
 		{
 			name: "a namespace without the tg- prefix is refused", namespace: "e2e-new-" + suffix, labels: toolgateLabels,
 			errAssertion: refusedWith("may create only namespaces named tg-*"),
@@ -135,13 +171,18 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 			errAssertion: refusedWith("may create only namespaces named tg-*"),
 		},
 		{
+			name: "a namespace with only the managed-by label is refused", namespace: "tg-e2e-managed-by-" + suffix,
+			labels:       map[string]string{"app.kubernetes.io/managed-by": "toolgate", "pod-security.kubernetes.io/enforce": "restricted"},
+			errAssertion: refusedWith("may create only namespaces named tg-*"),
+		},
+		{
 			name: "a namespace without Pod Security restricted is refused", namespace: "tg-e2e-unrestricted-" + suffix,
-			labels:       map[string]string{"app.kubernetes.io/managed-by": "toolgate"},
+			labels:       map[string]string{"toolgate.soliddowant.dev/writable": "true"},
 			errAssertion: refusedWith("may create only namespaces named tg-*"),
 		},
 		{
 			name: "a namespace with a weaker Pod Security level is refused", namespace: "tg-e2e-privileged-" + suffix,
-			labels:       map[string]string{"app.kubernetes.io/managed-by": "toolgate", "pod-security.kubernetes.io/enforce": "privileged"},
+			labels:       map[string]string{"toolgate.soliddowant.dev/writable": "true", "pod-security.kubernetes.io/enforce": "privileged"},
 			errAssertion: refusedWith("may create only namespaces named tg-*"),
 		},
 	}
@@ -166,5 +207,10 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 	t.Run("deleting a namespace without toolgate's label is refused", func(t *testing.T) {
 		err := gateway.CoreV1().Namespaces().Delete(t.Context(), plainNamespace, metav1.DeleteOptions{})
 		refusedWith("may delete only namespaces labelled")(t, err)
+	})
+
+	t.Run("deleting a writable namespace without the instance label is refused", func(t *testing.T) {
+		err := gateway.CoreV1().Namespaces().Delete(t.Context(), helmNamespace, metav1.DeleteOptions{})
+		refusedWith("may delete only namespaces labelled toolgate.soliddowant.dev/instance")(t, err)
 	})
 }

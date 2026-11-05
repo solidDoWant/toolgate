@@ -27,6 +27,11 @@ const (
 
 	// ManagedByValue is the value of LabelManagedBy.
 	ManagedByValue = "toolgate"
+
+	// LabelWritable marks a namespace the admission policy lets the gateway
+	// write in. It isn't LabelManagedBy because Helm 4 overwrites that label
+	// on every object it installs, the chart's shared namespace included.
+	LabelWritable = "toolgate.soliddowant.dev/writable"
 )
 
 // scopeShared is the scope of a template with one instance for everyone.

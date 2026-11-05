@@ -125,11 +125,6 @@ log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-database \
 	--from-literal=url="postgres://toolgate:$postgres_password@postgres.$deps_namespace.svc:5432/toolgate?sslmode=disable" >&2
-# The shared namespace is made here rather than by the chart: Helm 4 sets
-# app.kubernetes.io/managed-by=Helm on the objects it installs, which hides
-# the label toolgate's admission policy needs.
-kubectl create namespace toolgate-shared >&2
-kubectl label namespace toolgate-shared app.kubernetes.io/managed-by=toolgate pod-security.kubernetes.io/enforce=restricted >&2
 ./scripts/chart-deps.sh >&2
 helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.image.repository="$gateway_repository" \
@@ -140,7 +135,6 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.oidc.audience=toolgate \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
-	--set config.sharedNamespace.create=false \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"

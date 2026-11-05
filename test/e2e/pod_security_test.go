@@ -119,7 +119,7 @@ func TestGatewayCannotEscapePodSecurity(t *testing.T) {
 		name := "tg-e2e-escape-" + suffix
 		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
-			Labels: map[string]string{"app.kubernetes.io/managed-by": "toolgate"},
+			Labels: map[string]string{"toolgate.soliddowant.dev/writable": "true"},
 		}}
 
 		_, err := gateway.CoreV1().Namespaces().Create(t.Context(), namespace, metav1.CreateOptions{})
@@ -133,7 +133,7 @@ func TestGatewayCannotEscapePodSecurity(t *testing.T) {
 	t.Run("a pod in a toolgate namespace without Pod Security restricted is refused", func(t *testing.T) {
 		// An admin-made shared namespace that lacks the Pod Security label.
 		name := "e2e-unrestricted-" + suffix
-		createNamespace(t, admin, name, map[string]string{"app.kubernetes.io/managed-by": "toolgate"})
+		createNamespace(t, admin, name, map[string]string{"toolgate.soliddowant.dev/writable": "true"})
 		grantAdmin(t, admin, name)
 
 		_, err := gateway.CoreV1().Pods(name).Create(t.Context(), restrictedPod(name), metav1.CreateOptions{})
@@ -141,7 +141,7 @@ func TestGatewayCannotEscapePodSecurity(t *testing.T) {
 	})
 
 	// An instance namespace the gateway creates itself, and a shared namespace
-	// labelled as the chart labels it.
+	// labelled as Helm 4 installs the chart's one.
 	instanceNamespace := "tg-e2e-podsecurity-" + suffix
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instanceNamespace, Labels: toolgateLabels}}
 	_, err := gateway.CoreV1().Namespaces().Create(t.Context(), namespace, metav1.CreateOptions{})
@@ -154,7 +154,7 @@ func TestGatewayCannotEscapePodSecurity(t *testing.T) {
 	})
 
 	sharedNamespace := "e2e-shared-" + suffix
-	createNamespace(t, admin, sharedNamespace, toolgateLabels)
+	createNamespace(t, admin, sharedNamespace, helmLabels)
 
 	writable := []struct{ kind, name string }{
 		{kind: "an instance namespace", name: instanceNamespace},

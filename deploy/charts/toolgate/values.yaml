@@ -96,7 +96,7 @@ config:
     name: ""
     # -- Create the shared namespace with toolgate's labels. If false, the
     # namespace must exist and carry the labels
-    # `app.kubernetes.io/managed-by: toolgate` and
+    # `toolgate.soliddowant.dev/writable: "true"` and
     # `pod-security.kubernetes.io/enforce: restricted`.
     create: true
 
