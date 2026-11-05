@@ -792,6 +792,7 @@ func condition(kind, status, reason, message string) map[string]any {
 func TestStarterReadyConditionRule(t *testing.T) {
 	installFailed := condition("Ready", "False", "InstallFailed", "Helm install failed for release tg/server: context deadline exceeded")
 
+	// The object's status is current, but the condition is from generation 1.
 	staleCondition := condition("Ready", "False", "InstallFailed", "old failure")
 	staleCondition["observedGeneration"] = int64(1)
 
@@ -806,6 +807,17 @@ func TestStarterReadyConditionRule(t *testing.T) {
 			release:    helmRelease(2, installFailed),
 			wantStatus: "failed",
 			wantReason: "HelmRelease server failed: Helm install failed for release tg/server: context deadline exceeded",
+		},
+		{
+			name: "Ready False whose condition is at the current generation fails while status.observedGeneration is -1",
+			release: helmRelease(-1, func() map[string]any {
+				current := condition("Ready", "False", "InstallFailed", "the value image is required")
+				current["observedGeneration"] = int64(2)
+
+				return current
+			}()),
+			wantStatus: "failed",
+			wantReason: "HelmRelease server failed: the value image is required",
 		},
 		{
 			name:       "Ready False while Reconciling waits",

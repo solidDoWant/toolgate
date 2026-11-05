@@ -663,11 +663,6 @@ func readyConditionFailed(object *unstructured.Unstructured) (string, bool) {
 		return "", false
 	}
 
-	observed, found, err := unstructured.NestedInt64(object.Object, "status", "observedGeneration")
-	if err != nil || !found || observed != object.GetGeneration() {
-		return "", false
-	}
-
 	var ready map[string]any
 
 	for _, item := range conditions {
@@ -690,9 +685,16 @@ func readyConditionFailed(object *unstructured.Unstructured) (string, bool) {
 		return "", false
 	}
 
-	// A condition that records the generation it was set at must be
-	// current too.
-	if generation, found, err := unstructured.NestedInt64(ready, "observedGeneration"); err != nil || (found && generation != object.GetGeneration()) {
+	// The Ready condition's own observedGeneration says which generation
+	// it describes. Without one, the object's status.observedGeneration
+	// does. helm-controller keeps status.observedGeneration at -1 until an
+	// install succeeds, but sets it on each condition.
+	observed, found, err := unstructured.NestedInt64(ready, "observedGeneration")
+	if err == nil && !found {
+		observed, found, err = unstructured.NestedInt64(object.Object, "status", "observedGeneration")
+	}
+
+	if err != nil || !found || observed != object.GetGeneration() {
 		return "", false
 	}
 
