@@ -158,3 +158,36 @@ func (q *Queries) TouchUISession(ctx context.Context, idHash []byte) error {
 	_, err := q.db.Exec(ctx, touchUISession, idHash)
 	return err
 }
+
+const updateUISessionSignIn = `-- name: UpdateUISessionSignIn :execrows
+UPDATE ui_sessions
+SET email = $1, name = $2, groups = $3, auth_time = $4
+WHERE id_hash = $5 AND principal = $6
+  AND expires_at > now() AND last_seen_at > now() - interval '1 hour'
+`
+
+type UpdateUISessionSignInParams struct {
+	Email     string
+	Name      string
+	Groups    []string
+	AuthTime  pgtype.Timestamptz
+	IDHash    []byte
+	Principal string
+}
+
+// Records a step-up sign-in on a valid web UI session of the same
+// principal: the new auth_time and identity snapshot.
+func (q *Queries) UpdateUISessionSignIn(ctx context.Context, arg UpdateUISessionSignInParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateUISessionSignIn,
+		arg.Email,
+		arg.Name,
+		arg.Groups,
+		arg.AuthTime,
+		arg.IDHash,
+		arg.Principal,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

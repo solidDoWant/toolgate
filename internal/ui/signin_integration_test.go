@@ -72,9 +72,18 @@ type uiEnv struct {
 	replicas []replica
 	target   atomic.Int32
 	refusals *refusals
+	// formSubmits counts the step-up form's POSTs that ran.
+	formSubmits atomic.Int32
 }
 
 func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
+	t.Helper()
+
+	return startUIEnvWithIdP(t, adminGroup, toolgatetest.OIDCOptions{})
+}
+
+// startUIEnvWithIdP is startUIEnv with an IdP configured by idpOptions.
+func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.OIDCOptions) *uiEnv {
 	t.Helper()
 
 	postgres := toolgatetest.StartPostgres(t)
@@ -86,9 +95,8 @@ func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
 
 	env := &uiEnv{pool: pool, refusals: &refusals{}}
 
-	env.idp = toolgatetest.StartOIDCProvider(t, toolgatetest.OIDCOptions{
-		UIRedirectURIs: []string{"https://127.0.0.1:*/ui/auth/callback"},
-	})
+	idpOptions.UIRedirectURIs = []string{"https://127.0.0.1:*/ui/auth/callback"}
+	env.idp = toolgatetest.StartOIDCProvider(t, idpOptions)
 
 	env.server = httptest.NewUnstartedServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		env.replicas[env.target.Load()].mux.mux.ServeHTTP(writer, request)
@@ -113,6 +121,7 @@ func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
 		webUI.Handle("GET "+whoamiPath, ui.User, http.HandlerFunc(whoami))
 		webUI.Handle("GET /ui/admin-only", ui.Admin, http.HandlerFunc(whoami))
 		webUI.Handle("POST /ui/admin-only", ui.Admin, http.HandlerFunc(whoami))
+		registerStepUpForm(webUI, &env.formSubmits)
 
 		env.replicas = append(env.replicas, replica{ui: webUI, mux: registrar})
 	}
