@@ -86,6 +86,7 @@ type metaTools struct {
 	// user and of the gateway.
 	instanceLimitPerUser int
 	instanceLimit        int
+	sharedNamespace      string
 }
 
 func (m *metaTools) register(server *mcp.Server) {

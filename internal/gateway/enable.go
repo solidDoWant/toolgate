@@ -293,7 +293,7 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 			return db.Instance{}, err
 		}
 
-		instance, err = insertInstance(ctx, queries, current, template, key)
+		instance, err = insertInstance(ctx, queries, current, template, key, m.sharedNamespace)
 		if err != nil {
 			return db.Instance{}, err
 		}
@@ -367,7 +367,7 @@ func (m *metaTools) checkInstanceLimits(ctx context.Context, queries *db.Queries
 	return nil
 }
 
-func insertInstance(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate, key string) (db.Instance, error) {
+func insertInstance(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate, key, sharedNamespace string) (db.Instance, error) {
 	generated, err := uuid.NewV7()
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("instance ID: %w", err)
@@ -380,6 +380,13 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 		owner = ""
 	}
 
+	// A `namespace: shared` template is valid only while the gateway has a
+	// shared namespace, so the catalog offers none without it.
+	namespace := instanceNamespacePrefix + id
+	if template.Spec.Namespace == catalog.NamespaceShared {
+		namespace = sharedNamespace
+	}
+
 	instance, err := queries.InsertInstance(ctx, db.InsertInstanceParams{
 		ID:             id,
 		TemplateNs:     template.Namespace,
@@ -390,7 +397,7 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 		ScopeKey:       key,
 		OwnerPrincipal: owner,
 		RenderSession:  pgtype.Int8{Int64: current.session.ID, Valid: true},
-		Namespace:      instanceNamespacePrefix + id,
+		Namespace:      namespace,
 	})
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("insert instance: %w", err)

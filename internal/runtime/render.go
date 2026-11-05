@@ -163,6 +163,35 @@ func Render(ctx context.Context, input Input) (*Result, error) {
 	return result, nil
 }
 
+// RenderEndpointService renders the template's endpoint Service name for an
+// instance. A `namespace: shared` template names it with ${instance.id}, like
+// the Service itself. Only instance and template variables are rendered
+// there: the endpoint is never a place for an identity or a secret.
+func RenderEndpointService(template *v1alpha1.MCPServerTemplate, instance Instance) (string, error) {
+	shared := *template
+	shared.Spec.Scope = scopeShared
+
+	renderer := &renderer{
+		ctx:         context.Background(),
+		input:       Input{Template: &shared, Instance: instance, Secrets: noSecrets{}},
+		secretsUsed: map[string]bool{},
+	}
+
+	return renderer.text(template.Spec.Endpoint.Service, []string{"endpoint", "service"})
+}
+
+// noSecrets is a SecretSource with no values. The shared scope set by
+// RenderEndpointService refuses secret variables before they reach it.
+type noSecrets struct{}
+
+func (noSecrets) Secret(context.Context, string) (string, error) {
+	return "", fmt.Errorf("no secrets here")
+}
+
+func (noSecrets) Resolve(context.Context, string) (string, error) {
+	return "", fmt.Errorf("no resolvers here")
+}
+
 type renderer struct {
 	ctx         context.Context
 	input       Input

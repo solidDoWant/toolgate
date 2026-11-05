@@ -76,11 +76,13 @@ func TestLoadEnvironmentOnly(t *testing.T) {
 		"TOOLGATE_OIDC_AUDIENCE":           "toolgate",
 		"TOOLGATE_INSTANCE_LIMIT_PER_USER": "1",
 		"TOOLGATE_INSTANCE_LIMIT":          "1",
+		"TOOLGATE_SHARED_NAMESPACE":        "toolgate-shared",
 	}))
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, cfg.InstanceLimitPerUser, "1 is the smallest instance limit")
 	assert.Equal(t, 1, cfg.InstanceLimit)
+	assert.Equal(t, "toolgate-shared", cfg.SharedNamespace)
 	assert.Equal(t, "127.0.0.1:9100", cfg.MetricsListenAddress)
 	assert.Equal(t, config.Duration(5*time.Second), cfg.ShutdownTimeout)
 	assert.Equal(t, "warn", cfg.LogLevel)
@@ -139,6 +141,20 @@ leaseNamespace: "Not_A_Namespace"
 leaseNamespace: toolgate
 `,
 			wantProblems: []string{"gatewayPodLabels: required with leaseNamespace"},
+		},
+		{
+			name: "invalid shared namespace",
+			file: `
+sharedNamespace: "Not_A_Namespace"
+`,
+			wantProblems: []string{`sharedNamespace: "Not_A_Namespace" is not a namespace name`},
+		},
+		{
+			name: "shared namespace with the instance namespace prefix",
+			file: `
+sharedNamespace: tg-shared
+`,
+			wantProblems: []string{`sharedNamespace: "tg-shared" must not start with tg-`},
 		},
 		{
 			name: "invalid catalog namespace and pod labels",

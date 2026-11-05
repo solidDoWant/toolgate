@@ -132,6 +132,15 @@ type Config struct {
 	// labels. Required with `leaseNamespace`. The chart sets it.
 	GatewayPodLabels []string `json:"gatewayPodLabels" env:"TOOLGATE_GATEWAY_POD_LABELS"`
 
+	// The namespace where the MCP servers of `namespace: shared` templates
+	// run, all together. The chart sets it from
+	// `config.sharedNamespace.name`. The namespace must exist and carry the
+	// label `app.kubernetes.io/managed-by: toolgate`. The gateway never
+	// creates, labels or deletes it. It must not start with `tg-`, the prefix
+	// of the namespaces the gateway makes for single servers. If it is empty,
+	// every `namespace: shared` template is invalid.
+	SharedNamespace string `json:"sharedNamespace" env:"TOOLGATE_SHARED_NAMESPACE"`
+
 	// The maximum number of MCP server instances that run for one user at
 	// the same time. Per-session and per-user instances count for the user
 	// who started them. Shared instances do not count. When a user is at the
@@ -403,6 +412,14 @@ func (c Config) Validate() []error {
 
 		if len(c.GatewayPodLabels) == 0 {
 			problems = append(problems, errors.New("gatewayPodLabels: required with leaseNamespace"))
+		}
+	}
+
+	if c.SharedNamespace != "" {
+		if invalid := validation.IsDNS1123Label(c.SharedNamespace); len(invalid) > 0 {
+			problems = append(problems, fmt.Errorf("sharedNamespace: %q is not a namespace name", c.SharedNamespace))
+		} else if strings.HasPrefix(c.SharedNamespace, "tg-") {
+			problems = append(problems, fmt.Errorf("sharedNamespace: %q must not start with tg-, the prefix of instance namespaces", c.SharedNamespace))
 		}
 	}
 

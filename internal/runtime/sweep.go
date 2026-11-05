@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -20,10 +21,12 @@ import (
 // Sweep reconciles the instance objects in Kubernetes with the instance
 // rows after a leader change or a gateway restart (docs/design/phase-1.md
 // §4, row 17). It works on instance namespaces (`tg-<id>`): deleting one
-// deletes all of its instance's objects.
+// deletes all of its instance's objects. In the shared namespace it works on
+// the labelled objects of each instance instead.
 //
-// It lists the labelled namespaces first and reads the rows second, so a
-// namespace applied after the rows were read can't be taken for an orphan.
+// It lists the labelled namespaces and objects first and reads the rows
+// second, so a namespace or object applied after the rows were read can't be taken
+// for an orphan.
 type Sweep struct {
 	Pool *pgxpool.Pool
 	// Reader lists instance namespaces. It must read the API server, not a
@@ -34,7 +37,11 @@ type Sweep struct {
 	// objects is rendered from again. Nil means no row is sent back to
 	// pending.
 	Templates Templates
-	Log       *slog.Logger
+	// SharedNamespace is the namespace instances of `namespace: shared`
+	// templates share. The sweep deletes orphaned instance objects in it,
+	// and never the namespace. Empty means there is none.
+	SharedNamespace string
+	Log             *slog.Logger
 }
 
 // Pass wraps a full pass so that the sweep runs before it.
@@ -58,6 +65,17 @@ func (s *Sweep) Run(ctx context.Context) error {
 		return fmt.Errorf("list instance namespaces: %w", err)
 	}
 
+	var sharedObjects []*unstructured.Unstructured
+
+	if s.SharedNamespace != "" {
+		objects, err := listInstanceObjects(ctx, s.Reader, s.SharedNamespace, client.HasLabels{LabelInstance})
+		if err != nil {
+			return fmt.Errorf("list instance objects: %w", err)
+		}
+
+		sharedObjects = objects
+	}
+
 	instances, err := db.New(s.Pool).ListInstancesNotStopped(ctx)
 	if err != nil {
 		return fmt.Errorf("list instances: %w", err)
@@ -79,6 +97,11 @@ func (s *Sweep) Run(ctx context.Context) error {
 		namespace := &namespaces.Items[index]
 		id := namespace.Labels[LabelInstance]
 
+		if namespace.Name == s.SharedNamespace {
+			// The shared namespace is never deleted, whatever its labels.
+			continue
+		}
+
 		if instance, found := live[id]; found && instance.Namespace == namespace.Name {
 			present[id] = true
 
@@ -98,6 +121,23 @@ func (s *Sweep) Run(ctx context.Context) error {
 		}
 	}
 
+	for _, object := range sharedObjects {
+		id := object.GetLabels()[LabelInstance]
+
+		if instance, found := live[id]; (found && instance.Namespace == s.SharedNamespace) || object.GetDeletionTimestamp() != nil {
+			continue
+		}
+
+		s.Log.InfoContext(ctx, "deleting orphaned instance object", slog.String("namespace", object.GetNamespace()),
+			slog.String("kind", object.GetKind()), slog.String("name", object.GetName()), slog.String("instance", id))
+
+		uid := object.GetUID()
+		if err := s.Deleter.Delete(ctx, object, client.Preconditions{UID: &uid}); err != nil &&
+			!apierrors.IsNotFound(err) && !apierrors.IsConflict(err) {
+			problems = append(problems, err)
+		}
+	}
+
 	for _, instance := range live {
 		if present[instance.ID] || (instance.Status != StatusStarting && instance.Status != statusReady) {
 			continue
@@ -105,7 +145,7 @@ func (s *Sweep) Run(ctx context.Context) error {
 
 		// An instance in a namespace it shares with others is judged by
 		// its namespace's objects, which the sweep doesn't list.
-		if instance.Namespace != NamespacePrefix+instance.ID {
+		if !hasOwnNamespace(instance) {
 			continue
 		}
 

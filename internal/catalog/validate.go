@@ -58,6 +58,9 @@ type Validator struct {
 	// CiliumNetworkPolicy allows CiliumNetworkPolicy objects. Set it when
 	// the CiliumNetworkPolicy CRD exists in the cluster.
 	CiliumNetworkPolicy bool
+	// SharedNamespace is the gateway's shared namespace. When it is empty,
+	// every `namespace: shared` template is invalid.
+	SharedNamespace string
 }
 
 // Validate returns every problem found in template, or nil when it is valid.
@@ -80,6 +83,12 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 		if spec.Scope != ScopeShared {
 			problems = append(problems, "namespace: shared is allowed only with scope: shared")
 		}
+
+		if v.SharedNamespace == "" {
+			problems = append(problems, "The gateway has no shared namespace configured (`config.sharedNamespace.name`).")
+		}
+
+		problems = append(problems, validateSharedNames(template)...)
 	default:
 		problems = append(problems, fmt.Sprintf("namespace %q must be one of per-instance, shared", spec.Namespace))
 	}
@@ -160,6 +169,97 @@ func (v Validator) validateResource(scope string, index int, raw []byte) []strin
 	slices.Sort(variableProblems)
 
 	return append(problems, variableProblems...)
+}
+
+// instanceIDVariable is the variable that tells instances apart in the shared
+// namespace.
+const instanceIDVariable = "${instance.id}"
+
+// instanceLabel is the label every rendered object carries with its
+// instance's ID.
+const instanceLabel = "toolgate.soliddowant.dev/instance"
+
+// validateSharedNames checks that a `namespace: shared` template tells its
+// instances apart by itself, because toolgate never renames objects
+// (docs/design/phase-1.md §7): every name and the endpoint Service contain
+// ${instance.id}, and every selector of a known kind selects the instance
+// label.
+func validateSharedNames(template *v1alpha1.MCPServerTemplate) []string {
+	var problems []string
+
+	for _, raw := range template.Spec.Resources {
+		var object map[string]any
+		if err := json.Unmarshal(raw.Raw, &object); err != nil || object == nil {
+			continue
+		}
+
+		apiVersion, _ := object["apiVersion"].(string)
+		kind, _ := object["kind"].(string)
+		name, _ := nestedString(object, "metadata", "name")
+		where := "`" + kind + "/" + name + "`"
+
+		groupVersion, err := schema.ParseGroupVersion(apiVersion)
+		if err != nil {
+			continue
+		}
+
+		groupKind := schema.GroupKind{Group: groupVersion.Group, Kind: kind}
+
+		if groupKind == CiliumNetworkPolicy {
+			problems = append(problems, where+": a CiliumNetworkPolicy is not allowed in a shared namespace, because toolgate can't check its selectors.")
+
+			continue
+		}
+
+		if !strings.Contains(name, instanceIDVariable) {
+			problems = append(problems, where+": `metadata.name` must contain `"+instanceIDVariable+"` in a shared namespace.")
+		}
+
+		var labelMaps [][]string
+
+		switch groupKind {
+		case schema.GroupKind{Group: "", Kind: "Service"}:
+			spec, _ := object["spec"].(map[string]any)
+			if _, found := spec["selector"]; found {
+				labelMaps = [][]string{{"spec", "selector"}}
+			}
+		case schema.GroupKind{Group: "apps", Kind: "Deployment"}, schema.GroupKind{Group: "apps", Kind: "StatefulSet"}:
+			labelMaps = [][]string{{"spec", "selector", "matchLabels"}, {"spec", "template", "metadata", "labels"}}
+		case schema.GroupKind{Group: "networking.k8s.io", Kind: "NetworkPolicy"}:
+			labelMaps = [][]string{{"spec", "podSelector", "matchLabels"}}
+		}
+
+		for _, fields := range labelMaps {
+			if value, _ := nestedString(object, append(fields, instanceLabel)...); value != instanceIDVariable {
+				problems = append(problems, fmt.Sprintf("%s: `%s` must contain `%s: %s` in a shared namespace.",
+					where, strings.Join(fields, "."), instanceLabel, instanceIDVariable))
+			}
+		}
+	}
+
+	if !strings.Contains(template.Spec.Endpoint.Service, instanceIDVariable) {
+		problems = append(problems, "`endpoint.service` must contain `"+instanceIDVariable+"` in a shared namespace.")
+	}
+
+	return problems
+}
+
+// nestedString returns the string at fields in object, if there is one.
+func nestedString(object map[string]any, fields ...string) (string, bool) {
+	var node any = object
+
+	for _, field := range fields {
+		parent, isMap := node.(map[string]any)
+		if !isMap {
+			return "", false
+		}
+
+		node = parent[field]
+	}
+
+	text, isString := node.(string)
+
+	return text, isString
 }
 
 func describeKind(apiVersion, kind string) string {

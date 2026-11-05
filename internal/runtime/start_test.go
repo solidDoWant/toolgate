@@ -602,3 +602,62 @@ func TestMCPToolListerInitializesAndListsTools(t *testing.T) {
 	_, err = runtime.MCPToolLister(t.Context(), httpServer.URL+"/missing\x00")
 	require.Error(t, err)
 }
+
+const sharedNamespace = "toolgate-shared"
+
+func sharedNamespaceTemplate() *v1alpha1.MCPServerTemplate {
+	template := testTemplate(`{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"settings-${instance.id}"},"data":{"where":"${instance.namespace}"}}`)
+	template.Spec.Scope = "shared"
+	template.Spec.Namespace = "shared"
+	template.Spec.Endpoint.Service = "server-${instance.id}"
+
+	return template
+}
+
+func sharedInstance(instance db.Instance) db.Instance {
+	instance.Scope, instance.ScopeKey, instance.OwnerPrincipal = "shared", "shared", ""
+	instance.Namespace = sharedNamespace
+
+	return instance
+}
+
+func TestStarterPendingAppliesSharedNamespaceInstanceWithoutNamespace(t *testing.T) {
+	existing := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: sharedNamespace, Labels: map[string]string{runtime.LabelManagedBy: runtime.ManagedByValue},
+	}}
+	fixture := newStarterFixture(t, sharedNamespaceTemplate(), "pending", existing)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), sharedInstance(fixture.instance)))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	require.Equal(t, "starting", status, reason)
+
+	configMap := &corev1.ConfigMap{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: sharedNamespace, Name: "settings-" + instanceID}, configMap))
+	assert.Equal(t, sharedNamespace, configMap.Data["where"])
+	assert.Equal(t, instanceID, configMap.Labels[runtime.LabelInstance])
+
+	namespaces := &corev1.NamespaceList{}
+	require.NoError(t, fixture.kube.List(t.Context(), namespaces))
+	require.Len(t, namespaces.Items, 1, "no tg-<id> namespace is created")
+
+	namespace := namespaces.Items[0]
+	assert.Equal(t, sharedNamespace, namespace.Name)
+	assert.Equal(t, existing.Labels, namespace.Labels, "the shared namespace is not labelled")
+
+	policies := &networkingv1.NetworkPolicyList{}
+	require.NoError(t, fixture.kube.List(t.Context(), policies))
+	assert.Empty(t, policies.Items, "the per-instance default-deny policy is not applied in the shared namespace")
+}
+
+func TestStarterReachesSharedNamespaceInstanceAtRenderedService(t *testing.T) {
+	pod := readyPod()
+	pod.Namespace = sharedNamespace
+	fixture := newStarterFixture(t, sharedNamespaceTemplate(), "starting", pod)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), sharedInstance(fixture.instance)))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "ready", status, reason)
+	assert.Equal(t, []string{"http://server-" + instanceID + "." + sharedNamespace + ".svc:8080/mcp"}, fixture.listed)
+}
