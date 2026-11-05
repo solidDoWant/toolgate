@@ -63,7 +63,7 @@ func signInToUI(t *testing.T, publicURL string, user testutil.OIDCUser) context.
 
 	browser := testutil.StartBrowser(t, chromedp.Flag("ignore-certificate-errors", true))
 
-	require.NoError(t, chromedp.Do(browser, chromedp.Navigate(publicURL+ui.HomePath), testutil.SignInToOIDC(user)))
+	require.NoError(t, chromedp.Do(browser, testutil.Navigate(publicURL+ui.HomePath), testutil.SignInToOIDC(user)))
 
 	require.Eventually(t, func() bool {
 		title, err := chromedp.Run(browser, chromedp.Title())
@@ -110,7 +110,7 @@ func TestAC2_06RestartFromTheUI(t *testing.T) {
 		restart := chromedp.CSS(`form[action="/ui/instances/` + oldID + `/restart"] button`)
 
 		require.Eventually(t, func() bool {
-			if err := chromedp.Do(browser, chromedp.Navigate(publicURL+ui.HomePath)); err != nil {
+			if err := chromedp.Do(browser, testutil.Navigate(publicURL+ui.HomePath)); err != nil {
 				return false
 			}
 
