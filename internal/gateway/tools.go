@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/jackc/pgx/v5"
@@ -31,14 +32,33 @@ func ProxiedToolName(server, tool string) string {
 // set sends `notifications/tools/list_changed` to that session only.
 type sessionTools struct {
 	server *mcp.Server
+	// call answers a call of any proxied tool.
+	call mcp.ToolHandler
+	// current is the identity and session of the latest request on this MCP
+	// session. Fan-out syncs the session with it.
+	current requestContext
 
 	mu sync.Mutex
 	// offered maps each proxied tool name to its JSON definition.
 	offered map[string][]byte
 }
 
-func newSessionTools(server *mcp.Server) *sessionTools {
-	return &sessionTools{server: server, offered: make(map[string][]byte)}
+func newSessionTools(server *mcp.Server, call mcp.ToolHandler, current requestContext) *sessionTools {
+	return &sessionTools{server: server, call: call, current: current, offered: make(map[string][]byte)}
+}
+
+func (s *sessionTools) setCurrent(current requestContext) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.current = current
+}
+
+func (s *sessionTools) currentRequest() requestContext {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.current
 }
 
 // apply makes the server offer exactly wanted. Unchanged tools are left
@@ -70,21 +90,11 @@ func (s *sessionTools) apply(wanted map[string]*mcp.Tool) error {
 			continue
 		}
 
-		s.server.AddTool(tool, callNotAvailable)
+		s.server.AddTool(tool, s.call)
 		s.offered[name] = encoded
 	}
 
 	return nil
-}
-
-// callNotAvailable answers a call of a proxied tool. This gateway version
-// lists proxied tools but forwards no calls, so it refuses every call
-// before anything reaches the upstream server.
-func callNotAvailable(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	return &mcp.CallToolResult{
-		IsError: true,
-		Content: []mcp.Content{&mcp.TextContent{Text: "This gateway version doesn't forward tool calls yet."}},
-	}, nil
 }
 
 // proxiedTools returns the proxied tools the session should see, keyed by
@@ -192,6 +202,22 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 						return nil, err
 					}
 				}
+			}
+		}
+
+		return next(ctx, method, request)
+	}
+}
+
+// routeProxiedCalls sends every `tools/call` of a `<server>__<tool>` name to
+// callTool, also when the session doesn't offer that tool (not yet, or no
+// longer), so every such call gets a recorded decision. Meta tool names
+// have no separator.
+func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
+		if method == "tools/call" {
+			if call, ok := request.(*mcp.CallToolRequest); ok && call.Params != nil && strings.Contains(call.Params.Name, toolSeparator) {
+				return m.callTool(ctx, call)
 			}
 		}
 

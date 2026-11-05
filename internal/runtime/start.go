@@ -185,7 +185,7 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 		return nil
 	}
 
-	tools, err := s.ListTools(ctx, endpointURL(instance, template))
+	tools, err := s.ListTools(ctx, EndpointURL(instance, template))
 	if err != nil {
 		// The server may not be listening yet; startTimeout bounds the wait.
 		s.logger().DebugContext(ctx, "instance not answering MCP yet",
@@ -493,7 +493,9 @@ func (s *Starter) fail(ctx context.Context, instance db.Instance, from, reason s
 	return nil
 }
 
-func endpointURL(instance db.Instance, template *v1alpha1.MCPServerTemplate) string {
+// EndpointURL returns the MCP URL of an instance started from template: the
+// template's endpoint Service in the instance's namespace.
+func EndpointURL(instance db.Instance, template *v1alpha1.MCPServerTemplate) string {
 	endpoint := template.Spec.Endpoint
 
 	service, err := RenderEndpointService(template, Instance{ID: instance.ID, Namespace: instance.Namespace})

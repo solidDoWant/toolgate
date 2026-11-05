@@ -446,6 +446,39 @@ func TestStarterLateResultAfterTimeout(t *testing.T) {
 	assert.Equal(t, 1, writes, "only the timeout wrote")
 }
 
+// TestAC1_20LongToolNames: a server exposing a tool whose prefixed name is
+// over 64 characters is marked failed with a reason saying so; at exactly
+// 64 it becomes ready.
+func TestAC1_20LongToolNames(t *testing.T) {
+	tests := []struct {
+		name   string
+		length int
+		status string
+		reason string
+	}{
+		{name: "github__ plus 56 characters is 64 and ready", length: 56, status: "ready"},
+		{
+			name: "github__ plus 57 characters is 65 and failed", length: 57, status: "failed",
+			reason: "Tool `" + strings.Repeat("x", 57) + "` is longer than 64 characters with its `github__` prefix.",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run("[AC-1-20] "+test.name, func(t *testing.T) {
+			fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
+			fixture.starter.ListTools = func(context.Context, string) ([]*mcp.Tool, error) {
+				return []*mcp.Tool{{Name: strings.Repeat("x", test.length)}}, nil
+			}
+
+			require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+			status, reason, _, _ := fixture.store.snapshot()
+			assert.Equal(t, test.status, status)
+			assert.Equal(t, test.reason, reason)
+		})
+	}
+}
+
 func TestCheckToolList(t *testing.T) {
 	tools := func(count int, name func(int) string) []*mcp.Tool {
 		list := make([]*mcp.Tool, count)

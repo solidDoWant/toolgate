@@ -79,6 +79,7 @@ type metaTools struct {
 	policy      *policy.Engine
 	auditOutput io.Writer
 	subscribe   func() (<-chan store.Event, func())
+	upstreams   *upstreams
 	// sessionTools returns the proxied tool set of an MCP session.
 	sessionTools func(mcpSessionID string) (*sessionTools, bool)
 	// instanceLimitPerUser and instanceLimit bound the live instances of one

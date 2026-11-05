@@ -130,7 +130,7 @@ func (m *Monitor) Step(_ context.Context, instance db.Instance) error {
 		defer m.running.Done()
 		defer m.forget(instance.ID)
 
-		m.watch(ctx, instance, endpointURL(instance, template))
+		m.watch(ctx, instance, EndpointURL(instance, template))
 	}(m.base)
 
 	return nil
