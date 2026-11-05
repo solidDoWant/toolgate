@@ -13,6 +13,7 @@ import (
 const usage = `Usage: toolgate <command>
 
 Commands:
+  logout    Remove the stored sign-in token
   serve     Run the gateway (serve --config FILE)
   admin     Admin commands (admin rewrap --config FILE)
   version   Print the version
@@ -35,6 +36,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stdout, version.Get())
 
 		return 0
+	case "logout":
+		return logout(stdout, stderr)
 	case "serve":
 		return serve(args[1:], stdout, stderr)
 	case "admin":
