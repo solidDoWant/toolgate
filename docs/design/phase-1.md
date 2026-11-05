@@ -259,6 +259,7 @@ So a compromised gateway can't write outside toolgate's namespaces, whether or n
     - it contains no `CiliumNetworkPolicy` or other kind whose selectors toolgate can't check.
   - The reason names the first object and field that fails, for example "`Deployment/server`: `metadata.name` must contain `${instance.id}` in a shared namespace."
   - Two shared instances can then never collide, whether they come from two templates or from an old instance still stopping while a new one starts.
+  - **Cleanup without reading Secrets.** Before applying a shared instance's objects, the reconciler creates an anchor ConfigMap named `tg-<instance id>` in the shared namespace, with the instance labels. Every object it applies for that instance gets an `ownerReference` to the anchor (`blockOwnerDeletion: false`). Stopping deletes the anchor with background propagation, and Kubernetes' garbage collector deletes the rest, Secrets included. The row moves to `stopped` once no listable labelled object of the instance is left. The orphan sweep deletes anchors that have no live row. So the gateway never needs to list or read Secrets (§6).
 - **Failed sign-ins** write an `auth.refuse` audit event with the reason, issuer, audience and remote address, and no principal. At most 10 per minute per remote address are written; the rest are counted in a metric.
 
 ## 8. Client
