@@ -11,6 +11,13 @@ ON CONFLICT (principal, session_id) DO UPDATE
         last_seen_at = now()
 RETURNING *;
 
+-- name: CreateSession :one
+-- Creates the session. It returns no row when the session already exists.
+INSERT INTO sessions (principal, session_id, workspace, attestation, email, name, groups)
+VALUES (@principal, @session_id, @workspace, @attestation, @email, @name, @groups)
+ON CONFLICT (principal, session_id) DO NOTHING
+RETURNING *;
+
 -- name: GetSession :one
 SELECT * FROM sessions WHERE principal = @principal AND session_id = @session_id;
 

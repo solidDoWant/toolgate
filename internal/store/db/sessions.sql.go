@@ -22,6 +22,51 @@ func (q *Queries) CountSessionServers(ctx context.Context, sessionPk int64) (int
 	return count, err
 }
 
+const createSession = `-- name: CreateSession :one
+INSERT INTO sessions (principal, session_id, workspace, attestation, email, name, groups)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+ON CONFLICT (principal, session_id) DO NOTHING
+RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at
+`
+
+type CreateSessionParams struct {
+	Principal   string
+	SessionID   string
+	Workspace   string
+	Attestation string
+	Email       string
+	Name        string
+	Groups      []string
+}
+
+// Creates the session. It returns no row when the session already exists.
+func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error) {
+	row := q.db.QueryRow(ctx, createSession,
+		arg.Principal,
+		arg.SessionID,
+		arg.Workspace,
+		arg.Attestation,
+		arg.Email,
+		arg.Name,
+		arg.Groups,
+	)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.SessionID,
+		&i.Workspace,
+		&i.Attestation,
+		&i.Email,
+		&i.Name,
+		&i.Groups,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.EndedAt,
+	)
+	return i, err
+}
+
 const deleteSessionServers = `-- name: DeleteSessionServers :exec
 DELETE FROM session_servers WHERE session_pk = $1
 `
