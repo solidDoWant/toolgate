@@ -235,7 +235,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 |---|---|---|
 | `toolgate login [--gateway URL]` | 1 | Device-code sign-in, stores the refresh token |
 | `toolgate logout`, `toolgate status` | 1 | |
-| `toolgate headers` | 1 | `headersHelper` output: `Authorization`, `X-Toolgate-Session` (from `CLAUDE_CODE_SESSION_ID`), `X-Toolgate-Workspace` |
+| `toolgate headers` | 1 | `headersHelper` output: `Authorization`, `X-Toolgate-Session` (from the file the SessionStart hook writes), `X-Toolgate-Workspace` |
 | `toolgate hook session-start` | 1 | SessionStart hook: check sign-in, fetch the settings profile, merge it, print context |
 | `toolgate secret set/list/delete` | 1 | §11 |
 | `toolgate servers` | 1 | List the catalog as the CLI user sees it |
@@ -245,7 +245,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 
 **Workspace ID (user attestation):** `toolgate headers` sends `TOOLGATE_WORKSPACE` if set. Otherwise it sends `<hostname>/<git remote repo name or directory name>`, normalised to the header pattern.
 
-**Session ID:** from `CLAUDE_CODE_SESSION_ID`. Claude Code sets this for its child processes, but it isn't documented. Phase 1's first issue confirms that `headersHelper` receives it. If not, the fallback is that the SessionStart hook writes the session ID to `$XDG_RUNTIME_DIR/toolgate/<claude pid>`, and `toolgate headers` reads it by walking its parent processes. The confirmation decides which one ships.
+**Session ID:** from a file the SessionStart hook writes. Claude Code doesn't give the session ID to a `headersHelper`: `CLAUDE_CODE_SESSION_ID` isn't in its environment. It gives it to a SessionStart hook, on standard input (`session_id`) and in `CLAUDE_CODE_SESSION_ID`. Evidence: [`docs/dev/claude-code-integration.md`](docs/dev/claude-code-integration.md). So `toolgate hook session-start` writes the session ID to `$XDG_RUNTIME_DIR/toolgate/<claude pid>` before anything else, and `toolgate headers` reads it by walking its parent processes to the Claude Code process. Claude Code runs the hook and the helper at the same time, so `toolgate headers` waits a bounded time for the file to appear.
 
 **The plugin** (directory `plugin/`, installed from this repo as a Claude Code plugin marketplace) contains:
 - `.mcp.json`, with one HTTP server named `toolgate` at `${user_config.gateway_url}/mcp` and `headersHelper: toolgate headers`;
@@ -349,5 +349,5 @@ scripts/                 dev and agent scripts
 
 ## 21. Open questions
 
-1. Does `headersHelper` receive `CLAUDE_CODE_SESSION_ID`? Answered by the first phase 1 issue (§13).
+1. Does `headersHelper` receive `CLAUDE_CODE_SESSION_ID`? Answered: no. `toolgate headers` uses the SessionStart hook's file instead (§13).
 2. Can Coder vouch for a workspace the way TokenReview does for pods? Phase 3 investigates before designing it.
