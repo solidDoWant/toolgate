@@ -40,7 +40,7 @@ If the IdP does not send `auth_time`, the fresh sign-in fails. The other pages o
 
 ## Admins
 
-Set `config.ui.adminGroup` to the group whose members are admins in the UI. If it is empty, nobody is an admin. The UI reads the groups at sign-in. If you remove a user from the group, the change takes effect at the latest when the user's 8-hour session ends.
+Set `config.ui.adminGroup` to the group whose members are admins in the UI. If it is empty, nobody is an admin. The UI reads the groups at sign-in. If you remove a user from the group, the change takes effect at the latest when the user's 8-hour session ends. So the admin group is a snapshot from the last sign-in, and a removed admin can keep admin access for up to 8 hours.
 
 ## The Servers page
 
