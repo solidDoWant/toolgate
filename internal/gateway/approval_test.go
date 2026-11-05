@@ -74,3 +74,18 @@ func TestDurationWords(t *testing.T) {
 		assert.Equal(t, want, gateway.DurationWords(duration))
 	}
 }
+
+func TestApprovalWaitersAllowThirtyTwoWaitingCallsPerPrincipal(t *testing.T) {
+	var waiters gateway.ApprovalWaiters
+
+	for range 32 {
+		require.True(t, waiters.Acquire("alice"))
+	}
+
+	assert.False(t, waiters.Acquire("alice"), "the 33rd waiting call is refused")
+	assert.True(t, waiters.Acquire("bob"), "another principal has its own limit")
+
+	waiters.Release("alice")
+	assert.True(t, waiters.Acquire("alice"), "a released slot can be taken again")
+	assert.Equal(t, 32, gateway.WaitingCallLimit)
+}

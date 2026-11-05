@@ -19,11 +19,9 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// The protocol revisions URL elicitation is proven on.
-const (
-	revisionMultiRoundTrip = "2026-07-28"
-	revisionElicitCreate   = "2025-11-25"
-)
+// revisionElicitCreate is the protocol revision on which the go-sdk's
+// server middleware sends elicitation/create itself.
+const revisionElicitCreate = "2025-11-25"
 
 // approvalWakeBound is how soon a waiting call must notice an approval made
 // with a notification. It is below the 10 s tick, so a wait that wakes only
@@ -59,9 +57,6 @@ func (c *elicitingClient) progressMessages() []string {
 type elicitingOptions struct {
 	revision string
 	answer   string
-	// manual turns off the go-sdk client's multi round-trip handling, so
-	// the test sees the input requests itself.
-	manual bool
 }
 
 // connectEliciting connects alice's session with a client that declares
@@ -90,7 +85,6 @@ func (f *mcpFixture) connectEliciting(t *testing.T, options elicitingOptions) *e
 			client.progress = append(client.progress, request.Params.Message)
 			client.mu.Unlock()
 		},
-		MultiRoundTrip: &mcp.MultiRoundTripOptions{Disabled: options.manual},
 	})
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   f.server.URL,
@@ -102,6 +96,9 @@ func (f *mcpFixture) connectEliciting(t *testing.T, options elicitingOptions) *e
 	t.Cleanup(func() { _ = session.Close() })
 
 	client.session = session
+
+	// The test proves the revision it asks for, not a fallback.
+	require.Equal(t, options.revision, session.InitializeResult().ProtocolVersion)
 
 	_, err = session.ListTools(t.Context(), nil)
 	require.NoError(t, err)
@@ -184,7 +181,7 @@ func awaitOutcome(t *testing.T, outcomes <-chan callOutcome, bound time.Duration
 }
 
 func TestApprovalElicitation(t *testing.T) {
-	for _, revision := range []string{revisionMultiRoundTrip, revisionElicitCreate} {
+	for _, revision := range []string{revisionElicitCreate} {
 		t.Run("row 40: on "+revision+" the client opens the approval page, an approval from another replica lets the call through", func(t *testing.T) {
 			fixture := newApprovalFixture(t, withApprovalURL)
 			client := fixture.connectEliciting(t, elicitingOptions{revision: revision, answer: "accept"})
@@ -242,28 +239,9 @@ func TestApprovalElicitation(t *testing.T) {
 		}
 	}
 
-	t.Run("on 2026-07-28 the result holds one URL input request and the approval ID as request state", func(t *testing.T) {
-		fixture := newApprovalFixture(t, withApprovalURL)
-		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionMultiRoundTrip, answer: "accept", manual: true})
-
-		result := callTool(t, client.session, "github__echo", map[string]any{"text": "hi"})
-		require.True(t, result.NeedsInput())
-
-		approval := fixture.awaitPendingApproval(t)
-		assert.Equal(t, approval.ID, result.RequestState)
-		require.Len(t, result.InputRequests, 1)
-
-		params, ok := result.InputRequests[approval.ID].(*mcp.ElicitParams)
-		require.True(t, ok)
-		assert.Equal(t, "url", params.Mode)
-		assert.Equal(t, approvalBaseURL+approval.ID, params.URL)
-		assert.Equal(t, approval.ID, params.ElicitationID)
-		assert.Empty(t, fixture.auditRows(t, "tool.decision"))
-	})
-
 	t.Run("a request carrying input responses never gets input requests back", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
-		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionMultiRoundTrip, answer: "accept", manual: true})
+		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
 		result, err := client.session.CallTool(t.Context(), &mcp.CallToolParams{
 			Name: "github__echo", Arguments: map[string]any{"text": "hi"},
@@ -276,6 +254,7 @@ func TestApprovalElicitation(t *testing.T) {
 		approval := fixture.awaitPendingApproval(t)
 		require.True(t, result.IsError)
 		assert.Equal(t, pendingMessage(approval.ID), resultText(result))
+		assert.Empty(t, client.elicitations())
 	})
 
 	t.Run("a client without URL elicitation gets the approval link", func(t *testing.T) {
@@ -290,7 +269,7 @@ func TestApprovalElicitation(t *testing.T) {
 func TestApprovalWait(t *testing.T) {
 	t.Run("row 40: a denial fails the waiting call", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
-		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionMultiRoundTrip, answer: "accept"})
+		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
 		outcomes := startEcho(t.Context(), client.session, echoParams())
 		approval := fixture.awaitPendingApproval(t)
@@ -338,7 +317,7 @@ func TestApprovalWait(t *testing.T) {
 
 	t.Run("row 41: when the leader's pass expired the approval, the waiting call refuses without approval.expire", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
-		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionMultiRoundTrip, answer: "accept"})
+		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
 		outcomes := startEcho(t.Context(), client.session, echoParams())
 		approval := fixture.awaitPendingApproval(t)
@@ -382,7 +361,7 @@ func TestApprovalWait(t *testing.T) {
 		t.Cleanup(gateway.SetApprovalWaitInterval(100 * time.Millisecond))
 
 		fixture := newApprovalFixture(t, withApprovalURL)
-		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionMultiRoundTrip, answer: "accept"})
+		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
 		outcomes := startEcho(t.Context(), client.session, echoParams())
 		approval := fixture.awaitPendingApproval(t)
@@ -404,7 +383,7 @@ func TestApprovalWait(t *testing.T) {
 
 	t.Run("row 44: a cancelled wait writes nothing, and a retry uses the approval once approved", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
-		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionMultiRoundTrip, answer: "accept"})
+		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
 		ctx, cancel := context.WithCancel(t.Context())
 		outcomes := startEcho(ctx, client.session, echoParams())
