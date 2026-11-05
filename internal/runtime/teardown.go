@@ -2,9 +2,11 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -26,9 +28,6 @@ const (
 	// StoppedRetention is how long stopped rows are kept for the audit
 	// trail.
 	StoppedRetention = 7 * 24 * time.Hour
-
-	// maxReasonBytes cuts reasons copied from object conditions.
-	maxReasonBytes = 1024
 )
 
 // Deleter deletes Kubernetes objects. Reconciler.Delete implements it, and
@@ -48,6 +47,9 @@ type Teardown struct {
 	Metrics *Metrics
 	// Now returns the current time. Nil means time.Now.
 	Now func() time.Time
+
+	// stuck counts the stuck namespaces seen in the current pass.
+	stuck atomic.Int64
 }
 
 // Metrics are the instance metrics the reconciler keeps.
@@ -77,6 +79,29 @@ func NewMetrics() *Metrics {
 // Collectors returns the metrics for registration.
 func (m *Metrics) Collectors() []prometheus.Collector {
 	return []prometheus.Collector{m.Instances, m.NamespacesStuck}
+}
+
+// Step takes one instance one step towards stopped. It is a Step of the
+// full pass, which must be wrapped with Pass.
+func (t *Teardown) Step(ctx context.Context, instance db.Instance) error {
+	stuck, err := t.Advance(ctx, instance)
+	if stuck {
+		t.stuck.Add(1)
+	}
+
+	return err
+}
+
+// Pass wraps a full pass that runs Step. After the pass it deletes stopped
+// rows older than StoppedRetention and sets the metrics.
+func (t *Teardown) Pass(queries *db.Queries, pass func(ctx context.Context) error) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		t.stuck.Store(0)
+
+		err := pass(ctx)
+
+		return errors.Join(err, t.DeleteExpired(ctx), t.Metrics.update(ctx, queries, int(t.stuck.Load())))
+	}
 }
 
 // Advance takes one instance one step towards stopped. It returns true when
@@ -204,7 +229,7 @@ func (t *Teardown) now() time.Time {
 
 // isActive reports whether a status is one a stop moves to stopping.
 func isActive(status string) bool {
-	return status == statusPending || status == statusStarting || status == statusReady
+	return status == StatusPending || status == StatusStarting || status == statusReady
 }
 
 // namespaceConditions describes the namespace's conditions that are true,
@@ -223,16 +248,6 @@ func namespaceConditions(namespace *corev1.Namespace) string {
 	}
 
 	return strings.Join(parts, "; ")
-}
-
-// truncate cuts text to at most limit bytes without splitting a UTF-8
-// character.
-func truncate(text string, limit int) string {
-	if len(text) <= limit {
-		return text
-	}
-
-	return strings.ToValidUTF8(text[:limit], "")
 }
 
 // update sets the metrics from the rows that aren't stopped and the number

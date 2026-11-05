@@ -26,8 +26,6 @@ const (
 	desiredRunning = "running"
 	desiredStopped = "stopped"
 
-	statusPending  = "pending"
-	statusStarting = "starting"
 	statusReady    = "ready"
 	statusFailed   = "failed"
 	statusStopping = "stopping"
@@ -51,6 +49,14 @@ type StopDecider struct {
 	// Now returns the current time, used for idle stops. Nil means
 	// time.Now.
 	Now func() time.Time
+}
+
+// Step is Decide as a Step of the full pass. A stop it decides is torn
+// down on the next pass, which its notification starts.
+func (d *StopDecider) Step(ctx context.Context, instance db.Instance) error {
+	_, err := d.Decide(ctx, instance)
+
+	return err
 }
 
 // Decide checks one instance row. When a stop condition holds, it takes the

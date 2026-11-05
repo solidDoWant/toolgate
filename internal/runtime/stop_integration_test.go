@@ -85,7 +85,8 @@ func (f *stopFixture) pass(t *testing.T) {
 	stops := &runtime.StopDecider{Pool: f.pool, Templates: f.catalog, Log: logger, Now: now}
 	teardown := &runtime.Teardown{Pool: f.pool, Reader: f.kube, Deleter: reconciler, Log: logger, Metrics: f.metrics, Now: now}
 
-	require.NoError(t, runtime.FullPass(f.queries, logger, stops, teardown)(t.Context()))
+	pass := teardown.Pass(f.queries, runtime.FullPass(f.queries, logger, stops.Step, teardown.Step))
+	require.NoError(t, pass(t.Context()))
 }
 
 // template adds a valid template to the catalog and returns it.
@@ -137,7 +138,7 @@ func (f *stopFixture) instance(t *testing.T, template *v1alpha1.MCPServerTemplat
 	require.NoError(t, err)
 
 	if status != "pending" {
-		_, err = f.queries.SetInstanceStarting(t.Context(), id)
+		_, err = f.queries.SetInstanceStarting(t.Context(), db.SetInstanceStartingParams{ID: id, Generation: template.Generation})
 		require.NoError(t, err)
 	}
 
@@ -180,13 +181,17 @@ func (f *stopFixture) requireRunning(t *testing.T, instance db.Instance) {
 	require.Nil(t, namespace.DeletionTimestamp)
 }
 
-// requireTornDown checks that the instance went to stopping with its
-// namespace deleted, and to stopped on the next pass.
+// requireTornDown checks that the instance is to be stopped, goes to
+// stopping with its namespace deleted on the next pass, and to stopped on the
+// pass after.
 func (f *stopFixture) requireTornDown(t *testing.T, instance db.Instance) {
 	t.Helper()
 
+	require.Equal(t, "stopped", f.get(t, instance.ID).Desired)
+
+	f.pass(t)
+
 	current := f.get(t, instance.ID)
-	require.Equal(t, "stopped", current.Desired)
 	require.Equal(t, "stopping", current.Status)
 
 	err := f.kube.Get(t.Context(), types.NamespacedName{Name: instance.Namespace}, &corev1.Namespace{})
@@ -390,7 +395,6 @@ func TestTeardown(t *testing.T) {
 		template := fixture.template("failed", "shared", 0, everyone)
 		instance := fixture.instance(t, template, "shared", "", "failed")
 
-		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
 		assert.Equal(t, "boom", fixture.get(t, instance.ID).Reason)
 	})

@@ -92,7 +92,8 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, re
 	// This process doesn't read the template catalog yet, and judging
 	// instances against an empty catalog would stop them all, so it makes
 	// no stop decisions. Failed instances are still torn down.
-	reconciler.Pass = runtime.FullPass(db.New(pool), logger, nil, teardown)
+	queries := db.New(pool)
+	reconciler.Pass = teardown.Pass(queries, runtime.FullPass(queries, logger, teardown.Step))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
