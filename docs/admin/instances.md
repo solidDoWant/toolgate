@@ -21,6 +21,8 @@ An invalid template does not stop its instances. They continue on the last valid
 
 toolgate deletes the namespace `tg-<instance id>` of the instance. Kubernetes then deletes all the objects in it. toolgate deletes only a namespace that has the label `toolgate.soliddowant.dev/instance` with the ID of the instance.
 
+An instance of a `namespace: shared` template runs in the shared namespace (see [The shared namespace](chart.md#the-shared-namespace)). toolgate does not delete the shared namespace. It deletes the objects in it that have the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/instance` with the ID of the instance. toolgate cannot read Secrets, so it does not find and delete Secrets in the shared namespace.
+
 A failed instance is removed at once. The database keeps the record of a stopped instance for 7 days, and then deletes it.
 
 ## Recovery after a restart or a leader change
@@ -30,6 +32,7 @@ The replica that holds the leader Lease compares Kubernetes with the database ev
 - If a namespace has the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/instance`, but no running instance has that ID, toolgate deletes the namespace.
 - If the namespace of a starting or ready instance is missing, toolgate starts the instance again from the current version of its template.
 - If an instance was stopping, toolgate deletes its namespace again.
+- In the shared namespace, toolgate deletes each object with the label `toolgate.soliddowant.dev/instance` when no running instance has that ID. It never deletes the shared namespace.
 
 Do not put the label `toolgate.soliddowant.dev/instance` on namespaces that you make yourself. toolgate deletes them.
 

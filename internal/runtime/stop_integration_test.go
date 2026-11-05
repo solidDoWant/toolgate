@@ -190,6 +190,7 @@ func (f *stopFixture) sharedInstance(t *testing.T, template *v1alpha1.MCPServerT
 	case "failed":
 		_, err = f.queries.SetInstanceFailed(t.Context(), db.SetInstanceFailedParams{ID: id, Reason: "boom", FromStatus: "starting"})
 	}
+
 	require.NoError(t, err)
 
 	f.createSharedObjects(t, id)

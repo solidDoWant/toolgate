@@ -83,7 +83,15 @@ Do not put the label `app.kubernetes.io/managed-by: toolgate` on namespaces that
 
 ## The shared namespace
 
-Templates with `namespace: shared` run in one shared namespace. Set its name in `config.sharedNamespace.name`. The chart then creates the namespace with toolgate's label. If the namespace exists already, set `config.sharedNamespace.create` to `false` and add the label `app.kubernetes.io/managed-by: toolgate` to it yourself. The name must not start with `tg-`.
+Templates with `namespace: shared` run in one shared namespace. Set its name in `config.sharedNamespace.name`. The chart then creates the namespace with toolgate's label. If the namespace exists already, set `config.sharedNamespace.create` to `false` and add the label `app.kubernetes.io/managed-by: toolgate` to it yourself. The name must not start with `tg-`. The chart gives the name to the gateway in the setting `sharedNamespace` (see [Configuration](configuration.md)).
+
+If `config.sharedNamespace.name` is empty, every `namespace: shared` template is invalid, and users do not see it.
+
+toolgate does not rename the objects of a template. Several instances share this namespace, so a `namespace: shared` template must give each instance its own names. A template is invalid if one of these rules fails:
+
+- Each `metadata.name` contains `${instance.id}`, and `endpoint.service` contains it too.
+- The selectors contain `toolgate.soliddowant.dev/instance: ${instance.id}`. This applies to `spec.selector` of a Service, `spec.selector.matchLabels` and `spec.template.metadata.labels` of a Deployment or StatefulSet, and `spec.podSelector.matchLabels` of a NetworkPolicy.
+- The template contains no `CiliumNetworkPolicy`.
 
 ## CRD upgrades
 
