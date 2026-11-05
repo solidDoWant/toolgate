@@ -1,0 +1,33 @@
+{{define "content"}}
+{{with .Data.Error}}<p class="error" role="alert">{{.}}</p>
+{{end}}{{if .Data.Servers}}
+<form method="post" action="/ui/grants" id="grant-form">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<label>Server
+<select name="server" required>
+{{range .Data.Servers}}<option value="{{.Name}}"{{if eq .Name $.Data.Server}} selected{{end}}>{{.Name}}</option>
+{{end}}</select>
+</label>
+<label>Tool
+<select name="tool">
+<option value="">Whole server</option>
+{{range $server := .Data.Servers}}{{range .Tools}}<option value="{{.}}"{{if and (eq $server.Name $.Data.Server) (eq . $.Data.Tool)}} selected{{end}}>{{$server.Name}}__{{.}}</option>
+{{end}}{{end}}</select>
+</label>
+<label>Duration
+<select name="duration">
+{{range .Data.Durations}}<option value="{{.Value}}"{{if eq .Value $.Data.Duration}} selected{{end}}>{{.Label}}</option>
+{{end}}</select>
+</label>
+<label>Session
+<select name="session">
+<option value="">Any session</option>
+{{range .Data.Sessions}}<option value="{{.}}"{{if eq . $.Data.Session}} selected{{end}}>{{.}}</option>
+{{end}}</select>
+</label>
+<button type="submit">Create grant</button>
+</form>
+{{else}}
+<p>None of your servers needs a grant.</p>
+{{end}}
+{{end}}

@@ -27,6 +27,8 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/catalog"
+	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -77,6 +79,8 @@ type uiEnv struct {
 	target   atomic.Int32
 	refusals *refusals
 	servers  *fakeServers
+	// catalog backs the Grants pages.
+	catalog *catalog.Catalog
 	// formSubmits counts the step-up form's POSTs that ran.
 	formSubmits atomic.Int32
 	broker      *secrets.Broker
@@ -99,7 +103,7 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 	t.Cleanup(pool.Close)
 	require.NoError(t, store.Migrate(t.Context(), pool))
 
-	env := &uiEnv{pool: pool, refusals: &refusals{}, servers: &fakeServers{}}
+	env := &uiEnv{pool: pool, refusals: &refusals{}, servers: &fakeServers{}, catalog: catalog.New()}
 
 	idpOptions.UIRedirectURIs = []string{"https://127.0.0.1:*/ui/auth/callback"}
 	env.idp = toolgatetest.StartOIDCProvider(t, idpOptions)
@@ -134,6 +138,7 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 			Servers:    env.servers,
 			Secrets:    broker,
 			Auditor:    audit.NewRecorder(io.Discard, db.New(pool)),
+			Grants:     gateway.NewGrants(pool, env.catalog, io.Discard),
 		}, registrar)
 
 		webUI.Handle("GET "+whoamiPath, ui.User, http.HandlerFunc(whoami))

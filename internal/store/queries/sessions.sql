@@ -91,3 +91,9 @@ WHERE ss.template_ns = @template_ns AND ss.template_name = @template_name
     OR (@scope::text = 'per-user' AND s.principal = @owner_principal::text)
     OR (@scope::text = 'per-session' AND 'session:' || s.principal || ':' || s.session_id = @scope_key::text)
   );
+
+-- name: ListOpenSessionsOfPrincipal :many
+SELECT * FROM sessions
+WHERE principal = @principal AND ended_at IS NULL
+ORDER BY last_seen_at DESC
+LIMIT @max_rows::bigint;
