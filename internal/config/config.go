@@ -135,7 +135,8 @@ type Config struct {
 	// The namespace where the MCP servers of `namespace: shared` templates
 	// run, all together. The chart sets it from
 	// `config.sharedNamespace.name`. The namespace must exist and carry the
-	// label `app.kubernetes.io/managed-by: toolgate`. The gateway never
+	// labels `toolgate.soliddowant.dev/writable: "true"` and
+	// `pod-security.kubernetes.io/enforce: restricted`. The gateway never
 	// creates, labels or deletes it. It must not start with `tg-`, the prefix
 	// of the namespaces the gateway makes for single servers. If it is empty,
 	// every `namespace: shared` template is invalid.

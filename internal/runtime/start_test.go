@@ -241,6 +241,7 @@ func TestStarterPendingPreparesNamespaceAndApplies(t *testing.T) {
 	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Name: instanceNamespace}, namespace))
 	assert.Equal(t, "toolgate", namespace.Labels["app.kubernetes.io/managed-by"])
 	assert.Equal(t, instanceID, namespace.Labels["toolgate.soliddowant.dev/instance"])
+	assert.Equal(t, "true", namespace.Labels["toolgate.soliddowant.dev/writable"])
 	assert.Equal(t, "restricted", namespace.Labels["pod-security.kubernetes.io/enforce"])
 
 	serviceAccount := &corev1.ServiceAccount{}

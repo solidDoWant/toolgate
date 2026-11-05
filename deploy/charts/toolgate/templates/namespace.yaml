@@ -4,13 +4,14 @@
 {{- end }}
 {{- if and .name .create }}
 # The namespace for instances of `namespace: shared` templates. The admission
-# policy lets the gateway write only in namespaces with these labels.
+# policy lets the gateway write only in namespaces with these labels. Helm
+# sets app.kubernetes.io/managed-by itself, so the policy doesn't use it.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: {{ .name }}
   labels:
-    app.kubernetes.io/managed-by: toolgate
+    toolgate.soliddowant.dev/writable: "true"
     pod-security.kubernetes.io/enforce: restricted
 {{- end }}
 {{- end }}
