@@ -62,6 +62,7 @@ docs/acceptance/
 
 docs/design/
   phase-1.md               The design for phase 1: who does what, state, and the interaction table.
+  phase-2.md               The design for phase 2: who does what, state, and the interaction table.
 
 docs/agents/               Instructions for the agents (not for people).
   planner.md               The planner's playbook.
