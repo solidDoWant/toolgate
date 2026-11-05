@@ -18,6 +18,8 @@ Commands:
   headers   Print the request headers for Claude Code's headersHelper
   hook      Run a Claude Code hook (hook session-start)
   logout    Remove the stored sign-in token
+  secret    Manage your secrets (secret set NAME | list | delete NAME)
+  servers   List the servers you can use
   serve     Run the gateway (serve --config FILE)
   admin     Admin commands (admin rewrap --config FILE)
   status    Show the gateway and who is signed in
@@ -57,6 +59,10 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return hook(args[1:], stdin, stdout, stderr)
 	case "logout":
 		return logout(stdout, stderr)
+	case "secret":
+		return secret(args[1:], stdin, stdout, stderr)
+	case "servers":
+		return servers(args[1:], stdout, stderr)
 	case "serve":
 		return serve(args[1:], stdout, stderr)
 	case "admin":

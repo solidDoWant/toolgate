@@ -64,6 +64,34 @@ toolgate saves the gateway URL in the file `toolgate/config.json` in your user c
 
 To see who is signed in, run `toolgate status`. It shows the gateway URL, your principal (your user ID at the identity provider) and your email address. If your identity provider did not verify the email address, "(unverified)" follows it. The gateway decides what you can use. `toolgate status` only shows information.
 
+## See the servers that you can use
+
+To see the servers that you can use, run `toolgate servers`. It shows the same list that Claude gets from `toolgate_list_servers`: the name, the scope, the status, whether the server is enabled, and a description. If a server is blocked for you, the status also shows the reason.
+
+The list depends on the workspace. `toolgate servers` sends the same workspace that Claude Code sends from the current directory. If you set `TOOLGATE_SESSION`, the command uses that session, and the `ENABLED` column shows the servers that are enabled in it.
+
+## Set your secrets
+
+Some servers need a secret from you, for example a GitHub token. If a secret is missing, Claude tells you the command to run.
+
+To set a secret, run `toolgate secret set` with the name of the secret:
+
+```
+toolgate secret set github-token
+```
+
+If you run the command in a terminal, toolgate asks for the value and does not show what you type. You can also give the value on standard input. In that case, toolgate sends every byte, including a newline at the end. To send a value without a newline, use `printf`:
+
+```
+printf '%s' "$TOKEN" | toolgate secret set github-token
+```
+
+A name contains only letters, digits, `.`, `_` and `-`, and has 128 characters at most. A value is 4 MiB at most. If you set a secret again, the new value replaces the old value.
+
+To see your secrets, run `toolgate secret list`. It shows the name of each secret and when you set it. toolgate never shows a value after you set it.
+
+To delete a secret, run `toolgate secret delete github-token`. A server that is already running keeps the value that it started with.
+
 ## Where toolgate keeps your sign-in
 
 When you sign in, toolgate gets a refresh token from your identity provider. A refresh token is a secret that lets toolgate get new access tokens without a new sign-in. toolgate keeps it in the keychain of your operating system: the macOS Keychain, the Windows Credential Manager, or the Secret Service on Linux.
