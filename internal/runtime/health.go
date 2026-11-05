@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 )
 
 // Health check settings (docs/design/phase-1.md §7).
@@ -278,6 +280,12 @@ func (w *watcher) refreshTools(ctx context.Context) bool {
 	}
 
 	tools, err := w.session.ListTools(ctx)
+	if errors.Is(err, ErrToolListTooLarge) {
+		w.monitor.fail(ctx, w.instance, toolListTooLargeReason)
+
+		return false
+	}
+
 	if err != nil {
 		// A broken session also fails the next health check.
 		w.monitor.logger().InfoContext(ctx, "re-listing changed tools failed", slog.String("instance", w.instance.ID),
@@ -354,7 +362,7 @@ func MCPMonitorConnector(ctx context.Context, endpoint string, toolsChanged func
 		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
 	})
 
-	session, err := mcpClient.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint}, nil)
+	session, err := mcpClient.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: toolListHTTPClient}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("initialize %s: %w", endpoint, err)
 	}
@@ -377,9 +385,11 @@ func (s mcpMonitorSession) Ping(ctx context.Context) error {
 func (s mcpMonitorSession) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 	var tools []*mcp.Tool
 
+	ctx, budget := upstreamlimit.WithBudget(ctx, toolListResponseBudget)
+
 	for tool, err := range s.session.Tools(ctx, nil) {
 		if err != nil {
-			return nil, fmt.Errorf("tools/list: %w", err)
+			return nil, fmt.Errorf("tools/list: %w", toolListError(err, budget))
 		}
 
 		tools = append(tools, tool)
