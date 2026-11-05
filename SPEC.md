@@ -84,7 +84,7 @@ Every authenticated request has an **identity**:
 | `attestation` | `attested` or `user` | Computed |
 
 **Attestation levels:**
-- **`attested`:** the token was issued by a platform that vouches for the environment. Phase 1: a Kubernetes projected service-account token with audience `toolgate`, checked with TokenReview, from a namespace listed in the gateway's configuration. Phase 3 adds GitHub Actions OIDC tokens (repository, workflow and ref become the workspace) and, if feasible, Coder workspace identity.
+- **`attested`:** the token was issued by a platform that vouches for the environment. Phase 1: a Kubernetes projected service-account token with audience `toolgate`, checked with TokenReview, from a namespace listed in the gateway's configuration. Phase 3 adds SPIFFE JWT-SVIDs from allowed trust domains (the SPIFFE ID's path becomes the workspace), which covers Coder workspaces and other workloads running a SPIRE agent.
 - **`user`:** a person signed in to the IdP, and the machine only describes itself.
 - Anything else is refused with 401.
 
@@ -313,7 +313,7 @@ Each phase ends with a release an admin can deploy: image `ghcr.io/soliddowant/t
 
 1. **Core gateway** (`docs/acceptance/phase-1.md`). Sign-in from Claude Code and pods, the meta tools, templates of plain Kubernetes objects, all three scopes, per-user secrets through the CLI, standing block rules, settings sync, audit log, gateway traces, chart and CLI release.
 2. **Security model and web UI** (`docs/acceptance/phase-2.md`). Web UI, grants with step-up, approvals through elicitation, temporary blocks, per-tool rules in full, HelmRelease templates, resolvers, S3 payloads, instance restart.
-3. **SaaS servers and telemetry** (`docs/acceptance/phase-3.md`). Remote MCP servers with per-user OAuth brokered by toolgate, OTLP ingest with identity stamping, GitHub Actions attestation, Coder attestation if feasible, CLI audit and session commands.
+3. **SaaS servers and telemetry** (`docs/acceptance/phase-3.md`). Remote MCP servers with per-user OAuth brokered by toolgate, OTLP ingest with identity stamping, SPIFFE JWT-SVID attestation, CLI audit and session commands.
 
 A phase's design (`docs/design/phase-N.md`, with its interaction table) is reviewed before its issues are filed.
 

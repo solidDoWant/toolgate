@@ -17,8 +17,7 @@ Same rules as phase 1. The tag is `[AC-3-nn]`. This checklist is at feature leve
 
 ## Attestation
 
-- **AC-3-08 GitHub Actions.** A GitHub Actions OIDC token from an allowed repository is attested, with workspace `gha/<owner>/<repo>/<workflow>`, and rules can match it.
-- **AC-3-09 Coder.** Either Coder workspaces can be attested and a test shows it, or the design records why not and the docs say so.
+- **AC-3-09 SPIFFE.** A SPIFFE JWT-SVID from an allowed trust domain, with audience `toolgate`, is attested. Its workspace is the SPIFFE ID's path, rules can match it, and an SVID from another trust domain gets 401.
 
 ## CLI
 
