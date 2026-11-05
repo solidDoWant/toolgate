@@ -1,0 +1,47 @@
+name: release
+
+# A version tag, pushed by `make release PUSH_ALL=true` (scripts/release.sh)
+# after it created the GitHub release, publishes the gateway image and the
+# Helm chart with this workflow's own token.
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+
+permissions:
+  contents: read
+  packages: write
+
+# One release at a time; a running release always finishes.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/nix-dev-shell
+      - name: Sign in to ghcr.io
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | nix develop -c crane auth login ghcr.io --username "$GHCR_USER" --password-stdin
+          printf '%s' "$GHCR_TOKEN" | nix develop -c helm registry login ghcr.io --username "$GHCR_USER" --password-stdin
+      - name: Push the image
+        run: |
+          nix develop -c make build-images VERSION="$VERSION" PUSH_ALL=true
+          case "$VERSION" in
+            *-*) ;;
+            *) nix develop -c crane tag "ghcr.io/soliddowant/toolgate:$VERSION" latest ;;
+          esac
+      - name: Push the chart
+        run: |
+          nix develop -c helm package deploy/charts/toolgate --version "$VERSION" --app-version "$VERSION" --destination build/chart
+          nix develop -c helm push "build/chart/toolgate-$VERSION.tgz" oci://ghcr.io/soliddowant/charts
