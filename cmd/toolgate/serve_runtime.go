@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.opentelemetry.io/otel/trace"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -48,6 +49,8 @@ type runtimeOptions struct {
 	auditOutput io.Writer
 	// listener delivers the PostgreSQL notifications. serve runs it.
 	listener *store.Listener
+	// tracerProvider makes the render and apply spans.
+	tracerProvider trace.TracerProvider
 }
 
 // skipControllerNameValidation turns off controller-runtime's check that
@@ -171,6 +174,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		ListTools:        runtime.MCPToolLister,
 		GatewayNamespace: cfg.LeaseNamespace,
 		GatewayPodLabels: cfg.PodLabels(),
+		TracerProvider:   options.tracerProvider,
 		Logger:           logger,
 	}
 

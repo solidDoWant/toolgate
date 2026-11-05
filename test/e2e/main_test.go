@@ -5,8 +5,10 @@ package e2e
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/solidDoWant/toolgate/internal/testutil"
 )
@@ -16,9 +18,14 @@ import (
 // made by scripts/e2e/run.sh).
 var identityProvider *testutil.OIDCProvider
 
+// traceReceiver collects the spans the gateway under test exports. It is
+// nil when the harness gave no address.
+var traceReceiver *testutil.OTLPReceiver
+
 // TestMain starts the fake identity provider on the address and issuer URL
 // scripts/e2e/run.sh configured the chart with, so tokens it issues are the
-// ones the gateway accepts. All tests of the package share it.
+// ones the gateway accepts, and the test OTLP receiver the chart's
+// otlpEndpoint points at. All tests of the package share them.
 func TestMain(m *testing.M) {
 	os.Exit(run(m))
 }
@@ -43,7 +50,35 @@ func run(m *testing.M) int {
 		defer identityProvider.Close()
 	}
 
+	if listen := os.Getenv("TOOLGATE_E2E_OTLP_LISTEN"); listen != "" {
+		listener, err := net.Listen("tcp", listen)
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "e2e: OTLP receiver: %v\n", err)
+
+			return 1
+		}
+
+		traceReceiver = &testutil.OTLPReceiver{}
+		server := &http.Server{Handler: traceReceiver, ReadHeaderTimeout: 10 * time.Second}
+
+		go func() { _ = server.Serve(listener) }()
+
+		defer func() { _ = server.Close() }()
+	}
+
 	return m.Run()
+}
+
+// otlpReceiver returns the test OTLP receiver, or skips the test when the
+// harness started none.
+func otlpReceiver(t *testing.T) *testutil.OTLPReceiver {
+	t.Helper()
+
+	if traceReceiver == nil {
+		t.Skip("TOOLGATE_E2E_OTLP_LISTEN is not set: no OTLP receiver (run through scripts/e2e/run.sh)")
+	}
+
+	return traceReceiver
 }
 
 // oidcProvider returns the fake identity provider, or skips the test when

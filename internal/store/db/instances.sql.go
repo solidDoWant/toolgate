@@ -49,7 +49,7 @@ func (q *Queries) DeleteStoppedInstancesBefore(ctx context.Context, before pgtyp
 }
 
 const getInstance = `-- name: GetInstance :one
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at FROM instances WHERE id = $1
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context FROM instances WHERE id = $1
 `
 
 func (q *Queries) GetInstance(ctx context.Context, id string) (Instance, error) {
@@ -77,12 +77,13 @@ func (q *Queries) GetInstance(ctx context.Context, id string) (Instance, error) 
 		&i.FailedAt,
 		&i.LastUsedAt,
 		&i.UpdatedAt,
+		&i.TraceContext,
 	)
 	return i, err
 }
 
 const getLiveInstance = `-- name: GetLiveInstance :one
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at FROM instances
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context FROM instances
 WHERE template_ns = $1 AND template_name = $2 AND scope_key = $3
   AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
 `
@@ -118,12 +119,13 @@ func (q *Queries) GetLiveInstance(ctx context.Context, arg GetLiveInstanceParams
 		&i.FailedAt,
 		&i.LastUsedAt,
 		&i.UpdatedAt,
+		&i.TraceContext,
 	)
 	return i, err
 }
 
 const getNewestInstance = `-- name: GetNewestInstance :one
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at FROM instances
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context FROM instances
 WHERE template_ns = $1 AND template_name = $2 AND scope_key = $3
 ORDER BY created_at DESC, id DESC
 LIMIT 1
@@ -160,6 +162,7 @@ func (q *Queries) GetNewestInstance(ctx context.Context, arg GetNewestInstancePa
 		&i.FailedAt,
 		&i.LastUsedAt,
 		&i.UpdatedAt,
+		&i.TraceContext,
 	)
 	return i, err
 }
@@ -167,12 +170,12 @@ func (q *Queries) GetNewestInstance(ctx context.Context, arg GetNewestInstancePa
 const insertInstance = `-- name: InsertInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, attempt_started_at
+    owner_principal, render_session, namespace, trace_context, attempt_started_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, now()
+    $8, $9, $10, $11, now()
 )
-RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at
+RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context
 `
 
 type InsertInstanceParams struct {
@@ -186,6 +189,7 @@ type InsertInstanceParams struct {
 	OwnerPrincipal string
 	RenderSession  pgtype.Int8
 	Namespace      string
+	TraceContext   string
 }
 
 func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) (Instance, error) {
@@ -200,6 +204,7 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 		arg.OwnerPrincipal,
 		arg.RenderSession,
 		arg.Namespace,
+		arg.TraceContext,
 	)
 	var i Instance
 	err := row.Scan(
@@ -224,12 +229,13 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 		&i.FailedAt,
 		&i.LastUsedAt,
 		&i.UpdatedAt,
+		&i.TraceContext,
 	)
 	return i, err
 }
 
 const listInstancesNotStopped = `-- name: ListInstancesNotStopped :many
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at FROM instances WHERE status <> 'stopped' ORDER BY id
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context FROM instances WHERE status <> 'stopped' ORDER BY id
 `
 
 func (q *Queries) ListInstancesNotStopped(ctx context.Context) ([]Instance, error) {
@@ -263,6 +269,7 @@ func (q *Queries) ListInstancesNotStopped(ctx context.Context) ([]Instance, erro
 			&i.FailedAt,
 			&i.LastUsedAt,
 			&i.UpdatedAt,
+			&i.TraceContext,
 		); err != nil {
 			return nil, err
 		}

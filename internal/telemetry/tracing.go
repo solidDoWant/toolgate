@@ -3,6 +3,7 @@ package telemetry
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"go.opentelemetry.io/otel"
@@ -55,4 +56,39 @@ func Propagator() propagation.TextMapPropagator {
 // process-wide OpenTelemetry default.
 func SetGlobalPropagator() {
 	otel.SetTextMapPropagator(Propagator())
+}
+
+// EncodeContext returns the W3C trace context of ctx's span (its
+// `traceparent` and `tracestate`) as a JSON object, or "" when ctx carries
+// no valid span context. DecodeContext reads it back.
+func EncodeContext(ctx context.Context) string {
+	carrier := propagation.MapCarrier{}
+	Propagator().Inject(ctx, carrier)
+
+	if len(carrier) == 0 {
+		return ""
+	}
+
+	encoded, err := json.Marshal(carrier)
+	if err != nil {
+		return ""
+	}
+
+	return string(encoded)
+}
+
+// DecodeContext returns ctx with the remote span context that EncodeContext
+// wrote into encoded, so spans started from it are children of that span.
+// An empty or unreadable value returns ctx unchanged.
+func DecodeContext(ctx context.Context, encoded string) context.Context {
+	if encoded == "" {
+		return ctx
+	}
+
+	carrier := propagation.MapCarrier{}
+	if err := json.Unmarshal([]byte(encoded), &carrier); err != nil {
+		return ctx
+	}
+
+	return Propagator().Extract(ctx, carrier)
 }

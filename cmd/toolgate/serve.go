@@ -134,6 +134,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			logger:          logger,
 			auditOutput:     stdout,
 			listener:        listener,
+			tracerProvider:  server.TracerProvider(),
 		})
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)
