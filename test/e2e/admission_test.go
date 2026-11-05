@@ -16,7 +16,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-var toolgateLabels = map[string]string{"app.kubernetes.io/managed-by": "toolgate"}
+// toolgateLabels are the labels the admission policy requires on every
+// namespace the gateway writes to.
+var toolgateLabels = map[string]string{
+	"app.kubernetes.io/managed-by":       "toolgate",
+	"pod-security.kubernetes.io/enforce": "restricted",
+}
 
 func instanceLabels(instance string) map[string]string {
 	return map[string]string{
@@ -74,8 +79,8 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 	instanceNamespace := "tg-" + instance
 	plainNamespace := "e2e-plain-" + suffix
 
-	// The namespace carries toolgate's managed-by label, which is all the
-	// admission policy looks at, but not the instance label: the orphan sweep
+	// The namespace carries toolgate's managed-by and Pod Security labels,
+	// which are all the admission policy looks at, but not the instance label: the orphan sweep
 	// deletes every namespace with that label and no live instance row behind
 	// it, and this namespace has none.
 	createNamespace(t, admin, instanceNamespace, toolgateLabels)
@@ -126,6 +131,17 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 		},
 		{
 			name: "a namespace without toolgate's label is refused", namespace: "tg-e2e-unlabelled-" + suffix,
+			labels:       map[string]string{"pod-security.kubernetes.io/enforce": "restricted"},
+			errAssertion: refusedWith("may create only namespaces named tg-*"),
+		},
+		{
+			name: "a namespace without Pod Security restricted is refused", namespace: "tg-e2e-unrestricted-" + suffix,
+			labels:       map[string]string{"app.kubernetes.io/managed-by": "toolgate"},
+			errAssertion: refusedWith("may create only namespaces named tg-*"),
+		},
+		{
+			name: "a namespace with a weaker Pod Security level is refused", namespace: "tg-e2e-privileged-" + suffix,
+			labels:       map[string]string{"app.kubernetes.io/managed-by": "toolgate", "pod-security.kubernetes.io/enforce": "privileged"},
 			errAssertion: refusedWith("may create only namespaces named tg-*"),
 		},
 	}

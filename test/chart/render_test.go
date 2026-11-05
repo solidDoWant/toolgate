@@ -297,7 +297,7 @@ func TestAdmissionPolicyAppliesToEveryWriteByTheGateway(t *testing.T) {
 
 	require.Len(t, policy.Spec.MatchConditions, 1)
 	assert.Equal(t, `request.userInfo.username == "`+serviceAccount+`"`, policy.Spec.MatchConditions[0].Expression)
-	assert.Len(t, policy.Spec.Validations, 4)
+	assert.Len(t, policy.Spec.Validations, 6)
 
 	binding := find[admissionv1.ValidatingAdmissionPolicyBinding](t, manifests, "ValidatingAdmissionPolicyBinding")
 	assert.Equal(t, policy.Name, binding.Spec.PolicyName)
@@ -320,6 +320,7 @@ func TestSharedNamespace(t *testing.T) {
 		namespace := find[corev1.Namespace](t, manifests, "Namespace")
 		assert.Equal(t, "toolgate-shared", namespace.Name)
 		assert.Equal(t, "toolgate", namespace.Labels["app.kubernetes.io/managed-by"])
+		assert.Equal(t, "restricted", namespace.Labels["pod-security.kubernetes.io/enforce"])
 		assert.NotContains(t, namespace.Labels, "toolgate.soliddowant.dev/instance")
 
 		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
