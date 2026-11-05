@@ -96,6 +96,14 @@ func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
 func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.OIDCOptions) *uiEnv {
 	t.Helper()
 
+	return startUIEnvConfigured(t, adminGroup, idpOptions, nil)
+}
+
+// startUIEnvConfigured is startUIEnvWithIdP with a hook that adjusts the
+// UI's options.
+func startUIEnvConfigured(t *testing.T, adminGroup string, idpOptions toolgatetest.OIDCOptions, adjust func(*ui.Options)) *uiEnv {
+	t.Helper()
+
 	postgres := toolgatetest.StartPostgres(t)
 
 	pool, err := pgxpool.New(t.Context(), postgres.ConnString())
@@ -127,7 +135,8 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 	// The public URL is only known once the server listens.
 	for range 2 {
 		registrar := newMuxRegistrar()
-		webUI := ui.New(ui.Options{
+
+		options := ui.Options{
 			Database:   pool,
 			IssuerURL:  env.idp.Issuer,
 			ClientID:   env.idp.UIClientID,
@@ -139,7 +148,12 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 			Secrets:    broker,
 			Auditor:    audit.NewRecorder(io.Discard, db.New(pool)),
 			Grants:     gateway.NewGrants(pool, env.catalog, io.Discard),
-		}, registrar)
+		}
+		if adjust != nil {
+			adjust(&options)
+		}
+
+		webUI := ui.New(options, registrar)
 
 		webUI.Handle("GET "+whoamiPath, ui.User, http.HandlerFunc(whoami))
 		webUI.Handle("GET /ui/admin-only", ui.Admin, http.HandlerFunc(whoami))
@@ -497,8 +511,15 @@ FROM generate_series(1, $1) AS n`, count)
 func (e *uiEnv) insertSession(t *testing.T, cookieValue string, groups []string) *http.Client {
 	t.Helper()
 
+	return e.insertSessionOf(t, "dave", cookieValue, groups)
+}
+
+// insertSessionOf is insertSession for another principal.
+func (e *uiEnv) insertSessionOf(t *testing.T, principal, cookieValue string, groups []string) *http.Client {
+	t.Helper()
+
 	_, err := db.New(e.pool).InsertUISession(t.Context(), db.InsertUISessionParams{
-		IDHash: hashOf(cookieValue), Principal: "dave", Groups: append([]string{}, groups...),
+		IDHash: hashOf(cookieValue), Principal: principal, Groups: append([]string{}, groups...),
 		CsrfToken: hashOf("csrf-" + cookieValue),
 	})
 	require.NoError(t, err)

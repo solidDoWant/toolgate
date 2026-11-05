@@ -12,5 +12,11 @@
 <dt>Request ID</dt><dd>{{.Data.RequestID}}</dd>
 <dt>Details</dt><dd><pre>{{.Data.Details}}</pre></dd>
 </dl>
+{{with .Data}}{{if .HasPayload}}<h2>Payload</h2>
+<pre id="payload">{{.Payload}}</pre>
+{{if .PayloadTruncated}}<p class="note">Only the first 1 MiB is shown.</p>
+{{end}}<p><a href="/ui/audit/events/{{.Key}}/payload">Download the payload</a></p>
+{{end}}{{with .PayloadNote}}<p class="note">{{.}}</p>
+{{end}}{{end}}
 <p><a href="/ui/audit">Back to the audit log</a></p>
 {{end}}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -31,6 +32,7 @@ const (
 // implements it.
 type S3API interface {
 	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
 	DeleteObjects(ctx context.Context, params *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
 	GetObjectLockConfiguration(ctx context.Context, params *s3.GetObjectLockConfigurationInput, optFns ...func(*s3.Options)) (*s3.GetObjectLockConfigurationOutput, error)
 }
@@ -245,4 +247,19 @@ func (p *Payloads) DeleteObjects(ctx context.Context, keys []string) (map[string
 	}
 
 	return refused, nil
+}
+
+// Open returns the body of the payload object with key. The caller closes
+// it. The gateway streams the body itself; there are no presigned URLs.
+func (p *Payloads) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	if p == nil {
+		return nil, errors.New("audit payloads are off")
+	}
+
+	output, err := p.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(p.bucket), Key: aws.String(key)})
+	if err != nil {
+		return nil, fmt.Errorf("read audit payload: %w", err)
+	}
+
+	return output.Body, nil
 }

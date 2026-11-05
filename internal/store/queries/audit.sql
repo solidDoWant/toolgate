@@ -58,3 +58,21 @@ SELECT id, occurred_at, type, principal, workspace, session, attestation,
        server, tool, trace_id, request_id, details
 FROM audit_events
 WHERE occurred_at = @occurred_at AND id = @id;
+
+-- name: GetAuditEventPayload :one
+-- Returns the payload of one audit event: inline JSON, or the S3 key in
+-- payload_ref. Both are empty when the event has none.
+SELECT principal, payload, payload_ref
+FROM audit_events
+WHERE occurred_at = @occurred_at AND id = @id;
+
+-- name: GetApprovalRequestPayload :one
+-- Returns the payload of the approval.request event of an approval. since
+-- bounds the search to the partitions from when the approval was created.
+SELECT payload, payload_ref
+FROM audit_events
+WHERE type = 'approval.request'
+  AND occurred_at >= @since::timestamptz
+  AND details->>'approval' = @approval_id::text
+ORDER BY occurred_at, id
+LIMIT 1;
