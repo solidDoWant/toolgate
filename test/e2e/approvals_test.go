@@ -88,7 +88,8 @@ func openApprovalLink(t *testing.T, browser *http.Client, link string, user test
 	require.NoError(t, err)
 	_ = readPage(t, response)
 	require.Equal(t, testutil.OIDCSignInPath, response.Request.URL.Path, "the link goes straight to the IdP's sign-in")
-	assert.Equal(t, "login", response.Request.URL.Query().Get("prompt"), "the sign-in is a step-up")
+	assert.True(t, redirectedThrough(response, func(hop *url.URL) bool { return hop.Query().Get("prompt") == "login" }),
+		"the sign-in is a step-up")
 
 	signIn := response.Request.URL
 	response, err = browser.PostForm(signIn.String(), url.Values{
@@ -100,6 +101,24 @@ func openApprovalLink(t *testing.T, browser *http.Client, link string, user test
 	require.NoError(t, err)
 
 	return response, readPage(t, response)
+}
+
+// redirectedThrough reports whether a request on response's redirect chain
+// went to a URL that matches.
+func redirectedThrough(response *http.Response, matches func(*url.URL) bool) bool {
+	for request := response.Request; request != nil; {
+		if matches(request.URL) {
+			return true
+		}
+
+		if request.Response == nil {
+			return false
+		}
+
+		request = request.Response.Request
+	}
+
+	return false
 }
 
 var (
