@@ -173,7 +173,7 @@ With `shared`, all instances go in one configured namespace and are told apart b
 - A shared instance stops when no live session has it enabled and it had no calls for `idleStop`, or never if `idleStop` is `0`.
 - Any instance stops when its template is deleted or its scope changes. An invalid template stops nothing (§8).
 
-Stopping deletes the namespace, or the labelled objects in a shared namespace. A gateway that restarts finds its instances from the labels and the database, and reconciles them.
+**Limits.** Each user can have a limited number of running instances (default 20), and the gateway a limited total (default 200). Enabling a server that is already running for the user always works. Stopping deletes the namespace, or the labelled objects in a shared namespace. A gateway that restarts finds its instances from the labels and the database, and reconciles them.
 
 ## 10. Policy
 
