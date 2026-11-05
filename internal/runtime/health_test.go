@@ -86,6 +86,7 @@ type upstream struct {
 	pings        int
 	pingResult   func(n int) error
 	tools        []*mcp.Tool
+	listTools    func(ctx context.Context) ([]*mcp.Tool, error)
 	toolsChanged func()
 	open         bool
 	connects     int
@@ -135,11 +136,17 @@ func (s upstreamSession) Ping(context.Context) error {
 	return s.upstream.pingResult(s.upstream.pings)
 }
 
-func (s upstreamSession) ListTools(context.Context) ([]*mcp.Tool, error) {
+func (s upstreamSession) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 	s.upstream.mu.Lock()
-	defer s.upstream.mu.Unlock()
+	listTools := s.upstream.listTools
+	tools := s.upstream.tools
+	s.upstream.mu.Unlock()
 
-	return s.upstream.tools, nil
+	if listTools != nil {
+		return listTools(ctx)
+	}
+
+	return tools, nil
 }
 
 func (s upstreamSession) Close() error {

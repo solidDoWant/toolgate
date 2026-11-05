@@ -72,7 +72,7 @@ The name of the template is the name of the server. It has 31 characters at most
   - `shared`: one instance for all users.
 - `namespace`: `per-instance` (the default) or `shared`. See [Where instances run](#where-instances-run).
 - `idleStop`: how long a `per-user` or `shared` instance runs without calls before it stops. For a `shared` template, `0` means that the instance does not stop. [Instance stops and cleanup](instances.md) gives the full rules.
-- `startTimeout`: how long an instance can take to become ready. The default is 5 minutes.
+- `startTimeout`: how long an instance can take to become ready. The default is 5 minutes. While the instance starts, toolgate tries the MCP `initialize` and `tools/list` requests again every 30 seconds. Each try stops after 10 seconds. A server that does not answer stays `starting` until `startTimeout` passes, and then it fails.
 - `access`: who can see and turn on the server. See [Who can use a server](#who-can-use-a-server).
 - `tools`: changes for single tools, with the name of the tool as the key. Each entry can set `environments` or `blocked: true`. A blocked tool is never offered and every call to it is refused.
 - `endpoint`: the Service, port and path where the instance serves MCP over HTTP.
