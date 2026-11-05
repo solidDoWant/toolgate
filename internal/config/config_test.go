@@ -36,18 +36,26 @@ logLevel: debug
 `)
 
 	cfg, err := config.Load(path, envFrom(map[string]string{
-		"TOOLGATE_DATABASE_URL":  validDatabaseURL,
-		"TOOLGATE_OTLP_ENDPOINT": "http://collector:4318",
+		"TOOLGATE_DATABASE_URL":      validDatabaseURL,
+		"TOOLGATE_OTLP_ENDPOINT":     "http://collector:4318",
+		"TOOLGATE_OIDC_ISSUER_URL":   "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":     "toolgate",
+		"TOOLGATE_OIDC_GROUPS_CLAIM": "roles",
 	}))
 	require.NoError(t, err)
 
 	assert.Equal(t, config.Config{
-		ListenAddress:        ":8443",
-		MetricsListenAddress: ":9090",
-		DatabaseURL:          validDatabaseURL,
-		ShutdownTimeout:      config.Duration(45 * time.Second),
-		LogLevel:             "debug",
-		OTLPEndpoint:         "http://collector:4318",
+		ListenAddress:          ":8443",
+		MetricsListenAddress:   ":9090",
+		DatabaseURL:            validDatabaseURL,
+		ShutdownTimeout:        config.Duration(45 * time.Second),
+		LogLevel:               "debug",
+		OTLPEndpoint:           "http://collector:4318",
+		OIDCIssuerURL:          "https://idp.example",
+		OIDCAudience:           "toolgate",
+		OIDCEmailClaim:         "email",
+		OIDCEmailVerifiedClaim: "email_verified",
+		OIDCGroupsClaim:        "roles",
 	}, cfg)
 }
 
@@ -57,6 +65,8 @@ func TestLoadEnvironmentOnly(t *testing.T) {
 		"TOOLGATE_METRICS_LISTEN_ADDRESS": "127.0.0.1:9100",
 		"TOOLGATE_SHUTDOWN_TIMEOUT":       "5s",
 		"TOOLGATE_LOG_LEVEL":              "warn",
+		"TOOLGATE_OIDC_ISSUER_URL":        "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":          "toolgate",
 	}))
 	require.NoError(t, err)
 
@@ -78,7 +88,22 @@ func TestLoadReportsEveryProblem(t *testing.T) {
 		{
 			name:         "missing database URL",
 			env:          map[string]string{},
-			wantProblems: []string{"databaseURL: required"},
+			wantProblems: []string{"databaseURL: required", "oidcIssuerURL: required", "oidcAudience: required"},
+		},
+		{
+			name: "invalid OIDC values",
+			file: `
+oidcIssuerURL: "idp.example"
+oidcEmailClaim: ""
+oidcGroupsClaim: ""
+`,
+			wantProblems: []string{
+				`oidcIssuerURL: "idp.example" is not an http or https URL`,
+				"oidcAudience: required",
+				"oidcEmailClaim: must not be empty",
+				"oidcGroupsClaim: must not be empty",
+			},
+			wantAbsent: []string{"oidcEmailVerifiedClaim"},
 		},
 		{
 			name: "several invalid environment values",

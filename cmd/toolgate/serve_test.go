@@ -40,6 +40,8 @@ func clearConfigEnv(t *testing.T) {
 	for _, name := range []string{
 		"TOOLGATE_CONFIG", "TOOLGATE_LISTEN_ADDRESS", "TOOLGATE_METRICS_LISTEN_ADDRESS",
 		"TOOLGATE_DATABASE_URL", "TOOLGATE_SHUTDOWN_TIMEOUT", "TOOLGATE_LOG_LEVEL", "TOOLGATE_OTLP_ENDPOINT",
+		"TOOLGATE_OIDC_ISSUER_URL", "TOOLGATE_OIDC_AUDIENCE", "TOOLGATE_OIDC_EMAIL_CLAIM",
+		"TOOLGATE_OIDC_EMAIL_VERIFIED_CLAIM", "TOOLGATE_OIDC_GROUPS_CLAIM",
 	} {
 		t.Setenv(name, "")
 	}
@@ -67,6 +69,8 @@ func TestServeStopsOnSIGTERM(t *testing.T) {
 	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
 	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
 	t.Setenv("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate")
+	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
+	t.Setenv("TOOLGATE_OIDC_AUDIENCE", "toolgate")
 
 	stdout := &lockedBuffer{}
 	stderr := &lockedBuffer{}
