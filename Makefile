@@ -80,6 +80,10 @@ vulncheck: ## Report known vulnerabilities in Go dependencies and the standard l
 generate: ## Regenerate committed generated code (CRDs and deepcopy with controller-gen, queries with sqlc) for the inputs that exist.
 	./scripts/generate.sh
 
+.PHONY: generate-docs
+generate-docs: ## Regenerate the gateway configuration reference (docs/admin/configuration.md) from the doc comments in internal/config.
+	go run ./internal/config/docgen internal/config/config.go docs/admin/configuration.md
+
 .PHONY: check-generate
 check-generate: ## Fail if `make generate` changes the tree (committed generated code is stale).
 	./scripts/check-generate.sh

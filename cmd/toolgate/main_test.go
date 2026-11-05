@@ -19,7 +19,6 @@ func TestRun(t *testing.T) {
 		{name: "version", args: []string{"version"}, wantCode: 0, wantStdout: "dev\n"},
 		{name: "no command", args: nil, wantCode: 2, wantStderr: "Usage: toolgate"},
 		{name: "unknown command", args: []string{"frobnicate"}, wantCode: 2, wantStderr: `unknown command "frobnicate"`},
-		{name: "serve is a stub", args: []string{"serve"}, wantCode: 1, wantStderr: "not implemented yet"},
 		{name: "help", args: []string{"help"}, wantCode: 0, wantStdout: "Usage: toolgate"},
 	}
 	for _, test := range tests {

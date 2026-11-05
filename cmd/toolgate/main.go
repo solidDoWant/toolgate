@@ -13,7 +13,7 @@ import (
 const usage = `Usage: toolgate <command>
 
 Commands:
-  serve     Run the gateway (not implemented yet)
+  serve     Run the gateway (serve --config FILE)
   version   Print the version
 `
 
@@ -35,9 +35,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 
 		return 0
 	case "serve":
-		_, _ = fmt.Fprintln(stderr, "toolgate serve: not implemented yet")
-
-		return 1
+		return serve(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 
