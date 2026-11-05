@@ -302,10 +302,9 @@ func TestClientMetadataIsRateLimitedPerAddress(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, status)
 }
 
-// The probes, the client metadata document and the web UI's sign-in routes
-// and static files are the only routes on the main port that answer without
-// authentication; metrics are on their own port.
-func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
+// The probes and the client metadata document are the only routes on the
+// main port that answer without authentication; metrics are on their own port.
+func TestOnlyProbesAndClientMetadataArePublic(t *testing.T) {
 	t.Parallel()
 
 	server, err := gateway.New(t.Context(), testConfig(), slog.New(slog.DiscardHandler))
@@ -315,7 +314,16 @@ func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
 		"GET /healthz",
 		"GET /readyz",
 		"GET /.well-known/toolgate-client",
-	}, server.PublicRoutes(), "without the web UI")
+	}, server.PublicRoutes())
+}
+
+// With the web UI, its sign-in routes and static files are the only other
+// routes on the main port that answer without authentication.
+func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
+	t.Parallel()
+
+	server, err := gateway.New(t.Context(), testConfig(), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
 
 	ui.New(ui.Options{IssuerURL: "https://idp.invalid", ClientID: "toolgate-ui", PublicURL: "https://toolgate.example"}, server)
 
@@ -326,5 +334,5 @@ func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
 		"GET /ui/login",
 		"GET /ui/auth/callback",
 		"GET /ui/static/",
-	}, server.PublicRoutes(), "with the web UI")
+	}, server.PublicRoutes())
 }
