@@ -14,7 +14,6 @@ Phase 1's split stays (phase 1 §1): request handling runs on every replica and 
 **New reconciler work**, on the leader only:
 - replacing an instance when a restart is requested or a resolved value is about to expire (§6);
 - calling resolvers while rendering (§6);
-- tearing down instances with HelmReleases in order (§7);
 - on its 30 s pass: expiring pending approvals nobody waits on, and deleting old rows (§2).
 
 **Notifications.** Three new kinds on `toolgate_events`, sent inside the writing transaction like phase 1's: `grant:<grants.id>`, `block:<temporary_blocks.id>` and `approval:<approvals.id>`. A restart request sends the existing `instance:<id>`. Phase 1's rules for missed notifications hold: a replica whose `LISTEN` connection reconnects treats everything as changed, and every wait re-reads its rows at a 10 s tick.
@@ -248,42 +247,23 @@ resolvers:
 - **Restart on expiry.** On its 30 s pass, the reconciler replaces (step 2 above, reason `resolver-expiry`) every live instance whose `resolved_expires_at` is less than 60 s away. So the fresh value is fetched 30 to 60 s before the old one expires, and the 2-minute minimum gives each instance at least a minute.
 - The test resolver is a small Go binary in `test/resolver/` that returns a counter as the value, with an expiry the test sets.
 
-## 7. HelmRelease templates
+## 7. Extra kinds, such as HelmRelease templates
 
-Phase 2 allows `helm.toolkit.fluxcd.io/v2 HelmRelease`, and `source.toolkit.fluxcd.io/v1 OCIRepository` and `HelmRepository` (`SPEC.md` §9), when their CRDs exist (like `CiliumNetworkPolicy`). Otherwise a template using them is invalid with the reason "Flux's `HelmRelease` CRD isn't installed."
+toolgate has no HelmRelease integration. A HelmRelease is one more kind a template may contain, like a Deployment. What it can do is decided by the cluster: what the admin lets the gateway write, and what the admin lets Flux's helm-controller do.
 
-**The escalation to close.** helm-controller applies a chart with its own service account, which a default Flux install binds to `cluster-admin`. A HelmRelease the gateway may create would then install anything anywhere, around both the gateway's RBAC and its admission policy. So every toolgate HelmRelease sets **`spec.serviceAccountName: toolgate-helm`**, and Flux impersonates that account, confined to the instance namespace, for every install, upgrade and uninstall. This works whatever helm-controller's `--default-service-account` flag is set to. Impersonation by the gateway isn't an option, because helm-controller, not the gateway, does the apply.
+**Allowed kinds are a chart setting.** `config.allowedKinds` lists the kinds a template may contain. The default is phase 1's list (`SPEC.md` §9).
+- An admin can add any namespaced kind. For a Helm chart, that's `helm.toolkit.fluxcd.io/v2 HelmRelease` with `source.toolkit.fluxcd.io/v1 OCIRepository` or `HelmRepository`.
+- The chart builds the gateway's ClusterRole rules (`create`, `patch`, `delete`, `get`, `list`, `watch`) and the admission policy's kind list from that one setting, so they can't disagree.
+- The catalog refuses a template with a kind that isn't listed, or whose CRD isn't installed.
+- Cluster-scoped kinds, RBAC kinds (`Role`, `RoleBinding`, `ClusterRole`, `ClusterRoleBinding`), Namespaces and admission webhooks can't be listed. The chart fails to render, and the admission policy refuses them anyway. Everything else in phase 1 §6 is unchanged: writable and `restricted` namespaces only, and no Secret reads.
 
-**Namespace preparation** for a template with a HelmRelease adds, before the template's objects:
-- the ServiceAccount `toolgate-helm`, with `automountServiceAccountToken: false`;
-- the RoleBinding `toolgate-helm`, binding it to the chart's ClusterRole `<release>-instance-deployer`.
+**Nothing kind-specific in the runtime.**
+- **Readiness** is kstatus for every object, as in phase 1. Flux objects follow kstatus conventions (`Ready`, `Reconciling` and `Stalled` conditions, and `observedGeneration`), so kstatus reads a HelmRelease as current once Flux reports it ready, and as failed when it stalls. The worker proves this with an e2e test, and hands back `HANDOFF: question` if kstatus misreads a Flux object.
+- **The failure reason** (AC-2-17) comes from the failed object's conditions and events, as in phase 1, so a failed install reports the HelmRelease's own message.
+- **Teardown** (AC-2-16) deletes the namespace, as in phase 1. Kubernetes keeps the namespace until objects with finalizers have finished, so helm-controller uninstalls the chart first. A HelmRelease that can't finish holds the namespace in `Terminating`, and phase 1's stuck-namespace warning and metric show it.
+- **Shared namespaces:** phase 1 §7 already refuses kinds whose names and selectors toolgate can't check, so a `namespace: shared` template can't contain Flux kinds.
 
-That ClusterRole grants `get`, `list`, `watch`, `create`, `update`, `patch` and `delete` on phase 1's namespaced kinds (`SPEC.md` §9), Secrets included (Helm keeps its release records there). It grants no RBAC, namespaces or cluster-scoped kinds. A RoleBinding grants it only inside its own namespace. A chart that needs more fails to install, with Helm's reason (decision 4). Pod Security `restricted` still applies to every pod.
-
-**Rendering** sets `spec.serviceAccountName: toolgate-helm` on every HelmRelease.
-
-**Validation** (phase 1 §8). A template is invalid if a HelmRelease sets `serviceAccountName`, `kubeConfig`, `targetNamespace` or `storageNamespace`, or names a namespace in `chart.spec.sourceRef`, `chartRef` or `dependsOn`. A template with `namespace: shared` may not contain Flux kinds, because toolgate can't check that the chart's objects contain `${instance.id}` (phase 1 §7). When a template has a HelmRelease, `endpoint.service` may be a Service the chart creates.
-
-**Kubernetes permissions**, added to phase 1 §6:
-- ClusterRole:
-  - `helmreleases` (`helm.toolkit.fluxcd.io`), `ocirepositories` and `helmrepositories` (`source.toolkit.fluxcd.io`): `create`, `patch`, `delete`, `get`, `list`, `watch`;
-  - `rolebindings`: `create`, `delete`, `get`;
-  - `clusterroles`: `bind`, with `resourceNames: [<release>-instance-deployer]`. Kubernetes refuses a RoleBinding to a role whose permissions its creator lacks, and the gateway has no `update` and can't read Secrets.
-- ValidatingAdmissionPolicy:
-  - `isAllowedKind` adds `HelmRelease`, `OCIRepository`, `HelmRepository` and `RoleBinding`;
-  - a RoleBinding may be created or deleted, never updated. It must be named `toolgate-helm`, its `roleRef` must be exactly ClusterRole `<release>-instance-deployer`, and it must have exactly one subject: ServiceAccount `toolgate-helm` in the request's namespace;
-  - a HelmRelease create or update must have `spec.serviceAccountName == "toolgate-helm"`, no `spec.kubeConfig`, `targetNamespace` and `storageNamespace` absent or equal to the request's namespace, and no namespace other than its own in `chart.spec.sourceRef`, `chartRef` or `dependsOn`;
-  - a Pod, or a Deployment or StatefulSet pod template, created by the gateway may not use `serviceAccountName: toolgate-helm`. Only helm-controller, through impersonation, acts as that account. Otherwise the gateway could borrow its Secret access;
-  - phase 1's namespace rules (writable and `restricted` labels) apply to all of them.
-
-So a compromised gateway still can't write outside toolgate's namespaces, and what helm-controller does on its behalf is bounded by a RoleBinding inside one restricted namespace.
-
-**Readiness.** kstatus reads a Flux object without `Reconciling` or `Stalled` conditions as current, so the reconciler checks Flux kinds itself:
-- **Ready:** every Flux object has `Ready=True` with `status.observedGeneration == metadata.generation`, the plain objects are current by kstatus, and MCP `initialize` succeeds (phase 1).
-- **Failed at once** (AC-2-17): a HelmRelease with `Stalled=True`, or `Ready=False` with reason `InstallFailed`. The reason is "HelmRelease `<name>`: " followed by its `Ready` message, cut to 1 KiB.
-- **At `startTimeout`**, the reason is the first not-ready Flux object's `Ready` message (for example a source that can't pull), else phase 1's pod reasons.
-
-**Teardown** (AC-2-16). Deleting the namespace at once would also delete the `toolgate-helm` RoleBinding while helm-controller still needs it to uninstall, and the HelmRelease's finalizer would hold the namespace in `Terminating`. So `stopping` an instance with HelmReleases first deletes the HelmReleases and waits until they are gone, for at most 5 minutes, then deletes the namespace. After 5 minutes it deletes the namespace anyway, and phase 1's stuck-namespace warning and metric apply. A new leader repeats the same steps; both deletes are idempotent.
+**The admin decides what charts may do.** helm-controller installs a chart with its own service account, often `cluster-admin`. With HelmRelease in `allowedKinds`, a template, or a compromised gateway, can install anything helm-controller can. `docs/admin/` says this plainly, in the page that documents `config.allowedKinds`. It points to Flux's multi-tenancy lockdown (`--default-service-account` and `--no-cross-namespace-refs` on helm-controller), which bounds each HelmRelease to an account in its own namespace. toolgate doesn't set or check `spec.serviceAccountName`.
 
 ## 8. Audit payloads
 
@@ -338,8 +318,6 @@ Phase 1's rows (phase 1 §4) still hold. Rows continue its numbering. Each row i
 | 57 | Leader change | restart requested, not yet done | The new leader's first pass finds `restart_requested_at` on a live row and replaces it. | unit |
 | 58 | Resolver value close to expiry | instance `starting` | It is replaced like a ready one. The new attempt calls the resolver again. | unit |
 | 59 | Resolver fails during a replacement | sessions using the server | The new row fails with the resolver's reason. Sessions keep the server enabled with no tools, and the next enable inserts a new instance (phase 1 row 12). | integration |
-| 60 | Leader dies | HelmRelease instance `stopping` | The new leader deletes the HelmReleases again, waits, then deletes the namespace. | e2e |
-| 61 | helm-controller down | HelmRelease instance `stopping` | After 5 minutes the namespace is deleted anyway. The stuck-namespace metric shows it. | e2e |
 | 62 | Sign-in callback reaches another replica | sign-in started | The state is a `ui_logins` row, so any replica completes it. | integration |
 | 63 | Step-up older than 5 minutes | grant or approval form open | The POST changes nothing and redirects to a step-up that returns to the form. | AC-2-09 |
 | 64 | UI session idle for 1 h, or older than 8 h | page open | The next GET redirects to sign-in, and a POST gets 401 and changes nothing. | unit |
@@ -355,8 +333,7 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - UI session 8 h, idle timeout 1 h; sign-in state 10 minutes;
   - grant 1 minute to 7 days; temporary block 1 minute to 30 days;
   - `approvalTimeout` default 10 minutes, from 1 minute to 1 hour;
-  - resolver timeout default 10 s, at most 60 s; a resolved value valid for at least 2 minutes; replacement when it is under 60 s from expiry;
-  - HelmRelease deletion waits at most 5 minutes.
+  - resolver timeout default 10 s, at most 60 s; a resolved value valid for at least 2 minutes; replacement when it is under 60 s from expiry.
 - **Limits:**
   - 100 live grants and 100 pending approvals per principal; 32 waiting calls per principal on one replica;
   - 1000 live temporary blocks; block lists 64 items of 256 characters; reasons 1024 characters;
@@ -376,6 +353,6 @@ The operator decided these. None of them changes `docs/acceptance/phase-2.md`.
 1. **Approvals for service accounts:** only the call's principal approves, so a pod's call to an `approval: required` tool always fails with the approval error. A service account can't sign in. Admins approving other principals' calls isn't in phase 2.
 2. **Ending a temporary block early:** not in phase 2. A block ends at its expiry. A mistaken block lasts until its expiry, so admins choose short expiries. Ending one early is a backlog idea.
 3. **JSON API:** phase 2 adds no `/api/v1/` endpoints (§9).
-4. **Charts that need more than the deployer role** fail to install with Helm's reason. No chart value widens the role in phase 2.
+4. **What charts may do** is the admin's choice, through helm-controller's own permissions (§7). toolgate doesn't confine HelmReleases itself.
 5. **Grant elicitation:** dropped. A call that needs a grant fails at once with an error that links to the Grants page. Only approvals use elicitation (AC-2-11). `SPEC.md` §14 is updated to match.
 6. **Claude Code's URL elicitation:** if the owner's manual check shows Claude Code doesn't open the page, the AC-2-12 path (an error with a link, approve, retry) is accepted for AC-2-11 in phase 2.
