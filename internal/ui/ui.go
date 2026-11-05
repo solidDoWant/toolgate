@@ -196,6 +196,9 @@ func New(options Options, registrar Registrar) *UI {
 	u.Handle("POST "+LogoutPath, User, http.HandlerFunc(u.logout))
 	u.Handle("GET /{$}", User, http.RedirectHandler(HomePath, http.StatusSeeOther))
 
+	u.Handle("GET /ui/audit", User, http.HandlerFunc(u.audit))
+	u.Handle("GET /ui/audit/events/{key}", User, http.HandlerFunc(u.auditEventPage))
+
 	if options.Servers != nil {
 		u.Handle("GET "+HomePath, User, http.HandlerFunc(u.servers))
 	}

@@ -51,6 +51,16 @@ Set `config.ui.adminGroup` to the group whose members are admins in the UI. If i
 
 The navigation shows the Blocks link only to admins.
 
+## The Audit page
+
+`/ui/audit` lists audit events, newest first, 100 on a page. A user sees only their own events. An admin sees all events.
+
+You can filter by principal, workspace, session, server and tool. Each filter must match exactly. An admin can also filter by principal. For a user, the gateway ignores the principal filter.
+
+You can also set a time range. The default is the last 24 hours. A range can be at most 31 days, so a query reads at most two monthly partitions of the audit table. A longer range gives an error. All times are in UTC.
+
+The link "Open" on a row shows one event at `/ui/audit/events/` followed by a key: the time in Unix microseconds, a hyphen, and the event ID. The event is shown to its principal and to admins. Anyone else gets 404, so the key tells them nothing.
+
 ## Protection of the pages
 
 Each request to the UI that changes something must come from a UI page. The gateway does two checks:
