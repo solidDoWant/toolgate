@@ -13,3 +13,11 @@ SELECT name, created_at, updated_at FROM user_secrets WHERE principal = @princip
 
 -- name: DeleteUserSecret :execrows
 DELETE FROM user_secrets WHERE principal = @principal AND name = @name;
+
+-- name: ListUserSecretsNotUnderKey :many
+SELECT * FROM user_secrets WHERE key_id <> @key_id ORDER BY principal, name LIMIT @batch_size;
+
+-- name: RewrapUserSecret :execrows
+UPDATE user_secrets
+    SET ciphertext = @new_ciphertext, key_id = @new_key_id
+    WHERE principal = @principal AND name = @name AND ciphertext = @old_ciphertext;

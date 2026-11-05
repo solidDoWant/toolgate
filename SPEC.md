@@ -207,8 +207,8 @@ In globs, `*` matches any run of characters, including `/`. A template that does
 
 ## 11. Secrets
 
-- **Storage.** User secrets are rows of (principal, name, ciphertext, key ID), envelope-encrypted with Tink (`github.com/tink-crypto/tink-go/v2`, AEAD AES256-GCM). The key-encryption keyset is in a Kubernetes Secret mounted into the gateway, separate from PostgreSQL. Key rotation is a new keyset version. Old ciphertexts keep decrypting until re-encrypted by `toolgate admin rewrap`.
-- **Setting a secret.** Phase 1: `toolgate secret set <name>` (reads stdin), `toolgate secret list` (names and dates only), `toolgate secret delete <name>`. Phase 2: the same in the web UI.
+- **Storage.** User secrets are rows of (principal, name, ciphertext, key ID), envelope-encrypted with Tink (`github.com/tink-crypto/tink-go/v2`, AEAD AES256-GCM). The key-encryption keyset is in a Kubernetes Secret mounted into the gateway, separate from PostgreSQL. Key rotation is a new keyset version. Old ciphertexts keep decrypting until re-encrypted by `toolgate admin rewrap`. Each ciphertext is bound to its principal and name (associated data), so a row moved to another user doesn't decrypt.
+- **Setting a secret.** Phase 1: `toolgate secret set <name>` (reads stdin), `toolgate secret list` (names and dates only), `toolgate secret delete <name>`. They call `PUT /api/v1/secrets/<name>` (the body is the value), `GET /api/v1/secrets` and `DELETE /api/v1/secrets/<name>`, which act only on the verified principal's own secrets. A name matches `^[A-Za-z0-9._-]{1,128}$`; a value is at most 4 MiB. Phase 2: the same in the web UI.
 - **Missing secret.** A template referring to a secret the user hasn't set fails `enable_server` with a message naming the secret and the command to set it.
 - **Resolvers** (phase 2). A resolver is an HTTP service named in the gateway's configuration. The gateway POSTs the identity and the template name with a service-account token, and gets back `{value, expiresAt}`. Example: exchanging a GitHub App installation token for the user. Values are never cached beyond `expiresAt`. An instance whose resolved secret expires is restarted with a fresh one.
 

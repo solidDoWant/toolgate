@@ -88,6 +88,13 @@ type Config struct {
 	// audience `toolgate`, and its workspace is the pod's owner. If the list
 	// is empty, only users can sign in.
 	ServiceAccountNamespaces []string `json:"serviceAccountNamespaces" env:"TOOLGATE_SERVICE_ACCOUNT_NAMESPACES"`
+
+	// The path of the Tink keyset that encrypts user secrets, in the JSON
+	// keyset format of Tink. Mount it from a Kubernetes Secret. It is never
+	// stored in PostgreSQL. The gateway serves the secrets API
+	// (`/api/v1/secrets`) only when this is set. `toolgate admin rewrap`
+	// needs it too. See [User secrets](user-secrets.md).
+	SecretsKeysetFile string `json:"secretsKeysetFile" env:"TOOLGATE_SECRETS_KEYSET_FILE"`
 }
 
 // Default returns the configuration used for every field that is not set.

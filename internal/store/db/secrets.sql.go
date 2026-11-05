@@ -81,6 +81,42 @@ func (q *Queries) ListUserSecretNames(ctx context.Context, principal string) ([]
 	return items, nil
 }
 
+const listUserSecretsNotUnderKey = `-- name: ListUserSecretsNotUnderKey :many
+SELECT principal, name, ciphertext, key_id, created_at, updated_at FROM user_secrets WHERE key_id <> $1 ORDER BY principal, name LIMIT $2
+`
+
+type ListUserSecretsNotUnderKeyParams struct {
+	KeyID     int64
+	BatchSize int32
+}
+
+func (q *Queries) ListUserSecretsNotUnderKey(ctx context.Context, arg ListUserSecretsNotUnderKeyParams) ([]UserSecret, error) {
+	rows, err := q.db.Query(ctx, listUserSecretsNotUnderKey, arg.KeyID, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UserSecret{}
+	for rows.Next() {
+		var i UserSecret
+		if err := rows.Scan(
+			&i.Principal,
+			&i.Name,
+			&i.Ciphertext,
+			&i.KeyID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const putUserSecret = `-- name: PutUserSecret :one
 INSERT INTO user_secrets (principal, name, ciphertext, key_id)
 VALUES ($1, $2, $3, $4)
@@ -113,4 +149,32 @@ func (q *Queries) PutUserSecret(ctx context.Context, arg PutUserSecretParams) (U
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const rewrapUserSecret = `-- name: RewrapUserSecret :execrows
+UPDATE user_secrets
+    SET ciphertext = $1, key_id = $2
+    WHERE principal = $3 AND name = $4 AND ciphertext = $5
+`
+
+type RewrapUserSecretParams struct {
+	NewCiphertext []byte
+	NewKeyID      int64
+	Principal     string
+	Name          string
+	OldCiphertext []byte
+}
+
+func (q *Queries) RewrapUserSecret(ctx context.Context, arg RewrapUserSecretParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rewrapUserSecret,
+		arg.NewCiphertext,
+		arg.NewKeyID,
+		arg.Principal,
+		arg.Name,
+		arg.OldCiphertext,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

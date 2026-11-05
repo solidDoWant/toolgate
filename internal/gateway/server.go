@@ -77,6 +77,12 @@ func (s *Server) Handle(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, handler)
 }
 
+// Database returns the gateway's PostgreSQL connection pool. Serve closes
+// it.
+func (s *Server) Database() *pgxpool.Pool {
+	return s.database
+}
+
 // Listen binds the main and metrics ports.
 func (s *Server) Listen() error {
 	var listenConfig net.ListenConfig
