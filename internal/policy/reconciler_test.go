@@ -75,3 +75,47 @@ func TestRuleReconciler(t *testing.T) {
 	reconcileRule(valid)
 	assert.True(t, policyEngine.Decide(policy.Request{Identity: pod("ci"), Template: github}).Allowed, "a deleted rule stops applying")
 }
+
+func TestRuleReconcilerWritesStatusOnlyWhileElected(t *testing.T) {
+	blocking := rule("block-ci", v1alpha1.RuleMatch{Workspaces: []string{"k8s/ci/*"}}, nil)
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, v1alpha1.AddToScheme(scheme))
+
+	kube := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(blocking).
+		WithStatusSubresource(&v1alpha1.ToolgateRule{}).
+		Build()
+
+	elected := make(chan struct{})
+	rules := policy.NewRules()
+	reconciler := &policy.RuleReconciler{Client: kube, Rules: rules, Namespaces: []string{"rules"}, Elected: elected}
+	policyEngine := &policy.Engine{Rules: rules, Now: func() time.Time { return now }}
+	github := template("github", v1alpha1.Access{ServiceAccounts: []string{"system:serviceaccount:ci:runner"}, Environments: "any"}, nil)
+	request := reconcile.Request{NamespacedName: client.ObjectKeyFromObject(blocking)}
+
+	stored := func() *metav1.Condition {
+		t.Helper()
+
+		var current v1alpha1.ToolgateRule
+		require.NoError(t, kube.Get(t.Context(), client.ObjectKeyFromObject(blocking), &current))
+
+		return meta.FindStatusCondition(current.Status.Conditions, policy.ConditionValid)
+	}
+
+	_, err := reconciler.Reconcile(t.Context(), request)
+	require.NoError(t, err)
+	assert.Equal(t, "rules/block-ci", policyEngine.Decide(policy.Request{Identity: pod("ci"), Template: github}).Rule,
+		"a replica that isn't leader still applies the rule")
+	assert.Nil(t, stored(), "a replica that isn't leader writes no status")
+
+	close(elected)
+
+	_, err = reconciler.Reconcile(t.Context(), request)
+	require.NoError(t, err)
+
+	condition := stored()
+	require.NotNil(t, condition)
+	assert.Equal(t, metav1.ConditionTrue, condition.Status)
+}

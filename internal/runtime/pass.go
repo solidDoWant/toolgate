@@ -38,3 +38,18 @@ func FullPass(queries *db.Queries, logger *slog.Logger, steps ...Step) func(ctx 
 		return errors.Join(problems...)
 	}
 }
+
+// AfterLoaded wraps a full pass so that it waits until loaded is closed
+// (catalog.Catalog.Loaded): the first pass starts only after every watched
+// template has been read. It returns ctx's error if ctx ends first.
+func AfterLoaded(loaded <-chan struct{}, pass func(ctx context.Context) error) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		select {
+		case <-loaded:
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for the template catalog: %w", ctx.Err())
+		}
+
+		return pass(ctx)
+	}
+}

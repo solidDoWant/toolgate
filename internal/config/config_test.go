@@ -128,6 +128,26 @@ leaseNamespace: "Not_A_Namespace"
 			wantProblems: []string{`leaseNamespace: "Not_A_Namespace" is not a namespace name`},
 		},
 		{
+			name: "lease namespace without gateway pod labels",
+			file: `
+leaseNamespace: toolgate
+`,
+			wantProblems: []string{"gatewayPodLabels: required with leaseNamespace"},
+		},
+		{
+			name: "invalid catalog namespace and pod labels",
+			file: `
+catalogNamespaces: [catalog, "Not_A_Namespace"]
+gatewayPodLabels: [app.kubernetes.io/name=toolgate, "no-value", "bad key=x"]
+`,
+			wantProblems: []string{
+				`catalogNamespaces: "Not_A_Namespace" is not a namespace name`,
+				`gatewayPodLabels: "no-value" is not a key=value label`,
+				`gatewayPodLabels: "bad key=x" is not a key=value label`,
+			},
+			wantAbsent: []string{`"catalog"`, `"app.kubernetes.io/name=toolgate"`},
+		},
+		{
 			name: "several invalid environment values",
 			env: map[string]string{
 				"TOOLGATE_LISTEN_ADDRESS":   "no-port",
@@ -193,4 +213,16 @@ shutdownTimeout: 0s
 			}
 		})
 	}
+}
+
+func TestWatchedNamespacesAndPodLabels(t *testing.T) {
+	cfg := config.Config{LeaseNamespace: "toolgate", GatewayPodLabels: []string{"app=toolgate", "tier=gateway"}}
+
+	assert.Equal(t, []string{"toolgate"}, cfg.WatchedNamespaces(), "the lease namespace is the default")
+	assert.Equal(t, map[string]string{"app": "toolgate", "tier": "gateway"}, cfg.PodLabels())
+
+	cfg.CatalogNamespaces = []string{"catalog-a", "catalog-b"}
+	assert.Equal(t, []string{"catalog-a", "catalog-b"}, cfg.WatchedNamespaces())
+
+	assert.Empty(t, config.Config{}.WatchedNamespaces(), "no catalog without Kubernetes")
 }

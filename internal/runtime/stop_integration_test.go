@@ -57,10 +57,13 @@ func newStopFixture(t *testing.T) *stopFixture {
 	t.Cleanup(pool.Close)
 	require.NoError(t, store.Migrate(t.Context(), pool))
 
+	templates := catalog.New()
+	templates.MarkLoaded()
+
 	fixture := &stopFixture{
 		pool:    pool,
 		queries: db.New(pool),
-		catalog: catalog.New(),
+		catalog: templates,
 		kube:    clientfake.NewClientBuilder().Build(),
 		metrics: runtime.NewMetrics(),
 		logs:    &bytes.Buffer{},
@@ -482,4 +485,27 @@ func TestTeardown(t *testing.T) {
 		assert.InDelta(t, 1, promtestutil.ToFloat64(fixture.metrics.Instances.WithLabelValues("per-user", "ready")), 0)
 		assert.InDelta(t, 1, promtestutil.ToFloat64(fixture.metrics.Instances.WithLabelValues("per-user", "pending")), 0)
 	})
+}
+
+func TestStopDeciderDecidesNothingBeforeTheCatalogLoaded(t *testing.T) {
+	fixture := newStopFixture(t)
+
+	// The template is in the database but not read into this catalog yet.
+	template := fixture.template("not-read-yet", "shared", 0, v1alpha1.Access{Groups: []string{"staff"}})
+	instance := fixture.instance(t, template, "shared", "", "ready")
+
+	unloaded := catalog.New()
+	stops := &runtime.StopDecider{Pool: fixture.pool, Templates: unloaded, Log: slog.New(slog.DiscardHandler)}
+
+	decided, err := stops.Decide(t.Context(), instance)
+	require.NoError(t, err)
+	assert.Equal(t, "running", decided.Desired)
+	fixture.requireRunning(t, instance)
+
+	// Once loaded, the same catalog without the template stops it.
+	unloaded.MarkLoaded()
+
+	decided, err = stops.Decide(t.Context(), instance)
+	require.NoError(t, err)
+	assert.Equal(t, "stopped", decided.Desired)
 }

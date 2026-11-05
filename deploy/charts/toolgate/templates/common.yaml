@@ -34,6 +34,10 @@ settings from `config`.
 {{- end }}
 {{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LEASE_NAMESPACE" "value" .Release.Namespace) -}}
+{{- $env = append $env (dict "name" "TOOLGATE_GATEWAY_POD_LABELS" "value" (printf "app.kubernetes.io/name=%s,app.kubernetes.io/instance=%s" .Chart.Name .Release.Name)) -}}
+{{- with $config.catalogNamespaces }}
+{{- $env = append $env (dict "name" "TOOLGATE_CATALOG_NAMESPACES" "value" (join "," .)) }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

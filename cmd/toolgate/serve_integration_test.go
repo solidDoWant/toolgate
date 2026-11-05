@@ -18,17 +18,25 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testutil"
 )
 
-// startServe runs `toolgate serve` against the database at databaseURL. It
-// returns the gateway's output and its exit code channel, once the gateway
-// logged that it started.
+// startServe runs `toolgate serve` against the database at databaseURL,
+// with a fake identity provider. It returns the gateway's output and
+// its exit code channel, once the gateway logged that it started.
 func startServe(t *testing.T, databaseURL string) (*lockedBuffer, *lockedBuffer, chan int) {
 	t.Helper()
 	clearConfigEnv(t)
+
+	return startServeWith(t, databaseURL, testutil.StartOIDCProvider(t, testutil.OIDCOptions{}))
+}
+
+// startServeWith is startServe with the given identity provider and the
+// rest of the configuration environment left as the caller set it.
+func startServeWith(t *testing.T, databaseURL string, provider *testutil.OIDCProvider) (*lockedBuffer, *lockedBuffer, chan int) {
+	t.Helper()
 	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
 	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
 	t.Setenv("TOOLGATE_DATABASE_URL", databaseURL)
-	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
-	t.Setenv("TOOLGATE_OIDC_AUDIENCE", "toolgate")
+	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
+	t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
 
 	stdout := &lockedBuffer{}
 	stderr := &lockedBuffer{}

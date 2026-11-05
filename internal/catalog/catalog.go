@@ -47,6 +47,9 @@ type Status struct {
 type Catalog struct {
 	mu      sync.RWMutex
 	entries map[types.NamespacedName]*entry
+
+	loaded     chan struct{}
+	loadedOnce sync.Once
 }
 
 type entry struct {
@@ -61,7 +64,31 @@ type entry struct {
 
 // New returns an empty catalog.
 func New() *Catalog {
-	return &Catalog{entries: map[types.NamespacedName]*entry{}}
+	return &Catalog{entries: map[types.NamespacedName]*entry{}, loaded: make(chan struct{})}
+}
+
+// MarkLoaded records that the catalog holds every template in the watched
+// namespaces, as Loader does once it has seen them all. Later calls do
+// nothing.
+func (c *Catalog) MarkLoaded() {
+	c.loadedOnce.Do(func() { close(c.loaded) })
+}
+
+// Loaded returns a channel that is closed once MarkLoaded was called. Until
+// then the catalog may be missing templates, and judging instances against
+// it would stop instances whose template exists.
+func (c *Catalog) Loaded() <-chan struct{} {
+	return c.loaded
+}
+
+// IsLoaded reports whether MarkLoaded was called.
+func (c *Catalog) IsLoaded() bool {
+	select {
+	case <-c.loaded:
+		return true
+	default:
+		return false
+	}
 }
 
 // Set records the latest generation of a template and its own validation

@@ -20,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	apimachineryyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 )
@@ -196,6 +197,13 @@ func TestChartRendersTheGateway(t *testing.T) {
 	assert.Equal(t, "toolgate", values["TOOLGATE_OIDC_AUDIENCE"])
 	assert.Equal(t, releaseNamespace, values["TOOLGATE_LEASE_NAMESPACE"], "the leader Lease lives in the release namespace")
 	assert.NotContains(t, values, "TOOLGATE_OIDC_EMAIL_CLAIM", "an empty claim value keeps the gateway's default")
+	assert.NotContains(t, values, "TOOLGATE_CATALOG_NAMESPACES", "no catalog namespaces keeps the gateway's default")
+
+	podLabels, err := labels.ConvertSelectorToLabelsMap(values["TOOLGATE_GATEWAY_POD_LABELS"])
+	require.NoError(t, err)
+	require.NotEmpty(t, podLabels)
+	assert.True(t, labels.SelectorFromSet(podLabels).Matches(labels.Set(deployment.Spec.Template.Labels)),
+		"the gateway pod labels select the gateway's pods")
 
 	for _, candidate := range manifests {
 		if candidate.Kind == "CustomResourceDefinition" {

@@ -41,6 +41,11 @@ config:
     # gateway's default, `groups`.
     groupsClaim: ""
 
+  # -- Namespaces whose `MCPServerTemplate` and `ToolgateRule` objects the
+  # gateway reads, such as `[toolgate-catalog]`. Empty means the release
+  # namespace.
+  catalogNamespaces: []
+
   logging:
     # -- Lowest level of the JSON log lines: `debug`, `info`, `warn` or
     # `error`.

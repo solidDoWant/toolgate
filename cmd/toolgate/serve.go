@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -10,13 +11,17 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/gateway"
+	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -65,13 +70,31 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	authenticator := newAuthenticator(ctx, cfg, logger)
+
+	var broker *secrets.Broker
+
 	if cfg.SecretsKeysetFile != "" {
-		if err := registerSecretsAPI(ctx, server, cfg, stdout, logger); err != nil {
+		var err error
+
+		broker, err = registerSecretsAPI(server, cfg, authenticator, stdout, logger)
+		if err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
 			return 1
 		}
 	}
+
+	templates := catalog.New()
+	rules := policy.NewRules()
+
+	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
+		Database:    server.Database(),
+		Catalog:     templates,
+		Policy:      &policy.Engine{Rules: rules},
+		AuditOutput: stdout,
+		Logger:      logger,
+	}), true))
 
 	if err := server.Listen(); err != nil {
 		logger.Error("gateway failed to start", "error", err)
@@ -90,7 +113,15 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	var runtimeResult chan error
 
 	if cfg.LeaseNamespace != "" {
-		managerDone, err := startRuntime(ctx, cfg, server.Database(), server.RegisterMetrics, logger)
+		managerDone, err := startRuntime(ctx, runtimeOptions{
+			cfg:             cfg,
+			pool:            server.Database(),
+			catalog:         templates,
+			rules:           rules,
+			secrets:         userSecrets(broker),
+			registerMetrics: server.RegisterMetrics,
+			logger:          logger,
+		})
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
@@ -152,31 +183,65 @@ func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logge
 	return nil
 }
 
-// registerSecretsAPI serves `/api/v1/secrets` behind user authentication.
-func registerSecretsAPI(ctx context.Context, server *gateway.Server, cfg config.Config, stdout io.Writer, logger *slog.Logger) error {
-	cipher, err := secrets.LoadKeyset(cfg.SecretsKeysetFile)
-	if err != nil {
-		return err
+// newAuthenticator returns the authenticator of the gateway's user-facing
+// endpoints. It starts discovering the identity provider in the background;
+// requests are refused until discovery succeeds.
+func newAuthenticator(ctx context.Context, cfg config.Config, logger *slog.Logger) *lazyAuthenticator {
+	authenticator := &lazyAuthenticator{
+		ctx: context.WithoutCancel(ctx),
+		options: auth.Options{
+			IssuerURL:          cfg.OIDCIssuerURL,
+			Audience:           cfg.OIDCAudience,
+			EmailClaim:         cfg.OIDCEmailClaim,
+			EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
+			GroupsClaim:        cfg.OIDCGroupsClaim,
+		},
+		logger: logger,
 	}
 
-	authenticator, err := auth.New(ctx, auth.Options{
-		IssuerURL:          cfg.OIDCIssuerURL,
-		Audience:           cfg.OIDCAudience,
-		EmailClaim:         cfg.OIDCEmailClaim,
-		EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
-		GroupsClaim:        cfg.OIDCGroupsClaim,
-	})
+	go func() {
+		if _, err := authenticator.get(); err != nil {
+			logger.WarnContext(ctx, "cannot reach the identity provider yet", "error", err)
+		}
+	}()
+
+	return authenticator
+}
+
+// registerSecretsAPI serves `/api/v1/secrets` behind user authentication
+// and returns the secret broker.
+func registerSecretsAPI(server *gateway.Server, cfg config.Config, authenticator *lazyAuthenticator, stdout io.Writer,
+	logger *slog.Logger,
+) (*secrets.Broker, error) {
+	cipher, err := secrets.LoadKeyset(cfg.SecretsKeysetFile)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	queries := db.New(server.Database())
-	api := secrets.NewAPI(secrets.NewBroker(queries, cipher), audit.NewRecorder(stdout, queries), logger)
+	broker := secrets.NewBroker(queries, cipher)
+	api := secrets.NewAPI(broker, audit.NewRecorder(stdout, queries), logger)
 	api.Register(server, func(next http.Handler) http.Handler {
 		return authenticator.Middleware(next, false)
 	})
 
-	return nil
+	return broker, nil
+}
+
+// errNoSecretsKeyset is the render error for `${secret:…}` on a gateway
+// without a secrets keyset.
+var errNoSecretsKeyset = errors.New("user secrets are not configured on this gateway")
+
+// userSecrets returns the secret reader of instance renders: broker, or one
+// that fails every read when the gateway has no secrets keyset.
+func userSecrets(broker *secrets.Broker) runtime.SecretGetter {
+	if broker == nil {
+		return func(context.Context, string, string) ([]byte, time.Time, error) {
+			return nil, time.Time{}, errNoSecretsKeyset
+		}
+	}
+
+	return broker.Get
 }
 
 // newLogger returns the JSON logger writing to out at level (already
