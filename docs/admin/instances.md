@@ -8,7 +8,7 @@ An instance is one running copy of an MCP server from an `MCPServerTemplate`. Th
 
 The gateway replica that holds the leader Lease checks every instance every 30 seconds, and after each change in the database. It stops an instance when one of these conditions is true:
 
-- A `per-session` instance: its session no longer has the server enabled. A session that ends loses all its enabled servers.
+- A `per-session` instance: its session no longer has the server enabled. A session that ends loses all its enabled servers. A session ends when it has no requests for `sessionIdleTimeout` (2 hours by default, chart value `config.sessionIdleTimeout`).
 - A `per-user` instance: no live session of its owner has the server enabled, and it had no calls for `idleStop`. If it had no calls at all, the time counts from when it became ready.
 - A `shared` instance: no live session has the server enabled, and it had no calls for `idleStop`. If `idleStop` is `0` or not set, a shared instance does not stop for this reason.
 - The template was deleted, or deleted and created again.

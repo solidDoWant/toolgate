@@ -63,6 +63,7 @@ logLevel: debug
 		ServiceAccountNamespaces: []string{"ci", "agents"},
 		InstanceLimitPerUser:     20,
 		InstanceLimit:            200,
+		SessionIdleTimeout:       config.Duration(2 * time.Hour),
 	}, cfg)
 }
 
@@ -141,6 +142,13 @@ leaseNamespace: "Not_A_Namespace"
 leaseNamespace: toolgate
 `,
 			wantProblems: []string{"gatewayPodLabels: required with leaseNamespace"},
+		},
+		{
+			name: "zero session idle timeout",
+			file: `
+sessionIdleTimeout: 0s
+`,
+			wantProblems: []string{"sessionIdleTimeout: must be greater than zero"},
 		},
 		{
 			name: "invalid shared namespace",

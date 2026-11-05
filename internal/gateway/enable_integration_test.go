@@ -60,6 +60,13 @@ func (o *observedClient) progressMessages() []string {
 func (f *mcpFixture) connectObserved(t *testing.T, client user) *observedClient {
 	t.Helper()
 
+	return f.connectObservedTo(t, f.server.URL, client)
+}
+
+// connectObservedTo connects client to the gateway replica at endpoint.
+func (f *mcpFixture) connectObservedTo(t *testing.T, endpoint string, client user) *observedClient {
+	t.Helper()
+
 	observed := &observedClient{}
 	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, &mcp.ClientOptions{
 		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
@@ -74,7 +81,7 @@ func (f *mcpFixture) connectObserved(t *testing.T, client user) *observedClient 
 		},
 	})
 	transport := &mcp.StreamableClientTransport{
-		Endpoint:   f.server.URL,
+		Endpoint:   endpoint,
 		HTTPClient: &http.Client{Transport: headerTransport{header: f.headers(t, client)}},
 	}
 

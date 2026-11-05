@@ -44,6 +44,8 @@ type mcpFixture struct {
 	server   *httptest.Server
 	// upstreams maps a template name to the MCP URL of its instances.
 	upstreams *sync.Map
+	// replica starts another gateway replica on the same database.
+	replica func(t *testing.T) *httptest.Server
 }
 
 func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFixture {
@@ -61,49 +63,61 @@ func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFix
 	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audience: provider.Audience})
 	require.NoError(t, err)
 
-	listener := store.NewListener(pool, slog.New(slog.DiscardHandler))
-	listenCtx, stopListening := context.WithCancel(context.Background())
-	t.Cleanup(stopListening)
-
-	go func() { _ = listener.Run(listenCtx) }()
-
-	select {
-	case <-listener.Listening():
-	case <-t.Context().Done():
-	}
-
 	servers := catalog.New()
 	rules := policy.NewRules()
 	upstreams := &sync.Map{}
 
-	options := gateway.MCPOptions{
-		Database:  pool,
-		Catalog:   servers,
-		Policy:    &policy.Engine{Rules: rules},
-		Subscribe: listener.Subscribe,
-		UpstreamEndpoint: func(_ db.Instance, template *v1alpha1.MCPServerTemplate) string {
-			url, _ := upstreams.Load(template.Name)
-			endpoint, _ := url.(string)
+	fixture := &mcpFixture{provider: provider, pool: pool, catalog: servers, rules: rules, upstreams: upstreams}
 
-			return endpoint
-		},
+	// replica starts one gateway replica: its own PostgreSQL listener and
+	// MCP handler over the shared database, catalog and rules.
+	fixture.replica = func(t *testing.T) *httptest.Server {
+		t.Helper()
+
+		listener := store.NewListener(pool, slog.New(slog.DiscardHandler))
+		listenCtx, stopListening := context.WithCancel(context.Background())
+		t.Cleanup(stopListening)
+
+		go func() { _ = listener.Run(listenCtx) }()
+
+		select {
+		case <-listener.Listening():
+		case <-t.Context().Done():
+		}
+
+		options := gateway.MCPOptions{
+			Database:  pool,
+			Catalog:   servers,
+			Policy:    &policy.Engine{Rules: rules},
+			Subscribe: listener.Subscribe,
+			UpstreamEndpoint: func(_ db.Instance, template *v1alpha1.MCPServerTemplate) string {
+				url, _ := upstreams.Load(template.Name)
+				endpoint, _ := url.(string)
+
+				return endpoint
+			},
+		}
+
+		for _, change := range configure {
+			change(&options)
+		}
+
+		handler := gateway.NewMCPHandler(options)
+
+		// Every request gets a span, as in the gateway, so audit events
+		// carry a trace ID.
+		traced := otelhttp.NewHandler(authenticator.Middleware(handler, true), "gateway",
+			otelhttp.WithTracerProvider(sdktrace.NewTracerProvider()))
+
+		server := httptest.NewServer(traced)
+		t.Cleanup(server.Close)
+
+		return server
 	}
 
-	for _, change := range configure {
-		change(&options)
-	}
+	fixture.server = fixture.replica(t)
 
-	handler := gateway.NewMCPHandler(options)
-
-	// Every request gets a span, as in the gateway, so audit events carry
-	// a trace ID.
-	traced := otelhttp.NewHandler(authenticator.Middleware(handler, true), "gateway",
-		otelhttp.WithTracerProvider(sdktrace.NewTracerProvider()))
-
-	server := httptest.NewServer(traced)
-	t.Cleanup(server.Close)
-
-	return &mcpFixture{provider: provider, pool: pool, catalog: servers, rules: rules, server: server, upstreams: upstreams}
+	return fixture
 }
 
 func (f *mcpFixture) addTemplate(name, scope string, access v1alpha1.Access) *v1alpha1.MCPServerTemplate {
