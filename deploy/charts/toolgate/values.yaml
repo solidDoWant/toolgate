@@ -55,6 +55,15 @@ config:
   # `http://otel-collector:4318`. Empty turns trace export off.
   otlpEndpoint: ""
 
+  limits:
+    # -- Maximum number of MCP server instances that run for one user at the
+    # same time. Per-session and per-user instances count for the user who
+    # started them. Shared instances do not count. At least 1.
+    instancesPerUser: 20
+    # -- Maximum number of MCP server instances that the gateway runs at the
+    # same time, for all users and shared instances together. At least 1.
+    instances: 200
+
   # -- More environment variables for the gateway container, as a list of
   # Kubernetes `EnvVar` objects.
   extraEnv: []

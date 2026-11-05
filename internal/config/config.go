@@ -131,6 +131,20 @@ type Config struct {
 	// accepts connections only from pods in `leaseNamespace` with these
 	// labels. Required with `leaseNamespace`. The chart sets it.
 	GatewayPodLabels []string `json:"gatewayPodLabels" env:"TOOLGATE_GATEWAY_POD_LABELS"`
+
+	// The maximum number of MCP server instances that run for one user at
+	// the same time. Per-session and per-user instances count for the user
+	// who started them. Shared instances do not count. When a user is at the
+	// limit, an enable that must start a new instance fails. An enable of a
+	// server that already runs for the user still works. At least 1. The
+	// chart sets it from `config.limits.instancesPerUser`.
+	InstanceLimitPerUser int `json:"instanceLimitPerUser" env:"TOOLGATE_INSTANCE_LIMIT_PER_USER"`
+
+	// The maximum number of MCP server instances that the gateway runs at the
+	// same time, for all users and shared instances together. At the limit,
+	// an enable that must start a new instance fails. At least 1. The chart
+	// sets it from `config.limits.instances`.
+	InstanceLimit int `json:"instanceLimit" env:"TOOLGATE_INSTANCE_LIMIT"`
 }
 
 // WatchedNamespaces returns the namespaces whose catalog objects the gateway
@@ -171,6 +185,8 @@ func Default() Config {
 		OIDCEmailVerifiedClaim: "email_verified",
 		OIDCGroupsClaim:        "groups",
 		OIDCCLIScopes:          []string{"openid", "email", "profile", "offline_access"},
+		InstanceLimitPerUser:   20,
+		InstanceLimit:          200,
 	}
 }
 
@@ -286,6 +302,15 @@ func applyEnv(cfg *Config, getenv func(string) string) []error {
 			}
 		case *string:
 			target.SetString(raw)
+		case *int:
+			number, err := strconv.Atoi(raw)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s: %q is not a whole number", name, raw))
+
+				continue
+			}
+
+			target.SetInt(int64(number))
 		case *[]string:
 			var list []string
 
@@ -392,6 +417,14 @@ func (c Config) Validate() []error {
 		if !found || len(validation.IsQualifiedName(key)) > 0 || len(validation.IsValidLabelValue(value)) > 0 {
 			problems = append(problems, fmt.Errorf("gatewayPodLabels: %q is not a key=value label", item))
 		}
+	}
+
+	if c.InstanceLimitPerUser < 1 {
+		problems = append(problems, errors.New("instanceLimitPerUser: must be at least 1"))
+	}
+
+	if c.InstanceLimit < 1 {
+		problems = append(problems, errors.New("instanceLimit: must be at least 1"))
 	}
 
 	return problems

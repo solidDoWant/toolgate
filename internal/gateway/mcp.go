@@ -48,6 +48,26 @@ type MCPOptions struct {
 	// wake on them. Nil means no notifications: waits rely on the progress
 	// tick alone.
 	Subscribe func() (<-chan store.Event, func())
+	// InstanceLimitPerUser is the most live instances one user may have.
+	// Zero means 20.
+	InstanceLimitPerUser int
+	// InstanceLimit is the most live instances the gateway runs. Zero means
+	// 200.
+	InstanceLimit int
+}
+
+// The instance limits when MCPOptions sets none (docs/design/phase-1.md §7).
+const (
+	defaultInstanceLimitPerUser = 20
+	defaultInstanceLimit        = 200
+)
+
+func valueOr(value, fallback int) int {
+	if value == 0 {
+		return fallback
+	}
+
+	return value
 }
 
 // requestContext is what a tool handler knows about the request that called
@@ -124,6 +144,9 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		auditOutput:  auditOutput,
 		subscribe:    subscribe,
 		sessionTools: endpoint.sessionTools,
+
+		instanceLimitPerUser: valueOr(options.InstanceLimitPerUser, defaultInstanceLimitPerUser),
+		instanceLimit:        valueOr(options.InstanceLimit, defaultInstanceLimit),
 	}
 
 	endpoint.newServer = func() *mcp.Server {

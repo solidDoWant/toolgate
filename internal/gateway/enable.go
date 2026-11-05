@@ -89,6 +89,20 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 
 	// Steps 3 and 4.
 	instance, err := m.enableInTransaction(ctx, current, template)
+
+	var limitErr *instanceLimitError
+	if errors.As(err, &limitErr) {
+		// The transaction rolled back, so nothing is enabled.
+		recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
+		if err := recorder.Record(ctx, auditEvent(current, "server.enable", template.Name, map[string]any{
+			"decision": "refuse", "reason": "limit", "limit": limitErr.limit,
+		})); err != nil {
+			return nil, EnableResult{}, err
+		}
+
+		return nil, EnableResult{}, limitErr
+	}
+
 	if err != nil {
 		return nil, EnableResult{}, err
 	}
@@ -275,6 +289,10 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
+		if err := m.checkInstanceLimits(ctx, queries, current, template); err != nil {
+			return db.Instance{}, err
+		}
+
 		instance, err = insertInstance(ctx, queries, current, template, key)
 		if err != nil {
 			return db.Instance{}, err
@@ -302,6 +320,52 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 }
 
 var errTooManyServers = fmt.Errorf("This session already has %d servers enabled. Disable one with `%s` first.", MaxEnabledServers, ToolDisableServer) //nolint:staticcheck // A sentence for the model.
+
+// instanceLimitError refuses an enable that needs a new instance when the
+// user or the gateway already runs its limit of instances.
+type instanceLimitError struct {
+	// limit is "per-user" or "gateway".
+	limit   string
+	message string
+}
+
+func (e *instanceLimitError) Error() string { return e.message }
+
+// checkInstanceLimits takes the gateway-wide insert lock, then counts live
+// instances against the per-user and the gateway limits
+// (docs/design/phase-1.md §7, "Instance limits"). Only the insert path calls
+// it, after the (template, scope key) lock.
+func (m *metaTools) checkInstanceLimits(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate) error {
+	if err := queries.LockInstanceInsert(ctx); err != nil {
+		return fmt.Errorf("lock instance insert: %w", err)
+	}
+
+	if template.Spec.Scope != catalog.ScopeShared {
+		owned, err := queries.CountLiveInstancesOfOwner(ctx, current.identity.Principal)
+		if err != nil {
+			return fmt.Errorf("count the user's instances: %w", err)
+		}
+
+		if owned >= int64(m.instanceLimitPerUser) {
+			return &instanceLimitError{limit: "per-user", message: fmt.Sprintf(
+				"You already have %d servers running, the limit for each user. Disable servers you no longer need, or wait for idle ones to stop.",
+				m.instanceLimitPerUser)}
+		}
+	}
+
+	total, err := queries.CountLiveInstances(ctx)
+	if err != nil {
+		return fmt.Errorf("count instances: %w", err)
+	}
+
+	if total >= int64(m.instanceLimit) {
+		return &instanceLimitError{limit: "gateway", message: fmt.Sprintf(
+			"The gateway is already running its limit of %d servers. Try again later, or ask an admin to raise `limits.instances`.",
+			m.instanceLimit)}
+	}
+
+	return nil
+}
 
 func insertInstance(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate, key string) (db.Instance, error) {
 	generated, err := uuid.NewV7()

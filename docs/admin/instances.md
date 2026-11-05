@@ -33,6 +33,19 @@ The replica that holds the leader Lease compares Kubernetes with the database ev
 
 Do not put the label `toolgate.soliddowant.dev/instance` on namespaces that you make yourself. toolgate deletes them.
 
+## Instance limits
+
+Two chart values limit the number of instances. Only instances that are starting or ready count:
+
+- `config.limits.instancesPerUser` (default 20) is the maximum for one user. Per-session and per-user instances count for the user who started them. Shared instances do not count for a user.
+- `config.limits.instances` (default 200) is the maximum for the gateway. All instances count, including shared instances.
+
+Both values must be at least 1. If a value is lower, `helm install` and `helm upgrade` fail.
+
+A limit applies only when an enable must start a new instance. If the instance already runs, the enable works at the limit. For example, a user at the limit can use a running per-user server from a second session.
+
+If a limit refuses an enable, the user gets a message that names the limit. The audit log gets a `server.enable` event with `decision: refuse` and `reason: limit`. The field `limit` tells which limit refused it: `per-user` or `gateway`.
+
 ## Metrics
 
 The gateway serves these metrics on its metrics port. Only the replica that holds the leader Lease sets them. The other replicas report `0`.
