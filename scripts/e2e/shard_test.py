@@ -85,6 +85,13 @@ class Shard(unittest.TestCase):
             seen.extend(selected(shard(f"{index}/3", LISTING, "--match", acceptance).stdout))
         self.assertEqual(sorted(seen), ["TestAC1_07ToolCallDenied", "TestAC2_03AuditPayload", "TestScenario7"])
 
+    def test_exclude_drops_matching_names(self):
+        acceptance = "^(TestAC[0-9]+_[0-9]+.*|TestScenario7)$"
+        seen = []
+        for index in (1, 2, 3):
+            seen.extend(selected(shard(f"{index}/3", LISTING, "--exclude", acceptance).stdout))
+        self.assertEqual(sorted(seen), sorted(set(NAMES) - {"TestAC1_07ToolCallDenied", "TestAC2_03AuditPayload", "TestScenario7"}))
+
     def test_empty_shard_prints_nothing(self):
         self.assertEqual(shard("1/3", "ok  \tgithub.com/x\t0.01s\n").stdout.strip(), "")
 

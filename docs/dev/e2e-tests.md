@@ -34,7 +34,7 @@ With `E2E_SHARD`, `make acceptance` writes the results to `build/acceptance/resu
 
 ## In CI
 
-In CI, the `e2e` job has three shards. Each shard runs on its own kind cluster. It runs its part of the e2e tests and then its part of the acceptance tests, and uploads the acceptance results. A failing e2e test fails the shard. Then the `e2e-scoreboard` job puts the results of all the shards together with `scripts/ci/e2e-scoreboard.sh`. It writes the scoreboard to the job summary. This scoreboard is the same as the scoreboard of one run of all the tests.
+In CI, the `e2e` job has three shards. Each shard runs on its own kind cluster. It runs its part of the e2e tests without the acceptance tests, then its part of the acceptance tests, so that each test runs one time. Then it uploads the acceptance results. A failing test fails the shard. Then the `e2e-scoreboard` job puts the results of all the shards together with `scripts/ci/e2e-scoreboard.sh`. It writes the scoreboard to the job summary. This scoreboard is the same as the scoreboard of one run of all the tests.
 
 ## The fake identity provider
 
