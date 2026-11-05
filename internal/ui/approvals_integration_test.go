@@ -1,0 +1,286 @@
+//go:build integration
+
+package ui_test
+
+import (
+	"context"
+	"net/http"
+	"net/url"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/solidDoWant/toolgate/internal/store"
+	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/ui"
+)
+
+const approvalTimeout = 10 * time.Minute
+
+// insertApproval stores a pending approval of principal, with a session of
+// its own, expiring in expiresIn (negative: already past).
+func (e *uiEnv) insertApproval(t *testing.T, id, principal string, expiresIn time.Duration) {
+	t.Helper()
+
+	queries := db.New(e.pool)
+
+	session, err := queries.CreateSession(t.Context(), db.CreateSessionParams{
+		Principal: principal, SessionID: "session-" + id, Workspace: "github.com/acme/repo", Attestation: "user", Groups: []string{},
+	})
+	require.NoError(t, err)
+
+	_, err = e.pool.Exec(t.Context(),
+		`INSERT INTO approvals (id, principal, session_pk, workspace, template_ns, template_name, tool, arguments_sha256, created_at, expires_at)
+		 VALUES ($1, $2, $3, $4, 'toolgate', 'github', 'delete_repository', $5, now() - interval '1 hour', now() + $6::interval)`,
+		id, principal, session.ID, session.Workspace, hashOf(id),
+		pgtype.Interval{Microseconds: expiresIn.Microseconds(), Valid: true})
+	require.NoError(t, err)
+}
+
+func (e *uiEnv) approvalRow(t *testing.T, id string) db.Approval {
+	t.Helper()
+
+	row, err := db.New(e.pool).GetApproval(t.Context(), id)
+	require.NoError(t, err)
+
+	return row
+}
+
+// approvalEvents counts the events of type about approval id.
+func (e *uiEnv) approvalEvents(t *testing.T, eventType, id string) []map[string]string {
+	t.Helper()
+
+	rows, err := e.pool.Query(t.Context(),
+		`SELECT principal, workspace, session, attestation, server, tool FROM audit_events
+		 WHERE type = $1 AND details->>'approval' = $2`, eventType, id)
+	require.NoError(t, err)
+
+	defer rows.Close()
+
+	var events []map[string]string
+
+	for rows.Next() {
+		var principal, workspace, session, attestation, server, tool string
+		require.NoError(t, rows.Scan(&principal, &workspace, &session, &attestation, &server, &tool))
+		events = append(events, map[string]string{
+			"principal": principal, "workspace": workspace, "session": session,
+			"attestation": attestation, "server": server, "tool": tool,
+		})
+	}
+
+	require.NoError(t, rows.Err())
+
+	return events
+}
+
+// listen returns a function that waits for the next notification on the
+// gateway's channel.
+func (e *uiEnv) listen(t *testing.T) func() string {
+	t.Helper()
+
+	conn, err := e.pool.Acquire(t.Context())
+	require.NoError(t, err)
+	t.Cleanup(conn.Release)
+
+	_, err = conn.Exec(t.Context(), "LISTEN "+store.Channel)
+	require.NoError(t, err)
+
+	return func() string {
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+
+		notification, err := conn.Conn().WaitForNotification(ctx)
+		require.NoError(t, err)
+
+		return notification.Payload
+	}
+}
+
+func approvalID(n byte) string {
+	return strings.Repeat(string(rune('a'+n)), 32)
+}
+
+func TestApprovalsAreOwnerOnly(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	id := approvalID(0)
+	env.insertApproval(t, id, "erin", approvalTimeout)
+
+	admin := env.insertSession(t, "admin-session", []string{"admins"})
+	env.ageSignIn(t, "admin-session", 0)
+	token := csrfTokenOf("admin-session")
+
+	for _, path := range []string{ui.ApprovalPath(id)} {
+		response := get(t, admin, env.server.URL+path)
+		assert.Equal(t, http.StatusNotFound, response.StatusCode, "GET %s", path)
+	}
+
+	list := get(t, admin, env.server.URL+ui.ApprovalsPath)
+	require.Equal(t, http.StatusOK, list.StatusCode)
+	assert.NotContains(t, readBody(t, list), id, "the list leaves out other principals' approvals")
+
+	for _, action := range []string{"approve", "deny"} {
+		response := post(t, admin, env.server.URL+ui.ApprovalPath(id)+"/"+action, url.Values{ui.CSRFField: {token}})
+		assert.Equal(t, http.StatusNotFound, response.StatusCode, action)
+	}
+
+	assert.Equal(t, "pending", env.approvalRow(t, id).Status, "nobody but erin decides")
+}
+
+func TestApprovalsList(t *testing.T) {
+	env := startUIEnv(t, "")
+	env.insertApproval(t, approvalID(0), "dave", approvalTimeout)
+	env.insertApproval(t, approvalID(1), "dave", -time.Second)
+	browser := env.insertSession(t, "list-session", nil)
+
+	response := get(t, browser, env.server.URL+ui.ApprovalsPath)
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	page := readBody(t, response)
+	assert.Contains(t, page, "<td>github</td><td>delete_repository</td><td>session-"+approvalID(0)+"</td><td>github.com/acme/repo</td>",
+		"server, tool, session and workspace")
+	assert.Contains(t, page, ui.ApprovalPath(approvalID(0)))
+	assert.NotContains(t, page, approvalID(1), "an expired approval isn't listed")
+	assert.Contains(t, page, `hx-get="/ui/approvals" hx-trigger="every 5s"`, "htmx refreshes the list every 5 s")
+}
+
+func TestApprovalDetailSaysPayloadsAreOff(t *testing.T) {
+	env := startUIEnv(t, "")
+	id := approvalID(0)
+	env.insertApproval(t, id, "dave", approvalTimeout)
+	browser := env.insertSession(t, "detail-session", nil)
+
+	response := get(t, browser, env.server.URL+ui.ApprovalPath(id))
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	page := readBody(t, response)
+	assert.Contains(t, page, "Arguments aren&#39;t shown because audit payloads are off.")
+	assert.Contains(t, page, "session-"+id)
+	assert.Contains(t, page, "github.com/acme/repo")
+}
+
+func TestApprovalLinkWithoutSessionGoesToStepUp(t *testing.T) {
+	env := startUIEnv(t, "")
+	id := approvalID(0)
+	browser := env.browser(t)
+
+	response := get(t, browser, env.server.URL+ui.ApprovalPath(id))
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+	assert.Equal(t, ui.StepUpURL(ui.ApprovalPath(id)), response.Header.Get("Location"))
+}
+
+func TestApproveNeedsAFreshStepUp(t *testing.T) {
+	env := startUIEnv(t, "")
+	id := approvalID(0)
+	env.insertApproval(t, id, "dave", approvalTimeout)
+	browser := env.insertSession(t, "stale-session", nil)
+	env.ageSignIn(t, "stale-session", 5*time.Minute+time.Second)
+
+	page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
+	assert.Contains(t, page, "Sign in again to continue")
+	assert.NotContains(t, page, "/approve", "no approve form without a fresh sign-in")
+	assert.Contains(t, page, "/deny", "deny needs no step-up")
+
+	response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", url.Values{ui.CSRFField: {csrfTokenOf("stale-session")}})
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+	assert.Equal(t, ui.StepUpURL(ui.ApprovalPath(id)), response.Header.Get("Location"))
+	assert.Equal(t, "pending", env.approvalRow(t, id).Status)
+	assert.Empty(t, env.approvalEvents(t, "approval.approve", id))
+}
+
+func TestApproveAndDeny(t *testing.T) {
+	env := startUIEnv(t, "")
+	browser := env.insertSession(t, "decide-session", nil)
+	env.ageSignIn(t, "decide-session", time.Minute)
+	token := url.Values{ui.CSRFField: {csrfTokenOf("decide-session")}}
+	next := env.listen(t)
+
+	t.Run("approve", func(t *testing.T) {
+		id := approvalID(0)
+		env.insertApproval(t, id, "dave", time.Minute)
+
+		page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
+		assert.Contains(t, page, "/approve", "a fresh session sees the approve form")
+
+		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", token)
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+		assert.Equal(t, "approval:"+id, next())
+
+		row := env.approvalRow(t, id)
+		assert.Equal(t, "approved", row.Status)
+		assert.Equal(t, "dave", row.DecidedBy.String)
+		assert.WithinDuration(t, time.Now().Add(approvalTimeout), row.ExpiresAt.Time, time.Minute,
+			"expires_at is now() + approvalTimeout")
+
+		assert.Equal(t, []map[string]string{{
+			"principal": "dave", "workspace": "", "session": "", "attestation": "user", "server": "github", "tool": "delete_repository",
+		}}, env.approvalEvents(t, "approval.approve", id))
+
+		page = readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
+		assert.Contains(t, page, "This approval was approved.")
+	})
+
+	t.Run("deny with a stale sign-in", func(t *testing.T) {
+		id := approvalID(1)
+		env.insertApproval(t, id, "dave", time.Minute)
+		env.ageSignIn(t, "decide-session", time.Hour)
+
+		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/deny", token)
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+		assert.Equal(t, "approval:"+id, next())
+
+		assert.Equal(t, "denied", env.approvalRow(t, id).Status)
+		assert.Len(t, env.approvalEvents(t, "approval.deny", id), 1)
+	})
+}
+
+func TestDecisionsShowTheRealStatus(t *testing.T) {
+	env := startUIEnv(t, "")
+	browser := env.insertSession(t, "race-session", nil)
+	env.ageSignIn(t, "race-session", 0)
+	token := url.Values{ui.CSRFField: {csrfTokenOf("race-session")}}
+
+	t.Run("two tabs", func(t *testing.T) {
+		id := approvalID(0)
+		env.insertApproval(t, id, "dave", time.Minute)
+
+		require.Equal(t, http.StatusSeeOther, post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/deny", token).StatusCode)
+
+		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", token)
+		assert.Equal(t, http.StatusConflict, response.StatusCode)
+		assert.Contains(t, readBody(t, response), "This approval was denied.")
+		assert.Equal(t, "denied", env.approvalRow(t, id).Status)
+		assert.Empty(t, env.approvalEvents(t, "approval.approve", id))
+	})
+
+	for _, action := range []string{"approve", "deny"} {
+		t.Run(action+" after expiry", func(t *testing.T) {
+			id := approvalID(1)
+			if action == "deny" {
+				id = approvalID(2)
+			}
+
+			env.insertApproval(t, id, "dave", -time.Second)
+
+			response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/"+action, token)
+			assert.Equal(t, http.StatusConflict, response.StatusCode)
+			assert.Contains(t, readBody(t, response), "This approval expired.")
+			assert.Equal(t, "pending", env.approvalRow(t, id).Status)
+			assert.Empty(t, env.approvalEvents(t, "approval."+action, id))
+		})
+	}
+
+	t.Run("expired by the leader's pass", func(t *testing.T) {
+		id := approvalID(3)
+		env.insertApproval(t, id, "dave", time.Minute)
+		_, err := env.pool.Exec(t.Context(), "UPDATE approvals SET status = 'expired' WHERE id = $1", id)
+		require.NoError(t, err)
+
+		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", token)
+		assert.Equal(t, http.StatusConflict, response.StatusCode)
+		assert.Contains(t, readBody(t, response), "This approval expired.")
+	})
+}
