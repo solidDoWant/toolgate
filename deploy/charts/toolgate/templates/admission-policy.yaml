@@ -1,7 +1,7 @@
 # Confines every write by the gateway's service account, whatever RBAC grants
-# it, so a compromised gateway can't write outside toolgate's namespaces or
-# create kinds a template may not contain. docs/admin/chart.md explains the
-# rules.
+# it, so a compromised gateway can't write outside toolgate's namespaces.
+# RBAC, not this policy, decides which kinds it may write there.
+# docs/admin/chart.md explains the rules.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -43,14 +43,6 @@ spec:
     # The status of toolgate's own custom resources, in the namespaces it watches.
     - name: isCatalogStatus
       expression: request.resource.group == "toolgate.soliddowant.dev" && variables.subResource == "status"
-    - name: isAllowedKind
-      expression: >-
-        variables.subResource == "" && (
-        (request.kind.group == "" && request.kind.kind in
-          ["Pod", "Service", "ConfigMap", "Secret", "ServiceAccount", "PersistentVolumeClaim"]) ||
-        (request.kind.group == "apps" && request.kind.kind in ["Deployment", "StatefulSet"]) ||
-        (request.kind.group == "networking.k8s.io" && request.kind.kind == "NetworkPolicy") ||
-        (request.kind.group == "cilium.io" && request.kind.kind == "CiliumNetworkPolicy"))
     - name: inToolgateNamespace
       expression: >-
         namespaceObject != null && has(namespaceObject.metadata.labels) &&
@@ -62,11 +54,6 @@ spec:
         namespaceObject != null && has(namespaceObject.metadata.labels) &&
         namespaceObject.metadata.labels[?"pod-security.kubernetes.io/enforce"].orValue("") == "restricted"
   validations:
-    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.isAllowedKind
-      messageExpression: >-
-        "toolgate's service account may not write " + request.kind.kind +
-        (variables.subResource != "" ? "/" + variables.subResource : "") + " objects"
-      reason: Forbidden
     - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inToolgateNamespace
       messageExpression: >-
         "toolgate's service account may write only in namespaces labelled toolgate.soliddowant.dev/writable=true, not in " +

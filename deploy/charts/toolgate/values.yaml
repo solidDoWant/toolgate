@@ -108,12 +108,23 @@ config:
     # when the release is uninstalled (`helm.sh/resource-policy: keep`).
     keep: true
 
+rbac:
+  # -- More RBAC rules for the gateway's ClusterRole, added after the
+  # default rules. Grant each extra kind a template contains `create`,
+  # `patch`, `delete`, `get`, `list` and `watch`. The admission policy still
+  # confines every write to toolgate's namespaces.
+  extraRules: []
+  # extraRules:
+  #   - apiGroups: ["helm.toolkit.fluxcd.io"]
+  #     resources: ["helmreleases"]
+  #     verbs: ["create", "patch", "delete", "get", "list", "watch"]
+
 # -- The gateway's Deployment, Services, ServiceAccount, PodDisruptionBudget
 # and ServiceMonitor, in the values format of the bjw-s `common` library chart
 # (https://bjw-s-labs.github.io/helm-charts/docs/common-library/). Override any
 # part, such as probes, affinity, resources or extra containers. String values
-# can use Helm templates. The RBAC rules and the admission policy are not
-# here: values cannot change them.
+# can use Helm templates. The RBAC rules (see `rbac.extraRules`) and the
+# admission policy are not here.
 # @default -- see `values.yaml`
 resources:
   defaultPodOptions:

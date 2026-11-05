@@ -92,7 +92,7 @@ toolgate matches an email address only when the identity provider verified it. B
 
 ## The objects in a template
 
-A template can contain objects of these kinds: `Pod`, `Deployment`, `StatefulSet`, `Service`, `ConfigMap`, `Secret`, `ServiceAccount`, `NetworkPolicy`, `PersistentVolumeClaim`, and `CiliumNetworkPolicy` when that CRD exists. Any other kind makes the template invalid. toolgate puts each object in the namespace of the instance, and adds the labels `toolgate.soliddowant.dev/instance`, `toolgate.soliddowant.dev/template` and `app.kubernetes.io/managed-by: toolgate`.
+A template can contain objects of any namespaced kind that the cluster has. A cluster-scoped kind, or a kind whose CRD is not installed, makes the template invalid. The RBAC of the gateway decides which kinds it can create. See [Other kinds in templates](chart.md#other-kinds-in-templates). toolgate puts each object in the namespace of the instance, and adds the labels `toolgate.soliddowant.dev/instance`, `toolgate.soliddowant.dev/template` and `app.kubernetes.io/managed-by: toolgate`.
 
 The namespace of an instance enforces the Pod Security level `restricted`. Your pods must set the security fields in the example above, or Kubernetes refuses them.
 
