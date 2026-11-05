@@ -37,6 +37,9 @@ const (
 // once it is deleted. catalog.Catalog implements it.
 type Templates interface {
 	Running(key types.NamespacedName) (*v1alpha1.MCPServerTemplate, bool)
+	// IsLoaded reports whether every watched template has been read. Before
+	// that, a missing template may only be not read yet.
+	IsLoaded() bool
 }
 
 // StopDecider decides which live instances stop (docs/design/phase-1.md §2,
@@ -63,8 +66,11 @@ func (d *StopDecider) Step(ctx context.Context, instance db.Instance) error {
 // advisory lock of the instance's template and scope key in a transaction,
 // re-reads the row, checks again, and sets desired = stopped. It returns the
 // row as it is afterwards.
+//
+// Until Templates is loaded it decides nothing: judging against a partial
+// catalog would stop instances whose template exists.
 func (d *StopDecider) Decide(ctx context.Context, instance db.Instance) (db.Instance, error) {
-	if !isLive(instance) {
+	if !isLive(instance) || !d.Templates.IsLoaded() {
 		return instance, nil
 	}
 

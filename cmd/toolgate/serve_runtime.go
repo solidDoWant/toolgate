@@ -10,26 +10,49 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/config"
+	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
+// runtimeOptions are the dependencies of startRuntime.
+type runtimeOptions struct {
+	cfg  config.Config
+	pool *pgxpool.Pool
+	// catalog and rules are filled by their reconcilers, on every replica.
+	catalog *catalog.Catalog
+	rules   *policy.Rules
+	// secrets reads the users' secrets for instance renders.
+	secrets         runtime.SecretGetter
+	registerMetrics func(...prometheus.Collector) error
+	logger          *slog.Logger
+}
+
 // startRuntime starts the PostgreSQL notification listener and the
-// controller-runtime manager that runs the runtime reconciler on the
-// replica holding the Lease, and registers the runtime metrics with
-// registerMetrics. The returned channel receives the manager's
-// result once ctx ends or the replica loses the Lease.
-func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, registerMetrics func(...prometheus.Collector) error,
-	logger *slog.Logger,
-) (<-chan error, error) {
+// controller-runtime manager. On every replica the manager runs the catalog
+// and rule reconcilers, which write status only on the leader. On the
+// replica holding the Lease it runs the runtime reconciler and the health
+// monitor. It registers the runtime metrics with registerMetrics. The
+// returned channel receives the manager's result once ctx ends or the
+// replica loses the Lease.
+func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, error) {
+	cfg, pool, logger := options.cfg, options.pool, options.logger
+
 	kubeLogger := logr.FromSlogHandler(logger.Handler())
 	ctrl.SetLogger(kubeLogger)
 
@@ -59,11 +82,19 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, re
 
 	lease := runtime.NewLease(lock, timing.RenewDeadline)
 
-	options := runtime.ManagerOptions(lease, timing)
-	options.Logger = kubeLogger
-	options.Metrics = metricsserver.Options{BindAddress: "0"}
+	watched := cfg.WatchedNamespaces()
 
-	mgr, err := manager.New(restConfig, options)
+	managerOptions := runtime.ManagerOptions(lease, timing)
+	managerOptions.Logger = kubeLogger
+	managerOptions.Metrics = metricsserver.Options{BindAddress: "0"}
+	managerOptions.Scheme = kubeScheme()
+	// The informers for the catalog read only the watched namespaces.
+	managerOptions.Cache = cache.Options{ByObject: map[client.Object]cache.ByObject{
+		&v1alpha1.MCPServerTemplate{}: {Namespaces: catalog.CacheNamespaces(watched)},
+		&v1alpha1.ToolgateRule{}:      {Namespaces: catalog.CacheNamespaces(watched)},
+	}}
+
+	mgr, err := manager.New(restConfig, managerOptions)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
@@ -76,8 +107,12 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, re
 		Client:    mgr.GetClient(),
 	}
 
+	if err := setupCatalog(mgr, options.catalog, options.rules, watched, logger); err != nil {
+		return nil, err
+	}
+
 	metrics := runtime.NewMetrics()
-	if err := registerMetrics(metrics.Collectors()...); err != nil {
+	if err := options.registerMetrics(metrics.Collectors()...); err != nil {
 		return nil, err
 	}
 
@@ -92,18 +127,46 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, re
 	// The sweep deletes namespaces that belong to no live instance on every
 	// pass, starting with the pass on gaining the Lease.
 	sweep := &runtime.Sweep{
-		Pool:    pool,
-		Reader:  mgr.GetAPIReader(),
-		Deleter: reconciler,
-		Log:     logger,
+		Pool:      pool,
+		Reader:    mgr.GetAPIReader(),
+		Deleter:   reconciler,
+		Templates: options.catalog,
+		Log:       logger,
 	}
 
-	// This process doesn't read the template catalog yet, and judging
-	// instances against an empty catalog would stop them all, so it makes
-	// no stop decisions and sends no instance back to pending. Failed
-	// instances are still torn down.
+	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger}
+
+	startStore := runtime.PostgresStartStore{Pool: pool}
+
+	starter := &runtime.Starter{
+		Store:            startStore,
+		Client:           mgr.GetClient(),
+		Template:         options.catalog.Running,
+		Secrets:          runtime.BrokerSecrets(options.secrets),
+		ListTools:        runtime.MCPToolLister,
+		GatewayNamespace: cfg.LeaseNamespace,
+		GatewayPodLabels: cfg.PodLabels(),
+		Logger:           logger,
+	}
+
+	// The monitor runs only on the Lease holder, like every runnable that
+	// does not say otherwise.
+	monitor := &runtime.Monitor{
+		Store:    startStore,
+		Template: options.catalog.Running,
+		Connect:  runtime.MCPMonitorConnector,
+		Logger:   logger,
+	}
+	if err := mgr.Add(manager.RunnableFunc(monitor.Run)); err != nil {
+		return nil, fmt.Errorf("kubernetes manager: %w", err)
+	}
+
+	// Judging instances against a partial catalog would stop instances whose
+	// template exists, so the first pass waits until every watched template
+	// has been read.
 	queries := db.New(pool)
-	reconciler.Pass = sweep.Pass(teardown.Pass(queries, runtime.FullPass(queries, logger, teardown.Step)))
+	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
+		sweep.Pass(teardown.Pass(queries, runtime.FullPass(queries, logger, stops.Step, teardown.Step, starter.Step, monitor.Step))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
@@ -116,4 +179,46 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, re
 	go func() { result <- mgr.Start(ctx) }()
 
 	return result, nil
+}
+
+// setupCatalog registers the catalog and rule reconcilers, which run on
+// every replica and write status only while it is leader, and the loader
+// that marks the catalog loaded.
+func setupCatalog(mgr manager.Manager, templates *catalog.Catalog, rules *policy.Rules, watched []string, logger *slog.Logger) error {
+	catalogReconciler := &catalog.Reconciler{
+		Client:     mgr.GetClient(),
+		Catalog:    templates,
+		Log:        logger,
+		Elected:    mgr.Elected(),
+		Namespaces: watched,
+	}
+	if err := catalogReconciler.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("kubernetes manager: %w", err)
+	}
+
+	ruleReconciler := &policy.RuleReconciler{
+		Client:     mgr.GetClient(),
+		Rules:      rules,
+		Log:        logger,
+		Elected:    mgr.Elected(),
+		Namespaces: watched,
+	}
+	if err := ruleReconciler.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("kubernetes manager: %w", err)
+	}
+
+	if err := mgr.Add(&catalog.Loader{Reader: mgr.GetCache(), Catalog: templates, Namespaces: watched}); err != nil {
+		return fmt.Errorf("kubernetes manager: %w", err)
+	}
+
+	return nil
+}
+
+// kubeScheme returns the client-go types and toolgate's custom resources.
+func kubeScheme() *k8sruntime.Scheme {
+	scheme := k8sruntime.NewScheme()
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+
+	return scheme
 }

@@ -116,6 +116,48 @@ type Config struct {
 	// sets it. If it is empty, the gateway runs without Kubernetes: it
 	// serves requests but never starts or stops MCP servers.
 	LeaseNamespace string `json:"leaseNamespace" env:"TOOLGATE_LEASE_NAMESPACE"`
+
+	// The namespaces whose `MCPServerTemplate` and `ToolgateRule` objects
+	// the gateway reads, such as `[toolgate-catalog]`. In the environment
+	// variable, separate the names with commas. Objects in other namespaces
+	// are ignored. If the list is empty, the gateway reads only
+	// `leaseNamespace`. The gateway reads no catalog without
+	// `leaseNamespace`.
+	CatalogNamespaces []string `json:"catalogNamespaces" env:"TOOLGATE_CATALOG_NAMESPACES"`
+
+	// The labels of the gateway's own pods, as `key=value` items, such as
+	// `[app.kubernetes.io/name=toolgate]`. In the environment variable,
+	// separate the items with commas. Each MCP server's network policy
+	// accepts connections only from pods in `leaseNamespace` with these
+	// labels. Required with `leaseNamespace`. The chart sets it.
+	GatewayPodLabels []string `json:"gatewayPodLabels" env:"TOOLGATE_GATEWAY_POD_LABELS"`
+}
+
+// WatchedNamespaces returns the namespaces whose catalog objects the gateway
+// reads: CatalogNamespaces, or LeaseNamespace when that is empty.
+func (c Config) WatchedNamespaces() []string {
+	if len(c.CatalogNamespaces) > 0 {
+		return c.CatalogNamespaces
+	}
+
+	if c.LeaseNamespace == "" {
+		return nil
+	}
+
+	return []string{c.LeaseNamespace}
+}
+
+// PodLabels returns GatewayPodLabels as a map. Call it on a validated
+// configuration.
+func (c Config) PodLabels() map[string]string {
+	labels := make(map[string]string, len(c.GatewayPodLabels))
+
+	for _, item := range c.GatewayPodLabels {
+		key, value, _ := strings.Cut(item, "=")
+		labels[key] = value
+	}
+
+	return labels
 }
 
 // Default returns the configuration used for every field that is not set.
@@ -332,6 +374,23 @@ func (c Config) Validate() []error {
 	if c.LeaseNamespace != "" {
 		if invalid := validation.IsDNS1123Label(c.LeaseNamespace); len(invalid) > 0 {
 			problems = append(problems, fmt.Errorf("leaseNamespace: %q is not a namespace name", c.LeaseNamespace))
+		}
+
+		if len(c.GatewayPodLabels) == 0 {
+			problems = append(problems, errors.New("gatewayPodLabels: required with leaseNamespace"))
+		}
+	}
+
+	for _, namespace := range c.CatalogNamespaces {
+		if invalid := validation.IsDNS1123Label(namespace); len(invalid) > 0 {
+			problems = append(problems, fmt.Errorf("catalogNamespaces: %q is not a namespace name", namespace))
+		}
+	}
+
+	for _, item := range c.GatewayPodLabels {
+		key, value, found := strings.Cut(item, "=")
+		if !found || len(validation.IsQualifiedName(key)) > 0 || len(validation.IsValidLabelValue(value)) > 0 {
+			problems = append(problems, fmt.Errorf("gatewayPodLabels: %q is not a key=value label", item))
 		}
 	}
 

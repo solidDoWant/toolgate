@@ -255,3 +255,24 @@ func TestReconcilerMarksDuplicateServerNamesInvalid(t *testing.T) {
 	_, err = fixture.catalog.Offered("github")
 	require.NoError(t, err)
 }
+
+func TestReconcilerWritesStatusOnlyWhileElected(t *testing.T) {
+	template := newTemplate("github", catalog.ScopePerUser, serviceResource)
+	fixture := newReconcilerFixture(t, template)
+	elected := make(chan struct{})
+	fixture.reconciler.Elected = elected
+	key := keyOf(template)
+
+	fixture.reconcile(t, key)
+
+	_, err := fixture.catalog.Offered("github")
+	require.NoError(t, err, "a replica that isn't leader still offers the template")
+	assert.Nil(t, fixture.condition(t, key), "a replica that isn't leader writes no status")
+
+	close(elected)
+	fixture.reconcile(t, key)
+
+	condition := fixture.condition(t, key)
+	require.NotNil(t, condition)
+	assert.Equal(t, metav1.ConditionTrue, condition.Status)
+}
