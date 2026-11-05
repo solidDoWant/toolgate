@@ -45,7 +45,7 @@ func TestBrowserSignsInThroughOIDCProvider(t *testing.T) {
 	verifier := oauth2.GenerateVerifier()
 	user := testutil.OIDCUser{Subject: "bob", Email: "bob@example.com", EmailVerified: true, Groups: []string{"operators"}}
 
-	require.NoError(t, chromedp.Do(browser, chromedp.Navigate(flow.config.AuthCodeURL("state-1", oauth2.S256ChallengeOption(verifier)))))
+	require.NoError(t, chromedp.Do(browser, testutil.Navigate(flow.config.AuthCodeURL("state-1", oauth2.S256ChallengeOption(verifier)))))
 
 	title, err := chromedp.Run(browser, chromedp.Title())
 	require.NoError(t, err)

@@ -342,7 +342,7 @@ func TestAC2_03FormWithoutCSRFTokenIsRefused(t *testing.T) {
 	require.NoError(t, err)
 
 	logout := chromedp.CSS(`form.logout button`)
-	openServers := chromedp.Steps(chromedp.Navigate(env.server.URL+ui.HomePath), chromedp.WaitVisible(logout))
+	openServers := chromedp.Steps(toolgatetest.Navigate(env.server.URL+ui.HomePath), chromedp.WaitVisible(logout))
 
 	require.NoError(t, chromedp.Do(ctx, openServers))
 
