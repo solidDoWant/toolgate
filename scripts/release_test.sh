@@ -65,8 +65,12 @@ git init --quiet --bare "$work/origin.git"
 (
 	cd "$repo"
 	git init --quiet --initial-branch=master
+	# The release tags HEAD with an annotated tag, which needs an identity;
+	# CI runners have none.
+	git config user.name test
+	git config user.email test@example.com
 	git add --all
-	git -c user.name=test -c user.email=test@example.com commit --quiet -m "test tree"
+	git commit --quiet -m "test tree"
 	git remote add origin "$work/origin.git"
 	git push --quiet origin master
 )
