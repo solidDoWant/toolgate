@@ -31,3 +31,11 @@ RETURNING *;
 -- name: CountUILogins :one
 -- Counts the sign-ins in progress, to refuse new ones over the limit.
 SELECT count(*) FROM ui_logins;
+
+-- name: UpdateUISessionSignIn :execrows
+-- Records a step-up sign-in on a valid web UI session of the same
+-- principal: the new auth_time and identity snapshot.
+UPDATE ui_sessions
+SET email = @email, name = @name, groups = @groups, auth_time = @auth_time
+WHERE id_hash = @id_hash AND principal = @principal
+  AND expires_at > now() AND last_seen_at > now() - interval '1 hour';
