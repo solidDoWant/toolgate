@@ -1,3 +1,5 @@
+//go:build integration
+
 package main
 
 import (
@@ -36,7 +38,7 @@ func TestServeMountsTheSecretsAPIBehindAuthentication(t *testing.T) {
 
 	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
 	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate")
+	t.Setenv("TOOLGATE_DATABASE_URL", testutil.StartPostgres(t).ConnString())
 	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
 	t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
 	t.Setenv("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
