@@ -14,4 +14,6 @@ The [gateway configuration reference](configuration.md) lists the settings of `t
 
 [Pod sign-in](pod-sign-in.md) tells how a pod signs in with a Kubernetes service-account token, and which permissions the gateway needs for it.
 
+[Instance stops and cleanup](instances.md) tells you when toolgate stops an instance, and which metrics show stuck namespaces.
+
 Until then, [`SPEC.md`](../../SPEC.md) describes the system.

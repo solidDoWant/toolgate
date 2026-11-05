@@ -90,7 +90,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	var runtimeResult chan error
 
 	if cfg.LeaseNamespace != "" {
-		managerDone, err := startRuntime(ctx, cfg, server.Database(), logger)
+		managerDone, err := startRuntime(ctx, cfg, server.Database(), server.RegisterMetrics, logger)
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)
 

@@ -11,6 +11,43 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countLiveEnablers = `-- name: CountLiveEnablers :one
+SELECT count(*) FROM session_servers ss
+JOIN sessions s ON s.id = ss.session_pk
+WHERE ss.template_ns = $1 AND ss.template_name = $2
+  AND s.ended_at IS NULL
+  AND (
+    $3::text = 'shared'
+    OR ($3::text = 'per-user' AND s.principal = $4::text)
+    OR ($3::text = 'per-session' AND 'session:' || s.principal || ':' || s.session_id = $5::text)
+  )
+`
+
+type CountLiveEnablersParams struct {
+	TemplateNs     string
+	TemplateName   string
+	Scope          string
+	OwnerPrincipal string
+	ScopeKey       string
+}
+
+// Counts the live sessions that have the template enabled and use an
+// instance of the given scope and scope key: any session for shared, the
+// owner's sessions for per-user, and the one session of the scope key for
+// per-session.
+func (q *Queries) CountLiveEnablers(ctx context.Context, arg CountLiveEnablersParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveEnablers,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.Scope,
+		arg.OwnerPrincipal,
+		arg.ScopeKey,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSessionServers = `-- name: CountSessionServers :one
 SELECT count(*) FROM session_servers WHERE session_pk = $1
 `

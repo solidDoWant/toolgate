@@ -41,6 +41,7 @@ type Server struct {
 	publicRoutes   []string
 	database       *pgxpool.Pool
 	tracerProvider *sdktrace.TracerProvider
+	metrics        *prometheus.Registry
 
 	listener        net.Listener
 	metricsListener net.Listener
@@ -68,6 +69,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 		mux:            http.NewServeMux(),
 		database:       database,
 		tracerProvider: tracerProvider,
+		metrics:        newMetricsRegistry(),
 	}
 
 	health.Register(server.mux, logger, health.Check{Name: "postgresql", Run: database.Ping})
@@ -163,7 +165,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 
 	metricsServer := &http.Server{
-		Handler:           metricsHandler(),
+		Handler:           metricsHandler(s.metrics),
 		ReadHeaderTimeout: readHeaderTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(s.logger.Handler(), slog.LevelWarn),
@@ -214,14 +216,31 @@ func (s *Server) Serve(ctx context.Context) error {
 	return errors.Join(shutdownErrors...)
 }
 
-// metricsHandler serves the Prometheus metrics at /metrics.
-func metricsHandler() http.Handler {
+// newMetricsRegistry returns the registry served at /metrics, holding the Go
+// runtime and process metrics.
+func newMetricsRegistry() *prometheus.Registry {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
+	return registry
+}
+
+// RegisterMetrics adds collectors to the metrics served at /metrics.
+func (s *Server) RegisterMetrics(collectors ...prometheus.Collector) error {
+	for _, collector := range collectors {
+		if err := s.metrics.Register(collector); err != nil {
+			return fmt.Errorf("register metrics: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// metricsHandler serves the Prometheus metrics at /metrics.
+func metricsHandler(registry *prometheus.Registry) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 

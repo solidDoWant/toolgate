@@ -76,3 +76,18 @@ SELECT s.* FROM sessions s
 JOIN session_servers ss ON ss.session_pk = s.id
 WHERE ss.template_ns = @template_ns AND ss.template_name = @template_name AND s.ended_at IS NULL
 ORDER BY s.id;
+
+-- name: CountLiveEnablers :one
+-- Counts the live sessions that have the template enabled and use an
+-- instance of the given scope and scope key: any session for shared, the
+-- owner's sessions for per-user, and the one session of the scope key for
+-- per-session.
+SELECT count(*) FROM session_servers ss
+JOIN sessions s ON s.id = ss.session_pk
+WHERE ss.template_ns = @template_ns AND ss.template_name = @template_name
+  AND s.ended_at IS NULL
+  AND (
+    @scope::text = 'shared'
+    OR (@scope::text = 'per-user' AND s.principal = @owner_principal::text)
+    OR (@scope::text = 'per-session' AND 'session:' || s.principal || ':' || s.session_id = @scope_key::text)
+  );

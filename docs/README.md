@@ -44,6 +44,7 @@ docs/admin/
   chart-values.md          The chart values reference (generated).
   user-secrets.md          How user secrets are encrypted, and how to rotate the key.
   settings-profiles.md     How to give Claude Code settings to users with SettingsProfile objects.
+  instances.md             When instances stop, how they are removed, and their metrics.
 
 docs/dev/
   README.md                What the developer pages will cover.
