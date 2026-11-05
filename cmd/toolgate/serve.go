@@ -6,12 +6,17 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 
+	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/gateway"
+	"github.com/solidDoWant/toolgate/internal/secrets"
+	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 )
 
@@ -51,6 +56,14 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	if cfg.SecretsKeysetFile != "" {
+		if err := registerSecretsAPI(ctx, server, cfg, stdout, logger); err != nil {
+			logger.Error("gateway failed to start", "error", err)
+
+			return 1
+		}
+	}
+
 	if err := server.Listen(); err != nil {
 		logger.Error("gateway failed to start", "error", err)
 
@@ -70,6 +83,33 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	logger.Info("gateway stopped")
 
 	return 0
+}
+
+// registerSecretsAPI serves `/api/v1/secrets` behind user authentication.
+func registerSecretsAPI(ctx context.Context, server *gateway.Server, cfg config.Config, stdout io.Writer, logger *slog.Logger) error {
+	cipher, err := secrets.LoadKeyset(cfg.SecretsKeysetFile)
+	if err != nil {
+		return err
+	}
+
+	authenticator, err := auth.New(ctx, auth.Options{
+		IssuerURL:          cfg.OIDCIssuerURL,
+		Audience:           cfg.OIDCAudience,
+		EmailClaim:         cfg.OIDCEmailClaim,
+		EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
+		GroupsClaim:        cfg.OIDCGroupsClaim,
+	})
+	if err != nil {
+		return err
+	}
+
+	queries := db.New(server.Database())
+	api := secrets.NewAPI(secrets.NewBroker(queries, cipher), audit.NewRecorder(stdout, queries), logger)
+	api.Register(server, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
+
+	return nil
 }
 
 // newLogger returns the JSON logger writing to out at level (already
