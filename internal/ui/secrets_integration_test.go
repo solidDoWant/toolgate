@@ -312,7 +312,7 @@ func TestAC2_02SecretsInBrowser(t *testing.T) {
 
 	save := func(value string) {
 		require.NoError(t, chromedp.Do(ctx,
-			chromedp.Navigate(env.server.URL+"/ui/secrets"),
+			toolgatetest.Navigate(env.server.URL+"/ui/secrets"),
 			chromedp.WaitVisible(`#set-secret button`),
 			chromedp.SetValue(`#set-secret input[name="name"]`, "browser-key"),
 			chromedp.SetValue(`#set-secret textarea[name="value"]`, value),
@@ -326,7 +326,7 @@ func TestAC2_02SecretsInBrowser(t *testing.T) {
 	}
 
 	pageText := func() string {
-		require.NoError(t, chromedp.Do(ctx, chromedp.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#set-secret button`)))
+		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#set-secret button`)))
 
 		text, err := chromedp.Run(ctx, chromedp.OuterHTML("html"))
 		require.NoError(t, err)
@@ -338,7 +338,7 @@ func TestAC2_02SecretsInBrowser(t *testing.T) {
 	assert.Equal(t, first, env.secretValue(t, "dave", "browser-key"))
 	assert.NotContains(t, pageText(), first, "the page after saving doesn't hold the value")
 
-	require.NoError(t, chromedp.Do(ctx, chromedp.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#set-secret button`)))
+	require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#set-secret button`)))
 	assert.NotContains(t, pageText(), first)
 
 	save(second)

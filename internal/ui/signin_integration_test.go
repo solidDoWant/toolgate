@@ -79,6 +79,7 @@ type uiEnv struct {
 	target   atomic.Int32
 	refusals *refusals
 	servers  *fakeServers
+	rules    *fakeRules
 	// catalog backs the Grants pages.
 	catalog *catalog.Catalog
 	// formSubmits counts the step-up form's POSTs that ran.
@@ -111,7 +112,7 @@ func startUIEnvConfigured(t *testing.T, adminGroup string, idpOptions toolgatete
 	t.Cleanup(pool.Close)
 	require.NoError(t, store.Migrate(t.Context(), pool))
 
-	env := &uiEnv{pool: pool, refusals: &refusals{}, servers: &fakeServers{}, catalog: catalog.New()}
+	env := &uiEnv{pool: pool, refusals: &refusals{}, servers: &fakeServers{}, rules: &fakeRules{}, catalog: catalog.New()}
 
 	idpOptions.UIRedirectURIs = []string{"https://127.0.0.1:*/ui/auth/callback"}
 	env.idp = toolgatetest.StartOIDCProvider(t, idpOptions)
@@ -145,6 +146,8 @@ func startUIEnvConfigured(t *testing.T, adminGroup string, idpOptions toolgatete
 			AdminGroup: adminGroup,
 			Recorder:   env.refusals,
 			Servers:    env.servers,
+			Pool:       pool,
+			Rules:      env.rules,
 			Secrets:    broker,
 			Auditor:    audit.NewRecorder(io.Discard, db.New(pool)),
 			Grants:     gateway.NewGrants(pool, env.catalog, io.Discard),

@@ -269,7 +269,7 @@ func TestAC2_05AuditFilters(t *testing.T) {
 	submit := chromedp.CSS(`#filter button`)
 	// Chromium can report a network change while it starts; try again.
 	require.Eventually(t, func() bool {
-		return chromedp.Do(ctx, chromedp.Navigate(env.server.URL+"/ui/audit"), chromedp.WaitVisible(submit)) == nil
+		return chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/audit"), chromedp.WaitVisible(submit)) == nil
 	}, time.Minute, 200*time.Millisecond, "the audit page opens")
 
 	fields := []string{"principal", "workspace", "session", "server", "tool", "from", "to"}

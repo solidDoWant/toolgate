@@ -178,7 +178,7 @@ func TestAC2_04Sessions(t *testing.T) {
 		require.Eventually(t, func() bool {
 			status = 0
 
-			response, err := chromedp.RunResponse(ctx, chromedp.Navigate(env.server.URL+path))
+			response, err := chromedp.RunResponse(ctx, toolgatetest.Navigate(env.server.URL+path))
 			if err != nil || response == nil {
 				return false
 			}

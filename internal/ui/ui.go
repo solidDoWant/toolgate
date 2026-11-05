@@ -23,6 +23,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 
@@ -141,6 +142,11 @@ type Options struct {
 	HTTPClient *http.Client
 	// Servers gives the Servers page its rows. Nil leaves the page out.
 	Servers ServerSource
+	// Pool lets the Blocks page write temporary blocks. A nil Pool leaves the
+	// Blocks routes out.
+	Pool *pgxpool.Pool
+	// Rules gives the Blocks page the ToolgateRule objects. Nil shows none.
+	Rules RuleSource
 	// Secrets backs the Secrets page, and Auditor records its changes. Nil
 	// Secrets leaves the page out.
 	Secrets SecretStore
@@ -226,6 +232,11 @@ func New(options Options, registrar Registrar) *UI {
 	if options.Servers != nil {
 		u.Handle("GET "+HomePath, User, http.HandlerFunc(u.servers))
 		u.Handle("POST "+RestartPath, User, http.HandlerFunc(u.restartInstance))
+	}
+
+	if options.Pool != nil {
+		u.Handle("GET /ui/blocks", Admin, http.HandlerFunc(u.blocks))
+		u.Handle("POST /ui/blocks", Admin, http.HandlerFunc(u.createBlock))
 	}
 
 	if options.Secrets != nil {
