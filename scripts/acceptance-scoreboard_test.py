@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Tests scripts/acceptance-scoreboard.py, the scoreboard `make acceptance`
-prints, against the real phase 1 checklist and fixture results and sources."""
+prints, against a fixture checklist, results and sources. The real phase 1
+checklist is only checked for being read whole, so the owner can add or remove
+scenarios without breaking these tests."""
 
 import json
 import pathlib
@@ -14,9 +16,30 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = ROOT / "scripts" / "acceptance-scoreboard.py"
 CHECKLIST = ROOT / "docs" / "acceptance" / "phase-1.md"
 
-# The phase 1 checklist's scenarios, written out here rather than read the way
-# the script reads them: AC-1-01 to AC-1-30, with AC-1-05 and AC-1-12 manual.
-SCENARIOS = [f"AC-1-{number:02d}" for number in range(1, 31)]
+# The fixture checklist: sections, prose and scenarios out of numeric order,
+# with AC-1-05 and AC-1-12 manual, the way docs/acceptance/phase-N.md writes them.
+FIXTURE = """# Phase 1 acceptance checklist
+
+Each automated scenario has a test tagged `[AC-1-nn]`. Scenarios marked **manual** are checked by the owner.
+
+## First section
+
+- **AC-1-01 One.** Given this, then that.
+- **AC-1-05 Plugin (manual).** Checked in a real session.
+- **AC-1-07 Enable.** Given this, then that.
+- **AC-1-08 Call.** Given this, then that.
+- **AC-1-31 Added later.** Listed out of numeric order.
+
+## Second section
+
+Not a scenario: - **AC-1-99 Inline.** text.
+- **AC-1-09 Variables.** Given this, then that.
+- **AC-1-10 No injection.** Given this, then that.
+- **AC-1-12 Real session (manual).** Checked in a real session.
+- **AC-1-25 Block a tool.** Given this, then that.
+- **AC-1-26 Block by workspace.** Given this, then that.
+"""
+SCENARIOS = ["AC-1-01", "AC-1-05", "AC-1-07", "AC-1-08", "AC-1-31", "AC-1-09", "AC-1-10", "AC-1-12", "AC-1-25", "AC-1-26"]
 MANUAL = {"AC-1-05", "AC-1-12"}
 
 
@@ -27,6 +50,8 @@ class Scoreboard(unittest.TestCase):
         self.results.mkdir()
         self.sources = self.work / "sources"
         (self.sources / "test" / "e2e").mkdir(parents=True)
+        self.checklist = self.work / "phase-1.md"
+        self.checklist.write_text(FIXTURE, encoding="utf-8")
 
     def run_script(self, *arguments):
         completed = subprocess.run(
@@ -37,8 +62,8 @@ class Scoreboard(unittest.TestCase):
         )
         return completed.stdout
 
-    def scoreboard(self):
-        return self.run_script("--checklist", str(CHECKLIST), "--results", str(self.results))
+    def scoreboard(self, checklist=None):
+        return self.run_script("--checklist", str(checklist or self.checklist), "--results", str(self.results))
 
     def statuses(self, output):
         lines = {}
@@ -62,7 +87,7 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(list(statuses), SCENARIOS)
         self.assertEqual({scenario for scenario, value in statuses.items() if value == "manual"}, MANUAL)
         self.assertTrue(all(value == "no test" for scenario, value in statuses.items() if scenario not in MANUAL))
-        self.assertIn("passing 0/30", output)
+        self.assertIn("passing 0/10", output)
 
     def test_subtest_and_function_results(self):
         self.write_go(
@@ -79,7 +104,7 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(statuses["AC-1-08"], "fail")
         self.assertEqual(statuses["AC-1-25"], "pass")
         self.assertEqual(statuses["AC-1-26"], "not run")
-        self.assertIn("passing 2/30", self.scoreboard())
+        self.assertIn("passing 2/10", self.scoreboard())
 
     def test_a_tagged_test_that_did_not_run_is_not_run(self):
         self.write_source("x_test.go", 'package e2e\n\nfunc TestX(t *testing.T) {\n\tt.Run("[AC-1-09] variables", nil)\n}\n\nfunc TestAC1_10NoInjection(t *testing.T) {}\n')
@@ -90,6 +115,15 @@ class Scoreboard(unittest.TestCase):
     def test_manual_scenarios_never_pass(self):
         self.write_go(("TestAC1_05Plugin", "pass"))
         self.assertEqual(self.statuses(self.scoreboard())["AC-1-05"], "manual")
+
+    def test_reads_every_scenario_of_the_real_checklist(self):
+        # Counted by plain prefix matching, not the script's pattern, so the
+        # test holds whatever scenarios the owner lists.
+        listed = [line[len("- **"):].split()[0] for line in CHECKLIST.read_text(encoding="utf-8").splitlines() if line.startswith("- **AC-1-")]
+        output = self.scoreboard(CHECKLIST)
+        self.assertTrue(listed)
+        self.assertEqual(list(self.statuses(output)), listed)
+        self.assertIn(f"passing 0/{len(listed)}", output)
 
     def test_go_run_pattern(self):
         self.assertEqual(self.run_script("--go-run-pattern").strip(), "")

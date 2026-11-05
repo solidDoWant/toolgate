@@ -114,6 +114,10 @@ jobs:
       - uses: ./.github/actions/nix-dev-shell
       - name: Links, agent prose and page index
         run: nix develop -c make docs-check
+      # The scoreboard reads docs/acceptance/, so a checklist change runs its
+      # tests even when the code jobs are skipped.
+      - name: Acceptance scoreboard reads the checklists
+        run: nix develop -c ./scripts/acceptance-scoreboard_test.py
       - name: Style report (advisory)
         if: always() && github.event_name == 'pull_request'
         env:
