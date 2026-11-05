@@ -287,7 +287,7 @@ PostgreSQL, accessed with `pgx/v5`, forward-only migrations embedded with `press
 - `instances`: ID, template, generation, scope key, namespace, status, reason, timestamps.
 - `user_secrets`: principal, name, ciphertext, key ID, timestamps.
 - `audit_events`: partitioned by month.
-- Phase 2: `grants`, `approvals`, `temporary_blocks`, `ui_sessions`.
+- Phase 2: `grants`, `approvals`, `temporary_blocks`, `ui_sessions`, `ui_logins`, and three new `instances` columns for restarts and resolver expiry. `docs/design/phase-2.md` §2 gives their rules and row limits.
 
 Concurrency: instance creation for a template and scope key is serialized with a transaction-level advisory lock, so two sessions enabling a per-user server at once share one instance. `docs/design/phase-1.md` gives the locks and the interaction rules.
 

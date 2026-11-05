@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -48,6 +49,19 @@ func AfterLoaded(loaded <-chan struct{}, pass func(ctx context.Context) error) f
 		case <-loaded:
 		case <-ctx.Done():
 			return fmt.Errorf("waiting for the template catalog: %w", ctx.Err())
+		}
+
+		return pass(ctx)
+	}
+}
+
+// RowCleanup wraps a full pass so that it first deletes stale rows
+// (store.DeleteStaleRows). A failed cleanup doesn't keep the pass from
+// running; the errors of both are returned, so the pass is retried.
+func RowCleanup(queries *db.Queries, pass func(ctx context.Context) error) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		if err := store.DeleteStaleRows(ctx, queries); err != nil {
+			return errors.Join(err, pass(ctx))
 		}
 
 		return pass(ctx)

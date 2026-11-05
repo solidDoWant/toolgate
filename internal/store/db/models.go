@@ -8,6 +8,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type Approval struct {
+	ID              string
+	Principal       string
+	SessionPk       int64
+	Workspace       string
+	TemplateNs      string
+	TemplateName    string
+	Tool            string
+	ArgumentsSha256 []byte
+	Status          string
+	CreatedAt       pgtype.Timestamptz
+	ExpiresAt       pgtype.Timestamptz
+	DecidedAt       pgtype.Timestamptz
+	DecidedBy       pgtype.Text
+	UsedAt          pgtype.Timestamptz
+}
+
 type AuditEvent struct {
 	ID          int64
 	OccurredAt  pgtype.Timestamptz
@@ -25,29 +42,45 @@ type AuditEvent struct {
 	PayloadRef  string
 }
 
+type Grant struct {
+	ID           string
+	Principal    string
+	TemplateNs   string
+	TemplateName string
+	Tool         string
+	SessionID    pgtype.Text
+	CreatedAt    pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	RevokedAt    pgtype.Timestamptz
+	RevokedBy    pgtype.Text
+}
+
 type Instance struct {
-	ID               string
-	TemplateNs       string
-	TemplateName     string
-	TemplateUid      string
-	Generation       int64
-	Scope            string
-	ScopeKey         string
-	OwnerPrincipal   string
-	RenderSession    pgtype.Int8
-	Desired          string
-	Status           string
-	Reason           string
-	Namespace        string
-	Tools            []byte
-	SecretsUsed      []byte
-	CreatedAt        pgtype.Timestamptz
-	AttemptStartedAt pgtype.Timestamptz
-	ReadyAt          pgtype.Timestamptz
-	FailedAt         pgtype.Timestamptz
-	LastUsedAt       pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	TraceContext     string
+	ID                 string
+	TemplateNs         string
+	TemplateName       string
+	TemplateUid        string
+	Generation         int64
+	Scope              string
+	ScopeKey           string
+	OwnerPrincipal     string
+	RenderSession      pgtype.Int8
+	Desired            string
+	Status             string
+	Reason             string
+	Namespace          string
+	Tools              []byte
+	SecretsUsed        []byte
+	CreatedAt          pgtype.Timestamptz
+	AttemptStartedAt   pgtype.Timestamptz
+	ReadyAt            pgtype.Timestamptz
+	FailedAt           pgtype.Timestamptz
+	LastUsedAt         pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	TraceContext       string
+	RestartRequestedAt pgtype.Timestamptz
+	RestartRequestedBy pgtype.Text
+	ResolvedExpiresAt  pgtype.Timestamptz
 }
 
 type Session struct {
@@ -69,6 +102,38 @@ type SessionServer struct {
 	TemplateNs   string
 	TemplateName string
 	EnabledAt    pgtype.Timestamptz
+}
+
+type TemporaryBlock struct {
+	ID        string
+	Match     []byte
+	Reason    string
+	CreatedBy string
+	CreatedAt pgtype.Timestamptz
+	ExpiresAt pgtype.Timestamptz
+}
+
+type UiLogin struct {
+	StateHash     []byte
+	Nonce         string
+	PkceVerifier  string
+	ReturnTo      string
+	StepUp        bool
+	UiSessionHash []byte
+	CreatedAt     pgtype.Timestamptz
+}
+
+type UiSession struct {
+	IDHash     []byte
+	Principal  string
+	Email      string
+	Name       string
+	Groups     []string
+	CsrfToken  []byte
+	AuthTime   pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
+	LastSeenAt pgtype.Timestamptz
+	ExpiresAt  pgtype.Timestamptz
 }
 
 type UserSecret struct {
