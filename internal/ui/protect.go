@@ -6,6 +6,8 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+
+	"github.com/solidDoWant/toolgate/internal/secrets"
 )
 
 // Response headers and limits of every UI route (docs/design/phase-2.md §5).
@@ -16,6 +18,10 @@ const (
 
 	// MaxFormBytes bounds the body of a UI request.
 	MaxFormBytes = 64 << 10
+
+	// MaxSecretFormBytes bounds the body of the secret form: the largest
+	// value plus room for the other fields and the multipart framing.
+	MaxSecretFormBytes = secrets.MaxValueBytes + 64<<10
 
 	// CSRFField and CSRFHeader carry the session's CSRF token in a form and
 	// in an htmx request.
@@ -31,16 +37,16 @@ const (
 // Origin.
 var crossOrigin = http.NewCrossOriginProtection()
 
-// protect gives a UI handler its response headers, its body limit and
-// Go's cross-origin protection.
-func protect(next http.Handler) http.Handler {
+// protect gives a UI handler its response headers, its body limit (limit
+// bytes) and Go's cross-origin protection.
+func protect(next http.Handler, limit int64) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		header := writer.Header()
 		header.Set("Content-Security-Policy", ContentSecurityPolicy)
 		header.Set("Cache-Control", "no-store")
 
 		if request.Body != nil {
-			request.Body = http.MaxBytesReader(writer, request.Body, MaxFormBytes)
+			request.Body = http.MaxBytesReader(writer, request.Body, limit)
 		}
 
 		crossOrigin.Handler(next).ServeHTTP(writer, request)

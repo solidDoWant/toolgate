@@ -111,7 +111,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	engine := &policy.Engine{Rules: rules}
 
 	if cfg.UIEnabled() {
-		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), stdout, logger); err != nil {
+		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), broker, stdout, logger); err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
 			return 1
@@ -342,7 +342,7 @@ const maxClientSecretBytes = 4 << 10
 
 // registerUI serves the web UI under `/ui/` and `GET /`. It reads the UI
 // client's secret, when one is configured, before the gateway starts.
-func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, stdout io.Writer, logger *slog.Logger) error {
+func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, broker *secrets.Broker, stdout io.Writer, logger *slog.Logger) error {
 	var clientSecret string
 
 	if cfg.OIDCUIClientSecretFile != "" {
@@ -357,7 +357,7 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 		}
 	}
 
-	webUI := ui.New(ui.Options{
+	options := ui.Options{
 		Database:           server.Database(),
 		IssuerURL:          cfg.OIDCIssuerURL,
 		ClientID:           cfg.OIDCUIClientID,
@@ -374,7 +374,15 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 		},
 		Logger:  logger,
 		Servers: servers,
-	}, server)
+	}
+
+	// A gateway without a secrets keyset has no Secrets page.
+	if broker != nil {
+		options.Secrets = broker
+		options.Auditor = audit.NewRecorder(stdout, db.New(server.Database()))
+	}
+
+	webUI := ui.New(options, server)
 
 	return server.RegisterMetrics(webUI.DroppedRefusals())
 }
