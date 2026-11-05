@@ -211,10 +211,12 @@ The informers for instance objects use the label selector `app.kubernetes.io/man
 **ValidatingAdmissionPolicy** (installed by the chart; it applies when `request.userInfo.username` is the gateway's service account, for `CREATE`, `UPDATE` and `DELETE` on all resources). It denies:
 - any kind outside the allowed list;
 - any object in a namespace without the label `app.kubernetes.io/managed-by: toolgate` (the chart labels the configured shared namespace);
-- a Namespace create without that label or without the `tg-` prefix;
+- any object in a namespace without the label `pod-security.kubernetes.io/enforce: restricted`;
+- a Namespace create without the `app.kubernetes.io/managed-by: toolgate` label, without `pod-security.kubernetes.io/enforce: restricted`, or without the `tg-` prefix;
+- any Namespace update (the gateway only creates and deletes namespaces), so it can't remove or weaken a Pod Security label;
 - a Namespace delete of a namespace without that label.
 
-So a compromised gateway can't write outside toolgate's namespaces, whether or not it labels the object. AC-1-24's case (an RBAC object carrying the instance label, applied with the gateway's service account) is still rejected by the first rule.
+So a compromised gateway can't write outside toolgate's namespaces, whether or not it labels the object. Every namespace it can write to enforces Pod Security `restricted`, and Kubernetes' own Pod Security admission checks every pod there, including pods created by Deployment and StatefulSet controllers. So it can't run a privileged, host-namespace or `hostPath` pod either. The policy never re-implements pod checks itself. The chart labels the shared namespace `restricted` when it creates it. When `config.sharedNamespace.create` is `false`, the admin must add that label, and the docs say so. AC-1-24's case (an RBAC object carrying the instance label, applied with the gateway's service account) is still rejected by the first rule.
 
 **Pod sign-in** (AC-1-04). The projected token carries the pod's name and UID, not its owner. The gateway gets the pod, checks that its UID equals the token's, and takes its first controller `ownerReference` for the workspace. A pod with no controller uses `Pod/<name>`.
 
