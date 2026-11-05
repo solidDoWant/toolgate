@@ -38,9 +38,10 @@ lint-fix: ## Run golangci-lint and apply its fixes.
 	golangci-lint run --fix ./...
 
 .PHONY: test
-test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard and the image build tests.
+test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, and the image build and release tests.
 	go test -race -count=1 ./...
 	./scripts/build-images_test.sh
+	./scripts/release_test.sh
 	./scripts/agents/scheduler_test.py
 	./scripts/agents/wait-ci_test.sh
 	./scripts/ci/test-guard_test.py
@@ -113,9 +114,8 @@ chart-lint: ## Lint the Helm chart without a cluster: helm lint, the rendered-ma
 ##@ Release
 
 .PHONY: release
-release: ## Release VERSION (dry run unless PUSH_ALL=true): image, chart, CLI binaries and a GitHub release with the CHANGELOG section as notes. Not implemented yet.
-	@echo "release: not implemented yet (the release tooling is built for the phase 1 release, AC-1-30); nothing was done for VERSION=$(VERSION)" >&2
-	@exit 1
+release: ## Release VERSION (dry run unless PUSH_ALL=true): build the image, chart and CLI binaries; with PUSH_ALL=true tag, push the tag and create the GitHub release with the CHANGELOG section as notes (the tag's workflow pushes the image and chart).
+	VERSION="$(VERSION)" PUSH_ALL="$(or $(PUSH_ALL),false)" ./scripts/release.sh
 
 ##@ Dependencies
 
