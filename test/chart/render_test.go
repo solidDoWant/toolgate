@@ -177,6 +177,7 @@ func TestChartRendersTheGateway(t *testing.T) {
 
 	assert.Equal(t, "https://idp.example.com/realms/main", values["TOOLGATE_OIDC_ISSUER_URL"])
 	assert.Equal(t, "toolgate", values["TOOLGATE_OIDC_AUDIENCE"])
+	assert.Equal(t, releaseNamespace, values["TOOLGATE_LEASE_NAMESPACE"], "the leader Lease lives in the release namespace")
 	assert.NotContains(t, values, "TOOLGATE_OIDC_EMAIL_CLAIM", "an empty claim value keeps the gateway's default")
 
 	for _, candidate := range manifests {

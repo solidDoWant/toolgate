@@ -109,6 +109,12 @@ type Config struct {
 	// (`/api/v1/secrets`) only when this is set. `toolgate admin rewrap`
 	// needs it too. See [User secrets](user-secrets.md).
 	SecretsKeysetFile string `json:"secretsKeysetFile" env:"TOOLGATE_SECRETS_KEYSET_FILE"`
+
+	// The namespace of the Lease that picks the one replica that runs the
+	// runtime reconciler, normally the gateway's own namespace. The chart
+	// sets it. If it is empty, the gateway runs without Kubernetes: it
+	// serves requests but never starts or stops MCP servers.
+	LeaseNamespace string `json:"leaseNamespace" env:"TOOLGATE_LEASE_NAMESPACE"`
 }
 
 // Default returns the configuration used for every field that is not set.
@@ -319,6 +325,12 @@ func (c Config) Validate() []error {
 	for _, namespace := range c.ServiceAccountNamespaces {
 		if invalid := validation.IsDNS1123Label(namespace); len(invalid) > 0 {
 			problems = append(problems, fmt.Errorf("serviceAccountNamespaces: %q is not a namespace name", namespace))
+		}
+	}
+
+	if c.LeaseNamespace != "" {
+		if invalid := validation.IsDNS1123Label(c.LeaseNamespace); len(invalid) > 0 {
+			problems = append(problems, fmt.Errorf("leaseNamespace: %q is not a namespace name", c.LeaseNamespace))
 		}
 	}
 

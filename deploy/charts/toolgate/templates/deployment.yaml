@@ -73,6 +73,8 @@ spec:
             - name: TOOLGATE_OIDC_GROUPS_CLAIM
               value: {{ . | quote }}
             {{- end }}
+            - name: TOOLGATE_LEASE_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
             - name: TOOLGATE_LOG_LEVEL
               value: {{ .Values.logLevel | quote }}
             {{- with .Values.otlpEndpoint }}

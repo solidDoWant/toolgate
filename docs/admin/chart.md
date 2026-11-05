@@ -15,7 +15,7 @@ The chart installs these objects:
 - A ValidatingAdmissionPolicy and its binding. An admission policy is a set of rules that the Kubernetes API server applies to each write before it stores the object.
 - The shared namespace for instances, if you set `sharedNamespace.name`.
 
-Every gateway pod serves requests. Only one pod at a time runs the reconciler, the part of the gateway that creates and deletes the objects of MCP servers. The pods decide which pod that is with a Kubernetes Lease in the release namespace.
+Every gateway pod serves requests. Only one pod at a time runs the reconciler, the part of the gateway that creates and deletes the objects of MCP servers. The pods decide which pod that is with a Kubernetes Lease named `toolgate-runtime` in the release namespace. If that pod stops or loses the Lease, another pod takes it over within about 15 seconds.
 
 ## Why the gateway has a ClusterRole
 
