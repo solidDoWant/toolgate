@@ -10,8 +10,9 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-// crdDir is where `make generate` writes the CRDs: the chart's crds/ directory.
-const crdDir = "../../deploy/charts/toolgate/crds"
+// crdDir is where `make generate` writes the CRDs; the chart reads them from
+// there through its rawCRDs link.
+const crdDir = "../../config/crd/bases"
 
 var crdFiles = map[string]string{
 	"MCPServerTemplate": "toolgate.soliddowant.dev_mcpservertemplates.yaml",

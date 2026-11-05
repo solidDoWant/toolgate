@@ -9,11 +9,40 @@ The chart is in `deploy/charts/toolgate`. [The quick start](quick-start.md) show
 The chart installs these objects:
 
 - The three toolgate CRDs: `MCPServerTemplate`, `ToolgateRule` and `SettingsProfile`.
-- A Deployment with two gateway pods, and a Service for them.
+- A Deployment with two gateway pods, a Service for them, and a second Service for their metrics.
+- A PodDisruptionBudget that keeps at least one gateway pod running when Kubernetes drains a node. A PodDisruptionBudget is a limit on how many pods Kubernetes can evict at the same time.
+- A ServiceMonitor for the metrics Service, if you set `config.serviceMonitor.enabled` to `true`. The Prometheus Operator must be installed.
 - A ServiceAccount for the gateway.
 - A ClusterRole and a Role for that service account.
 - A ValidatingAdmissionPolicy and its binding. An admission policy is a set of rules that the Kubernetes API server applies to each write before it stores the object.
-- The shared namespace for instances, if you set `sharedNamespace.name`.
+- The shared namespace for instances, if you set `config.sharedNamespace.name`.
+
+## The layout of the values
+
+The values have two top-level blocks:
+
+- `config` holds the settings of toolgate: the image, the number of replicas, the database, the identity provider, logging, traces, the shared namespace and the CRDs. Most installs change only this block.
+- `resources` describes the Deployment, the Services, the ServiceAccount, the PodDisruptionBudget and the ServiceMonitor. It uses the values format of the [bjw-s `common` library chart](https://bjw-s-labs.github.io/helm-charts/docs/common-library/). You can change any part of these objects here, for example probes, node selectors, tolerations, affinity, resource requests or an extra container. String values can contain Helm templates, such as `"{{ .Values.config.replicas }}"`.
+
+For example, these values add a toleration to the gateway pods:
+
+```yaml
+resources:
+  controllers:
+    gateway:
+      pod:
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: toolgate
+            effect: NoSchedule
+```
+
+By default, the memory request of the gateway container is equal to its memory limit, and the container has no CPU limit.
+
+The ClusterRole, the Role, their bindings and the admission policy are not in `resources`. Values cannot change them. Only `config.serviceAccount.name` and `config.sharedNamespace` change what they refer to.
+
+## The pods
 
 Every gateway pod serves requests. Only one pod at a time runs the reconciler, the part of the gateway that creates and deletes the objects of MCP servers. The pods decide which pod that is with a Kubernetes Lease in the release namespace.
 
@@ -54,9 +83,17 @@ Do not put the label `app.kubernetes.io/managed-by: toolgate` on namespaces that
 
 ## The shared namespace
 
-Templates with `namespace: shared` run in one shared namespace. Set its name in `sharedNamespace.name`. The chart then creates the namespace with toolgate's label. If the namespace exists already, set `sharedNamespace.create` to `false` and add the label `app.kubernetes.io/managed-by: toolgate` to it yourself. The name must not start with `tg-`.
+Templates with `namespace: shared` run in one shared namespace. Set its name in `config.sharedNamespace.name`. The chart then creates the namespace with toolgate's label. If the namespace exists already, set `config.sharedNamespace.create` to `false` and add the label `app.kubernetes.io/managed-by: toolgate` to it yourself. The name must not start with `tg-`.
+
+## CRD upgrades
+
+The chart installs the CRDs as normal templates, not from the Helm `crds/` directory. So `helm upgrade` also updates the CRDs when a new chart version changes them.
+
+If you install the CRDs yourself, set `config.crds.enabled` to `false`. Then you must update them yourself before each upgrade.
 
 ## Uninstall
+
+By default, the CRDs stay in the cluster after `helm uninstall`, because `config.crds.keep` is `true`. Your templates, rules and settings profiles stay too. If you set `config.crds.keep` to `false`, `helm uninstall` deletes the CRDs and all objects of these kinds.
 
 If you uninstall the chart, the namespaces of running MCP servers stay. To delete them, run this command:
 

@@ -43,5 +43,6 @@ jobs:
           esac
       - name: Push the chart
         run: |
+          nix develop -c ./scripts/chart-deps.sh
           nix develop -c helm package deploy/charts/toolgate --version "$VERSION" --app-version "$VERSION" --destination build/chart
           nix develop -c helm push "build/chart/toolgate-$VERSION.tgz" oci://ghcr.io/soliddowant/charts

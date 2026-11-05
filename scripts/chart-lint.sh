@@ -7,12 +7,15 @@ cd "$(git rev-parse --show-toplevel)"
 
 chart="deploy/charts/toolgate"
 # The values docs/admin/quick-start.md installs with.
-quick_start=(--set database.existingSecret=toolgate-database
-	--set oidc.issuerURL=https://idp.example.com/realms/main --set oidc.audience=toolgate)
+quick_start=(--set config.database.existingSecret=toolgate-database
+	--set config.oidc.issuerURL=https://idp.example.com/realms/main --set config.oidc.audience=toolgate)
+
+# The bjw-s common library chart, at the version Chart.lock pins.
+./scripts/chart-deps.sh
 
 failed=""
 helm lint --strict "$chart" "${quick_start[@]}" || failed="$failed helm-lint"
-helm template toolgate "$chart" --namespace toolgate-system --include-crds "${quick_start[@]}" >/dev/null ||
+helm template toolgate "$chart" --namespace toolgate-system "${quick_start[@]}" >/dev/null ||
 	failed="$failed helm-template"
 go test -count=1 ./test/chart/ || failed="$failed rendered-manifests"
 

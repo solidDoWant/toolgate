@@ -117,13 +117,14 @@ log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-database \
 	--from-literal=url="postgres://toolgate:$postgres_password@postgres.$deps_namespace.svc:5432/toolgate?sslmode=disable" >&2
+./scripts/chart-deps.sh >&2
 helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
-	--set image.repository="$gateway_repository" \
-	--set image.tag="$image_tag" \
-	--set image.pullPolicy=Never \
-	--set database.existingSecret=toolgate-database \
-	--set oidc.issuerURL="$TOOLGATE_E2E_OIDC_ISSUER" \
-	--set oidc.audience=toolgate \
+	--set config.image.repository="$gateway_repository" \
+	--set config.image.tag="$image_tag" \
+	--set config.image.pullPolicy=Never \
+	--set config.database.existingSecret=toolgate-database \
+	--set config.oidc.issuerURL="$TOOLGATE_E2E_OIDC_ISSUER" \
+	--set config.oidc.audience=toolgate \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"

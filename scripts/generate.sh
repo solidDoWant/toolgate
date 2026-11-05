@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Regenerates the committed generated code (`make generate`), for each
 # generator whose inputs exist:
-#   - api/: CRD manifests (into the chart's crds/ directory) and deepcopy
-#     methods, with controller-gen;
+#   - api/: CRD manifests (into config/crd/bases, which the chart reads
+#     through its rawCRDs link) and deepcopy methods, with controller-gen;
 #   - sqlc.yaml: query code, with sqlc;
 #   - internal/config: the gateway configuration reference in docs/admin/;
 #   - the chart's values.yaml: the chart values reference in docs/admin/.
@@ -13,7 +13,7 @@ cd "$(git rev-parse --show-toplevel)"
 ran=0
 if [[ -d api ]]; then
 	controller-gen object paths=./api/...
-	controller-gen crd paths=./api/... output:crd:artifacts:config=deploy/charts/toolgate/crds
+	controller-gen crd paths=./api/... output:crd:artifacts:config=config/crd/bases
 	ran=1
 fi
 if [[ -f sqlc.yaml ]]; then

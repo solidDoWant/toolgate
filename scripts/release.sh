@@ -73,6 +73,7 @@ echo "release: building the gateway image $image:$version"
 VERSION="$version" PUSH_ALL=false ./scripts/build-images.sh
 
 echo "release: packaging the Helm chart"
+./scripts/chart-deps.sh
 helm package deploy/charts/toolgate --version "$version" --app-version "$version" --destination "$out_dir"
 chart="$out_dir/toolgate-$version.tgz"
 [[ -f "$chart" ]] || fail "helm package wrote no $chart"
