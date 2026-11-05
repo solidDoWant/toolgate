@@ -1,0 +1,33 @@
+{{define "content"}}
+<dl id="session">
+<dt>Principal</dt><dd>{{.Data.Session.Principal}}</dd>
+<dt>Session</dt><dd>{{.Data.Session.SessionID}}</dd>
+<dt>Workspace</dt><dd>{{.Data.Session.Workspace}}</dd>
+<dt>Attestation</dt><dd>{{.Data.Session.Attestation}}</dd>
+<dt>Started (UTC)</dt><dd>{{.Data.Session.CreatedAt.Format "2006-01-02 15:04:05"}}</dd>
+<dt>Last seen (UTC)</dt><dd>{{.Data.Session.LastSeenAt.Format "2006-01-02 15:04:05"}}</dd>
+</dl>
+<h2>Enabled servers</h2>
+{{if .Data.Servers}}
+<ul id="servers">
+{{range .Data.Servers}}<li>{{.}}</li>
+{{end}}</ul>
+{{else}}
+<p>No servers are enabled.</p>
+{{end}}
+<h2>Last {{len .Data.Decisions}} decisions</h2>
+{{if .Data.Decisions}}
+<table id="decisions">
+<thead><tr><th>Time (UTC)</th><th>Server</th><th>Tool</th><th>Decision</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Decisions}}<tr>
+<td>{{.OccurredAt.Format "2006-01-02 15:04:05.000000"}}</td><td>{{.Server}}</td><td>{{.Tool}}</td><td>{{.Outcome}}</td>
+<td><a href="/ui/audit/events/{{.Key}}">Open</a></td>
+</tr>
+{{end}}</tbody>
+</table>
+{{else}}
+<p>No tool calls yet.</p>
+{{end}}
+<p><a href="/ui/sessions">Back to the sessions</a></p>
+{{end}}

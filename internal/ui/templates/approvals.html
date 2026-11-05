@@ -1,0 +1,18 @@
+{{define "content"}}
+<div id="approvals" hx-get="/ui/approvals" hx-trigger="every 5s" hx-select="#approvals" hx-swap="outerHTML">
+{{if .Data}}
+<table>
+<thead><tr><th>Server</th><th>Tool</th><th>Session</th><th>Workspace</th><th>Requested</th><th>Expires</th><th></th></tr></thead>
+<tbody>
+{{range .Data}}<tr id="approval-{{.ID}}">
+<td>{{.Server}}</td><td>{{.Tool}}</td><td>{{.Session}}</td><td>{{.Workspace}}</td>
+<td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
+<td><a href="/ui/approvals/{{.ID}}">Open</a></td>
+</tr>
+{{end}}</tbody>
+</table>
+{{else}}
+<p>No approvals are waiting for you.</p>
+{{end}}
+</div>
+{{end}}

@@ -36,8 +36,12 @@ var pageTemplates = map[string]*template.Template{
 	"servers":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/servers.html")),
 	"audit":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
 	"blocks":      template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/blocks.html")),
+	"sessions":    template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/sessions.html")),
+	"session":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/session.html")),
 	"secrets":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/secrets.html")),
 	"audit_event": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
+	"approvals":   template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approvals.html")),
+	"approval":    template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approval.html")),
 }
 
 // page is what the layout renders around a page's content.
@@ -54,7 +58,7 @@ func (u *UI) render(writer http.ResponseWriter, request *http.Request, name, tit
 	u.renderStatus(writer, request, http.StatusOK, name, title, data)
 }
 
-// renderStatus is render with a response status.
+// renderStatus is render with an HTTP status.
 func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, status int, name, title string, data any) {
 	session, _ := SessionFrom(request.Context())
 
