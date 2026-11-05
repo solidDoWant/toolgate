@@ -121,10 +121,12 @@ func TestGatewayCannotEscapePodSecurity(t *testing.T) {
 			Name:   name,
 			Labels: map[string]string{"app.kubernetes.io/managed-by": "toolgate"},
 		}}
+
 		_, err := gateway.CoreV1().Namespaces().Create(t.Context(), namespace, metav1.CreateOptions{})
 		if err == nil {
 			_ = admin.CoreV1().Namespaces().Delete(context.Background(), name, metav1.DeleteOptions{})
 		}
+
 		refusedWith("pod-security.kubernetes.io/enforce=restricted")(t, err)
 	})
 
