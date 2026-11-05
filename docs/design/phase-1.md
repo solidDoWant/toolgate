@@ -95,6 +95,7 @@ A stop decision runs in a transaction that takes the same advisory lock as enabl
 
 **MCP sessions and replicas.** Each replica keeps its MCP sessions (go-sdk Streamable HTTP, stateful mode) in memory.
 - A request whose `Mcp-Session-Id` this replica doesn't know gets HTTP 404. By the MCP specification the client then sends a new `initialize`. Nothing is lost, because toolgate's state is keyed by (principal, `X-Toolgate-Session`), not by the MCP session.
+- A replica releases an MCP session that has no request in progress and no open GET stream for 30 minutes. Clients often go away without `DELETE`, and each session holds memory and goroutines. A later request with the ID of a released session gets HTTP 404, as above.
 - At `initialize`, the MCP session is bound to (principal, `X-Toolgate-Session`, `X-Toolgate-Workspace` as sent). Every later request on it must authenticate to the same three values, or it also gets 404. Use the go-sdk's per-session user check if the pinned version has one; otherwise check in middleware.
 - The chart doesn't need session affinity for correctness. `docs/admin/` shows how to add it to make replica switches rare: an Istio `DestinationRule` with `consistentHash.httpHeaderName: Mcp-Session-Id`, or `sessionAffinity: ClientIP` on the Service (a chart value).
 - Progress notifications for an enable go on that enable's POST response stream. `list_changed` goes on the session's GET stream, which is on the replica that holds the MCP session.
