@@ -1,0 +1,67 @@
+# The Helm chart
+
+For: admins who install toolgate and need to know what its chart is allowed to do in the cluster.
+
+The chart is in `deploy/charts/toolgate`. [The quick start](quick-start.md) shows an install, and [the values reference](chart-values.md) lists every value.
+
+## What the chart installs
+
+The chart installs these objects:
+
+- The three toolgate CRDs: `MCPServerTemplate`, `ToolgateRule` and `SettingsProfile`.
+- A Deployment with two gateway pods, and a Service for them.
+- A ServiceAccount for the gateway.
+- A ClusterRole and a Role for that service account.
+- A ValidatingAdmissionPolicy and its binding. An admission policy is a set of rules that the Kubernetes API server applies to each write before it stores the object.
+- The shared namespace for instances, if you set `sharedNamespace.name`.
+
+Every gateway pod serves requests. Only one pod at a time runs the reconciler, the part of the gateway that creates and deletes the objects of MCP servers. The pods decide which pod that is with a Kubernetes Lease in the release namespace.
+
+## Why the gateway has a ClusterRole
+
+toolgate starts each MCP server in its own namespace, named `tg-` and an instance ID. It creates these namespaces when a user enables a server. A Role works only in one namespace that exists already, so the gateway needs a ClusterRole.
+
+The ClusterRole allows these actions:
+
+- Create, delete, get, list and watch Namespaces.
+- Create, patch, delete, get, list and watch the kinds that a template can contain: Pod, Deployment, StatefulSet, Service, ConfigMap, ServiceAccount, NetworkPolicy, PersistentVolumeClaim and CiliumNetworkPolicy.
+- Create, patch and delete Secrets. The gateway cannot read Secrets.
+- List and watch Events, to find the reason when a server does not start.
+- Create TokenReviews, to check the tokens of pods that sign in.
+- Read the toolgate custom resources, and write their `status` only.
+
+The Role in the release namespace allows the gateway to use its Lease and to read ConfigMaps there.
+
+## What the admission policy prevents
+
+The ClusterRole alone lets the gateway write in every namespace. The admission policy limits this. It applies to every create, update and delete by the gateway's service account, for all resources. It refuses these writes:
+
+- An object of a kind that is not in the list above. So the gateway cannot create RBAC objects, webhooks or cluster-scoped objects, even if an RBAC rule allowed it.
+- An object in a namespace that does not have the label `app.kubernetes.io/managed-by: toolgate`.
+- A new namespace whose name does not start with `tg-`, or that does not have that label.
+- The deletion of a namespace that does not have that label.
+
+The policy has two exceptions, because the gateway needs them to work:
+
+- The Lease objects in the release namespace.
+- The `status` of the toolgate custom resources, in the namespaces where you keep them.
+
+The policy refuses a write when it cannot evaluate its rules (`failurePolicy: Fail`).
+
+So if an attacker controls the gateway, the attacker can write only in toolgate's own namespaces, and only the kinds that a template can contain. The attacker can still read and change the MCP servers that toolgate runs, and create Secrets in their namespaces. The labels on an object do not matter: the policy checks the label of the namespace, and only an admin or the gateway can label a namespace.
+
+Do not put the label `app.kubernetes.io/managed-by: toolgate` on namespaces that hold other workloads. The gateway can write in every namespace with that label.
+
+## The shared namespace
+
+Templates with `namespace: shared` run in one shared namespace. Set its name in `sharedNamespace.name`. The chart then creates the namespace with toolgate's label. If the namespace exists already, set `sharedNamespace.create` to `false` and add the label `app.kubernetes.io/managed-by: toolgate` to it yourself. The name must not start with `tg-`.
+
+## Uninstall
+
+If you uninstall the chart, the namespaces of running MCP servers stay. To delete them, run this command:
+
+```sh
+kubectl delete namespace -l toolgate.soliddowant.dev/instance
+```
+
+Instance namespaces always have this label. The shared namespace never has it.

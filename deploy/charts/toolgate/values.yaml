@@ -1,0 +1,80 @@
+# -- Number of gateway pods. Every replica serves requests; one at a time
+# holds the leader Lease and runs the runtime reconciler.
+replicaCount: 2
+
+image:
+  # -- Gateway image repository.
+  repository: ghcr.io/soliddowant/toolgate
+  # -- Image tag. Empty means the chart's `appVersion`.
+  tag: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Secrets that hold credentials for pulling the image.
+imagePullSecrets: []
+
+database:
+  # -- Name of an existing Secret in the release namespace that holds the
+  # PostgreSQL connection string. Required.
+  existingSecret: ""
+  # -- Key in `database.existingSecret` that holds the connection string.
+  secretKey: url
+
+# -- Lowest level of the JSON log lines: `debug`, `info`, `warn` or `error`.
+logLevel: info
+
+# -- OTLP/HTTP endpoint for the gateway's traces, such as
+# `http://otel-collector:4318`. Empty turns trace export off.
+otlpEndpoint: ""
+
+# -- More environment variables for the gateway container, as a list of
+# Kubernetes `EnvVar` objects.
+extraEnv: []
+
+serviceAccount:
+  # -- Name of the gateway's service account. Empty means the release's
+  # full name. The RBAC rules and the admission policy apply to this account.
+  name: ""
+  # -- Annotations for the service account.
+  annotations: {}
+
+service:
+  # -- Service type.
+  type: ClusterIP
+  # -- Port of the MCP and API listener on the Service.
+  port: 80
+  # -- Port of the metrics listener on the Service.
+  metricsPort: 9090
+  # -- Session affinity of the Service: `None` or `ClientIP`. toolgate
+  # does not need affinity to be correct. `ClientIP` makes replica switches
+  # rare.
+  sessionAffinity: None
+
+sharedNamespace:
+  # -- Name of the namespace for instances of `namespace: shared` templates.
+  # Empty means the chart creates none. It must not start with `tg-`.
+  name: ""
+  # -- Create the shared namespace with toolgate's label. If false, the
+  # namespace must exist and carry the label
+  # `app.kubernetes.io/managed-by: toolgate`.
+  create: true
+
+# -- Resource requests and limits of the gateway container.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# -- Extra labels for the gateway pods.
+podLabels: {}
+# -- Extra annotations for the gateway pods.
+podAnnotations: {}
+# -- Node selector for the gateway pods.
+nodeSelector: {}
+# -- Tolerations for the gateway pods.
+tolerations: []
+# -- Affinity for the gateway pods. Empty means a preferred anti-affinity
+# that spreads the replicas over nodes.
+affinity: {}
