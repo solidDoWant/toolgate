@@ -70,7 +70,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	authenticator := newAuthenticator(ctx, cfg, logger)
+	authenticator := newAuthenticator(ctx, cfg, server, stdout, logger)
 
 	var broker *secrets.Broker
 
@@ -199,8 +199,11 @@ func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logge
 
 // newAuthenticator returns the authenticator of the gateway's user-facing
 // endpoints. It starts discovering the identity provider in the background;
-// requests are refused until discovery succeeds.
-func newAuthenticator(ctx context.Context, cfg config.Config, logger *slog.Logger) *lazyAuthenticator {
+// requests are refused until discovery succeeds. Failed sign-ins go to the
+// audit log, and the count of those over its rate limit to /metrics.
+func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Server, stdout io.Writer,
+	logger *slog.Logger,
+) *lazyAuthenticator {
 	authenticator := &lazyAuthenticator{
 		ctx: context.WithoutCancel(ctx),
 		options: auth.Options{
@@ -209,8 +212,13 @@ func newAuthenticator(ctx context.Context, cfg config.Config, logger *slog.Logge
 			EmailClaim:         cfg.OIDCEmailClaim,
 			EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
 			GroupsClaim:        cfg.OIDCGroupsClaim,
+			Recorder: refusalRecorder{
+				recorder: audit.NewRecorder(stdout, db.New(server.Database())),
+				logger:   logger,
+			},
 		},
-		logger: logger,
+		logger:          logger,
+		registerMetrics: server.RegisterMetrics,
 	}
 
 	go func() {

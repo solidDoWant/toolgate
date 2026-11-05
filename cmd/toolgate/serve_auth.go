@@ -7,6 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 )
 
@@ -24,6 +27,9 @@ type lazyAuthenticator struct {
 	ctx     context.Context
 	options auth.Options
 	logger  *slog.Logger
+	// registerMetrics, if set, registers the authenticator's metrics once
+	// it is built.
+	registerMetrics func(...prometheus.Collector) error
 
 	mu            sync.Mutex
 	authenticator *auth.Authenticator
@@ -45,6 +51,12 @@ func (l *lazyAuthenticator) get() (*auth.Authenticator, error) {
 	authenticator, err := auth.New(ctx, l.options)
 	if err != nil {
 		return nil, err
+	}
+
+	if l.registerMetrics != nil {
+		if err := l.registerMetrics(authenticator.DroppedRefusals()); err != nil {
+			l.logger.WarnContext(ctx, "cannot register the authenticator's metrics", "error", err)
+		}
 	}
 
 	l.authenticator = authenticator
@@ -83,4 +95,32 @@ func (l *lazyAuthenticator) Middleware(next http.Handler, requireSession bool) h
 
 		handler.ServeHTTP(writer, request)
 	})
+}
+
+// refusalRecorder writes failed sign-ins as `auth.refuse` audit events.
+type refusalRecorder struct {
+	recorder *audit.Recorder
+	logger   *slog.Logger
+}
+
+// RecordAuthRefusal writes refusal with no principal. A failed write is
+// logged: the request is refused either way.
+func (r refusalRecorder) RecordAuthRefusal(ctx context.Context, refusal auth.Refusal) {
+	audience := refusal.Audience
+	if audience == nil {
+		audience = []string{}
+	}
+
+	err := r.recorder.Record(ctx, audit.Event{
+		Type: audit.TypeAuthRefuse,
+		Details: map[string]any{
+			"reason":        refusal.Reason,
+			"issuer":        refusal.Issuer,
+			"audience":      audience,
+			"remoteAddress": refusal.RemoteAddress,
+		},
+	})
+	if err != nil {
+		r.logger.WarnContext(ctx, "cannot write the auth.refuse audit event", "error", err)
+	}
 }
