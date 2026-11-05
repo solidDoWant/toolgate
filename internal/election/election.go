@@ -38,6 +38,15 @@ func RequeueOnElection(mgr manager.Manager, list func(ctx context.Context) ([]cl
 
 	// A runnable needs leader election unless it says otherwise.
 	err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		// The manager starts its leader-only runnables before it closes
+		// Elected. An object enqueued before then is reconciled as on a
+		// replica that isn't leader, and its leader-only write is lost.
+		select {
+		case <-mgr.Elected():
+		case <-ctx.Done():
+			return nil
+		}
+
 		objects, err := list(ctx)
 		if err != nil {
 			mgr.GetLogger().Error(err, "listing objects to re-queue after the election")
