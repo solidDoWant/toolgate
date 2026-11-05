@@ -1,0 +1,90 @@
+# Confines every write by the gateway's service account, whatever RBAC grants
+# it, so a compromised gateway can't write outside toolgate's namespaces or
+# create kinds a template may not contain. docs/admin/chart.md explains the
+# rules.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ include "toolgate.clusterName" . }}
+  labels:
+    {{- include "toolgate.labels" . | nindent 4 }}
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*/*"]
+    # TokenReviews are not stored; checking a token writes nothing.
+    excludeResourceRules:
+      - apiGroups: ["authentication.k8s.io"]
+        apiVersions: ["*"]
+        operations: ["CREATE"]
+        resources: ["tokenreviews"]
+  matchConditions:
+    - name: gateway-service-account
+      expression: >-
+        request.userInfo.username ==
+        "system:serviceaccount:{{ .Release.Namespace }}:{{ include "toolgate.serviceAccountName" . }}"
+  variables:
+    # The request leaves out these fields when they are empty.
+    - name: subResource
+      expression: 'has(request.subResource) ? request.subResource : ""'
+    - name: requestNamespace
+      expression: 'has(request.namespace) ? request.namespace : ""'
+    - name: isNamespace
+      expression: request.kind.group == "" && request.kind.kind == "Namespace" && variables.subResource == ""
+    # The leader-election Lease in the release namespace.
+    - name: isOwnLease
+      expression: >-
+        request.kind.group == "coordination.k8s.io" && request.kind.kind == "Lease" &&
+        variables.requestNamespace == "{{ .Release.Namespace }}"
+    # The status of toolgate's own custom resources, in the namespaces it watches.
+    - name: isCatalogStatus
+      expression: request.resource.group == "toolgate.soliddowant.dev" && variables.subResource == "status"
+    - name: isAllowedKind
+      expression: >-
+        variables.subResource == "" && (
+        (request.kind.group == "" && request.kind.kind in
+          ["Pod", "Service", "ConfigMap", "Secret", "ServiceAccount", "PersistentVolumeClaim"]) ||
+        (request.kind.group == "apps" && request.kind.kind in ["Deployment", "StatefulSet"]) ||
+        (request.kind.group == "networking.k8s.io" && request.kind.kind == "NetworkPolicy") ||
+        (request.kind.group == "cilium.io" && request.kind.kind == "CiliumNetworkPolicy"))
+    - name: inToolgateNamespace
+      expression: >-
+        namespaceObject != null && has(namespaceObject.metadata.labels) &&
+        namespaceObject.metadata.labels[?"app.kubernetes.io/managed-by"].orValue("") == "toolgate"
+  validations:
+    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.isAllowedKind
+      messageExpression: >-
+        "toolgate's service account may not write " + request.kind.kind +
+        (variables.subResource != "" ? "/" + variables.subResource : "") + " objects"
+      reason: Forbidden
+    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inToolgateNamespace
+      messageExpression: >-
+        "toolgate's service account may write only in namespaces labelled app.kubernetes.io/managed-by=toolgate, not in " +
+        (variables.requestNamespace != "" ? variables.requestNamespace : "the cluster scope")
+      reason: Forbidden
+    - expression: >-
+        !variables.isNamespace || request.operation == "DELETE" || (
+        object.metadata.name.startsWith("tg-") && has(object.metadata.labels) &&
+        object.metadata.labels[?"app.kubernetes.io/managed-by"].orValue("") == "toolgate")
+      message: toolgate's service account may create only namespaces named tg-* and labelled app.kubernetes.io/managed-by=toolgate
+      reason: Forbidden
+    - expression: >-
+        !variables.isNamespace || request.operation == "CREATE" || (
+        has(oldObject.metadata.labels) &&
+        oldObject.metadata.labels[?"app.kubernetes.io/managed-by"].orValue("") == "toolgate")
+      message: toolgate's service account may delete only namespaces labelled app.kubernetes.io/managed-by=toolgate
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ include "toolgate.clusterName" . }}
+  labels:
+    {{- include "toolgate.labels" . | nindent 4 }}
+spec:
+  policyName: {{ include "toolgate.clusterName" . }}
+  validationActions: ["Deny"]

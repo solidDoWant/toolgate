@@ -81,8 +81,9 @@ generate: ## Regenerate committed generated code (CRDs and deepcopy with control
 	./scripts/generate.sh
 
 .PHONY: generate-docs
-generate-docs: ## Regenerate the gateway configuration reference (docs/admin/configuration.md) from the doc comments in internal/config.
+generate-docs: ## Regenerate the gateway configuration reference (docs/admin/configuration.md) from the doc comments in internal/config, and the chart values reference (docs/admin/chart-values.md) from values.yaml.
 	go run ./internal/config/docgen internal/config/config.go docs/admin/configuration.md
+	./scripts/chart-values-docs.sh
 
 .PHONY: check-generate
 check-generate: ## Fail if `make generate` changes the tree (committed generated code is stale).
@@ -106,8 +107,8 @@ clean: ## Remove build artifacts.
 ##@ Helm
 
 .PHONY: chart-lint
-chart-lint: ## Lint the Helm chart in deploy/charts/toolgate (skipped until its Chart.yaml exists).
-	@if [ -f "$(CHART_DIR)/Chart.yaml" ]; then helm lint --strict "$(CHART_DIR)"; else echo "chart-lint: no chart in $(CHART_DIR) yet; nothing to lint"; fi
+chart-lint: ## Lint the Helm chart without a cluster: helm lint, the rendered-manifest tests in test/chart, and a check that docs/admin/chart-values.md is current.
+	./scripts/chart-lint.sh
 
 ##@ Release
 

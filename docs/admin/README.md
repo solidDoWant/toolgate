@@ -10,6 +10,6 @@ toolgate is in early development, and these pages are not written yet. They will
 - understand what the security model protects against, and what a client can avoid by the workspace or session that it claims;
 - operate toolgate: the audit log, metrics, traces and upgrades.
 
-The [gateway configuration reference](configuration.md) lists the settings of `toolgate serve`.
+The [gateway configuration reference](configuration.md) lists the settings of `toolgate serve`. The [quick start](quick-start.md) installs the chart. [The chart page](chart.md) tells you what the chart installs and what its permissions allow, and the [chart values reference](chart-values.md) lists its values.
 
 Until then, [`SPEC.md`](../../SPEC.md) describes the system.

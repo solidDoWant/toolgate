@@ -38,6 +38,9 @@ docs/user/
 docs/admin/
   README.md                What the admin pages will cover.
   configuration.md         The gateway configuration reference (generated).
+  quick-start.md           Install the chart with the smallest set of values.
+  chart.md                 What the chart installs, and why its permissions are safe.
+  chart-values.md          The chart values reference (generated).
 
 docs/dev/
   README.md                What the developer pages will cover.
