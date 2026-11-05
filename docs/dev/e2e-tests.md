@@ -56,6 +56,7 @@ The tests get the image name from `TOOLGATE_E2E_MCPSERVER_IMAGE`. The image is o
 - `TOOLGATE_E2E_NAMESPACE`: the release namespace, `toolgate-system`.
 - `TOOLGATE_E2E_MCPSERVER_IMAGE`: the image of the test MCP server.
 - `TOOLGATE_E2E_OIDC_LISTEN` and `TOOLGATE_E2E_OIDC_ISSUER`: the listen address and the issuer URL of the fake identity provider.
+- `TOOLGATE_E2E_OTLP_LISTEN`: the listen address of the test OTLP receiver. The test process runs it and collects the spans that the gateway sends. The chart's `config.otlpEndpoint` points to it.
 - `TOOLGATE_E2E_S3_ENDPOINT`: the URL of the S3 server in the cluster.
 
 If a variable is not set, the tests that need it skip.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -138,10 +139,15 @@ func TestMigrateConcurrently(t *testing.T) {
 		require.NoError(t, err, "gateway %d", index)
 	}
 
-	var applied int
+	files, err := filepath.Glob("migrations/*.sql")
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+
+	var applied, distinct int
 	require.NoError(t, pools[0].QueryRow(t.Context(),
-		"SELECT count(*) FROM goose_db_version WHERE version_id > 0").Scan(&applied))
-	assert.Equal(t, 1, applied, "the one migration is applied once")
+		"SELECT count(*), count(DISTINCT version_id) FROM goose_db_version WHERE version_id > 0").Scan(&applied, &distinct))
+	assert.Equal(t, len(files), distinct, "every migration is applied")
+	assert.Equal(t, len(files), applied, "each migration is applied once")
 }
 
 func TestMigrateWaitsForAnotherGatewaysMigration(t *testing.T) {

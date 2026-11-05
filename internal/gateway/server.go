@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/health"
@@ -136,6 +137,12 @@ func (s *Server) Listen() error {
 // Addr returns the bound address of the main port. Call it after Listen.
 func (s *Server) Addr() net.Addr {
 	return s.listener.Addr()
+}
+
+// TracerProvider returns the provider of the gateway's spans, which exports
+// them to the configured OTLP endpoint.
+func (s *Server) TracerProvider() trace.TracerProvider {
+	return s.tracerProvider
 }
 
 // MetricsAddr returns the bound address of the metrics port. Call it after

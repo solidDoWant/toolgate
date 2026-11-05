@@ -20,6 +20,9 @@
 #       TOOLGATE_E2E_OIDC_LISTEN      address the test process serves the fake
 #                                     identity provider on (test/e2e TestMain)
 #       TOOLGATE_E2E_OIDC_ISSUER      its issuer URL, reachable from pods
+#       TOOLGATE_E2E_OTLP_LISTEN      address the test process serves the test
+#                                     OTLP/HTTP receiver on; the chart's
+#                                     config.otlpEndpoint points at it
 #       TOOLGATE_E2E_S3_ENDPOINT      the S3 server inside the cluster
 #  6. deletes the cluster, also when a step fails. E2E_KEEP_CLUSTER=true
 #     keeps it for debugging.
@@ -113,6 +116,11 @@ oidc_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); pr
 export TOOLGATE_E2E_OIDC_LISTEN="$host_address:$oidc_port"
 export TOOLGATE_E2E_OIDC_ISSUER="http://$host_address:$oidc_port"
 
+# The test OTLP receiver runs there too, so the gateway's spans reach the
+# tests.
+otlp_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
+export TOOLGATE_E2E_OTLP_LISTEN="$host_address:$otlp_port"
+
 log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-database \
@@ -125,6 +133,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.database.existingSecret=toolgate-database \
 	--set config.oidc.issuerURL="$TOOLGATE_E2E_OIDC_ISSUER" \
 	--set config.oidc.audience=toolgate \
+	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"

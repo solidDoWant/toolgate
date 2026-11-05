@@ -204,10 +204,7 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	}
 
 	// Step 3: policy.
-	_, policySpan := tracer(ctx).Start(ctx, "toolgate.policy")
-	decision := m.policy.Decide(policy.Request{Identity: current.identity, Template: template, Tool: tool})
-	policySpan.SetAttributes(attribute.Bool("toolgate.allowed", decision.Allowed))
-	policySpan.End()
+	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, Tool: tool})
 
 	if !decision.Allowed {
 		return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
@@ -238,6 +235,17 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	}
 
 	return result, nil
+}
+
+// decide asks the policy engine for a decision inside a toolgate.policy
+// span.
+func (m *metaTools) decide(ctx context.Context, request policy.Request) policy.Decision {
+	_, span := tracer(ctx).Start(ctx, "toolgate.policy")
+	decision := m.policy.Decide(request)
+	span.SetAttributes(attribute.Bool("toolgate.allowed", decision.Allowed))
+	span.End()
+
+	return decision
 }
 
 // forward calls tool on the instance's upstream session. outcome is "ok",

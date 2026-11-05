@@ -1,7 +1,6 @@
 package gateway_test
 
 import (
-	"compress/gzip"
 	"context"
 	"encoding/hex"
 	"io"
@@ -16,12 +15,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	collectortrace "go.opentelemetry.io/proto/otlp/collector/trace/v1"
-	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/gateway"
+	"github.com/solidDoWant/toolgate/internal/testutil"
 )
 
 // unreachableDatabase points at a port nothing listens on.
@@ -128,69 +125,8 @@ func TestMetricsOnSeparatePort(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, status)
 }
 
-// otlpReceiver collects the spans exported to it over OTLP/HTTP.
-type otlpReceiver struct {
-	mutex sync.Mutex
-	spans []*tracepb.Span
-}
-
-func (r *otlpReceiver) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/v1/traces" {
-		http.NotFound(writer, request)
-
-		return
-	}
-
-	var reader io.Reader = request.Body
-
-	if request.Header.Get("Content-Encoding") == "gzip" {
-		gzipReader, err := gzip.NewReader(request.Body)
-		if err != nil {
-			http.Error(writer, err.Error(), http.StatusBadRequest)
-
-			return
-		}
-
-		reader = gzipReader
-	}
-
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		http.Error(writer, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	var export collectortrace.ExportTraceServiceRequest
-	if err := proto.Unmarshal(data, &export); err != nil {
-		http.Error(writer, err.Error(), http.StatusBadRequest)
-
-		return
-	}
-
-	r.mutex.Lock()
-	for _, resourceSpans := range export.GetResourceSpans() {
-		for _, scopeSpans := range resourceSpans.GetScopeSpans() {
-			r.spans = append(r.spans, scopeSpans.GetSpans()...)
-		}
-	}
-	r.mutex.Unlock()
-
-	response, _ := proto.Marshal(&collectortrace.ExportTraceServiceResponse{})
-
-	writer.Header().Set("Content-Type", "application/x-protobuf")
-	_, _ = writer.Write(response)
-}
-
-func (r *otlpReceiver) collected() []*tracepb.Span {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
-
-	return append([]*tracepb.Span(nil), r.spans...)
-}
-
 func TestSpansAreChildrenOfIncomingTraceparent(t *testing.T) {
-	receiver := &otlpReceiver{}
+	receiver := &testutil.OTLPReceiver{}
 	collector := httptest.NewServer(receiver)
 	t.Cleanup(collector.Close)
 
@@ -212,7 +148,7 @@ func TestSpansAreChildrenOfIncomingTraceparent(t *testing.T) {
 	// Shutdown flushes the batched spans to the receiver.
 	require.NoError(t, running.stop(t))
 
-	spans := receiver.collected()
+	spans := receiver.Spans()
 	require.NotEmpty(t, spans, "no spans were exported")
 
 	var found bool
