@@ -189,7 +189,8 @@ func newStarterFixture(t *testing.T, template *v1alpha1.MCPServerTemplate, statu
 }
 
 // fakeApply refuses server-side apply of a Namespace, as the chart's RBAC
-// does (it grants namespaces no patch), and stands in for server-side apply
+// does (it grants namespaces no patch), and of a Role, as RBAC does when the
+// admin grants no extra rules. It stands in for server-side apply
 // of a NetworkPolicy, which the fake client can't merge; other kinds are
 // applied as usual.
 func fakeApply(ctx context.Context, kube client.WithWatch, object k8sruntime.ApplyConfiguration, options ...client.ApplyOption) error {
@@ -200,6 +201,11 @@ func fakeApply(ctx context.Context, kube client.WithWatch, object k8sruntime.App
 
 	if content["kind"] == "Namespace" {
 		return apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "", errors.New("cannot patch resource \"namespaces\""))
+	}
+
+	if content["kind"] == "Role" {
+		return apierrors.NewForbidden(schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "roles"}, "reader",
+			errors.New(`User "system:serviceaccount:toolgate:toolgate" cannot patch resource "roles"`))
 	}
 
 	if content["kind"] != "NetworkPolicy" {
@@ -322,6 +328,18 @@ func TestStarterPendingRefusesUnlabelledNamespace(t *testing.T) {
 			assert.Empty(t, configMaps.Items, "nothing is applied into a namespace toolgate doesn't own")
 		})
 	}
+}
+
+func TestStarterPendingApplyRefusedByRBACFails(t *testing.T) {
+	role := `{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"name":"reader"}}`
+	fixture := newStarterFixture(t, testTemplate(configMapResource, role), "pending")
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Contains(t, reason, `roles.rbac.authorization.k8s.io "reader" is forbidden: User "system:serviceaccount:toolgate:toolgate" cannot patch resource "roles"`,
+		"the reason is the API server's message")
 }
 
 func TestStarterPendingRenderErrorFails(t *testing.T) {

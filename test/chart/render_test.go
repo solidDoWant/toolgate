@@ -267,6 +267,25 @@ func TestClusterRoleIsExactlyTheDesignedOne(t *testing.T) {
 	assert.Equal(t, []rbacv1.Subject{{Kind: "ServiceAccount", Name: "toolgate", Namespace: releaseNamespace}}, binding.Subjects)
 }
 
+func TestClusterRoleAddsExtraRules(t *testing.T) {
+	defaultRole := find[rbacv1.ClusterRole](t, renderQuickStart(t), "ClusterRole")
+
+	manifests, err := render(t, append([]string{
+		"rbac.extraRules[0].apiGroups[0]=helm.toolkit.fluxcd.io",
+		"rbac.extraRules[0].resources[0]=helmreleases",
+		"rbac.extraRules[0].verbs[0]=create",
+		"rbac.extraRules[0].verbs[1]=get",
+	}, quickStartValues...))
+	require.NoError(t, err)
+
+	role := find[rbacv1.ClusterRole](t, manifests, "ClusterRole")
+
+	expected := append(defaultRole.Rules, rbacv1.PolicyRule{
+		APIGroups: []string{"helm.toolkit.fluxcd.io"}, Resources: []string{"helmreleases"}, Verbs: []string{"create", "get"},
+	})
+	assert.Equal(t, expected, role.Rules)
+}
+
 func TestRoleCoversOnlyTheReleaseNamespace(t *testing.T) {
 	manifests := renderQuickStart(t)
 	role := find[rbacv1.Role](t, manifests, "Role")
@@ -297,7 +316,11 @@ func TestAdmissionPolicyAppliesToEveryWriteByTheGateway(t *testing.T) {
 
 	require.Len(t, policy.Spec.MatchConditions, 1)
 	assert.Equal(t, `request.userInfo.username == "`+serviceAccount+`"`, policy.Spec.MatchConditions[0].Expression)
-	assert.Len(t, policy.Spec.Validations, 6)
+	assert.Len(t, policy.Spec.Validations, 5)
+
+	for _, validation := range policy.Spec.Validations {
+		assert.NotContains(t, validation.Expression, "isAllowedKind", "RBAC, not the policy, decides which kinds the gateway writes")
+	}
 
 	binding := find[admissionv1.ValidatingAdmissionPolicyBinding](t, manifests, "ValidatingAdmissionPolicyBinding")
 	assert.Equal(t, policy.Name, binding.Spec.PolicyName)

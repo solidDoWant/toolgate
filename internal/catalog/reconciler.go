@@ -10,6 +10,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -60,15 +63,22 @@ func CacheNamespaces(namespaces []string) map[string]cache.Config {
 	return configs
 }
 
-// SetupWithManager registers the reconciler with mgr. It allows
-// CiliumNetworkPolicy objects when that CRD exists in the cluster.
+// SetupWithManager registers the reconciler with mgr. Unless the validator
+// already has a mapper, it reads the cluster's REST mappings once, here, so
+// a CRD installed after the gateway starts needs a gateway restart
+// (docs/design/phase-2.md §7).
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if len(r.Namespaces) == 0 {
 		return fmt.Errorf("catalog: no namespaces to watch")
 	}
 
-	if _, err := mgr.GetRESTMapper().RESTMapping(CiliumNetworkPolicy); err == nil {
-		r.Validator.CiliumNetworkPolicy = true
+	if r.Validator.Mapper == nil {
+		mapper, err := StartupRESTMapper(mgr.GetConfig())
+		if err != nil {
+			return fmt.Errorf("catalog: %w", err)
+		}
+
+		r.Validator.Mapper = mapper
 	}
 
 	requeue, err := election.RequeueOnElection(mgr, r.listWatched)
@@ -82,6 +92,22 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{NeedLeaderElection: ptr.To(false)}).
 		Named("catalog").
 		Complete(r)
+}
+
+// StartupRESTMapper returns a RESTMapper holding the kinds the API server
+// serves now. Unlike the manager's mapper, it never looks up kinds again.
+func StartupRESTMapper(config *rest.Config) (meta.RESTMapper, error) {
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("discovery client: %w", err)
+	}
+
+	groupResources, err := restmapper.GetAPIGroupResources(discoveryClient)
+	if err != nil {
+		return nil, fmt.Errorf("reading the API server's kinds: %w", err)
+	}
+
+	return restmapper.NewDiscoveryRESTMapper(groupResources), nil
 }
 
 // listWatched returns every template in the watched namespaces.

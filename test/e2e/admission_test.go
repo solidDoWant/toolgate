@@ -89,6 +89,7 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 	plainNamespace := "e2e-plain-" + suffix
 	helmNamespace := "e2e-helm-" + suffix
 	managedByNamespace := "e2e-managed-by-" + suffix
+	unrestrictedNamespace := "e2e-unrestricted-" + suffix
 
 	// The namespace carries toolgate's writable and Pod Security labels,
 	// which are all the admission policy looks at, but not the instance label: the orphan sweep
@@ -101,10 +102,12 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 		"app.kubernetes.io/managed-by":       "toolgate",
 		"pod-security.kubernetes.io/enforce": "restricted",
 	})
+	createNamespace(t, admin, unrestrictedNamespace, map[string]string{"toolgate.soliddowant.dev/writable": "true"})
 	grantAdmin(t, admin, instanceNamespace)
 	grantAdmin(t, admin, plainNamespace)
 	grantAdmin(t, admin, helmNamespace)
 	grantAdmin(t, admin, managedByNamespace)
+	grantAdmin(t, admin, unrestrictedNamespace)
 
 	t.Run("[AC-1-24] a ClusterRole is refused", func(t *testing.T) {
 		role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "e2e-" + suffix, Labels: instanceLabels(instance)}}
@@ -113,10 +116,26 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 		assert.True(t, apierrors.IsForbidden(err), "refused, got %v", err)
 	})
 
-	t.Run("[AC-1-24] a Role with the instance label in an instance namespace is refused", func(t *testing.T) {
-		role := &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "e2e", Namespace: instanceNamespace, Labels: instanceLabels(instance)}}
-		_, err := gateway.RbacV1().Roles(instanceNamespace).Create(t.Context(), role, metav1.CreateOptions{})
-		refusedWith("may not write Role objects")(t, err)
+	role := func(namespace string) *rbacv1.Role {
+		return &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "e2e", Namespace: namespace, Labels: instanceLabels(instance)}}
+	}
+
+	t.Run("[AC-1-24] a Role in an instance namespace is accepted", func(t *testing.T) {
+		_, err := gateway.RbacV1().Roles(instanceNamespace).Create(t.Context(), role(instanceNamespace), metav1.CreateOptions{})
+		require.NoError(t, err)
+
+		err = gateway.RbacV1().Roles(instanceNamespace).Delete(t.Context(), "e2e", metav1.DeleteOptions{})
+		require.NoError(t, err)
+	})
+
+	t.Run("[AC-1-24] a Role outside toolgate's namespaces is refused", func(t *testing.T) {
+		_, err := gateway.RbacV1().Roles(plainNamespace).Create(t.Context(), role(plainNamespace), metav1.CreateOptions{})
+		refusedWith("may write only in namespaces labelled toolgate.soliddowant.dev/writable=true")(t, err)
+	})
+
+	t.Run("[AC-1-24] a write in a writable namespace without Pod Security restricted is refused", func(t *testing.T) {
+		_, err := gateway.RbacV1().Roles(unrestrictedNamespace).Create(t.Context(), role(unrestrictedNamespace), metav1.CreateOptions{})
+		refusedWith("may write only in namespaces labelled pod-security.kubernetes.io/enforce=restricted")(t, err)
 	})
 
 	configMap := func(namespace string) *corev1.ConfigMap {
