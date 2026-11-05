@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"sync"
 	"testing"
@@ -39,6 +40,15 @@ type OIDCOptions struct {
 	// Issuer is the public base URL of the provider. Default:
 	// "http://" + the listener's address.
 	Issuer string
+	// UIClientID is the public authorization-code client of the UI, which
+	// must use PKCE. Default DefaultOIDCUIClientID.
+	UIClientID string
+	// UIRedirectURIs are the UI client's redirect URIs, as globs
+	// (github.com/bmatcuk/doublestar). Default DefaultOIDCUIRedirectURI.
+	UIRedirectURIs []string
+	// OmitAuthTime makes the provider leave auth_time out of the ID tokens
+	// of the UI's sign-ins, as some IdPs do.
+	OmitAuthTime bool
 }
 
 // OIDCUser is a user of the fake OIDC provider.
@@ -66,13 +76,15 @@ type TokenClaims struct {
 }
 
 // OIDCProvider is a fake OIDC provider running in the test process. It
-// serves discovery, JWKS, the device authorization and token endpoints and
-// userinfo through github.com/zitadel/oidc, and signs every token, issued or
-// minted, with the same key.
+// serves discovery, JWKS, the device authorization, authorization and token
+// endpoints and userinfo through github.com/zitadel/oidc, and signs every
+// token, issued or minted, with the same key. Its sign-in page
+// (OIDCSignInPath) signs a browser in as any user with any groups.
 type OIDCProvider struct {
-	Issuer   string
-	ClientID string
-	Audience string
+	Issuer     string
+	ClientID   string
+	UIClientID string
+	Audience   string
 
 	storage *oidcStorage
 	server  *httptest.Server
@@ -102,6 +114,14 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		options.Audience = DefaultOIDCAudience
 	}
 
+	if options.UIClientID == "" {
+		options.UIClientID = DefaultOIDCUIClientID
+	}
+
+	if options.UIRedirectURIs == nil {
+		options.UIRedirectURIs = []string{DefaultOIDCUIRedirectURI}
+	}
+
 	if options.Listener == nil {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -125,6 +145,13 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		}),
 		users:  users,
 		client: client,
+		uiClient: &uiClient{
+			id:           options.UIClientID,
+			redirectURIs: options.UIRedirectURIs,
+			loginURL:     options.Issuer + OIDCSignInPath,
+		},
+		omitAuthTime: options.OmitAuthTime,
+		authRequests: &uiAuthRequests{authTimes: map[string]time.Time{}},
 	}
 
 	config := &op.Config{
@@ -148,17 +175,22 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		return nil, err
 	}
 
-	server := httptest.NewUnstartedServer(provider)
+	mux := http.NewServeMux()
+	mux.Handle(OIDCSignInPath, &oidcBrowser{issuer: options.Issuer, storage: store, sessions: map[string]oidcSession{}})
+	mux.Handle("/", provider)
+
+	server := httptest.NewUnstartedServer(mux)
 	_ = server.Listener.Close()
 	server.Listener = options.Listener
 	server.Start()
 
 	return &OIDCProvider{
-		Issuer:   options.Issuer,
-		ClientID: options.ClientID,
-		Audience: options.Audience,
-		storage:  store,
-		server:   server,
+		Issuer:     options.Issuer,
+		ClientID:   options.ClientID,
+		UIClientID: options.UIClientID,
+		Audience:   options.Audience,
+		storage:    store,
+		server:     server,
 	}, nil
 }
 
@@ -170,6 +202,11 @@ func (p *OIDCProvider) Close() {
 // DeviceAuthorizationURL is the device authorization endpoint.
 func (p *OIDCProvider) DeviceAuthorizationURL() string {
 	return p.Issuer + "/device_authorization"
+}
+
+// AuthorizationURL is the authorization endpoint.
+func (p *OIDCProvider) AuthorizationURL() string {
+	return p.Issuer + "/authorize"
 }
 
 // TokenURL is the token endpoint.
@@ -370,20 +407,27 @@ func (u *oidcUsers) claims(subject string) map[string]any {
 }
 
 // oidcStorage is the zitadel example storage with the test's users, a public
-// device-code client and the identity claims in every token.
+// device-code client, the UI's authorization-code client and the identity
+// claims in every token.
 type oidcStorage struct {
 	*storage.Storage
 
-	users  *oidcUsers
-	client *deviceClient
+	users        *oidcUsers
+	client       *deviceClient
+	uiClient     *uiClient
+	omitAuthTime bool
+	authRequests *uiAuthRequests
 }
 
 func (s *oidcStorage) GetClientByClientID(_ context.Context, clientID string) (op.Client, error) {
-	if clientID != s.client.id {
+	switch clientID {
+	case s.client.id:
+		return s.client, nil
+	case s.uiClient.id:
+		return s.uiClient, nil
+	default:
 		return nil, errors.New("client not found")
 	}
-
-	return s.client, nil
 }
 
 // TokenRequestByRefreshToken names the device client in the refresh token's
@@ -414,7 +458,7 @@ type deviceRefreshRequest struct {
 func (r deviceRefreshRequest) GetClientID() string { return r.clientID }
 
 func (s *oidcStorage) AuthorizeClientIDSecret(context.Context, string, string) error {
-	return errors.New("the device client is public and has no secret")
+	return errors.New("the clients are public and have no secret")
 }
 
 func (s *oidcStorage) GetPrivateClaimsFromScopes(_ context.Context, userID, _ string, _ []string) (map[string]any, error) {

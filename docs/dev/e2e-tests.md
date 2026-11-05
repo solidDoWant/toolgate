@@ -30,6 +30,27 @@ In CI, the `e2e` job runs the e2e tests and then the acceptance scoreboard on on
 
 The fake OIDC provider of `internal/testutil` runs in the test process, not in the cluster. `TestMain` in `test/e2e` starts it. The provider listens on the address of the host in the Docker network of kind. Thus the tests and the gateway pods use the same issuer URL. The chart is installed with this issuer URL and the audience `toolgate`. To get the provider in a test, call `oidcProvider(t)`.
 
+## Browser tests
+
+Browser tests drive a headless Chromium with `github.com/chromedp/chromedp`. The dev shell puts `chromium` on PATH on Linux. To use another Chromium binary, set `TOOLGATE_CHROMIUM` to its path. If the tests find no Chromium, they skip.
+
+These helpers of `internal/testutil` are for browser tests:
+
+- `StartBrowser(t)` starts a new browser with no cookies and returns a chromedp context for it. The browser stops when the test ends.
+- `SignInToOIDC(user)` is a chromedp action. It fills the sign-in page of the fake identity provider and sends it. The page signs the browser in as `user`, with its email, `email_verified` and groups.
+
+The fake identity provider has a second client for the UI, `toolgate-ui`. This client uses the authorization code flow and must use PKCE (a code challenge in each sign-in request). Its redirect URI is `http://127.0.0.1:*/ui/auth/callback`, so a test can reach the gateway through a port-forward on any local port. You can change the client ID and the redirect URIs with `OIDCOptions`.
+
+The provider keeps a session in a browser cookie after a sign-in. On the next sign-in request, the provider uses the session and does not show the sign-in page. It shows the page again in these cases:
+
+- The request has `prompt=login`.
+- The request has a `max_age` that is shorter than the age of the session.
+- The browser has no session.
+
+The ID token has `auth_time`, the time of the sign-in that made the session. If you set `OIDCOptions.OmitAuthTime`, the provider leaves `auth_time` out of the ID tokens of the UI client.
+
+`TestBrowserSignsInThroughGatewayIdP` in `test/e2e` shows a full sign-in. It reads the issuer from the gateway at `/.well-known/toolgate-client`, opens the sign-in page, and signs in as a user with groups.
+
 ## The test MCP server
 
 `test/mcpserver` is a small MCP server. Tests use it as the workload of a catalog template, to see what the gateway put into the pod. It serves streamable HTTP at `/mcp` on port 8080. Its tools are:
