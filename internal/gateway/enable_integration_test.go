@@ -631,3 +631,66 @@ func TestProxiedToolList(t *testing.T) {
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, second.session))
 	})
 }
+
+// serverStatus calls toolgate_server_status for name.
+func serverStatus(t *testing.T, session *mcp.ClientSession, name string) gateway.ServerStatusResult {
+	t.Helper()
+
+	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name: gateway.ToolServerStatus, Arguments: map[string]any{"name": name},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError, "server_status failed: %v", result.Content)
+
+	encoded, err := json.Marshal(result.StructuredContent)
+	require.NoError(t, err)
+
+	var status gateway.ServerStatusResult
+	require.NoError(t, json.Unmarshal(encoded, &status))
+
+	return status
+}
+
+func TestTemplateChange(t *testing.T) {
+	t.Run("[AC-1-19] new instances use the edited template and server_status shows the running one as outdated", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		original := fixture.addEnableTemplate("github", "per-session", anyone)
+
+		first := fixture.connectObserved(t, alice())
+		results := startEnable(t, first.session, "github")
+		running := fixture.awaitInstance(t, original, "session:alice:session-1")
+		assert.Equal(t, original.Generation, running.Generation)
+		fixture.markReady(t, running.ID, "search")
+		assert.Equal(t, enableResult{tools: []string{"github__search"}}, awaitEnable(t, results))
+
+		before := serverStatus(t, first.session, "github")
+		assert.Equal(t, gateway.StatusReady, before.Status)
+		assert.False(t, before.Outdated, "an instance of the template's current generation isn't outdated")
+
+		edited := original.DeepCopy()
+		edited.Generation = original.Generation + 1
+		edited.Spec.Description = "The edited github server."
+		fixture.catalog.Set(edited, nil)
+
+		after := serverStatus(t, first.session, "github")
+		assert.Equal(t, gateway.StatusReady, after.Status, "the running instance keeps running")
+		assert.True(t, after.Outdated, "the running instance is older than its template")
+
+		secondUser := alice()
+		secondUser.session = "session-2"
+		second := fixture.connectObserved(t, secondUser)
+		secondResults := startEnable(t, second.session, "github")
+		started := fixture.awaitInstance(t, edited, "session:alice:session-2")
+		assert.Equal(t, edited.Generation, started.Generation, "a new instance uses the new generation")
+		fixture.markReady(t, started.ID, "search")
+		assert.Equal(t, enableResult{tools: []string{"github__search"}}, awaitEnable(t, secondResults))
+
+		assert.False(t, serverStatus(t, second.session, "github").Outdated, "the new instance isn't outdated")
+		assert.True(t, serverStatus(t, first.session, "github").Outdated, "the older instance stays outdated")
+
+		current, err := db.New(fixture.pool).GetInstance(t.Context(), running.ID)
+		require.NoError(t, err)
+		assert.Equal(t, original.Generation, current.Generation, "the running instance keeps its generation")
+		assert.Equal(t, "ready", current.Status)
+	})
+}
