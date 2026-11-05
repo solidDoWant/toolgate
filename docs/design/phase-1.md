@@ -245,6 +245,13 @@ So a compromised gateway can't write outside toolgate's namespaces, whether or n
 - **Default environment:** a template that doesn't set `access.environments` gets `opt-in`. The CRD sets this as the field's default (`+kubebuilder:default=opt-in`), so the stored object always shows it, and the policy engine also treats an empty value as `opt-in`. In phase 1, `opt-in` behaves like `attested`, so an admin must write `environments: any` for a server that people may use from their laptops. A per-tool `environments` that isn't set inherits the server's value, so that field has no default.
 - **Server names:** a template whose name doesn't match `^[a-z][a-z0-9-]{0,30}$` is invalid. If valid templates in different watched namespaces share a name, all of them are invalid with the reason "duplicate server name", until one is renamed.
 - **`namespace: shared`** is valid only with `scope: shared`. A per-session or per-user template with `namespace: shared` is invalid, so instances that hold one user's secrets always get their own namespace and its default-deny policy.
+  - The gateway setting `sharedNamespace` names the namespace, and the chart passes it from `config.sharedNamespace.name`. If it is empty, every `namespace: shared` template is invalid, with the reason "The gateway has no shared namespace configured (`config.sharedNamespace.name`)." So the template isn't offered.
+  - **toolgate never renames objects.** The template tells instances apart itself, and the catalog validates it. With `namespace: shared`, a template is invalid unless all of these hold:
+    - every object's `metadata.name` contains `${instance.id}`, and so does `endpoint.service`, which is rendered with the same variables;
+    - every selector in a known kind contains `toolgate.soliddowant.dev/instance: ${instance.id}`, and so does the matching pod template's labels. The known kinds are Service `spec.selector`, Deployment and StatefulSet `spec.selector.matchLabels` with `spec.template.metadata.labels`, and NetworkPolicy `spec.podSelector.matchLabels`;
+    - it contains no `CiliumNetworkPolicy` or other kind whose selectors toolgate can't check.
+  - The reason names the first object and field that fails, for example "`Deployment/server`: `metadata.name` must contain `${instance.id}` in a shared namespace."
+  - Two shared instances can then never collide, whether they come from two templates or from an old instance still stopping while a new one starts.
 - **Failed sign-ins** write an `auth.refuse` audit event with the reason, issuer, audience and remote address, and no principal. At most 10 per minute per remote address are written; the rest are counted in a metric.
 
 ## 8. Client
