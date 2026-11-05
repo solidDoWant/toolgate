@@ -59,15 +59,39 @@ type Config struct {
 	// `http://otel-collector:4318`. The gateway sends traces to `/v1/traces`
 	// under this URL. If it is empty, the gateway does not export traces.
 	OTLPEndpoint string `json:"otlpEndpoint" env:"TOOLGATE_OTLP_ENDPOINT"`
+
+	// The issuer URL of the OIDC identity provider (IdP) that users sign in
+	// with, such as `https://idp.example.com/realms/main`. Required. The
+	// gateway reads the IdP's discovery document and signing keys from it,
+	// and accepts only access tokens this issuer signed.
+	OIDCIssuerURL string `json:"oidcIssuerURL" env:"TOOLGATE_OIDC_ISSUER_URL"`
+
+	// The audience that users' access tokens must contain, such as
+	// `toolgate`. Required. The gateway refuses a token for another audience.
+	OIDCAudience string `json:"oidcAudience" env:"TOOLGATE_OIDC_AUDIENCE"`
+
+	// The access token claim that holds the user's email address.
+	OIDCEmailClaim string `json:"oidcEmailClaim" env:"TOOLGATE_OIDC_EMAIL_CLAIM"`
+
+	// The access token claim that tells whether the IdP verified the email
+	// address. The gateway uses the email only when this claim is `true`.
+	OIDCEmailVerifiedClaim string `json:"oidcEmailVerifiedClaim" env:"TOOLGATE_OIDC_EMAIL_VERIFIED_CLAIM"`
+
+	// The access token claim that holds the user's groups, as a list of
+	// strings. The gateway refuses a token if this claim has another type.
+	OIDCGroupsClaim string `json:"oidcGroupsClaim" env:"TOOLGATE_OIDC_GROUPS_CLAIM"`
 }
 
 // Default returns the configuration used for every field that is not set.
 func Default() Config {
 	return Config{
-		ListenAddress:        ":8080",
-		MetricsListenAddress: ":9090",
-		ShutdownTimeout:      Duration(30 * time.Second),
-		LogLevel:             "info",
+		ListenAddress:          ":8080",
+		MetricsListenAddress:   ":9090",
+		ShutdownTimeout:        Duration(30 * time.Second),
+		LogLevel:               "info",
+		OIDCEmailClaim:         "email",
+		OIDCEmailVerifiedClaim: "email_verified",
+		OIDCGroupsClaim:        "groups",
 	}
 }
 
@@ -225,6 +249,26 @@ func (c Config) Validate() []error {
 		endpoint, err := url.Parse(c.OTLPEndpoint)
 		if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
 			problems = append(problems, fmt.Errorf("otlpEndpoint: %q is not an http or https URL", c.OTLPEndpoint))
+		}
+	}
+
+	if c.OIDCIssuerURL == "" {
+		problems = append(problems, errors.New("oidcIssuerURL: required"))
+	} else if issuer, err := url.Parse(c.OIDCIssuerURL); err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" {
+		problems = append(problems, fmt.Errorf("oidcIssuerURL: %q is not an http or https URL", c.OIDCIssuerURL))
+	}
+
+	if c.OIDCAudience == "" {
+		problems = append(problems, errors.New("oidcAudience: required"))
+	}
+
+	for key, value := range map[string]string{
+		"oidcEmailClaim":         c.OIDCEmailClaim,
+		"oidcEmailVerifiedClaim": c.OIDCEmailVerifiedClaim,
+		"oidcGroupsClaim":        c.OIDCGroupsClaim,
+	} {
+		if value == "" {
+			problems = append(problems, fmt.Errorf("%s: must not be empty", key))
 		}
 	}
 
