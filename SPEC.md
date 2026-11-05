@@ -114,7 +114,7 @@ All are in API group `toolgate.soliddowant.dev`, version `v1alpha1`. The chart i
 - **`ToolgateRule`**: a standing block rule (§10).
 - **`SettingsProfile`**: Claude Code settings handed to clients (§13).
 
-Every resource is validated by CEL rules in its CRD and again when toolgate reads it. An invalid resource is skipped, with the reason in its `status.conditions` and in the log. A previously valid version keeps working until a valid replacement arrives.
+Every resource is validated by CEL rules in its CRD and again when toolgate reads it. An invalid resource is skipped, with the reason in its `status.conditions` and in the log. For an `MCPServerTemplate`, the condition is `Valid`. Its status is `False` and its message gives the reason. A previously valid version keeps working until a valid replacement arrives.
 
 ## 9. Catalog entries and instances
 
