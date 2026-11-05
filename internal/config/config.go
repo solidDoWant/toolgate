@@ -43,8 +43,9 @@ type Config struct {
 	MetricsListenAddress string `json:"metricsListenAddress" env:"TOOLGATE_METRICS_LISTEN_ADDRESS"`
 
 	// The PostgreSQL connection string, as a URL or as key/value pairs.
-	// Required. `/readyz` answers 503 while the gateway cannot connect to this
-	// database.
+	// Required. When it starts, the gateway creates and updates its tables in
+	// this database. If it cannot, it stops with an error. `/readyz` answers
+	// 503 while the gateway cannot connect to this database.
 	DatabaseURL string `json:"databaseURL" env:"TOOLGATE_DATABASE_URL"`
 
 	// After SIGTERM, the gateway stops accepting requests and waits this long

@@ -26,29 +26,61 @@ const partitionLockKey = 0x746f6f6c67617465 // "toolgate"
 // once are serialized by a PostgreSQL session advisory lock, so each
 // migration is applied exactly once.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
-	migrations, err := fs.Sub(migrationFiles, "migrations")
-	if err != nil {
-		return fmt.Errorf("read embedded migrations: %w", err)
-	}
-
 	locker, err := lock.NewPostgresSessionLocker()
 	if err != nil {
 		return fmt.Errorf("create migration lock: %w", err)
 	}
 
-	sqlDB := stdlib.OpenDBFromPool(pool)
-	defer func() { _ = sqlDB.Close() }()
-
-	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations, goose.WithSessionLocker(locker))
+	provider, closeDB, err := newProvider(pool, goose.WithSessionLocker(locker))
 	if err != nil {
-		return fmt.Errorf("create migration provider: %w", err)
+		return err
 	}
+	defer closeDB()
 
 	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
 
 	return EnsureAuditPartitions(ctx, pool, time.Now())
+}
+
+// SchemaVersions returns the highest migration version recorded in the
+// database and the highest one embedded in this binary. A database version
+// above the binary's means the gateway was rolled back to an older release.
+func SchemaVersions(ctx context.Context, pool *pgxpool.Pool) (database, binary int64, err error) {
+	provider, closeDB, err := newProvider(pool)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer closeDB()
+
+	database, binary, err = provider.GetVersions(ctx)
+	if err != nil {
+		return 0, 0, fmt.Errorf("read schema versions: %w", err)
+	}
+
+	return database, binary, nil
+}
+
+// newProvider returns a goose provider for the embedded migrations on pool,
+// and a function that releases its database handle.
+func newProvider(pool *pgxpool.Pool, options ...goose.ProviderOption) (*goose.Provider, func(), error) {
+	migrations, err := fs.Sub(migrationFiles, "migrations")
+	if err != nil {
+		return nil, nil, fmt.Errorf("read embedded migrations: %w", err)
+	}
+
+	sqlDB := stdlib.OpenDBFromPool(pool)
+	closeDB := func() { _ = sqlDB.Close() }
+
+	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations, options...)
+	if err != nil {
+		closeDB()
+
+		return nil, nil, fmt.Errorf("create migration provider: %w", err)
+	}
+
+	return provider, closeDB, nil
 }
 
 // EnsureAuditPartitions creates the monthly audit_events partitions for the

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"syscall"
 	"testing"
@@ -64,11 +63,11 @@ func TestServeRejectsInvalidConfiguration(t *testing.T) {
 	assert.Contains(t, stderr.String(), "TOOLGATE_SHUTDOWN_TIMEOUT: must be a duration")
 }
 
-func TestServeStopsOnSIGTERM(t *testing.T) {
+func TestServeExitsWhenTheDatabaseIsUnreachable(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
 	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate")
+	t.Setenv("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate?connect_timeout=5")
 	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
 	t.Setenv("TOOLGATE_OIDC_AUDIENCE", "toolgate")
 
@@ -78,18 +77,17 @@ func TestServeStopsOnSIGTERM(t *testing.T) {
 
 	go func() { done <- run([]string{"serve"}, stdout, stderr) }()
 
-	require.Eventually(t, func() bool {
-		return strings.Contains(stdout.String(), `"msg":"gateway started"`)
-	}, 30*time.Second, 10*time.Millisecond, "the gateway did not start")
-
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGTERM))
-
 	select {
 	case code := <-done:
-		assert.Equal(t, 0, code, "stderr: %s", stderr.String())
+		assert.Equal(t, 1, code, "stderr: %s", stderr.String())
 	case <-time.After(30 * time.Second):
-		require.FailNow(t, "serve did not stop after SIGTERM")
+		// Stop the gateway that started without its schema.
+		require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGTERM))
+		<-done
+		require.FailNow(t, "serve kept running without its database schema", "stdout: %s", stdout.String())
 	}
 
-	assert.Contains(t, stdout.String(), `"msg":"gateway stopped"`)
+	assert.Contains(t, stdout.String(), "database migrations")
+	assert.NotContains(t, stdout.String(), `"msg":"gateway started"`,
+		"the gateway must not open its listeners before the migrations ran")
 }

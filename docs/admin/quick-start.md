@@ -9,7 +9,7 @@ This page installs the toolgate Helm chart with the smallest set of values. The 
 You need these items:
 
 - A Kubernetes 1.35 cluster, with Flux v2 installed.
-- A PostgreSQL database that the gateway can reach, and its connection string.
+- A PostgreSQL database that the gateway can reach, and its connection string. The database user must be able to create tables and indexes in its schema. The gateway creates and updates its tables each time it starts.
 - An S3 bucket.
 - An OIDC identity provider that users sign in with. You need its issuer URL and the audience of its access tokens for toolgate.
 - Helm 3.8 or later, and `kubectl` with cluster-admin rights.

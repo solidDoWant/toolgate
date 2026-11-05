@@ -11,11 +11,14 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/secrets"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 )
@@ -51,6 +54,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	server, err := gateway.New(ctx, cfg, logger)
 	if err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
+
+	if err := migrateDatabase(ctx, server.Database(), logger); err != nil {
 		logger.Error("gateway failed to start", "error", err)
 
 		return 1
@@ -118,6 +127,29 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	logger.Info("gateway stopped")
 
 	return 0
+}
+
+// migrateDatabase applies the schema migrations before the gateway opens its
+// listeners or joins leader election (docs/design/phase-1.md §7). Replicas
+// starting together take turns behind goose's PostgreSQL session lock. A
+// database newer than this binary (a rollback) is only logged: migrations
+// never run down.
+func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error {
+	if err := store.Migrate(ctx, pool); err != nil {
+		return fmt.Errorf("database migrations: %w", err)
+	}
+
+	database, binary, err := store.SchemaVersions(ctx, pool)
+	if err != nil {
+		return fmt.Errorf("database migrations: %w", err)
+	}
+
+	if database > binary {
+		logger.Warn("the database schema is newer than this gateway; starting anyway",
+			"databaseVersion", database, "gatewayVersion", binary)
+	}
+
+	return nil
 }
 
 // registerSecretsAPI serves `/api/v1/secrets` behind user authentication.
