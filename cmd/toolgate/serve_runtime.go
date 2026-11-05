@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,6 +45,11 @@ type runtimeOptions struct {
 	// listener delivers the PostgreSQL notifications. serve runs it.
 	listener *store.Listener
 }
+
+// skipControllerNameValidation turns off controller-runtime's check that
+// controller names are unique in the process. Only tests set it: they run
+// serve more than once in one process. A gateway process runs serve once.
+var skipControllerNameValidation bool
 
 // startRuntime starts the controller-runtime manager. On every replica the manager runs the catalog
 // and rule reconcilers, which write status only on the leader. On the
@@ -94,6 +100,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		&v1alpha1.MCPServerTemplate{}: {Namespaces: catalog.CacheNamespaces(watched)},
 		&v1alpha1.ToolgateRule{}:      {Namespaces: catalog.CacheNamespaces(watched)},
 	}}
+
+	if skipControllerNameValidation {
+		managerOptions.Controller.SkipNameValidation = ptr.To(true)
+	}
 
 	mgr, err := manager.New(restConfig, managerOptions)
 	if err != nil {
