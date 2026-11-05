@@ -42,6 +42,7 @@ docs/admin/
   quick-start.md           Install the chart with the smallest set of values.
   chart.md                 What the chart installs, and why its permissions are safe.
   chart-values.md          The chart values reference (generated).
+  user-secrets.md          How user secrets are encrypted, and how to rotate the key.
 
 docs/dev/
   README.md                What the developer pages will cover.
