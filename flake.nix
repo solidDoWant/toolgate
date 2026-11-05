@@ -134,6 +134,10 @@
 
             # Link and anchor check for the Markdown docs (make docs-check).
             pkgs.lychee
+          ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+            # Headless browser for the UI's browser tests (chromedp). nixpkgs
+            # builds Chromium for Linux only; elsewhere the tests skip.
+            pkgs.chromium
           ];
 
           KUBEBUILDER_ASSETS = "${envtestAssets}";
