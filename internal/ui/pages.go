@@ -29,6 +29,7 @@ var templateFiles embed.FS
 var pageTemplates = map[string]*template.Template{
 	"servers":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/servers.html")),
 	"audit":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
+	"secrets":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/secrets.html")),
 	"audit_event": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
 }
 
