@@ -55,12 +55,12 @@ test-integration: ## Run the integration-tagged tests (PostgreSQL with TLS clien
 	timeout 30m go test -race -count=1 -tags integration -timeout 25m ./...
 
 .PHONY: test-e2e
-test-e2e: ## Run the e2e-tagged tests on kind (Flux, the gateway image, the fake IdP and the test MCP server).
-	./scripts/test-e2e.sh
+test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server), then delete it.
+	./scripts/e2e/run.sh ./scripts/test-e2e.sh
 
 .PHONY: acceptance
-acceptance: ## Run every [AC-…] test and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/).
-	PHASE=$(PHASE) ./scripts/acceptance.sh
+acceptance: ## Run every [AC-…] test on a new kind cluster (as test-e2e) and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/).
+	PHASE=$(PHASE) ./scripts/e2e/run.sh ./scripts/acceptance.sh
 
 .PHONY: docs-check
 docs-check: ## Check the human-facing Markdown: links and anchors (lychee, offline), agent-prose tells, every docs/ page listed in docs/README.md.

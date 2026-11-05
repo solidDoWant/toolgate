@@ -83,6 +83,17 @@ type OIDCProvider struct {
 func StartOIDCProvider(tb testing.TB, options OIDCOptions) *OIDCProvider {
 	tb.Helper()
 
+	provider, err := NewOIDCProvider(options)
+	require.NoError(tb, err)
+	tb.Cleanup(provider.Close)
+
+	return provider
+}
+
+// NewOIDCProvider starts a fake OIDC provider that runs until Close. Tests
+// use StartOIDCProvider; this is for a TestMain that shares one provider
+// between all the tests of a package.
+func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 	if options.ClientID == "" {
 		options.ClientID = DefaultOIDCClientID
 	}
@@ -93,7 +104,9 @@ func StartOIDCProvider(tb testing.TB, options OIDCOptions) *OIDCProvider {
 
 	if options.Listener == nil {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		require.NoError(tb, err)
+		if err != nil {
+			return nil, err
+		}
 
 		options.Listener = listener
 	}
@@ -125,14 +138,18 @@ func StartOIDCProvider(tb testing.TB, options OIDCOptions) *OIDCProvider {
 			UserCode:     op.UserCodeBase20,
 		},
 	}
+
 	provider, err := op.NewProvider(config, store, op.StaticIssuer(options.Issuer), op.WithAllowInsecure())
-	require.NoError(tb, err)
+	if err != nil {
+		_ = options.Listener.Close()
+
+		return nil, err
+	}
 
 	server := httptest.NewUnstartedServer(provider)
 	_ = server.Listener.Close()
 	server.Listener = options.Listener
 	server.Start()
-	tb.Cleanup(server.Close)
 
 	return &OIDCProvider{
 		Issuer:   options.Issuer,
@@ -140,7 +157,12 @@ func StartOIDCProvider(tb testing.TB, options OIDCOptions) *OIDCProvider {
 		Audience: options.Audience,
 		storage:  store,
 		server:   server,
-	}
+	}, nil
+}
+
+// Close stops the provider.
+func (p *OIDCProvider) Close() {
+	p.server.Close()
 }
 
 // DeviceAuthorizationURL is the device authorization endpoint.
