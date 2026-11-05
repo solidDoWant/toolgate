@@ -279,7 +279,13 @@ func (w *watcher) refreshTools(ctx context.Context) bool {
 		return true
 	}
 
-	tools, err := w.session.ListTools(ctx)
+	// The re-list is bounded like a health check, so an upstream that
+	// never answers `tools/list` can't stop the checks.
+	listCtx, cancel := context.WithTimeout(ctx, w.monitor.interval())
+	tools, err := w.session.ListTools(listCtx)
+
+	cancel()
+
 	if errors.Is(err, ErrToolListTooLarge) {
 		w.monitor.fail(ctx, w.instance, toolListTooLargeReason)
 

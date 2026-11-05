@@ -46,6 +46,12 @@ const FieldManager = "toolgate"
 // its template sets no startTimeout.
 const DefaultStartTimeout = 5 * time.Minute
 
+// DefaultToolListTimeout bounds one `initialize` and `tools/list` exchange
+// with a starting instance when the Starter sets no ToolListTimeout. An
+// upstream that never answers can't hold up the reconciler's pass: the
+// attempt is retried on the next pass until startTimeout fails it.
+const DefaultToolListTimeout = 10 * time.Second
+
 // NamespacePrefix starts the name of every per-instance namespace.
 const NamespacePrefix = "tg-"
 
@@ -103,6 +109,9 @@ type Starter struct {
 	Secrets func(principal string) SecretSource
 	// ListTools reaches the instance over MCP.
 	ListTools ToolLister
+	// ToolListTimeout bounds each ListTools call. Zero means
+	// DefaultToolListTimeout.
+	ToolListTimeout time.Duration
 	// GatewayNamespace is the namespace of the gateway's pods, which the
 	// instance NetworkPolicy admits.
 	GatewayNamespace string
@@ -226,7 +235,7 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 		return nil
 	}
 
-	tools, err := s.ListTools(ctx, EndpointURL(instance, template))
+	tools, err := s.listTools(ctx, EndpointURL(instance, template))
 	if errors.Is(err, ErrToolListTooLarge) {
 		return s.fail(ctx, instance, StatusStarting, toolListTooLargeReason)
 	}
@@ -706,6 +715,19 @@ func (s *Starter) now() time.Time {
 	}
 
 	return time.Now()
+}
+
+// listTools calls ListTools with a deadline of ToolListTimeout.
+func (s *Starter) listTools(ctx context.Context, endpoint string) ([]*mcp.Tool, error) {
+	timeout := s.ToolListTimeout
+	if timeout == 0 {
+		timeout = DefaultToolListTimeout
+	}
+
+	listCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	return s.ListTools(listCtx, endpoint)
 }
 
 func (s *Starter) logger() *slog.Logger {
