@@ -71,7 +71,7 @@ var statusKinds = []schema.GroupVersionKind{
 }
 
 // Starter drives instances from pending through starting to ready or
-// failed.
+// failed, and fails a ready instance whose objects kstatus reports failed.
 type Starter struct {
 	Store StartStore
 	// Client applies, reads and lists instance objects.
@@ -104,6 +104,8 @@ func (s *Starter) Step(ctx context.Context, instance db.Instance) error {
 		return s.startPending(ctx, instance)
 	case StatusStarting:
 		return s.checkStarting(ctx, instance)
+	case StatusReady:
+		return s.checkReady(ctx, instance)
 	default:
 		return nil
 	}
@@ -199,6 +201,26 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 
 	if _, err := s.Store.MarkReady(ctx, instance.ID, encoded); err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
+	}
+
+	return nil
+}
+
+// checkReady fails a ready instance when kstatus reports one of its
+// objects failed. An object that is only in progress, such as a restarting
+// pod, is left to the health checks.
+func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
+	if _, found := s.template(instance); !found {
+		return nil
+	}
+
+	_, reason, err := s.objectsCurrent(ctx, instance)
+	if err != nil {
+		return err
+	}
+
+	if reason != "" {
+		return s.fail(ctx, instance, StatusReady, reason)
 	}
 
 	return nil

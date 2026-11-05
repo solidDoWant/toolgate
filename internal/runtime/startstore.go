@@ -27,8 +27,9 @@ type StartStore interface {
 	MarkFailed(ctx context.Context, id, from, reason string) (bool, error)
 }
 
-// PostgresStartStore is the StartStore on PostgreSQL. Each status change
-// notifies `instance:<id>` in the same transaction.
+// PostgresStartStore is the StartStore and HealthStore on PostgreSQL. Each
+// status or tool list change notifies `instance:<id>` in the same
+// transaction.
 type PostgresStartStore struct {
 	Pool *pgxpool.Pool
 }
@@ -61,6 +62,23 @@ func (s PostgresStartStore) MarkReady(ctx context.Context, id string, tools []by
 func (s PostgresStartStore) MarkFailed(ctx context.Context, id, from, reason string) (bool, error) {
 	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceFailed(ctx, db.SetInstanceFailedParams{ID: id, FromStatus: from, Reason: reason})
+	})
+}
+
+// Instance implements HealthStore.
+func (s PostgresStartStore) Instance(ctx context.Context, id string) (db.Instance, error) {
+	instance, err := db.New(s.Pool).GetInstance(ctx, id)
+	if err != nil {
+		return db.Instance{}, fmt.Errorf("get instance %s: %w", id, err)
+	}
+
+	return instance, nil
+}
+
+// SetTools implements HealthStore.
+func (s PostgresStartStore) SetTools(ctx context.Context, id string, tools []byte) (bool, error) {
+	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
+		return queries.SetInstanceTools(ctx, db.SetInstanceToolsParams{ID: id, Tools: tools})
 	})
 }
 
