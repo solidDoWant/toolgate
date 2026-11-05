@@ -53,6 +53,7 @@ Run `make help` for the full list, and keep it and this section current as targe
 - `make fmt` / `make lint` (`lint-fix`): format; run every linter and check, reporting all failures before exiting non-zero.
 - `make test`: unit tests with `-race`.
 - `make generate` / `make check-generate`: regenerate CRDs, deepcopy and sqlc code, or fail on drift.
+- `make generate-docs`: regenerate the gateway configuration reference (`docs/admin/configuration.md`) from the doc comments in `internal/config`. `make generate` runs it too.
 - `make test-integration`: `integration`-tagged tests against PostgreSQL and S3 in Docker.
 - `make test-e2e`: kind + Flux + the gateway image + fake IdP + test MCP server.
 - `make acceptance`: run every `[AC-…]` test and print the scoreboard for the current phase.

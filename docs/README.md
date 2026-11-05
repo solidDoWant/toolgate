@@ -37,6 +37,7 @@ docs/user/
 
 docs/admin/
   README.md                What the admin pages will cover.
+  configuration.md         The gateway configuration reference (generated).
 
 docs/dev/
   README.md                What the developer pages will cover.
