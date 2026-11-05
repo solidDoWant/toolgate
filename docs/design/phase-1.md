@@ -161,7 +161,7 @@ Each row is one event combined with one operation already in flight, in the orde
 | 12 | Instance fails after `ready` | calls in flight | In-flight calls get the upstream error. Later calls get `not-ready` with the failure reason. The session keeps the server enabled with no tools. The next enable inserts a new instance. | integration |
 | 13 | Session ends (idle) | instance `starting` | Ending the session deletes its `session_servers` rows. The reconciler then stops the instance. No orphan objects remain. | AC-1-15 |
 | 14 | Replica holding the stream dies | enable waiting | The client reconnects to another replica, gets 404 for its old MCP session, and initializes again. The `session_servers` row exists, so `tools/list` shows the server once ready. Calling enable again waits on the same instance. | AC-1-17 |
-| 15 | Leader dies | instance `pending` or `starting` | A new leader takes the Lease and continues from the rows and the labelled objects. Applying is idempotent (server-side apply). | e2e |
+| 15 | Leader dies | instance `pending` or `starting` | A new leader takes the Lease and continues from the rows and the labelled objects. Applying is idempotent (server-side apply, and the namespace create accepts an existing namespace with the instance label). | e2e |
 | 16 | Leader dies | instance `stopping` | The new leader deletes again. Deletion is idempotent. | e2e |
 | 17 | Leader change or gateway restart | everything | The new leader lists objects carrying toolgate's labels, then reads rows. Objects with no live instance row are deleted. Live rows in `starting` or `ready` with no objects go back to `pending`. | e2e |
 | 18 | Secret deleted by the user | instance running | Running instances keep the value they started with. The next enable is refused with the missing-secret message. | unit |
@@ -198,7 +198,7 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
 Instance namespaces are created on the fly, so the gateway's service account needs a ClusterRole. The admission policy, not RBAC, confines its writes.
 
 **ClusterRole** (the chart installs exactly this):
-- `namespaces`: `create`, `delete`, `get`, `list`, `watch`.
+- `namespaces`: `create`, `delete`, `get`, `list`, `watch`. There is no `patch`, so the gateway creates an instance namespace and does not apply it with server-side apply. If the namespace already exists, the gateway uses it only when it carries the label `toolgate.soliddowant.dev/instance` with the instance ID. Otherwise the instance fails.
 - Each allowed kind (`SPEC.md` §9) except `Secret`: `create`, `patch`, `delete`, `get`, `list`, `watch`.
 - `secrets`: `create`, `patch`, `delete` only. The gateway never reads Secrets. Server-side apply needs only `patch`, and Secrets need no readiness check.
 - `events`: `list`, `watch` (start-failure reasons).
