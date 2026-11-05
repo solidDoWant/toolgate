@@ -52,6 +52,18 @@ Do these steps after you install the plugin and sign in with `toolgate login`.
 
 If the `toolgate` server shows as failed in step 2, run `toolgate status` in a shell to make sure that you are signed in. Then make sure that the gateway URL in `/plugin configure toolgate@toolgate` is correct.
 
+## Tool calls
+
+When Claude calls a tool of a server, for example `test__echo`, the gateway sends the call to the server and returns the result. The gateway refuses a call in these cases:
+
+- The server is not turned on in this session. Turn it on with `toolgate_enable_server` first.
+- The server is not ready, for example because it failed. The error gives the status and the reason. `toolgate_server_status` shows them too.
+- A rule from your admin blocks the tool. The error gives the reason of the rule.
+- The request is larger than 4 MiB. Send smaller tool arguments.
+- The result is larger than 16 MiB. The gateway does not send it to Claude Code.
+
+The gateway records each call and each refusal in its audit log.
+
 ## Sign in
 
 Your admin gives you the URL of your gateway. Run:

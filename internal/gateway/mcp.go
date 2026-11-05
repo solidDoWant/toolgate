@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -16,6 +17,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/version"
@@ -54,6 +56,12 @@ type MCPOptions struct {
 	// InstanceLimit is the most live instances the gateway runs. Zero means
 	// 200.
 	InstanceLimit int
+	// UpstreamEndpoint returns the MCP URL of an instance. Nil means the
+	// URL of the template's endpoint Service in the instance's namespace.
+	UpstreamEndpoint UpstreamEndpoint
+	// UpstreamHTTPClient carries forwarded calls. Nil means
+	// http.DefaultClient.
+	UpstreamHTTPClient *http.Client
 }
 
 // The instance limits when MCPOptions sets none (docs/design/phase-1.md §7).
@@ -100,6 +108,7 @@ type mcpSession struct {
 // change to one session's proxied tools sends list_changed to it alone.
 type mcpEndpoint struct {
 	newServer func() *mcp.Server
+	callTool  mcp.ToolHandler
 	handler   http.Handler
 	sessions  *sessionStore
 	logger    *slog.Logger
@@ -137,7 +146,18 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		subscribe = func() (<-chan store.Event, func()) { return nil, func() {} }
 	}
 
+	upstreamEndpoint := options.UpstreamEndpoint
+	if upstreamEndpoint == nil {
+		upstreamEndpoint = runtime.EndpointURL
+	}
+
+	upstreamHTTPClient := options.UpstreamHTTPClient
+	if upstreamHTTPClient == nil {
+		upstreamHTTPClient = http.DefaultClient
+	}
+
 	tools := &metaTools{
+		upstreams:    newUpstreams(upstreamEndpoint, upstreamHTTPClient),
 		database:     options.Database,
 		catalog:      options.Catalog,
 		policy:       options.Policy,
@@ -149,10 +169,17 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		instanceLimit:        valueOr(options.InstanceLimit, defaultInstanceLimit),
 	}
 
+	endpoint.callTool = tools.callTool
+
+	if options.Subscribe != nil {
+		events, _ := options.Subscribe()
+		go endpoint.fanOut(tools, events)
+	}
+
 	endpoint.newServer = func() *mcp.Server {
 		server := mcp.NewServer(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
 		tools.register(server)
-		server.AddReceivingMiddleware(tools.syncOnList)
+		server.AddReceivingMiddleware(tools.syncOnList, tools.routeProxiedCalls)
 
 		return server
 	}
@@ -175,7 +202,23 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	request.Body = http.MaxBytesReader(writer, request.Body, maxRequestBodyBytes)
+	// The body is read here, bounded, so an oversized request gets a clear
+	// error instead of a transport failure.
+	body, err := io.ReadAll(http.MaxBytesReader(writer, request.Body, maxRequestBodyBytes))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(writer, "The request is larger than 4 MiB, the limit. Send smaller tool arguments.", http.StatusRequestEntityTooLarge)
+
+			return
+		}
+
+		http.Error(writer, "The request body can't be read.", http.StatusBadRequest)
+
+		return
+	}
+
+	request.Body = io.NopCloser(bytes.NewReader(body))
 
 	session, err := e.sessions.resolve(request.Context(), identity)
 	if errors.Is(err, errWorkspaceChanged) {
@@ -208,7 +251,14 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		}
 	}
 
-	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, requestContext{identity: identity, session: session})
+	current := requestContext{identity: identity, session: session}
+	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
+
+	if mcpSessionID != "" {
+		if known, found := e.session(mcpSessionID); found {
+			known.tools.setCurrent(current)
+		}
+	}
 
 	if mcpSessionID == "" {
 		// A new MCP session gets its own server, bound once the go-sdk
@@ -216,7 +266,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		server := e.newServer()
 		ctx = context.WithValue(ctx, newServerCtxKey{}, server)
 		writer = &bindingWriter{ResponseWriter: writer, onSessionID: func(id string) {
-			e.bind(id, &mcpSession{binding: binding, tools: newSessionTools(server)})
+			e.bind(id, &mcpSession{binding: binding, tools: newSessionTools(server, e.callTool, current)})
 		}}
 	}
 
