@@ -19,8 +19,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -147,7 +149,7 @@ func newStarterFixture(t *testing.T, template *v1alpha1.MCPServerTemplate, statu
 			7: {ID: 7, Principal: "alice", SessionID: "session-1", Workspace: "laptop", Attestation: "user", Email: "alice@example.com", Name: "Alice"},
 		}},
 		kube: clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).
-			WithInterceptorFuncs(interceptor.Funcs{Apply: applyNetworkPolicyAsCreate}).WithReturnManagedFields().Build(),
+			WithInterceptorFuncs(interceptor.Funcs{Apply: fakeApply}).WithReturnManagedFields().Build(),
 		now: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC),
 	}
 
@@ -185,13 +187,18 @@ func newStarterFixture(t *testing.T, template *v1alpha1.MCPServerTemplate, statu
 	return fixture
 }
 
-// applyNetworkPolicyAsCreate stands in for server-side apply of a
-// NetworkPolicy, which the fake client can't merge; other kinds are applied
-// as usual.
-func applyNetworkPolicyAsCreate(ctx context.Context, kube client.WithWatch, object k8sruntime.ApplyConfiguration, options ...client.ApplyOption) error {
+// fakeApply refuses server-side apply of a Namespace, as the chart's RBAC
+// does (it grants namespaces no patch), and stands in for server-side apply
+// of a NetworkPolicy, which the fake client can't merge; other kinds are
+// applied as usual.
+func fakeApply(ctx context.Context, kube client.WithWatch, object k8sruntime.ApplyConfiguration, options ...client.ApplyOption) error {
 	content, err := k8sruntime.DefaultUnstructuredConverter.ToUnstructured(object)
 	if err != nil {
 		return err
+	}
+
+	if content["kind"] == "Namespace" {
+		return apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "", errors.New("cannot patch resource \"namespaces\""))
 	}
 
 	if content["kind"] != "NetworkPolicy" {
@@ -269,6 +276,50 @@ func TestStarterPendingPreparesNamespaceAndApplies(t *testing.T) {
 	}
 
 	assert.Equal(t, map[string]bool{"toolgate": true}, managers, "applied server-side by field manager toolgate")
+}
+
+func TestStarterPendingReusesLabelledNamespace(t *testing.T) {
+	existing := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instanceNamespace, Labels: instanceLabels()}}
+	fixture := newStarterFixture(t, testTemplate(configMapResource), "pending", existing)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, _, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "starting", status, "a namespace from an earlier attempt is reused")
+
+	configMap := &corev1.ConfigMap{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: instanceNamespace, Name: "settings"}, configMap))
+}
+
+func TestStarterPendingRefusesUnlabelledNamespace(t *testing.T) {
+	tests := []struct {
+		name   string
+		labels map[string]string
+	}{
+		{name: "no labels"},
+		{name: "another instance", labels: map[string]string{runtime.LabelInstance: "other", runtime.LabelManagedBy: runtime.ManagedByValue}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			existing := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instanceNamespace, Labels: test.labels}}
+			fixture := newStarterFixture(t, testTemplate(configMapResource), "pending", existing)
+
+			require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+			status, reason, _, _ := fixture.store.snapshot()
+			assert.Equal(t, "failed", status)
+			assert.Contains(t, reason, instanceNamespace)
+
+			namespace := &corev1.Namespace{}
+			require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Name: instanceNamespace}, namespace))
+			assert.Equal(t, test.labels, namespace.Labels, "the namespace is not adopted")
+
+			configMaps := &corev1.ConfigMapList{}
+			require.NoError(t, fixture.kube.List(t.Context(), configMaps, client.InNamespace(instanceNamespace)))
+			assert.Empty(t, configMaps.Items, "nothing is applied into a namespace toolgate doesn't own")
+		})
+	}
 }
 
 func TestStarterPendingRenderErrorFails(t *testing.T) {

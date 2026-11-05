@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -138,7 +139,8 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 	}
 
 	if hasOwnNamespace(instance) {
-		if err := s.prepareNamespace(ctx, instance, template); err != nil {
+		prepared, err := s.prepareNamespace(ctx, instance, template)
+		if err != nil || !prepared {
 			return err
 		}
 	}
@@ -301,9 +303,11 @@ func startTimeout(template *v1alpha1.MCPServerTemplate) time.Duration {
 	return DefaultStartTimeout
 }
 
-// prepareNamespace applies the instance namespace and what every instance
-// namespace holds before the template's objects.
-func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) error {
+// prepareNamespace creates the instance namespace and applies what every
+// instance namespace holds before the template's objects. It reports false
+// when the instance has failed because the namespace exists without the
+// instance's label.
+func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (bool, error) {
 	objectLabels := map[string]string{
 		LabelManagedBy: ManagedByValue,
 		LabelInstance:  instance.ID,
@@ -322,11 +326,29 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 	dnsPort := intstr.FromInt32(53)
 	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
 
+	// The gateway's RBAC grants namespaces create but not patch, so the
+	// namespace is created rather than applied. A new leader repeating the
+	// step finds it already there and goes on, but only when it carries the
+	// instance's label: toolgate never adopts a namespace it didn't create.
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instance.Namespace, Labels: namespaceLabels}}
+	if err := s.Client.Create(ctx, namespace); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return false, fmt.Errorf("create Namespace %s: %w", instance.Namespace, err)
+		}
+
+		existing := &corev1.Namespace{}
+		if err := s.Client.Get(ctx, client.ObjectKey{Name: instance.Namespace}, existing); err != nil {
+			return false, fmt.Errorf("get Namespace %s: %w", instance.Namespace, err)
+		}
+
+		if existing.Labels[LabelInstance] != instance.ID {
+			return false, s.fail(ctx, instance, StatusPending, fmt.Sprintf(
+				"The namespace %s already exists and doesn't carry the label %s=%s, so toolgate won't use it.",
+				instance.Namespace, LabelInstance, instance.ID))
+		}
+	}
+
 	objects := []k8sruntime.Object{
-		&corev1.Namespace{
-			TypeMeta:   metav1.TypeMeta{APIVersion: "v1", Kind: "Namespace"},
-			ObjectMeta: metav1.ObjectMeta{Name: instance.Namespace, Labels: namespaceLabels},
-		},
 		&corev1.ServiceAccount{
 			TypeMeta:                     metav1.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"},
 			ObjectMeta:                   metav1.ObjectMeta{Name: "default", Namespace: instance.Namespace},
@@ -360,7 +382,7 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 	for _, object := range objects {
 		content, err := k8sruntime.DefaultUnstructuredConverter.ToUnstructured(object)
 		if err != nil {
-			return fmt.Errorf("instance %s: %w", instance.ID, err)
+			return false, fmt.Errorf("instance %s: %w", instance.ID, err)
 		}
 
 		// Server-side apply sends only the fields set here, never an empty
@@ -369,11 +391,11 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 		unstructured.RemoveNestedField(content, "metadata", "creationTimestamp")
 
 		if err := s.apply(ctx, &unstructured.Unstructured{Object: content}); err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 func (s *Starter) apply(ctx context.Context, object *unstructured.Unstructured) error {
