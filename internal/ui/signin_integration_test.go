@@ -22,8 +22,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tink-crypto/tink-go/v2/aead"
+	"github.com/tink-crypto/tink-go/v2/keyset"
 
+	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	toolgatetest "github.com/solidDoWant/toolgate/internal/testutil"
@@ -75,6 +79,7 @@ type uiEnv struct {
 	servers  *fakeServers
 	// formSubmits counts the step-up form's POSTs that ran.
 	formSubmits atomic.Int32
+	broker      *secrets.Broker
 }
 
 func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
@@ -106,6 +111,15 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 	env.server.StartTLS()
 	t.Cleanup(env.server.Close)
 
+	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
+	require.NoError(t, err)
+
+	cipher, err := secrets.NewCipher(handle)
+	require.NoError(t, err)
+
+	broker := secrets.NewBroker(db.New(pool), cipher)
+	env.broker = broker
+
 	// The public URL is only known once the server listens.
 	for range 2 {
 		registrar := newMuxRegistrar()
@@ -118,6 +132,8 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 			AdminGroup: adminGroup,
 			Recorder:   env.refusals,
 			Servers:    env.servers,
+			Secrets:    broker,
+			Auditor:    audit.NewRecorder(io.Discard, db.New(pool)),
 		}, registrar)
 
 		webUI.Handle("GET "+whoamiPath, ui.User, http.HandlerFunc(whoami))

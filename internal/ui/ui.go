@@ -26,6 +26,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -37,6 +38,8 @@ const (
 	StaticPath   = "/ui/static/"
 	// HomePath is where `GET /` and a sign-in without a valid return_to go.
 	HomePath = "/ui/servers"
+	// RestartPath requests the restart of an outdated instance.
+	RestartPath = "/ui/instances/{id}/restart"
 
 	// SessionCookie holds the UI session's random ID.
 	SessionCookie = "__Host-toolgate"
@@ -137,6 +140,10 @@ type Options struct {
 	HTTPClient *http.Client
 	// Servers gives the Servers page its rows. Nil leaves the page out.
 	Servers ServerSource
+	// Secrets backs the Secrets page, and Auditor records its changes. Nil
+	// Secrets leaves the page out.
+	Secrets SecretStore
+	Auditor secrets.Recorder
 }
 
 // UI is the web UI. Create it with New.
@@ -203,6 +210,13 @@ func New(options Options, registrar Registrar) *UI {
 
 	if options.Servers != nil {
 		u.Handle("GET "+HomePath, User, http.HandlerFunc(u.servers))
+		u.Handle("POST "+RestartPath, User, http.HandlerFunc(u.restartInstance))
+	}
+
+	if options.Secrets != nil {
+		u.Handle("GET /ui/secrets", User, http.HandlerFunc(u.secretsPage))
+		u.handle("POST /ui/secrets", User, MaxSecretFormBytes, http.HandlerFunc(u.setSecret))
+		u.Handle("POST /ui/secrets/{name}/delete", User, http.HandlerFunc(u.deleteSecret))
 	}
 
 	return u
@@ -231,15 +245,20 @@ func (u *UI) Routes() []Route {
 // redirected to sign-in and anything else gets 401. An Admin handler gives
 // 403 to a session outside the admin group.
 func (u *UI) Handle(pattern string, access Access, handler http.Handler) {
+	u.handle(pattern, access, MaxFormBytes, handler)
+}
+
+// handle is Handle with a body limit of limit bytes.
+func (u *UI) handle(pattern string, access Access, limit int64, handler http.Handler) {
 	u.mu.Lock()
 	u.routes = append(u.routes, Route{Pattern: pattern, Access: access})
 	u.mu.Unlock()
 
 	switch access {
 	case Public:
-		u.registrar.HandlePublic(pattern, protect(handler))
+		u.registrar.HandlePublic(pattern, protect(handler, limit))
 	case User, Admin:
-		u.registrar.Handle(pattern, protect(u.requireSession(access, requireCSRFToken(handler))))
+		u.registrar.Handle(pattern, protect(u.requireSession(access, requireCSRFToken(handler)), limit))
 	default:
 		panic(fmt.Sprintf("ui: route %s has an unknown access level %d", pattern, access))
 	}

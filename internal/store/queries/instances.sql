@@ -111,3 +111,25 @@ SELECT * FROM instances
 WHERE ((owner_principal = @owner_principal AND owner_principal <> '') OR (@include_shared::boolean AND scope = 'shared'))
   AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
 ORDER BY template_name, template_ns, created_at, id;
+
+-- name: RequestInstanceRestart :execrows
+-- Records a restart request from the web UI. Only a live, ready instance
+-- matches; the reconciler replaces it.
+UPDATE instances
+SET restart_requested_at = now(), restart_requested_by = @requested_by, updated_at = now()
+WHERE id = @id AND desired = 'running' AND status = 'ready';
+
+-- name: GetInstanceForUpdate :one
+SELECT * FROM instances WHERE id = @id FOR UPDATE;
+
+-- name: InsertReplacementInstance :one
+-- Inserts the pending row that replaces an instance. last_used_at is carried
+-- over from the old row, so a replacement doesn't count as use.
+INSERT INTO instances (
+    id, template_ns, template_name, template_uid, generation, scope, scope_key,
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at
+) VALUES (
+    @id, @template_ns, @template_name, @template_uid, @generation, @scope, @scope_key,
+    @owner_principal, @render_session, @namespace, @trace_context, now(), @last_used_at
+)
+RETURNING *;

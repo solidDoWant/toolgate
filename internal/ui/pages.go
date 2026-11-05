@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"errors"
 	"html/template"
 	"net/http"
 
@@ -20,6 +21,11 @@ type ServerSource interface {
 	// LiveInstances returns principal's live instances and, with
 	// includeShared, the shared ones.
 	LiveInstances(ctx context.Context, principal string, includeShared bool) ([]gateway.InstanceEntry, error)
+	// RequestRestart asks the reconciler to replace an outdated instance.
+	// It returns gateway.ErrInstanceNotFound when the instance isn't
+	// principal's to restart, and gateway.ErrInstanceChanged when it isn't
+	// live, ready and outdated any more.
+	RequestRestart(ctx context.Context, id, principal string, admin bool) error
 }
 
 //go:embed templates
@@ -31,6 +37,7 @@ var pageTemplates = map[string]*template.Template{
 	"audit":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
 	"sessions":    template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/sessions.html")),
 	"session":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/session.html")),
+	"secrets":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/secrets.html")),
 	"audit_event": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
 }
 
@@ -77,8 +84,21 @@ func (u *UI) render(writer http.ResponseWriter, request *http.Request, name, tit
 }
 
 type serversPage struct {
+	Notice    string
 	Servers   []gateway.ServerEntry
 	Instances []gateway.InstanceEntry
+}
+
+// Notices the Servers page shows after a restart request, by the value of
+// its `notice` parameter.
+const (
+	noticeRestartRequested = "restart-requested"
+	noticeInstanceChanged  = "instance-changed"
+)
+
+var serversNotices = map[string]string{
+	noticeRestartRequested: "The restart was requested. The new instance starts in a moment.",
+	noticeInstanceChanged:  "The instance changed before the restart request arrived. The list below is current.",
 }
 
 // servers shows the catalog as toolgate_list_servers shows it to the user
@@ -111,5 +131,31 @@ func (u *UI) servers(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	u.render(writer, request, "servers", "Servers", serversPage{Servers: servers, Instances: instances})
+	u.render(writer, request, "servers", "Servers", serversPage{
+		Notice:    serversNotices[request.URL.Query().Get("notice")],
+		Servers:   servers,
+		Instances: instances,
+	})
+}
+
+// restartInstance requests the restart of an outdated instance
+// (docs/design/phase-2.md §6, "Restart"). Another user's instance, or a
+// shared one for a non-admin, gives 404. If the instance isn't live, ready
+// and outdated any more, the Servers page says so.
+func (u *UI) restartInstance(writer http.ResponseWriter, request *http.Request) {
+	session, _ := SessionFrom(request.Context())
+
+	err := u.options.Servers.RequestRestart(request.Context(), request.PathValue("id"), session.Principal, session.Admin)
+
+	switch {
+	case errors.Is(err, gateway.ErrInstanceNotFound):
+		http.NotFound(writer, request)
+	case errors.Is(err, gateway.ErrInstanceChanged):
+		http.Redirect(writer, request, HomePath+"?notice="+noticeInstanceChanged, http.StatusSeeOther)
+	case err != nil:
+		u.logger.ErrorContext(request.Context(), "cannot request an instance restart", "error", err)
+		http.Error(writer, "The gateway can't request the restart. Try again later.", http.StatusInternalServerError)
+	default:
+		http.Redirect(writer, request, HomePath+"?notice="+noticeRestartRequested, http.StatusSeeOther)
+	}
 }

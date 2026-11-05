@@ -49,6 +49,10 @@ Set `config.ui.adminGroup` to the group whose members are admins in the UI. If i
 - The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason.
 - The running instances of the user. An admin also sees the shared instances. Each instance shows its status and if it runs an old version of its template.
 
+An instance is outdated when it runs an old version of its template. A ready, outdated instance has a Restart button. The owner of the instance can use it. For a shared instance, only an admin can use it. The gateway then starts a new instance from the current version of the template and stops the old one. Sessions keep the server enabled. The tools of the server leave the tool list while the new instance starts, and come back when it is ready. The audit log gets an `instance.stop` event with the reason `restart` and the user who asked for it.
+
+If the instance stopped or changed before the request arrived, the page tells the user and shows the current list. If the template was deleted, or the owner lost access, or the instance is idle with no session that uses it, the gateway stops the instance and does not start a new one.
+
 The navigation shows the Blocks link only to admins.
 
 ## The Sessions pages
@@ -56,6 +60,12 @@ The navigation shows the Blocks link only to admins.
 `/ui/sessions` lists the open sessions. A session is open until the gateway ends it. A user sees only their own sessions. An admin sees all of them.
 
 "Open" on a row shows `/ui/sessions/` followed by the session's number. The page shows the session's servers that are enabled and its 20 newest `tool.decision` events. Each event links to its audit page. A user who asks for another user's session, or for a session that has ended, gets 404. An admin can open any open session. You cannot end a session from the UI.
+
+## The Secrets page
+
+`/ui/secrets` shows the signed-in user's secrets: each name with the dates it was created and last set. It needs the secrets keyset, like `/api/v1/secrets`, and is not offered without it. It uses the same secret broker as the API, so the CLI and the page show the same secrets. It writes the same `secret.set` and `secret.delete` audit events, with attestation `user` and no workspace or session.
+
+The form takes a value in a text box or from a file, not both. A value is 4 MiB at most. Text from the box has its CRLF line breaks changed to LF, so a PEM key matches one set with the CLI. A file's bytes are kept as they are. The form never shows a value, and each action answers with a redirect back to the page.
 
 ## The Audit page
 

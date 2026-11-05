@@ -31,6 +31,10 @@
 #                                     account tokens the gateway accepts
 #       TOOLGATE_E2E_CHART_REPOSITORY the OCI repository of the test chart,
 #                                     as Flux inside the cluster reaches it
+#       TOOLGATE_E2E_UI_LISTEN        loopback address the web UI's public
+#                                     URL (config.ui.publicURL, https) names;
+#                                     a test serves a TLS proxy to a gateway
+#                                     pod there
 #  6. deletes the cluster, also when a step fails. E2E_KEEP_CLUSTER=true
 #     keeps it for debugging.
 #
@@ -140,6 +144,12 @@ export TOOLGATE_E2E_OIDC_ISSUER="http://$host_address:$oidc_port"
 otlp_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
 export TOOLGATE_E2E_OTLP_LISTEN="$host_address:$otlp_port"
 
+# The web UI's public URL is a loopback port on the host, where a browser
+# test serves a TLS proxy to a gateway pod. The fake identity provider allows
+# its callback.
+ui_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
+export TOOLGATE_E2E_UI_LISTEN="127.0.0.1:$ui_port"
+
 log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 workload_namespace=toolgate-workloads
@@ -154,6 +164,8 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.database.existingSecret=toolgate-database \
 	--set config.oidc.issuerURL="$TOOLGATE_E2E_OIDC_ISSUER" \
 	--set config.oidc.audience=toolgate \
+	--set config.ui.clientID=toolgate-ui \
+	--set config.ui.publicURL="https://$TOOLGATE_E2E_UI_LISTEN" \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
