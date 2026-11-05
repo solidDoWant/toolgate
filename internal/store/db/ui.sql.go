@@ -11,6 +11,18 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countUILogins = `-- name: CountUILogins :one
+SELECT count(*) FROM ui_logins
+`
+
+// Counts the sign-ins in progress, to refuse new ones over the limit.
+func (q *Queries) CountUILogins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countUILogins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteUISession = `-- name: DeleteUISession :exec
 DELETE FROM ui_sessions WHERE id_hash = $1
 `

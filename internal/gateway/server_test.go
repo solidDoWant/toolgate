@@ -19,6 +19,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/testutil"
+	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
 // unreachableDatabase points at a port nothing listens on.
@@ -313,5 +314,25 @@ func TestOnlyProbesAndClientMetadataArePublic(t *testing.T) {
 		"GET /healthz",
 		"GET /readyz",
 		"GET /.well-known/toolgate-client",
+	}, server.PublicRoutes())
+}
+
+// With the web UI, its sign-in routes and static files are the only other
+// routes on the main port that answer without authentication.
+func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
+	t.Parallel()
+
+	server, err := gateway.New(t.Context(), testConfig(), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+
+	ui.New(ui.Options{IssuerURL: "https://idp.invalid", ClientID: "toolgate-ui", PublicURL: "https://toolgate.example"}, server)
+
+	assert.ElementsMatch(t, []string{
+		"GET /healthz",
+		"GET /readyz",
+		"GET /.well-known/toolgate-client",
+		"GET /ui/login",
+		"GET /ui/auth/callback",
+		"GET /ui/static/",
 	}, server.PublicRoutes())
 }

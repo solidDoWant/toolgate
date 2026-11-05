@@ -164,6 +164,35 @@ type Config struct {
 	// zero. The chart sets it from `config.sessionIdleTimeout`.
 	SessionIdleTimeout Duration `json:"sessionIdleTimeout" env:"TOOLGATE_SESSION_IDLE_TIMEOUT"`
 
+	// The URL where users reach the gateway in a browser, such as
+	// `https://toolgate.example.com`. Required when `oidcUIClientID` is set.
+	// It must be `https://`; `http://localhost` and `http://127.0.0.1` are
+	// accepted for tests only. The web UI's sign-in redirect URI is this URL
+	// plus `/ui/auth/callback`.
+	PublicURL string `json:"publicURL" env:"TOOLGATE_PUBLIC_URL"`
+
+	// The client ID that the web UI signs users in with, using the
+	// authorization code grant with PKCE. It is a separate client from
+	// `oidcCLIClientID`, and the IdP must allow the redirect URI `publicURL`
+	// plus `/ui/auth/callback`. Both clients must give a user the same
+	// subject (`sub`). The web UI is on only when this is set.
+	OIDCUIClientID string `json:"oidcUIClientID" env:"TOOLGATE_OIDC_UI_CLIENT_ID"`
+
+	// The path of a file that holds the web UI client's secret. Mount it from
+	// a Kubernetes Secret. If it is empty, the web UI is a public client
+	// (without a secret). PKCE is used in both cases.
+	OIDCUIClientSecretFile string `json:"oidcUIClientSecretFile" env:"TOOLGATE_OIDC_UI_CLIENT_SECRET_FILE"`
+
+	// The scopes that the web UI asks for at sign-in. In the environment
+	// variable, separate the scopes with commas. The IdP must put the email
+	// and groups claims in the ID token.
+	OIDCUIScopes []string `json:"oidcUIScopes" env:"TOOLGATE_OIDC_UI_SCOPES"`
+
+	// The group whose members are web UI admins, checked against the groups
+	// from the user's sign-in. Group changes take effect at the latest when
+	// the 8-hour UI session ends. If it is empty, nobody is an admin.
+	AdminGroup string `json:"adminGroup" env:"TOOLGATE_ADMIN_GROUP"`
+
 	// Whether the gateway stores audit payloads: the arguments of each tool
 	// call and approval request, and each tool result. A payload under 64 KiB
 	// (65,536 bytes) is stored in its audit row in PostgreSQL. A larger one
@@ -242,6 +271,7 @@ func Default() Config {
 		OIDCEmailVerifiedClaim: "email_verified",
 		OIDCGroupsClaim:        "groups",
 		OIDCCLIScopes:          []string{"openid", "email", "profile", "offline_access"},
+		OIDCUIScopes:           []string{"openid", "email", "profile"},
 		InstanceLimitPerUser:   20,
 		InstanceLimit:          200,
 		SessionIdleTimeout:     Duration(2 * time.Hour),
@@ -506,6 +536,8 @@ func (c Config) Validate() []error {
 		problems = append(problems, errors.New("sessionIdleTimeout: must be greater than zero"))
 	}
 
+	problems = append(problems, c.validateUI()...)
+
 	if c.AuditPayloads && c.AuditS3Bucket == "" {
 		problems = append(problems, errors.New("auditS3Bucket: required when auditPayloads is true"))
 	}
@@ -518,6 +550,52 @@ func (c Config) Validate() []error {
 	}
 
 	return problems
+}
+
+// UIEnabled reports whether the web UI is on: oidcUIClientID is set.
+func (c Config) UIEnabled() bool {
+	return c.OIDCUIClientID != ""
+}
+
+func (c Config) validateUI() []error {
+	var problems []error
+
+	if c.PublicURL != "" {
+		if err := validatePublicURL(c.PublicURL); err != nil {
+			problems = append(problems, err)
+		}
+	}
+
+	if !c.UIEnabled() {
+		return problems
+	}
+
+	if c.PublicURL == "" {
+		problems = append(problems, errors.New("publicURL: required with oidcUIClientID"))
+	}
+
+	return problems
+}
+
+// validatePublicURL accepts an https URL, or http on localhost or 127.0.0.1
+// for tests: the UI's `__Host-` cookies need a secure origin.
+func validatePublicURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Path != "" && parsed.Path != "/") {
+		return fmt.Errorf("publicURL: %q is not a URL with only a scheme, host and port", raw)
+	}
+
+	switch parsed.Scheme {
+	case "https":
+		return nil
+	case "http":
+		if host := parsed.Hostname(); host == "localhost" || host == "127.0.0.1" {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("publicURL: %q must be https://, or http://localhost or http://127.0.0.1 for tests", raw)
 }
 
 func validateAddress(key, address string) []error {

@@ -41,6 +41,25 @@ config:
     # gateway's default, `groups`.
     groupsClaim: ""
 
+  ui:
+    # -- URL where users open the gateway in a browser, such as
+    # `https://toolgate.example.com`. Required when `config.ui.clientID` is
+    # set. It must be `https://`.
+    publicURL: ""
+    # -- OIDC client ID of the web UI. The web UI is on only when this is
+    # set. The identity provider must allow the redirect URI
+    # `config.ui.publicURL` + `/ui/auth/callback`.
+    clientID: ""
+    # -- Path of a file that holds the web UI client's secret, mounted from a
+    # Secret with `persistence`. Empty means a public client.
+    clientSecretFile: ""
+    # -- Scopes the web UI asks for at sign-in. Empty means the gateway's
+    # default, `openid email profile`.
+    scopes: []
+    # -- Group whose members are web UI admins. Empty means nobody is an
+    # admin.
+    adminGroup: ""
+
   # -- Namespaces whose `MCPServerTemplate` and `ToolgateRule` objects the
   # gateway reads, such as `[toolgate-catalog]`. Empty means the release
   # namespace.

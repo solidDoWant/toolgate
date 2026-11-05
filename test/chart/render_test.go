@@ -412,6 +412,52 @@ func TestInstanceLimits(t *testing.T) {
 	}
 }
 
+func TestWebUISettings(t *testing.T) {
+	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
+		t.Helper()
+
+		manifests, err := render(t, append(append([]string{}, quickStartValues...), set...))
+		require.NoError(t, err)
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		values := map[string]string{}
+
+		for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+			values[variable.Name] = variable.Value
+		}
+
+		return values
+	}
+
+	t.Run("off by default", func(t *testing.T) {
+		values := gatewayEnv(t)
+		for _, name := range []string{"TOOLGATE_PUBLIC_URL", "TOOLGATE_OIDC_UI_CLIENT_ID", "TOOLGATE_OIDC_UI_CLIENT_SECRET_FILE", "TOOLGATE_OIDC_UI_SCOPES", "TOOLGATE_ADMIN_GROUP"} {
+			assert.NotContains(t, values, name)
+		}
+	})
+
+	t.Run("set from config.ui", func(t *testing.T) {
+		values := gatewayEnv(t,
+			"config.ui.publicURL=https://toolgate.example.com",
+			"config.ui.clientID=toolgate-ui",
+			"config.ui.clientSecretFile=/var/run/secrets/toolgate-ui/secret",
+			"config.ui.scopes={openid,email,profile,groups}",
+			"config.ui.adminGroup=toolgate-admins",
+		)
+		assert.Equal(t, "https://toolgate.example.com", values["TOOLGATE_PUBLIC_URL"])
+		assert.Equal(t, "toolgate-ui", values["TOOLGATE_OIDC_UI_CLIENT_ID"])
+		assert.Equal(t, "/var/run/secrets/toolgate-ui/secret", values["TOOLGATE_OIDC_UI_CLIENT_SECRET_FILE"])
+		assert.Equal(t, "openid,email,profile,groups", values["TOOLGATE_OIDC_UI_SCOPES"])
+		assert.Equal(t, "toolgate-admins", values["TOOLGATE_ADMIN_GROUP"])
+	})
+
+	t.Run("client ID needs the public URL", func(t *testing.T) {
+		_, err := render(t, append(append([]string{}, quickStartValues...), "config.ui.clientID=toolgate-ui"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "config.ui.publicURL is required")
+	})
+}
+
 func TestAuditPayloadSettings(t *testing.T) {
 	gatewayEnv := func(t *testing.T, set ...string) map[string]corev1.EnvVar {
 		t.Helper()

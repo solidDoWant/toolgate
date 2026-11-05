@@ -14,6 +14,9 @@ settings from `config`.
 {{- if not .oidc.audience }}
 {{- fail "config.oidc.audience is required: the audience of users' access tokens" }}
 {{- end }}
+{{- if and .ui.clientID (not .ui.publicURL) }}
+{{- fail "config.ui.publicURL is required with config.ui.clientID: the URL where users open the web UI" }}
+{{- end }}
 {{- range $setting := list "instancesPerUser" "instances" }}
 {{- $value := index $.Values.config.limits $setting }}
 {{- if or (not (has (kindOf $value) (list "int" "int64" "float64"))) (lt (float64 $value) 1.0) (ne (float64 $value) (floor $value)) }}
@@ -40,6 +43,16 @@ settings from `config`.
 {{- range $setting, $name := dict "emailClaim" "TOOLGATE_OIDC_EMAIL_CLAIM" "emailVerifiedClaim" "TOOLGATE_OIDC_EMAIL_VERIFIED_CLAIM" "groupsClaim" "TOOLGATE_OIDC_GROUPS_CLAIM" }}
 {{- with index $config.oidc $setting }}
 {{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- with $config.ui }}
+{{- range $setting, $name := dict "publicURL" "TOOLGATE_PUBLIC_URL" "clientID" "TOOLGATE_OIDC_UI_CLIENT_ID" "clientSecretFile" "TOOLGATE_OIDC_UI_CLIENT_SECRET_FILE" "adminGroup" "TOOLGATE_ADMIN_GROUP" }}
+{{- with index $.Values.config.ui $setting }}
+{{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- with .scopes }}
+{{- $env = append $env (dict "name" "TOOLGATE_OIDC_UI_SCOPES" "value" (join "," .)) }}
 {{- end }}
 {{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LEASE_NAMESPACE" "value" .Release.Namespace) -}}
