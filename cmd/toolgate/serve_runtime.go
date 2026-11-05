@@ -66,13 +66,13 @@ func startRuntime(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, lo
 
 	listener := store.NewListener(pool, logger)
 
-	if err := mgr.Add(&runtime.Reconciler{
+	reconciler := &runtime.Reconciler{
 		Pass:      runtime.FullPass(db.New(pool), logger),
 		Subscribe: listener.Subscribe,
 		Fence:     lease,
 		Client:    mgr.GetClient(),
-		Log:       logger,
-	}); err != nil {
+	}
+	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
 

@@ -4,10 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"time"
 
+	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/solidDoWant/toolgate/internal/store"
 )
@@ -21,8 +27,8 @@ const DefaultPassInterval = 30 * time.Second
 // holds the Lease.
 var ErrNotLeader = errors.New("runtime: this replica no longer holds the leader Lease")
 
-// Reconciler is the runtime reconciler loop. It is a controller-runtime
-// runnable that needs leader election, so it runs only on the replica that
+// Reconciler is the runtime reconciler. It is a controller-runtime
+// controller that needs leader election, so it runs only on the replica that
 // holds the Lease, and stops when that replica loses it.
 type Reconciler struct {
 	// Pass does one full pass over every row.
@@ -36,62 +42,58 @@ type Reconciler struct {
 	Client client.Client
 	// Interval between full passes. Zero means DefaultPassInterval.
 	Interval time.Duration
-	Log      *slog.Logger
 }
 
-// NeedLeaderElection makes the manager start the reconciler only on the
-// Lease holder.
-func (r *Reconciler) NeedLeaderElection() bool {
-	return true
+// passRequest is the work queue item for a full pass. There is only one, so
+// triggers that arrive while a pass waits or runs fold into one more pass.
+type passRequest struct{}
+
+// SetupWithManager registers the reconciler with mgr. On the Lease holder it
+// runs a full pass at once, then every Interval and after every `instance:`
+// or `session:` notification, or after notifications were missed. A failed
+// pass is retried with backoff.
+func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
+	notifications := make(chan event.TypedGenericEvent[store.Event])
+
+	// A runnable needs leader election unless it says otherwise.
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		return r.feed(ctx, notifications)
+	})); err != nil {
+		return fmt.Errorf("runtime reconciler: %w", err)
+	}
+
+	return builder.TypedControllerManagedBy[passRequest](mgr).
+		Named("runtime").
+		WatchesRawSource(source.TypedChannel(notifications, handler.TypedFuncs[store.Event, passRequest]{
+			GenericFunc: func(_ context.Context, notification event.TypedGenericEvent[store.Event], queue workqueue.TypedRateLimitingInterface[passRequest]) {
+				if triggersPass(notification.Object) {
+					queue.Add(passRequest{})
+				}
+			},
+		})).
+		Complete(r)
 }
 
-// Start runs a full pass at once, then every Interval and after every
-// `instance:` or `session:` notification, until ctx ends. Notifications that
-// arrive during a pass are folded into one following pass. A failed pass is
-// logged; the next trigger retries.
-func (r *Reconciler) Start(ctx context.Context) error {
+// feed subscribes to the notifications and passes them to the controller,
+// starting with a Missed event: on gaining the Lease, everything counts as
+// changed.
+func (r *Reconciler) feed(ctx context.Context, notifications chan<- event.TypedGenericEvent[store.Event]) error {
 	events, unsubscribe := r.Subscribe()
 	defer unsubscribe()
 
-	interval := r.Interval
-	if interval == 0 {
-		interval = DefaultPassInterval
-	}
+	next := store.Event{Missed: true}
 
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	r.Log.InfoContext(ctx, "runtime reconciler started")
-
-	for {
-		if err := r.Pass(ctx); err != nil && ctx.Err() == nil {
-			r.Log.ErrorContext(ctx, "runtime reconciler pass failed", slog.String("error", err.Error()))
-		}
-
-		if !r.wait(ctx, events, ticker.C) {
-			r.Log.InfoContext(ctx, "runtime reconciler stopped")
-
-			return nil
-		}
-	}
-}
-
-// wait blocks until the next pass is due and reports false when ctx ends.
-func (r *Reconciler) wait(ctx context.Context, events <-chan store.Event, ticks <-chan time.Time) bool {
 	for {
 		select {
 		case <-ctx.Done():
-			return false
-		case <-ticks:
-			return true
-		case event := <-events:
-			if !triggersPass(event) {
-				continue
-			}
+			return nil
+		case notifications <- event.TypedGenericEvent[store.Event]{Object: next}:
+		}
 
-			drain(events)
-
-			return true
+		select {
+		case <-ctx.Done():
+			return nil
+		case next = <-events:
 		}
 	}
 }
@@ -100,16 +102,18 @@ func triggersPass(event store.Event) bool {
 	return event.Missed || event.Kind == store.KindInstance || event.Kind == store.KindSession
 }
 
-// drain discards the events already buffered: the pass about to run covers
-// them.
-func drain(events <-chan store.Event) {
-	for {
-		select {
-		case <-events:
-		default:
-			return
-		}
+// Reconcile runs one full pass and schedules the next one.
+func (r *Reconciler) Reconcile(ctx context.Context, _ passRequest) (reconcile.Result, error) {
+	if err := r.Pass(ctx); err != nil {
+		return reconcile.Result{}, fmt.Errorf("runtime reconciler pass: %w", err)
 	}
+
+	interval := r.Interval
+	if interval == 0 {
+		interval = DefaultPassInterval
+	}
+
+	return reconcile.Result{RequeueAfter: interval}, nil
 }
 
 // Delete deletes object from Kubernetes, but only while this replica still

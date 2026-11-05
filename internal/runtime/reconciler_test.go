@@ -2,8 +2,6 @@ package runtime_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -25,19 +24,16 @@ type fakeFence struct{ holds atomic.Bool }
 
 func (f *fakeFence) HoldsLease() bool { return f.holds.Load() }
 
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-// startLoop runs a reconciler whose passes are reported on the returned
-// channel, and returns the channel that feeds it notifications.
+// startLoop runs a reconciler without leader election, whose passes are
+// reported on the returned channel, and returns the channel that feeds it
+// notifications.
 func startLoop(t *testing.T, interval time.Duration) (chan<- store.Event, <-chan struct{}) {
 	t.Helper()
 
 	events := make(chan store.Event, 16)
 	passes := make(chan struct{}, 64)
 
-	reconciler := &runtime.Reconciler{
+	startManager(t, manager.Options{}, &runtime.Reconciler{
 		Pass: func(context.Context) error {
 			passes <- struct{}{}
 
@@ -46,17 +42,6 @@ func startLoop(t *testing.T, interval time.Duration) (chan<- store.Event, <-chan
 		Subscribe: func() (<-chan store.Event, func()) { return events, func() {} },
 		Fence:     &fakeFence{},
 		Interval:  interval,
-		Log:       discardLogger(),
-	}
-
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-
-	go func() { done <- reconciler.Start(ctx) }()
-
-	t.Cleanup(func() {
-		cancel()
-		require.NoError(t, <-done)
 	})
 
 	return events, passes
@@ -115,7 +100,7 @@ func TestReconcilerDeletesOnlyWhileHoldingTheLease(t *testing.T) {
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "tg-0123"}}
 	kube := clientfake.NewClientBuilder().WithObjects(namespace.DeepCopy()).Build()
 	fence := &fakeFence{}
-	reconciler := &runtime.Reconciler{Fence: fence, Client: kube, Log: discardLogger()}
+	reconciler := &runtime.Reconciler{Fence: fence, Client: kube}
 
 	fence.holds.Store(false)
 

@@ -102,6 +102,7 @@ func (l *Lease) HoldsLease() bool {
 func ManagerOptions(lease *Lease, timing ElectionTiming) manager.Options {
 	return manager.Options{
 		LeaderElection:                      true,
+		LeaderElectionID:                    LeaseName,
 		LeaderElectionResourceLockInterface: lease,
 		LeaderElectionReleaseOnCancel:       true,
 		LeaseDuration:                       &timing.LeaseDuration,

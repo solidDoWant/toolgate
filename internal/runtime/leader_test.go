@@ -3,8 +3,6 @@ package runtime_test
 import (
 	"context"
 	"errors"
-	"io"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -16,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -114,42 +113,48 @@ func startReplica(t *testing.T, clientset *fake.Clientset, identity string) *rep
 
 	r := &replica{lease: runtime.NewLease(lock, timing.RenewDeadline)}
 
-	options := runtime.ManagerOptions(r.lease, timing)
-	options.Metrics = metricsserver.Options{BindAddress: "0"}
-
-	// The manager never reaches this address: the Lease lives in the fake
-	// clientset and the reconciler touches no other API.
-	mgr, err := manager.New(&rest.Config{Host: "http://127.0.0.1:1"}, options)
-	require.NoError(t, err)
-
-	events := make(chan store.Event)
-
-	require.NoError(t, mgr.Add(&runtime.Reconciler{
+	r.stop = startManager(t, runtime.ManagerOptions(r.lease, timing), &runtime.Reconciler{
 		Pass: func(context.Context) error {
 			r.passes.Add(1)
 
 			return nil
 		},
-		Subscribe: func() (<-chan store.Event, func()) { return events, func() {} },
+		Subscribe: func() (<-chan store.Event, func()) { return make(chan store.Event), func() {} },
 		Fence:     r.lease,
 		Interval:  time.Hour,
-		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}))
+	})
+
+	return r
+}
+
+// startManager runs a manager with options and reconciler until the test
+// ends, and returns a function that stops it and returns its result.
+func startManager(t *testing.T, options manager.Options, reconciler *runtime.Reconciler) func() error {
+	t.Helper()
+
+	options.Metrics = metricsserver.Options{BindAddress: "0"}
+	options.Controller.SkipNameValidation = ptr.To(true)
+
+	// The manager never reaches this address: a Lease lives in a fake
+	// clientset and the reconciler touches no other API.
+	mgr, err := manager.New(&rest.Config{Host: "http://127.0.0.1:1"}, options)
+	require.NoError(t, err)
+	require.NoError(t, reconciler.SetupWithManager(mgr))
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 
 	go func() { done <- mgr.Start(ctx) }()
 
-	r.stop = sync.OnceValue(func() error {
+	stop := sync.OnceValue(func() error {
 		cancel()
 
 		return <-done
 	})
 
-	t.Cleanup(func() { _ = r.stop() })
+	t.Cleanup(func() { _ = stop() })
 
-	return r
+	return stop
 }
 
 func TestOnlyTheLeaseHolderRunsTheReconciler(t *testing.T) {
