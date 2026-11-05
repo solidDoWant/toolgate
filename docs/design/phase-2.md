@@ -124,7 +124,7 @@ A grant's expiry stops nothing. The server stays enabled, its tools are left out
 ## 4. Approvals and grants inside a session
 
 **Elicitation through the go-sdk.** The tool handlers use the go-sdk's multi round-trip style. A handler that needs a person returns a `CallToolResult` whose `InputRequests` holds one URL-mode `ElicitParams`, with a `RequestState`.
-- On revision 2026-07-28, the client opens the URL and calls the tool again with `InputResponses` and the same `RequestState`.
+- On revision 2026-07-28, the client opens the URL and calls the tool again with `InputResponses` and the same `RequestState`. The gateway doesn't negotiate this revision yet (`SPEC.md` §5). A test proves this path through a stateless go-sdk server created only in the test.
 - On revision 2025-11-25, the go-sdk's server middleware sends `elicitation/create` itself and runs the handler again with the response.
 
 So one code path serves both revisions, and toolgate never builds elicitation messages itself.
