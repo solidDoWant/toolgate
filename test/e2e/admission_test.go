@@ -74,7 +74,11 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 	instanceNamespace := "tg-" + instance
 	plainNamespace := "e2e-plain-" + suffix
 
-	createNamespace(t, admin, instanceNamespace, instanceLabels(instance))
+	// The namespace carries toolgate's managed-by label, which is all the
+	// admission policy looks at, but not the instance label: the orphan sweep
+	// deletes every namespace with that label and no live instance row behind
+	// it, and this namespace has none.
+	createNamespace(t, admin, instanceNamespace, toolgateLabels)
 	createNamespace(t, admin, plainNamespace, nil)
 	grantAdmin(t, admin, instanceNamespace)
 	grantAdmin(t, admin, plainNamespace)
