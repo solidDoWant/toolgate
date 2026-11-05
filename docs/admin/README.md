@@ -10,4 +10,6 @@ toolgate is in early development, and these pages are not written yet. They will
 - understand what the security model protects against, and what a client can avoid by the workspace or session that it claims;
 - operate toolgate: the audit log, metrics, traces and upgrades.
 
+The [gateway configuration reference](configuration.md) lists the settings of `toolgate serve`.
+
 Until then, [`SPEC.md`](../../SPEC.md) describes the system.
