@@ -18,6 +18,11 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | imagePullSecrets | list | `[]` | Secrets that hold credentials for pulling the image. |
 | logLevel | string | `"info"` | Lowest level of the JSON log lines: `debug`, `info`, `warn` or `error`. |
 | nodeSelector | object | `{}` | Node selector for the gateway pods. |
+| oidc.audience | string | `""` | Audience that users' access tokens must contain, such as `toolgate`. Required. |
+| oidc.emailClaim | string | `""` | Access token claim that holds the user's email address. Empty means the gateway's default, `email`. |
+| oidc.emailVerifiedClaim | string | `""` | Access token claim that tells whether the identity provider verified the email address. Empty means the gateway's default, `email_verified`. |
+| oidc.groupsClaim | string | `""` | Access token claim that holds the user's groups. Empty means the gateway's default, `groups`. |
+| oidc.issuerURL | string | `""` | Issuer URL of the OIDC identity provider that users sign in with, such as `https://idp.example.com/realms/main`. Required. |
 | otlpEndpoint | string | `""` | OTLP/HTTP endpoint for the gateway's traces, such as `http://otel-collector:4318`. Empty turns trace export off. |
 | podAnnotations | object | `{}` | Extra annotations for the gateway pods. |
 | podLabels | object | `{}` | Extra labels for the gateway pods. |

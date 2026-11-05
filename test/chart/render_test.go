@@ -9,6 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,11 @@ const (
 var chartDir = filepath.Join("..", "..", "deploy", "charts", "toolgate")
 
 // quickStartValues are the values docs/admin/quick-start.md installs with.
-var quickStartValues = []string{"database.existingSecret=toolgate-database"}
+var quickStartValues = []string{
+	"database.existingSecret=toolgate-database",
+	"oidc.issuerURL=https://idp.example.com/realms/main",
+	"oidc.audience=toolgate",
+}
 
 type manifest struct {
 	Kind     string `json:"kind"`
@@ -165,6 +170,15 @@ func TestChartRendersTheGateway(t *testing.T) {
 	assert.Equal(t, "toolgate-database", databaseURL.ValueFrom.SecretKeyRef.Name)
 	assert.Equal(t, "url", databaseURL.ValueFrom.SecretKeyRef.Key)
 
+	values := map[string]string{}
+	for _, variable := range container.Env {
+		values[variable.Name] = variable.Value
+	}
+
+	assert.Equal(t, "https://idp.example.com/realms/main", values["TOOLGATE_OIDC_ISSUER_URL"])
+	assert.Equal(t, "toolgate", values["TOOLGATE_OIDC_AUDIENCE"])
+	assert.NotContains(t, values, "TOOLGATE_OIDC_EMAIL_CLAIM", "an empty claim value keeps the gateway's default")
+
 	for _, candidate := range manifests {
 		if candidate.Kind == "CustomResourceDefinition" {
 			continue
@@ -176,10 +190,22 @@ func TestChartRendersTheGateway(t *testing.T) {
 	}
 }
 
-func TestChartRequiresTheDatabaseSecret(t *testing.T) {
-	_, err := render(t, nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "database.existingSecret is required")
+func TestChartRequiresTheDatabaseAndTheIdentityProvider(t *testing.T) {
+	for _, required := range []string{"database.existingSecret", "oidc.issuerURL", "oidc.audience"} {
+		t.Run(required, func(t *testing.T) {
+			var set []string
+
+			for _, value := range quickStartValues {
+				if !strings.HasPrefix(value, required+"=") {
+					set = append(set, value)
+				}
+			}
+
+			_, err := render(t, set)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), required+" is required")
+		})
+	}
 }
 
 func TestClusterRoleIsExactlyTheDesignedOne(t *testing.T) {

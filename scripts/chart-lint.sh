@@ -7,7 +7,8 @@ cd "$(git rev-parse --show-toplevel)"
 
 chart="deploy/charts/toolgate"
 # The values docs/admin/quick-start.md installs with.
-quick_start=(--set database.existingSecret=toolgate-database)
+quick_start=(--set database.existingSecret=toolgate-database
+	--set oidc.issuerURL=https://idp.example.com/realms/main --set oidc.audience=toolgate)
 
 failed=""
 helm lint --strict "$chart" "${quick_start[@]}" || failed="$failed helm-lint"

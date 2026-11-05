@@ -11,6 +11,7 @@ You need these items:
 - A Kubernetes 1.35 cluster, with Flux v2 installed.
 - A PostgreSQL database that the gateway can reach, and its connection string.
 - An S3 bucket.
+- An OIDC identity provider that users sign in with. You need its issuer URL and the audience of its access tokens for toolgate.
 - Helm 3.8 or later, and `kubectl` with cluster-admin rights.
 
 ## Install the chart
@@ -28,22 +29,24 @@ You need these items:
      --from-literal=url='postgres://toolgate:PASSWORD@postgres.example:5432/toolgate'
    ```
 
-3. Install the chart with the release name `toolgate`. Give it the name of the Secret from step 2:
-
-   ```sh
-   helm install toolgate oci://ghcr.io/soliddowant/charts/toolgate \
-     --namespace toolgate-system \
-     --set database.existingSecret=toolgate-database
-   ```
-
-   The quick-start values are only this one setting:
+3. Write the quick-start values to a file named `values.yaml`. Use the name of the Secret from step 2, and the issuer URL and audience of your identity provider:
 
    ```yaml
    database:
      existingSecret: toolgate-database
+   oidc:
+     issuerURL: https://idp.example.com/realms/main
+     audience: toolgate
    ```
 
-4. Wait until the two gateway pods are ready:
+4. Install the chart with the release name `toolgate`:
+
+   ```sh
+   helm install toolgate oci://ghcr.io/soliddowant/charts/toolgate \
+     --namespace toolgate-system --values values.yaml
+   ```
+
+5. Wait until the two gateway pods are ready:
 
    ```sh
    kubectl --namespace toolgate-system rollout status deployment/toolgate

@@ -1,6 +1,12 @@
 {{- if not .Values.database.existingSecret }}
 {{- fail "database.existingSecret is required: the name of a Secret that holds the PostgreSQL connection string" }}
 {{- end }}
+{{- if not .Values.oidc.issuerURL }}
+{{- fail "oidc.issuerURL is required: the issuer URL of the OIDC identity provider" }}
+{{- end }}
+{{- if not .Values.oidc.audience }}
+{{- fail "oidc.audience is required: the audience of users' access tokens" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -51,6 +57,22 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.database.existingSecret }}
                   key: {{ .Values.database.secretKey }}
+            - name: TOOLGATE_OIDC_ISSUER_URL
+              value: {{ .Values.oidc.issuerURL | quote }}
+            - name: TOOLGATE_OIDC_AUDIENCE
+              value: {{ .Values.oidc.audience | quote }}
+            {{- with .Values.oidc.emailClaim }}
+            - name: TOOLGATE_OIDC_EMAIL_CLAIM
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.oidc.emailVerifiedClaim }}
+            - name: TOOLGATE_OIDC_EMAIL_VERIFIED_CLAIM
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.oidc.groupsClaim }}
+            - name: TOOLGATE_OIDC_GROUPS_CLAIM
+              value: {{ . | quote }}
+            {{- end }}
             - name: TOOLGATE_LOG_LEVEL
               value: {{ .Values.logLevel | quote }}
             {{- with .Values.otlpEndpoint }}
