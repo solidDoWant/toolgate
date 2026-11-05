@@ -413,8 +413,9 @@ func (s *oidcStorage) setUserinfo(userinfo *oidc.UserInfo, subject string) error
 	return nil
 }
 
-// deviceClient is a public client allowed only the device-code grant. Its
-// access tokens are JWTs, as the gateway verifies them against the JWKS.
+// deviceClient is a public client allowed the device-code and refresh-token
+// grants. Its access tokens are JWTs, as the gateway verifies them against
+// the JWKS.
 type deviceClient struct {
 	id string
 }
@@ -429,7 +430,7 @@ func (c *deviceClient) ResponseTypes() []oidc.ResponseType {
 }
 
 func (c *deviceClient) GrantTypes() []oidc.GrantType {
-	return []oidc.GrantType{oidc.GrantTypeDeviceCode}
+	return []oidc.GrantType{oidc.GrantTypeDeviceCode, oidc.GrantTypeRefreshToken}
 }
 func (c *deviceClient) LoginURL(string) string               { return "" }
 func (c *deviceClient) AccessTokenType() op.AccessTokenType  { return op.AccessTokenTypeJWT }

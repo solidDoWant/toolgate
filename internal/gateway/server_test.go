@@ -331,3 +331,51 @@ func TestShutdownGivesUpAfterTimeout(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "did not drain within 100ms")
 }
+
+func TestClientMetadataIsServedWithoutAuthentication(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.OIDCIssuerURL = "https://idp.example/realms/main"
+	cfg.OIDCCLIClientID = "toolgate-cli"
+	cfg.OIDCEmailClaim = "mail"
+	running := start(t, cfg, nil)
+
+	status, body := get(t, running.url("/.well-known/toolgate-client"), nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.JSONEq(t, `{
+		"issuer": "https://idp.example/realms/main",
+		"clientID": "toolgate-cli",
+		"scopes": ["openid", "email", "profile", "offline_access"],
+		"emailClaim": "mail"
+	}`, body)
+}
+
+func TestClientMetadataIsRateLimitedPerAddress(t *testing.T) {
+	t.Parallel()
+
+	running := start(t, testConfig(), nil)
+
+	for range 10 {
+		status, _ := get(t, running.url("/.well-known/toolgate-client"), nil)
+		require.Equal(t, http.StatusOK, status)
+	}
+
+	status, _ := get(t, running.url("/.well-known/toolgate-client"), nil)
+	assert.Equal(t, http.StatusTooManyRequests, status)
+}
+
+// The probes and the client metadata document are the only routes on the
+// main port that answer without authentication; metrics are on their own port.
+func TestOnlyProbesAndClientMetadataArePublic(t *testing.T) {
+	t.Parallel()
+
+	server, err := gateway.New(t.Context(), testConfig(), slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{
+		"GET /healthz",
+		"GET /readyz",
+		"GET /.well-known/toolgate-client",
+	}, server.PublicRoutes())
+}

@@ -125,7 +125,7 @@ type Authenticator struct {
 	accounts *serviceAccountVerifier
 	claims   claimNames
 	recorder RefusalRecorder
-	limiter  *refusalLimiter
+	limiter  *RateLimiter
 	dropped  prometheus.Counter
 }
 
@@ -171,7 +171,7 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		accounts: accounts,
 		claims:   claims,
 		recorder: options.Recorder,
-		limiter:  newRefusalLimiter(),
+		limiter:  NewRateLimiter(),
 		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "toolgate_auth_refusals_dropped_total",
 			Help: "Failed sign-ins not written to the audit log because their remote address passed 10 a minute.",
@@ -371,9 +371,9 @@ func unverifiedIssuer(token string) string {
 }
 
 func (a *Authenticator) refuse(request *http.Request, refusal Refusal) {
-	refusal.RemoteAddress = remoteIP(request)
+	refusal.RemoteAddress = RemoteIP(request)
 
-	if !a.limiter.allow(refusal.RemoteAddress) {
+	if !a.limiter.Allow(refusal.RemoteAddress) {
 		a.dropped.Inc()
 
 		return
@@ -384,7 +384,8 @@ func (a *Authenticator) refuse(request *http.Request, refusal Refusal) {
 	}
 }
 
-func remoteIP(request *http.Request) string {
+// RemoteIP returns the IP address of the request's peer, without its port.
+func RemoteIP(request *http.Request) string {
 	host, _, err := net.SplitHostPort(request.RemoteAddr)
 	if err != nil {
 		return request.RemoteAddr

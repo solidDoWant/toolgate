@@ -82,6 +82,20 @@ type Config struct {
 	// strings. The gateway refuses a token if this claim has another type.
 	OIDCGroupsClaim string `json:"oidcGroupsClaim" env:"TOOLGATE_OIDC_GROUPS_CLAIM"`
 
+	// The client ID that `toolgate login` signs in with, such as
+	// `toolgate-cli`. It must be a public client (one without a secret) with
+	// the OAuth 2.0 device authorization grant. The gateway publishes it, with
+	// `oidcIssuerURL`, `oidcCLIScopes` and `oidcEmailClaim`, at
+	// `/.well-known/toolgate-client` without authentication. If it is empty,
+	// users must pass `--client-id` to `toolgate login`.
+	OIDCCLIClientID string `json:"oidcCLIClientID" env:"TOOLGATE_OIDC_CLI_CLIENT_ID"`
+
+	// The scopes that `toolgate login` asks for. In the environment variable,
+	// separate the scopes with commas. Keep `offline_access`: without it, the
+	// IdP gives no refresh token and users must sign in again when their
+	// access token expires.
+	OIDCCLIScopes []string `json:"oidcCLIScopes" env:"TOOLGATE_OIDC_CLI_SCOPES"`
+
 	// The namespaces whose pods may sign in with a Kubernetes service-account
 	// token, such as `[ci, agents]`. In the environment variable, separate
 	// the names with commas. A pod signs in with a projected token for the
@@ -107,6 +121,7 @@ func Default() Config {
 		OIDCEmailClaim:         "email",
 		OIDCEmailVerifiedClaim: "email_verified",
 		OIDCGroupsClaim:        "groups",
+		OIDCCLIScopes:          []string{"openid", "email", "profile", "offline_access"},
 	}
 }
 
@@ -295,6 +310,10 @@ func (c Config) Validate() []error {
 		if value == "" {
 			problems = append(problems, fmt.Errorf("%s: must not be empty", key))
 		}
+	}
+
+	if len(c.OIDCCLIScopes) == 0 {
+		problems = append(problems, errors.New("oidcCLIScopes: must not be empty"))
 	}
 
 	for _, namespace := range c.ServiceAccountNamespaces {
