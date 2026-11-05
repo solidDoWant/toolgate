@@ -103,21 +103,53 @@ jobs:
         uses: ./.github/actions/go-cache-save
 
   # kind on the runner's Docker (kind, kubectl, helm and flux come from the
-  # dev shell). One cluster runs the e2e tests, then the acceptance
-  # scoreboard, which goes to the job summary.
+  # dev shell). Each shard runs its share of the e2e tests and then of the
+  # acceptance tests on its own cluster (scripts/e2e/shard.py picks the
+  # tests); e2e-scoreboard scores the results of every shard together.
   e2e:
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    env:
+      E2E_SHARD: ${{ matrix.shard }}/3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/nix-dev-shell
-      - name: e2e tests and acceptance scoreboard
+      - name: e2e and acceptance tests (shard ${{ matrix.shard }} of 3)
         run: nix develop -c ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
+      - name: Upload the acceptance results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-results-${{ matrix.shard }}
+          path: build/acceptance/results/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Save Go caches
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: matrix.shard == 1 && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: ./.github/actions/go-cache-save
+
+  # The acceptance scoreboard of every e2e shard's results, as `make
+  # acceptance` prints it, in the job summary. Plain runner Python, no Nix.
+  e2e-scoreboard:
+    needs: e2e
+    if: ${{ !cancelled() && needs.e2e.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: acceptance-results-*
+          merge-multiple: true
+          path: build/acceptance/results
+      - name: Acceptance scoreboard
+        run: ./scripts/ci/e2e-scoreboard.sh build/acceptance/results
 
   # The human-facing Markdown: links and anchors, agent-prose tells and the
   # page index fail the job; the style report is advisory and only goes to
@@ -187,7 +219,7 @@ jobs:
   # still produce a passing `checks`; it fails if any job failed or was
   # cancelled, and passes when each succeeded or was skipped.
   checks:
-    needs: [changes, lint, unit, integration, e2e, docs, plugin, test-guard]
+    needs: [changes, lint, unit, integration, e2e, e2e-scoreboard, docs, plugin, test-guard]
     if: always()
     runs-on: ubuntu-latest
     steps:
