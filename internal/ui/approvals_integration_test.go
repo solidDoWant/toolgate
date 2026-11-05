@@ -50,7 +50,7 @@ func (e *uiEnv) approvalRow(t *testing.T, id string) db.Approval {
 	return row
 }
 
-// approvalEvents counts the events of type about approval id.
+// approvalEvents returns the events of type about approval id.
 func (e *uiEnv) approvalEvents(t *testing.T, eventType, id string) []map[string]string {
 	t.Helper()
 
@@ -111,12 +111,11 @@ func TestApprovalsAreOwnerOnly(t *testing.T) {
 
 	admin := env.insertSession(t, "admin-session", []string{"admins"})
 	env.ageSignIn(t, "admin-session", 0)
+
 	token := csrfTokenOf("admin-session")
 
-	for _, path := range []string{ui.ApprovalPath(id)} {
-		response := get(t, admin, env.server.URL+path)
-		assert.Equal(t, http.StatusNotFound, response.StatusCode, "GET %s", path)
-	}
+	detail := get(t, admin, env.server.URL+ui.ApprovalPath(id))
+	assert.Equal(t, http.StatusNotFound, detail.StatusCode)
 
 	list := get(t, admin, env.server.URL+ui.ApprovalsPath)
 	require.Equal(t, http.StatusOK, list.StatusCode)
@@ -195,6 +194,7 @@ func TestApproveAndDeny(t *testing.T) {
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "decide-session", nil)
 	env.ageSignIn(t, "decide-session", time.Minute)
+
 	token := url.Values{ui.CSRFField: {csrfTokenOf("decide-session")}}
 	next := env.listen(t)
 
@@ -241,6 +241,7 @@ func TestDecisionsShowTheRealStatus(t *testing.T) {
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "race-session", nil)
 	env.ageSignIn(t, "race-session", 0)
+
 	token := url.Values{ui.CSRFField: {csrfTokenOf("race-session")}}
 
 	t.Run("two tabs", func(t *testing.T) {

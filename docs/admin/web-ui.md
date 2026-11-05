@@ -89,3 +89,7 @@ A template can mark a tool with `approval: required`. Then each call of the tool
 If the web UI is off, nobody can approve a call, so each call of such a tool fails. A service account cannot sign in to the UI, so its calls of such a tool always fail.
 
 Set `config.ui.approvalTimeout` to the time that a request waits for approval, from `1m` to `1h`. The default is `10m`. An approved request also stays usable for this time. The gateway marks a waiting request expired 1 minute after this time. A user can have at most 100 requests waiting.
+
+`/ui/approvals` lists the requests of the signed-in user that wait for approval, with the server, the tool, the session and the workspace. The list updates every 5 seconds. Each request has its own page, where the user approves or denies it. Approving needs a fresh sign-in. Denying does not, because it gives no access. Only the user who made the call can see or decide a request. Other users get 404, and admins also get 404. If a user opens an approval link without a UI session, the gateway sends the browser straight to a fresh sign-in.
+
+If two people or two browser tabs decide the same request, the first decision wins. The other page then shows the real status, for example "This approval expired." Each decision writes an `approval.approve` or `approval.deny` event to the audit log. When audit payloads are off, the approval page says "Arguments aren't shown because audit payloads are off."
