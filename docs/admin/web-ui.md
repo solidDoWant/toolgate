@@ -71,6 +71,23 @@ You can also set a time range. The default is the last 24 hours. A range can be 
 
 The link "Open" on a row shows one event at `/ui/audit/events/` followed by a key: the time in Unix microseconds, a hyphen, and the event ID. The event is shown to its principal and to admins. Anyone else gets 404, so the key tells them nothing.
 
+## The Blocks page
+
+`/ui/blocks` is only for admins. A user who is not an admin gets 403.
+
+The page has two parts. The first part lists the temporary blocks that are live now, and a form that adds one. The second part lists the `ToolgateRule` objects that the gateway reads from git. This list is read-only, and each rule shows if it is valid. To change a rule, change it in git.
+
+A temporary block refuses the tools that match it, for every user, until it expires. The form has these fields:
+
+- Principals, groups, workspaces, sessions, servers and tools. Write one item on each line. An item is a glob, and `*` matches any run of characters.
+- Attestation: `attested` or `user`.
+- A reason of up to 1024 characters. Users see it in the refusal.
+- A duration from 1 minute to 30 days, in minutes.
+
+You must set at least one match field. Each list can have 64 items of 256 characters. At most 1000 blocks can be live. The gateway writes a `block.create` event to the audit log, and open sessions get the change within 5 seconds.
+
+You cannot end a block early. It ends at its expiry, so choose a short duration.
+
 ## Protection of the pages
 
 Each request to the UI that changes something must come from a UI page. The gateway does two checks:

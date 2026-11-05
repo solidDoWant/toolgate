@@ -11,6 +11,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/oauth2"
 
@@ -140,6 +142,13 @@ type Options struct {
 	HTTPClient *http.Client
 	// Servers gives the Servers page its rows. Nil leaves the page out.
 	Servers ServerSource
+	// Pool and AuditOutput let the Blocks page write temporary blocks and
+	// their audit events. A nil Pool leaves the Blocks routes out. A nil
+	// AuditOutput writes audit lines nowhere (the rows are still written).
+	Pool        *pgxpool.Pool
+	AuditOutput io.Writer
+	// Rules gives the Blocks page the ToolgateRule objects. Nil shows none.
+	Rules RuleSource
 	// Secrets backs the Secrets page, and Auditor records its changes. Nil
 	// Secrets leaves the page out.
 	Secrets SecretStore
@@ -211,6 +220,11 @@ func New(options Options, registrar Registrar) *UI {
 		u.Handle("POST "+RestartPath, User, http.HandlerFunc(u.restartInstance))
 	}
 
+	if options.Pool != nil {
+		u.Handle("GET /ui/blocks", Admin, http.HandlerFunc(u.blocks))
+		u.Handle("POST /ui/blocks", Admin, http.HandlerFunc(u.createBlock))
+	}
+
 	if options.Secrets != nil {
 		u.Handle("GET /ui/secrets", User, http.HandlerFunc(u.secretsPage))
 		u.handle("POST /ui/secrets", User, MaxSecretFormBytes, http.HandlerFunc(u.setSecret))
@@ -218,6 +232,14 @@ func New(options Options, registrar Registrar) *UI {
 	}
 
 	return u
+}
+
+func (u *UI) auditOutput() io.Writer {
+	if u.options.AuditOutput == nil {
+		return io.Discard
+	}
+
+	return u.options.AuditOutput
 }
 
 //go:embed static

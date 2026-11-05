@@ -77,6 +77,7 @@ type uiEnv struct {
 	target   atomic.Int32
 	refusals *refusals
 	servers  *fakeServers
+	rules    *fakeRules
 	// formSubmits counts the step-up form's POSTs that ran.
 	formSubmits atomic.Int32
 	broker      *secrets.Broker
@@ -99,7 +100,7 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 	t.Cleanup(pool.Close)
 	require.NoError(t, store.Migrate(t.Context(), pool))
 
-	env := &uiEnv{pool: pool, refusals: &refusals{}, servers: &fakeServers{}}
+	env := &uiEnv{pool: pool, refusals: &refusals{}, servers: &fakeServers{}, rules: &fakeRules{}}
 
 	idpOptions.UIRedirectURIs = []string{"https://127.0.0.1:*/ui/auth/callback"}
 	env.idp = toolgatetest.StartOIDCProvider(t, idpOptions)
@@ -132,6 +133,8 @@ func startUIEnvWithIdP(t *testing.T, adminGroup string, idpOptions toolgatetest.
 			AdminGroup: adminGroup,
 			Recorder:   env.refusals,
 			Servers:    env.servers,
+			Pool:       pool,
+			Rules:      env.rules,
 			Secrets:    broker,
 			Auditor:    audit.NewRecorder(io.Discard, db.New(pool)),
 		}, registrar)

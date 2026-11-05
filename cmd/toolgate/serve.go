@@ -11,13 +11,16 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
@@ -109,9 +112,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	listener := store.NewListener(server.Database(), logger)
 
 	engine := &policy.Engine{Rules: rules}
+	ruleView := &ruleLister{}
 
 	if cfg.UIEnabled() {
-		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), broker, stdout, logger); err != nil {
+		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), ruleView, broker, stdout, logger); err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
 			return 1
@@ -171,6 +175,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			pool:            server.Database(),
 			catalog:         templates,
 			rules:           rules,
+			ruleLister:      ruleView,
 			secrets:         userSecrets(broker),
 			registerMetrics: server.RegisterMetrics,
 			logger:          logger,
@@ -342,7 +347,7 @@ const maxClientSecretBytes = 4 << 10
 
 // registerUI serves the web UI under `/ui/` and `GET /`. It reads the UI
 // client's secret, when one is configured, before the gateway starts.
-func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, broker *secrets.Broker, stdout io.Writer, logger *slog.Logger) error {
+func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, rules ui.RuleSource, broker *secrets.Broker, stdout io.Writer, logger *slog.Logger) error {
 	var clientSecret string
 
 	if cfg.OIDCUIClientSecretFile != "" {
@@ -372,8 +377,11 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 			recorder: audit.NewRecorder(stdout, db.New(server.Database())),
 			logger:   logger,
 		},
-		Logger:  logger,
-		Servers: servers,
+		Logger:      logger,
+		Servers:     servers,
+		Pool:        server.Database(),
+		AuditOutput: stdout,
+		Rules:       rules,
 	}
 
 	// A gateway without a secrets keyset has no Secrets page.
@@ -405,4 +413,40 @@ func readSmallFile(path string, limit int64) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// ruleLister lists the ToolgateRule objects from the manager's informer
+// cache for the Blocks page. It lists none until the manager exists.
+type ruleLister struct {
+	source atomic.Pointer[ruleSource]
+}
+
+type ruleSource struct {
+	reader     client.Reader
+	namespaces []string
+}
+
+func (l *ruleLister) set(reader client.Reader, namespaces []string) {
+	l.source.Store(&ruleSource{reader: reader, namespaces: namespaces})
+}
+
+// Rules returns the rules of the watched namespaces.
+func (l *ruleLister) Rules(ctx context.Context) ([]v1alpha1.ToolgateRule, error) {
+	source := l.source.Load()
+	if source == nil {
+		return nil, nil
+	}
+
+	var rules []v1alpha1.ToolgateRule
+
+	for _, namespace := range source.namespaces {
+		var list v1alpha1.ToolgateRuleList
+		if err := source.reader.List(ctx, &list, client.InNamespace(namespace)); err != nil {
+			return nil, fmt.Errorf("list rules in %s: %w", namespace, err)
+		}
+
+		rules = append(rules, list.Items...)
+	}
+
+	return rules, nil
 }

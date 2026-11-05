@@ -35,6 +35,7 @@ var templateFiles embed.FS
 var pageTemplates = map[string]*template.Template{
 	"servers":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/servers.html")),
 	"audit":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
+	"blocks":      template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/blocks.html")),
 	"secrets":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/secrets.html")),
 	"audit_event": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
 }
@@ -50,6 +51,11 @@ type page struct {
 
 // render writes a page for the request's session.
 func (u *UI) render(writer http.ResponseWriter, request *http.Request, name, title string, data any) {
+	u.renderStatus(writer, request, http.StatusOK, name, title, data)
+}
+
+// renderStatus is render with a response status.
+func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, status int, name, title string, data any) {
 	session, _ := SessionFrom(request.Context())
 
 	user := session.Email
@@ -78,6 +84,7 @@ func (u *UI) render(writer http.ResponseWriter, request *http.Request, name, tit
 	}
 
 	writer.Header().Set("Content-Type", "text/html; charset=utf-8")
+	writer.WriteHeader(status)
 	_, _ = writer.Write(body.Bytes())
 }
 

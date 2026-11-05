@@ -29,6 +29,7 @@ const (
 	TypeToolDecision    = "tool.decision"
 	TypeToolResult      = "tool.result"
 	TypeRuleChange      = "rule.change"
+	TypeBlockCreate     = "block.create"
 	TypeSecretSet       = "secret.set"
 	TypeSecretDelete    = "secret.delete"
 	logMessage          = "audit"

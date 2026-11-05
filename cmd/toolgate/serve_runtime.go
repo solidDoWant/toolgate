@@ -41,6 +41,8 @@ type runtimeOptions struct {
 	// catalog and rules are filled by their reconcilers, on every replica.
 	catalog *catalog.Catalog
 	rules   *policy.Rules
+	// ruleLister gets the manager's cache for the Blocks page. Nil is fine.
+	ruleLister *ruleLister
 	// secrets reads the users' secrets for instance renders.
 	secrets         runtime.SecretGetter
 	registerMetrics func(...prometheus.Collector) error
@@ -123,6 +125,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Subscribe: listener.Subscribe,
 		Fence:     lease,
 		Client:    mgr.GetClient(),
+	}
+
+	if options.ruleLister != nil {
+		options.ruleLister.set(mgr.GetClient(), watched)
 	}
 
 	if err := setupCatalog(mgr, options.catalog, options.rules, watched, cfg.SharedNamespace, logger); err != nil {
