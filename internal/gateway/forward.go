@@ -22,12 +22,17 @@ import (
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 	"github.com/solidDoWant/toolgate/internal/version"
 )
 
 // MaxResultBytes is the largest tool result the gateway forwards, measured
 // as the JSON encoding of the result (docs/design/phase-1.md §7).
 const MaxResultBytes = 16 << 20
+
+// upstreamResponseBudget bounds the upstream response bytes one forwarded
+// call reads, so a huge result is refused without being read whole.
+const upstreamResponseBudget = MaxResultBytes + upstreamlimit.Slack
 
 // lastUsedInterval is how often a call moves an instance's last_used_at
 // forward.
@@ -256,6 +261,8 @@ func (m *metaTools) forward(ctx context.Context, instance db.Instance, template 
 		attribute.String("toolgate.server", template.Name), attribute.String("toolgate.tool", tool)))
 	defer span.End()
 
+	ctx, budget := upstreamlimit.WithBudget(ctx, upstreamResponseBudget)
+
 	session, err := m.upstreams.session(ctx, instance, template)
 	if err != nil {
 		span.SetStatus(codes.Error, "connect")
@@ -266,6 +273,12 @@ func (m *metaTools) forward(ctx context.Context, instance db.Instance, template 
 	params := &mcp.CallToolParams{Name: tool}
 	if len(arguments) > 0 {
 		params.Arguments = arguments
+	}
+
+	tooLarge := func() (*mcp.CallToolResult, string) {
+		span.SetStatus(codes.Error, "too large")
+
+		return errorResult(fmt.Sprintf("The result of `%s` is larger than 16 MiB, the limit, so the gateway didn't forward it.", ProxiedToolName(template.Name, tool))), "too-large"
 	}
 
 	result, err := session.CallTool(ctx, params)
@@ -279,14 +292,17 @@ func (m *metaTools) forward(ctx context.Context, instance db.Instance, template 
 			m.upstreams.drop(instance.ID, session)
 		}
 
+		// The response was cut off at the budget.
+		if budget.Exceeded() {
+			return tooLarge()
+		}
+
 		return errorResult(fmt.Sprintf("Server `%s` returned an error: %v", template.Name, err)), "failed"
 	}
 
 	encoded, err := json.Marshal(result)
 	if err != nil || len(encoded) > MaxResultBytes {
-		span.SetStatus(codes.Error, "too large")
-
-		return errorResult(fmt.Sprintf("The result of `%s` is larger than 16 MiB, the limit, so the gateway didn't forward it.", ProxiedToolName(template.Name, tool))), "too-large"
+		return tooLarge()
 	}
 
 	if result.IsError {

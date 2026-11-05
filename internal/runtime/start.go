@@ -3,10 +3,12 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +35,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
+	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 )
 
 // FieldManager is the server-side apply field manager of every object the
@@ -52,6 +55,18 @@ const (
 	MaxTools          = 512
 	MaxToolListBytes  = 1 << 20
 )
+
+// toolListResponseBudget bounds the upstream response bytes one tool
+// listing reads, so a huge list is refused without being read whole.
+const toolListResponseBudget = MaxToolListBytes + upstreamlimit.Slack
+
+// ErrToolListTooLarge is returned by the MCP tool listers when the
+// upstream's `tools/list` responses are larger than the tool list limit.
+var ErrToolListTooLarge = errors.New("the tool list is larger than the limit")
+
+// toolListTooLargeReason is the failure reason of an instance whose tool
+// list responses were cut off at the budget.
+const toolListTooLargeReason = "The server's tool list is more than the limit of 1 MiB."
 
 // maxReasonBytes bounds a reason copied from object conditions and events.
 const maxReasonBytes = 1024
@@ -212,6 +227,10 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 	}
 
 	tools, err := s.ListTools(ctx, EndpointURL(instance, template))
+	if errors.Is(err, ErrToolListTooLarge) {
+		return s.fail(ctx, instance, StatusStarting, toolListTooLargeReason)
+	}
+
 	if err != nil {
 		// The server may not be listening yet; startTimeout bounds the wait.
 		s.logger().DebugContext(ctx, "instance not answering MCP yet",
@@ -631,9 +650,13 @@ func (s *Starter) logger() *slog.Logger {
 func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, error) {
 	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "toolgate", Version: "0"}, nil)
 
-	session, err := mcpClient.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint, DisableStandaloneSSE: true}, nil)
+	ctx, budget := upstreamlimit.WithBudget(ctx, toolListResponseBudget)
+
+	session, err := mcpClient.Connect(ctx, &mcp.StreamableClientTransport{
+		Endpoint: endpoint, DisableStandaloneSSE: true, HTTPClient: toolListHTTPClient,
+	}, nil)
 	if err != nil {
-		return nil, fmt.Errorf("initialize %s: %w", endpoint, err)
+		return nil, fmt.Errorf("initialize %s: %w", endpoint, toolListError(err, budget))
 	}
 	defer func() { _ = session.Close() }()
 
@@ -641,7 +664,7 @@ func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, error) {
 
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
-			return nil, fmt.Errorf("tools/list %s: %w", endpoint, err)
+			return nil, fmt.Errorf("tools/list %s: %w", endpoint, toolListError(err, budget))
 		}
 
 		tools = append(tools, tool)
@@ -651,4 +674,18 @@ func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, error) {
 	}
 
 	return tools, nil
+}
+
+// toolListHTTPClient carries the MCP tool listers' requests. A request
+// with no budget of its own, such as a ping, is bounded like a tool list.
+var toolListHTTPClient = upstreamlimit.NewClient(http.DefaultClient, toolListResponseBudget)
+
+// toolListError returns ErrToolListTooLarge for an error caused by the
+// budget running out, and err otherwise.
+func toolListError(err error, budget *upstreamlimit.Budget) error {
+	if budget.Exceeded() {
+		return fmt.Errorf("%w: %w", ErrToolListTooLarge, err)
+	}
+
+	return err
 }

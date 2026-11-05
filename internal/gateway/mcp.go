@@ -20,6 +20,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 	"github.com/solidDoWant/toolgate/internal/version"
 )
 
@@ -161,7 +162,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 	}
 
 	tools := &metaTools{
-		upstreams:    newUpstreams(upstreamEndpoint, upstreamHTTPClient),
+		upstreams:    newUpstreams(upstreamEndpoint, upstreamlimit.NewClient(upstreamHTTPClient, upstreamResponseBudget)),
 		database:     options.Database,
 		catalog:      options.Catalog,
 		policy:       options.Policy,
