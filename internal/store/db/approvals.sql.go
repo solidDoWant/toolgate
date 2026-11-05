@@ -117,6 +117,38 @@ func (q *Queries) ExpireApproval(ctx context.Context, id string) (Approval, erro
 	return i, err
 }
 
+const expireDueApproval = `-- name: ExpireDueApproval :one
+UPDATE approvals
+SET status = 'expired'
+WHERE id = $1 AND status = 'pending' AND expires_at <= now()
+RETURNING id, principal, session_pk, workspace, template_ns, template_name, tool, arguments_sha256, status, created_at, expires_at, decided_at, decided_by, used_at
+`
+
+// Marks a pending approval expired once its expires_at has passed. It
+// returns no row when the approval isn't pending any more or hasn't
+// expired yet.
+func (q *Queries) ExpireDueApproval(ctx context.Context, id string) (Approval, error) {
+	row := q.db.QueryRow(ctx, expireDueApproval, id)
+	var i Approval
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.Tool,
+		&i.ArgumentsSha256,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.UsedAt,
+	)
+	return i, err
+}
+
 const findPendingApproval = `-- name: FindPendingApproval :one
 SELECT id, principal, session_pk, workspace, template_ns, template_name, tool, arguments_sha256, status, created_at, expires_at, decided_at, decided_by, used_at FROM approvals
 WHERE principal = $1 AND session_pk = $2
@@ -238,6 +270,42 @@ func (q *Queries) GetApproval(ctx context.Context, id string) (Approval, error) 
 		&i.DecidedAt,
 		&i.DecidedBy,
 		&i.UsedAt,
+	)
+	return i, err
+}
+
+const getApprovalForWait = `-- name: GetApprovalForWait :one
+SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at, (expires_at <= now())::boolean AS overdue
+FROM approvals
+WHERE id = $1
+`
+
+type GetApprovalForWaitRow struct {
+	Approval Approval
+	Overdue  bool
+}
+
+// Returns an approval and whether its expires_at has passed, by
+// PostgreSQL's clock, for a call waiting on it.
+func (q *Queries) GetApprovalForWait(ctx context.Context, id string) (GetApprovalForWaitRow, error) {
+	row := q.db.QueryRow(ctx, getApprovalForWait, id)
+	var i GetApprovalForWaitRow
+	err := row.Scan(
+		&i.Approval.ID,
+		&i.Approval.Principal,
+		&i.Approval.SessionPk,
+		&i.Approval.Workspace,
+		&i.Approval.TemplateNs,
+		&i.Approval.TemplateName,
+		&i.Approval.Tool,
+		&i.Approval.ArgumentsSha256,
+		&i.Approval.Status,
+		&i.Approval.CreatedAt,
+		&i.Approval.ExpiresAt,
+		&i.Approval.DecidedAt,
+		&i.Approval.DecidedBy,
+		&i.Approval.UsedAt,
+		&i.Overdue,
 	)
 	return i, err
 }

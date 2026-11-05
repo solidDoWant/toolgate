@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -221,15 +222,65 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 // routeProxiedCalls sends every `tools/call` of a `<server>__<tool>` name to
 // callTool, also when the session doesn't offer that tool (not yet, or no
 // longer), so every such call gets a recorded decision. Meta tool names
-// have no separator.
+// have no separator. A tool the session offers goes through the go-sdk's
+// own tool path, whose multi round-trip handling serves URL elicitation; a
+// call of a tool it doesn't offer is answered here without elicitation.
 func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
-		if method == "tools/call" {
-			if call, ok := request.(*mcp.CallToolRequest); ok && call.Params != nil && strings.Contains(call.Params.Name, toolSeparator) {
-				return m.callTool(ctx, call)
-			}
+		if method != "tools/call" {
+			return next(ctx, method, request)
 		}
 
-		return next(ctx, method, request)
+		call, ok := request.(*mcp.CallToolRequest)
+		if !ok || call.Params == nil || !strings.Contains(call.Params.Name, toolSeparator) {
+			return next(ctx, method, request)
+		}
+
+		if m.offers(call.Session, call.Params.Name) {
+			result, err := next(ctx, method, request)
+
+			var wireErr *jsonrpc.Error
+			if !errors.As(err, &wireErr) || wireErr.Code != jsonrpc.CodeInvalidParams || !strings.HasPrefix(wireErr.Message, "unknown tool") {
+				return result, err
+			}
+
+			// The tool was removed after the check above.
+		}
+
+		return m.callTool(withoutElicitation(ctx), call)
 	}
+}
+
+// offers reports whether the MCP session currently offers the proxied tool
+// name.
+func (m *metaTools) offers(session *mcp.ServerSession, name string) bool {
+	if session == nil || m.sessionTools == nil {
+		return false
+	}
+
+	offered, found := m.sessionTools(session.ID())
+	if !found {
+		return false
+	}
+
+	offered.mu.Lock()
+	defer offered.mu.Unlock()
+
+	_, ok := offered.offered[name]
+
+	return ok
+}
+
+type noElicitationKey struct{}
+
+// withoutElicitation marks a call answered outside the go-sdk's tool path,
+// where an input request would not reach the client.
+func withoutElicitation(ctx context.Context) context.Context {
+	return context.WithValue(ctx, noElicitationKey{}, true)
+}
+
+func elicitationAllowed(ctx context.Context) bool {
+	disabled, _ := ctx.Value(noElicitationKey{}).(bool)
+
+	return !disabled
 }

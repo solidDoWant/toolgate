@@ -95,6 +95,8 @@ type metaTools struct {
 	// gateway has no web UI.
 	approvalURL     func(id string) string
 	approvalTimeout time.Duration
+	// waiters counts the calls waiting for an approval on this replica.
+	waiters approvalWaiters
 }
 
 func (m *metaTools) register(server *mcp.Server) {

@@ -125,7 +125,9 @@ Each UI response has the header `Content-Security-Policy: default-src 'self'; fr
 
 ## Approvals
 
-A template can mark a tool with `approval: required`. Then each call of the tool needs the approval of the user who made the call. The gateway refuses the call and gives a link to the approval page under `/ui/approvals/`. The user approves the request on that page and calls the tool again with the same arguments. An approval lets exactly one call through.
+A template can mark a tool with `approval: required`. Then each call of the tool needs the approval of the user who made the call. An approval lets exactly one call through.
+
+If the client supports URL elicitation (a request from the server to open a web page), the gateway asks the client to open the approval page under `/ui/approvals/`. The call then waits until the user approves or denies the request, or until the request expires. A user can have at most 32 calls that wait on one gateway replica. If the client does not support URL elicitation, or the user declines to open the page, the gateway refuses the call and gives the link to the approval page. The user approves the request on that page and calls the tool again with the same arguments.
 
 If the web UI is off, nobody can approve a call, so each call of such a tool fails. A service account cannot sign in to the UI, so its calls of such a tool always fail.
 
