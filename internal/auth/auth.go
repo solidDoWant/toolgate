@@ -54,17 +54,20 @@ var headerValuePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 // Identity is the verified identity of a request plus what the client claimed
 // about its environment.
 type Identity struct {
-	// Principal is the OIDC subject of a user.
+	// Principal is the OIDC subject of a user, or
+	// `system:serviceaccount:<ns>:<name>` for a pod.
 	Principal string `json:"principal"`
 	// Email is set only when the token's email-verified claim is true.
 	Email string `json:"email,omitempty"`
 	// Groups come from the configured groups claim.
 	Groups []string `json:"groups,omitempty"`
-	// Workspace is `claimed/<header>`, or `claimed/default` without a header.
+	// Workspace is `claimed/<header>`, or `claimed/default` without a header,
+	// for users, and `k8s/<namespace>/<owner kind>/<owner name>` for pods.
 	Workspace string `json:"workspace"`
 	// Session is the X-Toolgate-Session header. Nobody verifies it.
 	Session string `json:"session,omitempty"`
-	// Attestation is AttestationUser for users.
+	// Attestation is AttestationUser for users and AttestationAttested for
+	// pods.
 	Attestation string `json:"attestation"`
 }
 
@@ -109,12 +112,17 @@ type Options struct {
 	GroupsClaim        string
 	// Recorder receives failed sign-ins. Nil records nothing.
 	Recorder RefusalRecorder
+	// ServiceAccounts enables sign-in with Kubernetes projected
+	// service-account tokens. Nil accepts only user access tokens.
+	ServiceAccounts *ServiceAccountOptions
 }
 
 // Authenticator checks user access tokens and the identity headers.
 type Authenticator struct {
 	verifier *oidc.IDTokenVerifier
+	issuer   string
 	audience string
+	accounts *serviceAccountVerifier
 	claims   claimNames
 	recorder RefusalRecorder
 	limiter  *refusalLimiter
@@ -148,9 +156,19 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		groups:        valueOr(options.GroupsClaim, "groups"),
 	}
 
+	var accounts *serviceAccountVerifier
+	if options.ServiceAccounts != nil {
+		accounts, err = newServiceAccountVerifier(*options.ServiceAccounts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &Authenticator{
 		verifier: provider.VerifierContext(context.WithoutCancel(ctx), &oidc.Config{ClientID: options.Audience}),
+		issuer:   options.IssuerURL,
 		audience: options.Audience,
+		accounts: accounts,
 		claims:   claims,
 		recorder: options.Recorder,
 		limiter:  newRefusalLimiter(),
@@ -202,7 +220,12 @@ func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.
 		}
 
 		identity.Session = session
-		identity.Workspace = claimedPrefix + workspace
+
+		// An attested identity's workspace was verified, so the header
+		// can't replace it.
+		if identity.Attestation != AttestationAttested {
+			identity.Workspace = claimedPrefix + workspace
+		}
 
 		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), identityKey{}, identity)))
 	})
@@ -241,6 +264,11 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 
 	if !found || !strings.EqualFold(scheme, "Bearer") || token == "" {
 		return Identity{}, &Refusal{Reason: "missing token"}
+	}
+
+	// The unverified issuer only picks the verifier; both verify fully.
+	if a.accounts != nil && unverifiedIssuer(token) != a.issuer {
+		return a.accounts.verify(request.Context(), token)
 	}
 
 	verified, err := a.verifier.Verify(request.Context(), token)
@@ -294,13 +322,17 @@ func (a *Authenticator) identityFromClaims(subject string, claims map[string]jso
 	return identity, nil
 }
 
+// tokenAlgorithms are the signature algorithms accepted when reading a
+// token's claims without verifying them.
+var tokenAlgorithms = []jose.SignatureAlgorithm{
+	jose.RS256, jose.RS384, jose.RS512, jose.ES256, jose.ES384, jose.ES512,
+	jose.PS256, jose.PS384, jose.PS512, jose.EdDSA,
+}
+
 // unverifiedRefusal reads the issuer and audience of a token that failed
 // verification, without checking its signature, for the audit event.
 func unverifiedRefusal(token string) Refusal {
-	parsed, err := jwt.ParseSigned(token, []jose.SignatureAlgorithm{
-		jose.RS256, jose.RS384, jose.RS512, jose.ES256, jose.ES384, jose.ES512,
-		jose.PS256, jose.PS384, jose.PS512, jose.EdDSA,
-	})
+	parsed, err := jwt.ParseSigned(token, tokenAlgorithms)
 	if err != nil {
 		return Refusal{}
 	}
@@ -321,6 +353,21 @@ func unverifiedRefusal(token string) Refusal {
 	}
 
 	return Refusal{Issuer: truncate(claims.Issuer), Audience: bounded}
+}
+
+// unverifiedIssuer reads a token's issuer without checking its signature.
+func unverifiedIssuer(token string) string {
+	parsed, err := jwt.ParseSigned(token, tokenAlgorithms)
+	if err != nil {
+		return ""
+	}
+
+	var claims jwt.Claims
+	if err := parsed.UnsafeClaimsWithoutVerification(&claims); err != nil {
+		return ""
+	}
+
+	return claims.Issuer
 }
 
 func (a *Authenticator) refuse(request *http.Request, refusal Refusal) {

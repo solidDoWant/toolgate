@@ -38,6 +38,7 @@ docs/user/
 docs/admin/
   README.md                What the admin pages will cover.
   configuration.md         The gateway configuration reference (generated).
+  pod-sign-in.md           How pods sign in with service-account tokens, and the permissions it needs.
 
 docs/dev/
   README.md                What the developer pages will cover.

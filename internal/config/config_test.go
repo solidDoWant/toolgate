@@ -36,26 +36,28 @@ logLevel: debug
 `)
 
 	cfg, err := config.Load(path, envFrom(map[string]string{
-		"TOOLGATE_DATABASE_URL":      validDatabaseURL,
-		"TOOLGATE_OTLP_ENDPOINT":     "http://collector:4318",
-		"TOOLGATE_OIDC_ISSUER_URL":   "https://idp.example",
-		"TOOLGATE_OIDC_AUDIENCE":     "toolgate",
-		"TOOLGATE_OIDC_GROUPS_CLAIM": "roles",
+		"TOOLGATE_DATABASE_URL":               validDatabaseURL,
+		"TOOLGATE_OTLP_ENDPOINT":              "http://collector:4318",
+		"TOOLGATE_OIDC_ISSUER_URL":            "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":              "toolgate",
+		"TOOLGATE_OIDC_GROUPS_CLAIM":          "roles",
+		"TOOLGATE_SERVICE_ACCOUNT_NAMESPACES": "ci, agents,",
 	}))
 	require.NoError(t, err)
 
 	assert.Equal(t, config.Config{
-		ListenAddress:          ":8443",
-		MetricsListenAddress:   ":9090",
-		DatabaseURL:            validDatabaseURL,
-		ShutdownTimeout:        config.Duration(45 * time.Second),
-		LogLevel:               "debug",
-		OTLPEndpoint:           "http://collector:4318",
-		OIDCIssuerURL:          "https://idp.example",
-		OIDCAudience:           "toolgate",
-		OIDCEmailClaim:         "email",
-		OIDCEmailVerifiedClaim: "email_verified",
-		OIDCGroupsClaim:        "roles",
+		ListenAddress:            ":8443",
+		MetricsListenAddress:     ":9090",
+		DatabaseURL:              validDatabaseURL,
+		ShutdownTimeout:          config.Duration(45 * time.Second),
+		LogLevel:                 "debug",
+		OTLPEndpoint:             "http://collector:4318",
+		OIDCIssuerURL:            "https://idp.example",
+		OIDCAudience:             "toolgate",
+		OIDCEmailClaim:           "email",
+		OIDCEmailVerifiedClaim:   "email_verified",
+		OIDCGroupsClaim:          "roles",
+		ServiceAccountNamespaces: []string{"ci", "agents"},
 	}, cfg)
 }
 
@@ -104,6 +106,14 @@ oidcGroupsClaim: ""
 				"oidcGroupsClaim: must not be empty",
 			},
 			wantAbsent: []string{"oidcEmailVerifiedClaim"},
+		},
+		{
+			name: "invalid service-account namespace",
+			file: `
+serviceAccountNamespaces: [ci, "Not_A_Namespace"]
+`,
+			wantProblems: []string{`serviceAccountNamespaces: "Not_A_Namespace" is not a namespace name`},
+			wantAbsent:   []string{`"ci"`},
 		},
 		{
 			name: "several invalid environment values",

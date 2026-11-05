@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/yaml"
 )
 
@@ -80,6 +81,13 @@ type Config struct {
 	// The access token claim that holds the user's groups, as a list of
 	// strings. The gateway refuses a token if this claim has another type.
 	OIDCGroupsClaim string `json:"oidcGroupsClaim" env:"TOOLGATE_OIDC_GROUPS_CLAIM"`
+
+	// The namespaces whose pods may sign in with a Kubernetes service-account
+	// token, such as `[ci, agents]`. In the environment variable, separate
+	// the names with commas. A pod signs in with a projected token for the
+	// audience `toolgate`, and its workspace is the pod's owner. If the list
+	// is empty, only users can sign in.
+	ServiceAccountNamespaces []string `json:"serviceAccountNamespaces" env:"TOOLGATE_SERVICE_ACCOUNT_NAMESPACES"`
 }
 
 // Default returns the configuration used for every field that is not set.
@@ -207,6 +215,16 @@ func applyEnv(cfg *Config, getenv func(string) string) []error {
 			}
 		case *string:
 			target.SetString(raw)
+		case *[]string:
+			var list []string
+
+			for _, item := range strings.Split(raw, ",") {
+				if item = strings.TrimSpace(item); item != "" {
+					list = append(list, item)
+				}
+			}
+
+			target.Set(reflect.ValueOf(list))
 		default:
 			problems = append(problems, fmt.Errorf("%s: unsupported field type %s", name, field.Type))
 		}
@@ -269,6 +287,12 @@ func (c Config) Validate() []error {
 	} {
 		if value == "" {
 			problems = append(problems, fmt.Errorf("%s: must not be empty", key))
+		}
+	}
+
+	for _, namespace := range c.ServiceAccountNamespaces {
+		if invalid := validation.IsDNS1123Label(namespace); len(invalid) > 0 {
+			problems = append(problems, fmt.Errorf("serviceAccountNamespaces: %q is not a namespace name", namespace))
 		}
 	}
 

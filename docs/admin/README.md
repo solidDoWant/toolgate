@@ -12,4 +12,6 @@ toolgate is in early development, and these pages are not written yet. They will
 
 The [gateway configuration reference](configuration.md) lists the settings of `toolgate serve`.
 
+[Pod sign-in](pod-sign-in.md) tells how a pod signs in with a Kubernetes service-account token, and which permissions the gateway needs for it.
+
 Until then, [`SPEC.md`](../../SPEC.md) describes the system.
