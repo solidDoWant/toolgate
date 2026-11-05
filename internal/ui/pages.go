@@ -27,7 +27,9 @@ var templateFiles embed.FS
 
 // pageTemplates holds one template set per page, each with the layout.
 var pageTemplates = map[string]*template.Template{
-	"servers": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/servers.html")),
+	"servers":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/servers.html")),
+	"audit":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
+	"audit_event": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
 }
 
 // page is what the layout renders around a page's content.

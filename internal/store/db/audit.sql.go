@@ -57,6 +57,54 @@ func (q *Queries) DeleteAuditEventsByKey(ctx context.Context, arg DeleteAuditEve
 	return result.RowsAffected(), nil
 }
 
+const getAuditEvent = `-- name: GetAuditEvent :one
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at = $1 AND id = $2
+`
+
+type GetAuditEventParams struct {
+	OccurredAt pgtype.Timestamptz
+	ID         int64
+}
+
+type GetAuditEventRow struct {
+	ID          int64
+	OccurredAt  pgtype.Timestamptz
+	Type        string
+	Principal   string
+	Workspace   string
+	Session     string
+	Attestation string
+	Server      string
+	Tool        string
+	TraceID     string
+	RequestID   string
+	Details     []byte
+}
+
+// Returns one audit event by its primary key, without its payload.
+func (q *Queries) GetAuditEvent(ctx context.Context, arg GetAuditEventParams) (GetAuditEventRow, error) {
+	row := q.db.QueryRow(ctx, getAuditEvent, arg.OccurredAt, arg.ID)
+	var i GetAuditEventRow
+	err := row.Scan(
+		&i.ID,
+		&i.OccurredAt,
+		&i.Type,
+		&i.Principal,
+		&i.Workspace,
+		&i.Session,
+		&i.Attestation,
+		&i.Server,
+		&i.Tool,
+		&i.TraceID,
+		&i.RequestID,
+		&i.Details,
+	)
+	return i, err
+}
+
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
 INSERT INTO audit_events (
     type, principal, workspace, session, attestation, server, tool,
@@ -98,6 +146,97 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 		arg.PayloadRef,
 	)
 	return err
+}
+
+const listAuditEventsPage = `-- name: ListAuditEventsPage :many
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at >= $1::timestamptz
+  AND occurred_at < $2::timestamptz
+  AND ($3::text = '' OR principal = $3)
+  AND ($4::text = '' OR workspace = $4)
+  AND ($5::text = '' OR session = $5)
+  AND ($6::text = '' OR server = $6)
+  AND ($7::text = '' OR tool = $7)
+  AND ($8::timestamptz IS NULL
+       OR (occurred_at, id) < ($8::timestamptz, $9::bigint))
+ORDER BY occurred_at DESC, id DESC
+LIMIT $10
+`
+
+type ListAuditEventsPageParams struct {
+	FromTime  pgtype.Timestamptz
+	ToTime    pgtype.Timestamptz
+	Principal string
+	Workspace string
+	Session   string
+	Server    string
+	Tool      string
+	BeforeAt  pgtype.Timestamptz
+	BeforeID  int64
+	PageSize  int32
+}
+
+type ListAuditEventsPageRow struct {
+	ID          int64
+	OccurredAt  pgtype.Timestamptz
+	Type        string
+	Principal   string
+	Workspace   string
+	Session     string
+	Attestation string
+	Server      string
+	Tool        string
+	TraceID     string
+	RequestID   string
+	Details     []byte
+}
+
+// Lists one page of audit events for the web UI, newest first. An empty
+// filter matches everything. A null cursor starts at the newest event.
+func (q *Queries) ListAuditEventsPage(ctx context.Context, arg ListAuditEventsPageParams) ([]ListAuditEventsPageRow, error) {
+	rows, err := q.db.Query(ctx, listAuditEventsPage,
+		arg.FromTime,
+		arg.ToTime,
+		arg.Principal,
+		arg.Workspace,
+		arg.Session,
+		arg.Server,
+		arg.Tool,
+		arg.BeforeAt,
+		arg.BeforeID,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAuditEventsPageRow{}
+	for rows.Next() {
+		var i ListAuditEventsPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.Type,
+			&i.Principal,
+			&i.Workspace,
+			&i.Session,
+			&i.Attestation,
+			&i.Server,
+			&i.Tool,
+			&i.TraceID,
+			&i.RequestID,
+			&i.Details,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listExpiredAuditEvents = `-- name: ListExpiredAuditEvents :many

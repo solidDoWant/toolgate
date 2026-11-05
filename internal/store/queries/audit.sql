@@ -33,3 +33,28 @@ DELETE FROM audit_events
 WHERE (occurred_at, id) IN (
     SELECT unnest(@occurred_ats::timestamptz[]), unnest(@ids::bigint[])
 );
+
+-- name: ListAuditEventsPage :many
+-- Lists one page of audit events for the web UI, newest first. An empty
+-- filter matches everything. A null cursor starts at the newest event.
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at >= @from_time::timestamptz
+  AND occurred_at < @to_time::timestamptz
+  AND (@principal::text = '' OR principal = @principal)
+  AND (@workspace::text = '' OR workspace = @workspace)
+  AND (@session::text = '' OR session = @session)
+  AND (@server::text = '' OR server = @server)
+  AND (@tool::text = '' OR tool = @tool)
+  AND (sqlc.narg(before_at)::timestamptz IS NULL
+       OR (occurred_at, id) < (sqlc.narg(before_at)::timestamptz, @before_id::bigint))
+ORDER BY occurred_at DESC, id DESC
+LIMIT @page_size;
+
+-- name: GetAuditEvent :one
+-- Returns one audit event by its primary key, without its payload.
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at = @occurred_at AND id = @id;

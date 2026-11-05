@@ -1,0 +1,16 @@
+{{define "content"}}
+<dl id="event">
+<dt>Time (UTC)</dt><dd>{{.Data.OccurredAt.Format "2006-01-02 15:04:05.000000"}}</dd>
+<dt>Type</dt><dd>{{.Data.Type}}</dd>
+<dt>Principal</dt><dd>{{.Data.Principal}}</dd>
+<dt>Workspace</dt><dd>{{.Data.Workspace}}</dd>
+<dt>Session</dt><dd>{{.Data.Session}}</dd>
+<dt>Attestation</dt><dd>{{.Data.Attestation}}</dd>
+<dt>Server</dt><dd>{{.Data.Server}}</dd>
+<dt>Tool</dt><dd>{{.Data.Tool}}</dd>
+<dt>Trace ID</dt><dd>{{.Data.TraceID}}</dd>
+<dt>Request ID</dt><dd>{{.Data.RequestID}}</dd>
+<dt>Details</dt><dd><pre>{{.Data.Details}}</pre></dd>
+</dl>
+<p><a href="/ui/audit">Back to the audit log</a></p>
+{{end}}
