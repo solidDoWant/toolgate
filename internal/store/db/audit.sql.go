@@ -7,7 +7,34 @@ package db
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const deleteAuditEventsBefore = `-- name: DeleteAuditEventsBefore :execrows
+DELETE FROM audit_events AS target
+WHERE (target.occurred_at, target.id) IN (
+    SELECT old.occurred_at, old.id FROM audit_events AS old
+    WHERE old.occurred_at < $1
+    ORDER BY old.occurred_at
+    LIMIT $2
+)
+`
+
+type DeleteAuditEventsBeforeParams struct {
+	Cutoff    pgtype.Timestamptz
+	BatchSize int32
+}
+
+// Deletes at most batch_size audit events that occurred before cutoff,
+// oldest first, so retention never holds a long lock on the table.
+func (q *Queries) DeleteAuditEventsBefore(ctx context.Context, arg DeleteAuditEventsBeforeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAuditEventsBefore, arg.Cutoff, arg.BatchSize)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
 
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
 INSERT INTO audit_events (
