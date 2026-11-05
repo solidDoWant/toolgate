@@ -33,10 +33,10 @@ SPEC.md                    The rules of the system. For developers and agents.
 docs/README.md             This page.
 
 docs/user/
-  README.md                What the user pages will cover.
+  README.md                Install the plugin, sign in, use servers, set secrets, read a refusal.
 
 docs/admin/
-  README.md                What the admin pages will cover.
+  README.md                The list of admin pages.
   configuration.md         The gateway configuration reference (generated).
   pod-sign-in.md           How pods sign in with service-account tokens, and the permissions it needs.
   quick-start.md           Install the chart with the smallest set of values.
@@ -45,6 +45,9 @@ docs/admin/
   user-secrets.md          How user secrets are encrypted, and how to rotate the key.
   settings-profiles.md     How to give Claude Code settings to users with SettingsProfile objects.
   instances.md             When instances stop, how they are removed, and their metrics.
+  templates-and-rules.md   How to write MCPServerTemplate and ToolgateRule objects.
+  security-model.md        What toolgate protects against, and what claimed workspaces and sessions cannot.
+  operations.md            Backups, upgrades, key rotation, instance limits, the audit log, uninstall.
 
 docs/dev/
   README.md                What the developer pages will cover.
