@@ -24,7 +24,9 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      # The scoreboard's tests read the real checklist, so a checklist edit
+      # runs the test jobs too.
+      code: ${{ steps.filter.outputs.code == 'true' || steps.filter.outputs.acceptance == 'true' }}
       docs: ${{ steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,6 +43,8 @@ jobs:
               - '!LICENSE'
               - '!.github/renovate.json5'
               - '!.github/renovate/**'
+            acceptance:
+              - 'docs/acceptance/**'
             docs:
               - '{**/*.md,scripts/docs/**}'
 

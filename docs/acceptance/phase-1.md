@@ -32,7 +32,6 @@ Each automated scenario has a test tagged `[AC-1-nn]`, run by `make acceptance` 
 - **AC-1-18 Start failure.** A template whose image can't be pulled fails `toolgate_enable_server` within its `startTimeout`, with a reason that names the image problem. `toolgate_server_status` shows the same reason.
 - **AC-1-19 Template change.** After a template is edited, new instances use the new version, and `toolgate_server_status` shows running older instances as outdated.
 - **AC-1-20 Long tool names.** A server exposing a tool whose prefixed name is over 64 characters is marked failed with a reason saying so.
-- **AC-1-31 Instance limit.** A user who has as many running servers as the per-user limit can't start another: `toolgate_enable_server` fails with a message naming the limit. Enabling a per-user server that is already running for that user still works, and other users aren't affected.
 
 ## Secrets and templates
 
@@ -55,3 +54,7 @@ Each automated scenario has a test tagged `[AC-1-nn]`, run by `make acceptance` 
 ## Release
 
 - **AC-1-30 Release.** Release `0.1.0` publishes the image, the chart, and CLI binaries for Linux, macOS and Windows. `docs/user/` explains installing the plugin and signing in. `docs/admin/` explains deployment, writing templates and rules, and what claimed workspaces and sessions can't protect against.
+
+## Limits
+
+- **AC-1-31 Instance limit.** A user who has as many running servers as the per-user limit can't start another: `toolgate_enable_server` fails with a message naming the limit. Enabling a per-user server that is already running for that user still works, and other users aren't affected.

@@ -15,8 +15,8 @@ SCRIPT = ROOT / "scripts" / "acceptance-scoreboard.py"
 CHECKLIST = ROOT / "docs" / "acceptance" / "phase-1.md"
 
 # The phase 1 checklist's scenarios, written out here rather than read the way
-# the script reads them: AC-1-01 to AC-1-30, with AC-1-05 and AC-1-12 manual.
-SCENARIOS = [f"AC-1-{number:02d}" for number in range(1, 31)]
+# the script reads them: AC-1-01 to AC-1-31, with AC-1-05 and AC-1-12 manual.
+SCENARIOS = [f"AC-1-{number:02d}" for number in range(1, 32)]
 MANUAL = {"AC-1-05", "AC-1-12"}
 
 
@@ -62,7 +62,7 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(list(statuses), SCENARIOS)
         self.assertEqual({scenario for scenario, value in statuses.items() if value == "manual"}, MANUAL)
         self.assertTrue(all(value == "no test" for scenario, value in statuses.items() if scenario not in MANUAL))
-        self.assertIn("passing 0/30", output)
+        self.assertIn("passing 0/31", output)
 
     def test_subtest_and_function_results(self):
         self.write_go(
@@ -79,7 +79,7 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(statuses["AC-1-08"], "fail")
         self.assertEqual(statuses["AC-1-25"], "pass")
         self.assertEqual(statuses["AC-1-26"], "not run")
-        self.assertIn("passing 2/30", self.scoreboard())
+        self.assertIn("passing 2/31", self.scoreboard())
 
     def test_a_tagged_test_that_did_not_run_is_not_run(self):
         self.write_source("x_test.go", 'package e2e\n\nfunc TestX(t *testing.T) {\n\tt.Run("[AC-1-09] variables", nil)\n}\n\nfunc TestAC1_10NoInjection(t *testing.T) {}\n')
