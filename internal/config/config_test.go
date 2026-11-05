@@ -121,6 +121,13 @@ serviceAccountNamespaces: [ci, "Not_A_Namespace"]
 			wantAbsent:   []string{`"ci"`},
 		},
 		{
+			name: "invalid lease namespace",
+			file: `
+leaseNamespace: "Not_A_Namespace"
+`,
+			wantProblems: []string{`leaseNamespace: "Not_A_Namespace" is not a namespace name`},
+		},
+		{
 			name: "several invalid environment values",
 			env: map[string]string{
 				"TOOLGATE_LISTEN_ADDRESS":   "no-port",

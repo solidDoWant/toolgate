@@ -74,8 +74,43 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	// requests made with the global OpenTelemetry API carry trace context.
 	telemetry.SetGlobalPropagator()
 
-	if err := server.Serve(ctx); err != nil {
-		logger.Error("gateway stopped with an error", "error", err)
+	// A replica that loses the Lease stops: its manager can't regain it.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	var runtimeResult chan error
+
+	if cfg.LeaseNamespace != "" {
+		managerDone, err := startRuntime(ctx, cfg, server.Database(), logger)
+		if err != nil {
+			logger.Error("gateway failed to start", "error", err)
+
+			return 1
+		}
+
+		runtimeResult = make(chan error, 1)
+
+		go func() {
+			runtimeResult <- <-managerDone
+
+			cancel()
+		}()
+	}
+
+	serveErr := server.Serve(ctx)
+
+	cancel()
+
+	if runtimeResult != nil {
+		if err := <-runtimeResult; err != nil {
+			logger.Error("runtime reconciler stopped with an error", "error", err)
+
+			return 1
+		}
+	}
+
+	if serveErr != nil {
+		logger.Error("gateway stopped with an error", "error", serveErr)
 
 		return 1
 	}
