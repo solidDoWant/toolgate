@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -39,6 +42,8 @@ type mcpFixture struct {
 	catalog  *catalog.Catalog
 	rules    *policy.Rules
 	server   *httptest.Server
+	// upstreams maps a template name to the MCP URL of its instances.
+	upstreams *sync.Map
 }
 
 func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFixture {
@@ -69,12 +74,19 @@ func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFix
 
 	servers := catalog.New()
 	rules := policy.NewRules()
+	upstreams := &sync.Map{}
 
 	options := gateway.MCPOptions{
 		Database:  pool,
 		Catalog:   servers,
 		Policy:    &policy.Engine{Rules: rules},
 		Subscribe: listener.Subscribe,
+		UpstreamEndpoint: func(_ db.Instance, template *v1alpha1.MCPServerTemplate) string {
+			url, _ := upstreams.Load(template.Name)
+			endpoint, _ := url.(string)
+
+			return endpoint
+		},
 	}
 
 	for _, change := range configure {
@@ -83,10 +95,15 @@ func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFix
 
 	handler := gateway.NewMCPHandler(options)
 
-	server := httptest.NewServer(authenticator.Middleware(handler, true))
+	// Every request gets a span, as in the gateway, so audit events carry
+	// a trace ID.
+	traced := otelhttp.NewHandler(authenticator.Middleware(handler, true), "gateway",
+		otelhttp.WithTracerProvider(sdktrace.NewTracerProvider()))
+
+	server := httptest.NewServer(traced)
 	t.Cleanup(server.Close)
 
-	return &mcpFixture{provider: provider, pool: pool, catalog: servers, rules: rules, server: server}
+	return &mcpFixture{provider: provider, pool: pool, catalog: servers, rules: rules, server: server, upstreams: upstreams}
 }
 
 func (f *mcpFixture) addTemplate(name, scope string, access v1alpha1.Access) *v1alpha1.MCPServerTemplate {
