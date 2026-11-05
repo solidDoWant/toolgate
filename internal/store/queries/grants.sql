@@ -31,3 +31,14 @@ SELECT * FROM grants WHERE id = @id;
 SELECT * FROM grants
 WHERE principal = @principal AND revoked_at IS NULL AND expires_at > now()
 ORDER BY created_at, id;
+
+-- name: NextPolicyExpiry :one
+-- Returns the milliseconds from PostgreSQL's now() to the earliest future
+-- expires_at of the live grants and temporary blocks, or -1 when there is
+-- none. PostgreSQL computes the delay, so replica clock skew doesn't matter.
+SELECT COALESCE(ceil(EXTRACT(EPOCH FROM (min(live.expires_at) - now())) * 1000), -1)::bigint AS delay_ms
+FROM (
+    SELECT expires_at FROM grants WHERE revoked_at IS NULL AND expires_at > now()
+    UNION ALL
+    SELECT expires_at FROM temporary_blocks WHERE expires_at > now()
+) AS live;

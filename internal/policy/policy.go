@@ -1,7 +1,8 @@
 // Package policy decides whether an identity may list or enable a server and
-// call its tools (SPEC.md §10). Phase 1 has no grants, approvals or temporary
-// blocks: a decision checks catalog access, then the environment, then the
-// blocks (a tool's blocked flag and the standing ToolgateRule objects).
+// call its tools (SPEC.md §10, docs/design/phase-2.md §3). A decision checks
+// catalog access, then the environment (where a live grant passes opt-in for
+// a signed-in user), then the blocks: a tool's blocked flag, the standing
+// ToolgateRule objects and the live temporary blocks.
 package policy
 
 import (
@@ -20,6 +21,8 @@ const (
 	StepEnvironment = "environment"
 	StepBlocked     = "blocked"
 	StepRule        = "rule"
+	// StepTemporaryBlock is a live temporary block made by an admin.
+	StepTemporaryBlock = "temporary-block"
 )
 
 // Values of access.environments and its per-tool override.
@@ -44,6 +47,9 @@ type Request struct {
 	// Tool is the tool's own name, without the server prefix. It is empty
 	// for list_servers and enable_server, which decide for the whole server.
 	Tool string
+	// State is the request's live grants and temporary blocks. The zero
+	// value has none.
+	State State
 }
 
 // Decision is the outcome of a Request.
@@ -54,6 +60,12 @@ type Decision struct {
 	// Rule is the namespace/name of the ToolgateRule that refused, when
 	// Step is StepRule.
 	Rule string
+	// Grant is the ID of the grant that passed the environment step, if a
+	// grant was needed.
+	Grant string
+	// Block is the ID of the temporary block that refused, when Step is
+	// StepTemporaryBlock.
+	Block string
 	// Reason is a short sentence for the model and the audit log.
 	Reason string
 }
@@ -65,9 +77,15 @@ type Engine struct {
 	// Now returns the current time, used for rule expiry. Nil means
 	// time.Now.
 	Now func() time.Time
+	// GrantURL returns the web UI link that creates a grant for server,
+	// tool (empty for the whole server) and session. Nil means the gateway
+	// has no web UI: a missing grant then gets the plain environment
+	// refusal.
+	GrantURL func(server, tool, session string) string
 }
 
 // Decide applies SPEC.md §10 in order: catalog access, environment, blocks.
+// It reads the grants and temporary blocks from request.State only.
 func (e *Engine) Decide(request Request) Decision {
 	identity := request.Identity
 	template := request.Template
@@ -87,13 +105,19 @@ func (e *Engine) Decide(request Request) Decision {
 		environment = override.Environments
 	}
 
+	var grantID string
+
 	if !environmentAllows(environment, identity.Attestation) {
-		subject := fmt.Sprintf("Server %q", server)
-		if request.Tool != "" {
-			subject = fmt.Sprintf("Tool %q", proxiedName(server, request.Tool))
+		grant, granted := Grant{}, false
+		if needsGrant(environment, identity.Attestation) {
+			grant, granted = request.State.grantFor(identity.Principal, identity.Session, template.Namespace, server, request.Tool)
 		}
 
-		return refuse(StepEnvironment, "", subject+" can be used only from an attested environment, not from a signed-in user's machine.")
+		if !granted {
+			return e.refuseEnvironment(request, environment)
+		}
+
+		grantID = grant.ID
 	}
 
 	if override.Blocked {
@@ -101,18 +125,7 @@ func (e *Engine) Decide(request Request) Decision {
 	}
 
 	if e.Rules != nil {
-		subject := target{
-			principal:   identity.Principal,
-			email:       identity.Email,
-			groups:      identity.Groups,
-			workspace:   identity.Workspace,
-			session:     identity.Session,
-			attestation: identity.Attestation,
-			server:      server,
-		}
-		if request.Tool != "" {
-			subject.tool = proxiedName(server, request.Tool)
-		}
+		subject := ruleTarget(identity, server, request.Tool)
 
 		if rule, found := e.Rules.match(subject, e.now()); found {
 			name := rule.key.String()
@@ -121,7 +134,59 @@ func (e *Engine) Decide(request Request) Decision {
 		}
 	}
 
-	return Decision{Allowed: true}
+	if len(request.State.Blocks) > 0 {
+		subject := ruleTarget(identity, server, request.Tool)
+		for _, block := range request.State.Blocks {
+			if block.match.applies(subject, time.Time{}) {
+				return Decision{Step: StepTemporaryBlock, Block: block.ID, Grant: grantID, Reason: block.refusal()}
+			}
+		}
+	}
+
+	return Decision{Allowed: true, Grant: grantID}
+}
+
+// refuseEnvironment is the refusal of step 2. When a grant would pass it
+// and the gateway has a web UI, the reason links to the page that creates
+// one (docs/design/phase-2.md §4, "A missing grant").
+func (e *Engine) refuseEnvironment(request Request, environment string) Decision {
+	server := request.Template.Name
+
+	subject := fmt.Sprintf("Server %q", server)
+	if request.Tool != "" {
+		subject = fmt.Sprintf("Tool %q", proxiedName(server, request.Tool))
+	}
+
+	if e.GrantURL != nil && needsGrant(environment, request.Identity.Attestation) {
+		subject = fmt.Sprintf("Server `%s`", server)
+		if request.Tool != "" {
+			subject = fmt.Sprintf("Tool `%s`", proxiedName(server, request.Tool))
+		}
+
+		link := e.GrantURL(server, request.Tool, request.Identity.Session)
+
+		return refuse(StepEnvironment, "", fmt.Sprintf("%s needs a grant on a signed-in user's machine. Create one at %s, then try again.", subject, link))
+	}
+
+	return refuse(StepEnvironment, "", subject+" can be used only from an attested environment, not from a signed-in user's machine.")
+}
+
+// ruleTarget is what rules and temporary blocks are matched against.
+func ruleTarget(identity auth.Identity, server, tool string) target {
+	subject := target{
+		principal:   identity.Principal,
+		email:       identity.Email,
+		groups:      identity.Groups,
+		workspace:   identity.Workspace,
+		session:     identity.Session,
+		attestation: identity.Attestation,
+		server:      server,
+	}
+	if tool != "" {
+		subject.tool = proxiedName(server, tool)
+	}
+
+	return subject
 }
 
 func (e *Engine) now() time.Time {
@@ -171,14 +236,21 @@ func isServiceAccount(identity auth.Identity) bool {
 }
 
 // environmentAllows reports whether an attestation level satisfies an
-// environments value. An empty value is opt-in, the CRD's default. In phase 1
-// there are no grants, so opt-in needs attested.
+// environments value without a grant. An empty value is opt-in, the CRD's
+// default.
 func environmentAllows(environment, attestation string) bool {
 	switch environment {
 	case EnvironmentAny:
 		return attestation == attestationUser || attestation == attestationAttested
 	default:
-		// attested, and opt-in (also when empty) without grants.
+		// attested, and opt-in (also when empty) without a grant.
 		return attestation == attestationAttested
 	}
+}
+
+// needsGrant reports whether a live grant passes an environment that
+// refused: opt-in (also when empty) for a signed-in user. Grants never
+// count for attested.
+func needsGrant(environment, attestation string) bool {
+	return attestation == attestationUser && environment != EnvironmentAny && environment != EnvironmentAttested
 }

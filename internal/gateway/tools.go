@@ -112,13 +112,22 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 	tools = make(map[string]*mcp.Tool)
 	byServer = make(map[string][]string)
 
+	if len(rows) == 0 {
+		return tools, byServer, nil
+	}
+
+	state, err := m.policyState(ctx, current.identity)
+	if err != nil {
+		return nil, nil, err
+	}
+
 	for _, row := range rows {
 		template, found := m.catalog.Running(types.NamespacedName{Namespace: row.TemplateNs, Name: row.TemplateName})
 		if !found {
 			continue
 		}
 
-		if !m.policy.Decide(policy.Request{Identity: current.identity, Template: template}).Allowed {
+		if !m.policy.Decide(policy.Request{Identity: current.identity, Template: template, State: state}).Allowed {
 			continue
 		}
 
@@ -144,7 +153,7 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 		}
 
 		for _, tool := range upstream {
-			if tool == nil || !m.policy.Decide(policy.Request{Identity: current.identity, Template: template, Tool: tool.Name}).Allowed {
+			if tool == nil || !m.policy.Decide(policy.Request{Identity: current.identity, Template: template, Tool: tool.Name, State: state}).Allowed {
 				continue
 			}
 

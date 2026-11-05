@@ -213,7 +213,12 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	}
 
 	// Step 3: policy.
-	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, Tool: tool})
+	state, err := m.policyState(ctx, current.identity)
+	if err != nil {
+		return nil, err
+	}
+
+	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, Tool: tool, State: state})
 
 	if !decision.Allowed {
 		return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
@@ -222,8 +227,12 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	// Step 4: the allow is committed before anything is forwarded. With
 	// payloads on, the arguments are stored first; a call whose arguments
 	// can't be stored is refused.
-	allow := callEvent(current, "tool.decision", server, tool,
-		map[string]any{"decision": "allow", "instance": instance.ID})
+	allowDetails := map[string]any{"decision": "allow", "instance": instance.ID}
+	if decision.Grant != "" {
+		allowDetails["grant"] = decision.Grant
+	}
+
+	allow := callEvent(current, "tool.decision", server, tool, allowDetails)
 	if err := m.payloads.Attach(ctx, &allow, callArguments(request.Params.Arguments)); err != nil {
 		return m.refuseCall(ctx, current, server, tool,
 			map[string]any{"reason": reasonPayloadError, "payload_error": err.Error()}, messageNotRecorded)

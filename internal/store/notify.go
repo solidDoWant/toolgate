@@ -21,6 +21,8 @@ const Channel = "toolgate_events"
 const (
 	KindSession  = "session"
 	KindInstance = "instance"
+	KindGrant    = "grant"
+	KindBlock    = "block"
 )
 
 const (

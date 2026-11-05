@@ -133,6 +133,25 @@ func (q *Queries) LockPrincipalGrants(ctx context.Context, principal string) err
 	return err
 }
 
+const nextPolicyExpiry = `-- name: NextPolicyExpiry :one
+SELECT COALESCE(ceil(EXTRACT(EPOCH FROM (min(live.expires_at) - now())) * 1000), -1)::bigint AS delay_ms
+FROM (
+    SELECT expires_at FROM grants WHERE revoked_at IS NULL AND expires_at > now()
+    UNION ALL
+    SELECT expires_at FROM temporary_blocks WHERE expires_at > now()
+) AS live
+`
+
+// Returns the milliseconds from PostgreSQL's now() to the earliest future
+// expires_at of the live grants and temporary blocks, or -1 when there is
+// none. PostgreSQL computes the delay, so replica clock skew doesn't matter.
+func (q *Queries) NextPolicyExpiry(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, nextPolicyExpiry)
+	var delay_ms int64
+	err := row.Scan(&delay_ms)
+	return delay_ms, err
+}
+
 const revokeGrant = `-- name: RevokeGrant :one
 UPDATE grants
 SET revoked_at = now(), revoked_by = $1

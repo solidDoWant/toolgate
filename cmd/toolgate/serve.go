@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
@@ -72,7 +74,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	authenticator := newAuthenticator(ctx, cfg, server, stdout, logger)
+	authenticator, err := newAuthenticator(ctx, cfg, server, stdout, logger)
+	if err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
 
 	var broker *secrets.Broker
 
@@ -224,10 +231,28 @@ func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logge
 // newAuthenticator returns the authenticator of the gateway's user-facing
 // endpoints. It starts discovering the identity provider in the background;
 // requests are refused until discovery succeeds. Failed sign-ins go to the
-// audit log, and the count of those over its rate limit to /metrics.
+// audit log, and the count of those over its rate limit to /metrics. When
+// serviceAccountNamespaces is set, pods in those namespaces sign in with
+// their service-account tokens, checked by TokenReview.
 func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Server, stdout io.Writer,
 	logger *slog.Logger,
-) *lazyAuthenticator {
+) (*lazyAuthenticator, error) {
+	var serviceAccounts *auth.ServiceAccountOptions
+
+	if len(cfg.ServiceAccountNamespaces) > 0 {
+		restConfig, err := ctrl.GetConfig()
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes: %w", err)
+		}
+
+		clientset, err := kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			return nil, fmt.Errorf("kubernetes: %w", err)
+		}
+
+		serviceAccounts = &auth.ServiceAccountOptions{Client: clientset, Namespaces: cfg.ServiceAccountNamespaces}
+	}
+
 	authenticator := &lazyAuthenticator{
 		ctx: context.WithoutCancel(ctx),
 		options: auth.Options{
@@ -240,6 +265,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 				recorder: audit.NewRecorder(stdout, db.New(server.Database())),
 				logger:   logger,
 			},
+			ServiceAccounts: serviceAccounts,
 		},
 		logger:          logger,
 		registerMetrics: server.RegisterMetrics,
@@ -251,7 +277,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 		}
 	}()
 
-	return authenticator
+	return authenticator, nil
 }
 
 // registerSecretsAPI serves `/api/v1/secrets` behind user authentication

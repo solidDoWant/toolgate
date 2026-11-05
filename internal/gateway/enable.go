@@ -72,7 +72,12 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	// Step 1: policy, from this request's own identity.
-	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template})
+	state, err := m.policyState(ctx, current.identity)
+	if err != nil {
+		return nil, EnableResult{}, err
+	}
+
+	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, State: state})
 	if !decision.Allowed {
 		if decision.Step == policy.StepAccess {
 			return nil, EnableResult{}, notInCatalog(input.Name)
@@ -131,8 +136,14 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 		return nil, EnableResult{}, fmt.Errorf("`%s` failed to start: %s", template.Name, reason)
 	}
 
-	// Step 6: decide again, now that the instance is ready.
-	decision = m.decide(ctx, policy.Request{Identity: current.identity, Template: template})
+	// Step 6: decide again, now that the instance is ready, with fresh
+	// grants and temporary blocks.
+	state, err = m.policyState(ctx, current.identity)
+	if err != nil {
+		return nil, EnableResult{}, err
+	}
+
+	decision = m.decide(ctx, policy.Request{Identity: current.identity, Template: template, State: state})
 	if !decision.Allowed {
 		if err := m.disableInTransaction(ctx, current, template, decision); err != nil {
 			return nil, EnableResult{}, err
@@ -480,6 +491,14 @@ func refusalDetails(decision policy.Decision) map[string]any {
 	details := map[string]any{"decision": "refuse", "step": decision.Step, "reason": decision.Reason}
 	if decision.Rule != "" {
 		details["rule"] = decision.Rule
+	}
+
+	if decision.Grant != "" {
+		details["grant"] = decision.Grant
+	}
+
+	if decision.Block != "" {
+		details["block"] = decision.Block
 	}
 
 	return details

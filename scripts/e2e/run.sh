@@ -24,6 +24,8 @@
 #                                     OTLP/HTTP receiver on; the chart's
 #                                     config.otlpEndpoint points at it
 #       TOOLGATE_E2E_S3_ENDPOINT      the S3 server inside the cluster
+#       TOOLGATE_E2E_WORKLOAD_NAMESPACE  a namespace whose pods' service
+#                                     account tokens the gateway accepts
 #  6. deletes the cluster, also when a step fails. E2E_KEEP_CLUSTER=true
 #     keeps it for debugging.
 #
@@ -123,6 +125,8 @@ export TOOLGATE_E2E_OTLP_LISTEN="$host_address:$otlp_port"
 
 log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
+workload_namespace=toolgate-workloads
+kubectl create namespace "$workload_namespace" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-database \
 	--from-literal=url="postgres://toolgate:$postgres_password@postgres.$deps_namespace.svc:5432/toolgate?sslmode=disable" >&2
 ./scripts/chart-deps.sh >&2
@@ -135,10 +139,13 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.oidc.audience=toolgate \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
+	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
+	--set "config.extraEnv[0].value=$workload_namespace" \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"
 export TOOLGATE_E2E_MCPSERVER_IMAGE="$mcpserver_image"
+export TOOLGATE_E2E_WORKLOAD_NAMESPACE="$workload_namespace"
 export TOOLGATE_E2E_S3_ENDPOINT="http://s3.$deps_namespace.svc:7070"
 
 log "running: $*"

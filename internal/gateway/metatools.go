@@ -78,6 +78,7 @@ type metaTools struct {
 	database    *pgxpool.Pool
 	catalog     *catalog.Catalog
 	policy      *policy.Engine
+	blocks      blockCache
 	auditOutput io.Writer
 	// payloads stores call arguments and results; nil means off.
 	payloads  *audit.Payloads
@@ -125,10 +126,15 @@ func (m *metaTools) listServers(ctx context.Context, request *mcp.CallToolReques
 		return nil, ListServersResult{}, err
 	}
 
+	state, err := m.policyState(ctx, current.identity)
+	if err != nil {
+		return nil, ListServersResult{}, err
+	}
+
 	result := ListServersResult{Servers: []ServerEntry{}}
 
 	for _, template := range m.catalog.List() {
-		entry, visible, err := m.entry(ctx, current, template, enabled)
+		entry, visible, err := m.entry(ctx, current, template, enabled, state)
 		if err != nil {
 			return nil, ListServersResult{}, err
 		}
@@ -159,7 +165,12 @@ func (m *metaTools) serverStatus(ctx context.Context, request *mcp.CallToolReque
 		return nil, ServerStatusResult{}, err
 	}
 
-	entry, visible, err := m.entry(ctx, current, template, enabled)
+	state, err := m.policyState(ctx, current.identity)
+	if err != nil {
+		return nil, ServerStatusResult{}, err
+	}
+
+	entry, visible, err := m.entry(ctx, current, template, enabled, state)
 	if err != nil {
 		return nil, ServerStatusResult{}, err
 	}
@@ -192,8 +203,8 @@ var errNoIdentity = errors.New("Sign in again: run `toolgate login`.") //nolint:
 // entry describes template for the request's identity. visible is false when
 // the identity has no catalog access to it; any other refusal shows the
 // server as blocked with the reason.
-func (m *metaTools) entry(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, enabled map[types.NamespacedName]bool) (entry ServerEntry, visible bool, err error) {
-	decision := m.policy.Decide(policy.Request{Identity: current.identity, Template: template})
+func (m *metaTools) entry(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, enabled map[types.NamespacedName]bool, state policy.State) (entry ServerEntry, visible bool, err error) {
+	decision := m.policy.Decide(policy.Request{Identity: current.identity, Template: template, State: state})
 	if !decision.Allowed && decision.Step == policy.StepAccess {
 		return ServerEntry{}, false, nil
 	}
