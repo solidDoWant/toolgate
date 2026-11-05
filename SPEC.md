@@ -201,7 +201,7 @@ spec:
   reason: No repository deletion from CI
   expires: 2026-12-31T00:00:00Z  # optional
 ```
-In globs, `*` matches any run of characters, including `/`. Rules only refuse. Grants never come from rules. A rule matching only claimed fields (a `claimed/…` workspace or a session) still applies, but the docs say plainly that a client can avoid it by claiming something else.
+In globs, `*` matches any run of characters, including `/`. A template that doesn't set `access.environments` gets `opt-in`. Rules only refuse. Grants never come from rules. A rule matching only claimed fields (a `claimed/…` workspace or a session) still applies, but the docs say plainly that a client can avoid it by claiming something else.
 
 **When decisions run:** on `list_servers`, on `tools/list` (blocked tools are left out), on `enable_server` and on every call. A rule change reaches every open session within 5 seconds (`LISTEN/NOTIFY`, then `list_changed`).
 
@@ -233,7 +233,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 
 | Command | Phase | What it does |
 |---|---|---|
-| `toolgate login [--gateway URL]` | 1 | Device-code sign-in, stores the refresh token |
+| `toolgate login [--gateway URL]` | 1 | Device-code sign-in, stores the refresh token. It learns the IdP from the gateway's `/.well-known/toolgate-client` |
 | `toolgate logout`, `toolgate status` | 1 | |
 | `toolgate headers` | 1 | `headersHelper` output: `Authorization`, `X-Toolgate-Session` (from the file the SessionStart hook writes), `X-Toolgate-Workspace` |
 | `toolgate hook session-start` | 1 | SessionStart hook: check sign-in, fetch the settings profile, merge it, print context |
@@ -245,7 +245,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 
 **Workspace ID (user attestation):** `toolgate headers` sends `TOOLGATE_WORKSPACE` if set. Otherwise it sends `<hostname>/<git remote repo name or directory name>`, normalised to the header pattern.
 
-**Session ID:** from a file the SessionStart hook writes. Claude Code doesn't give the session ID to a `headersHelper`: `CLAUDE_CODE_SESSION_ID` isn't in its environment. It gives it to a SessionStart hook, on standard input (`session_id`) and in `CLAUDE_CODE_SESSION_ID`. Evidence: [`docs/dev/claude-code-integration.md`](docs/dev/claude-code-integration.md). So `toolgate hook session-start` writes the session ID to `$XDG_RUNTIME_DIR/toolgate/<claude pid>` before anything else, and `toolgate headers` reads it by walking its parent processes to the Claude Code process. Claude Code runs the hook and the helper at the same time, so `toolgate headers` waits a bounded time for the file to appear.
+**Session ID:** from a file the SessionStart hook writes. Claude Code doesn't give the session ID to a `headersHelper`: `CLAUDE_CODE_SESSION_ID` isn't in its environment. It gives it to a SessionStart hook, on standard input (`session_id`) and in `CLAUDE_CODE_SESSION_ID`. Evidence: [`docs/dev/claude-code-integration.md`](docs/dev/claude-code-integration.md). So `toolgate hook session-start` writes the session ID to `$XDG_RUNTIME_DIR/toolgate/<claude pid>` (or a directory under the user cache directory when that variable isn't set) before anything else, and `toolgate headers` reads it by walking its parent processes to the Claude Code process. Claude Code runs the hook and the helper at the same time, so `toolgate headers` waits up to 5 s for the file to appear. The design gives the details (`docs/design/phase-1.md` §8).
 
 **The plugin** (directory `plugin/`, installed from this repo as a Claude Code plugin marketplace) contains:
 - `.mcp.json`, with one HTTP server named `toolgate` at `${user_config.gateway_url}/mcp` and `headersHelper: toolgate headers`;

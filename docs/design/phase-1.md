@@ -232,6 +232,22 @@ So a compromised gateway can't write outside toolgate's namespaces, whether or n
 - **Errors to the model** are short sentences naming what to do next, for example "Secret `github-token` isn't set. Run `toolgate secret set github-token`."
 - **Email claims:** `email` is used for matching and rendering only when the `email_verified` claim (name configurable) is `true`. Otherwise it is treated as absent: `access.users` and rules never match by it, and `${principal.email}` fails to render.
 - **Globs** in `ToolgateRule` (`workspaces`, `tools`, and the other list fields) are compiled with `github.com/gobwas/glob` with no separators. So `*` matches any run of characters, including `/`, and `k8s/ci/*` matches `k8s/ci/ReplicaSet/runner-abc`. A rule with a pattern that doesn't compile is invalid, with the reason in its status.
+- **Default environment:** a template that doesn't set `access.environments` gets `opt-in`. The CRD sets this as the field's default (`+kubebuilder:default=opt-in`), so the stored object always shows it, and the policy engine also treats an empty value as `opt-in`. In phase 1, `opt-in` behaves like `attested`, so an admin must write `environments: any` for a server that people may use from their laptops. A per-tool `environments` that isn't set inherits the server's value, so that field has no default.
 - **Server names:** a template whose name doesn't match `^[a-z][a-z0-9-]{0,30}$` is invalid. If valid templates in different watched namespaces share a name, all of them are invalid with the reason "duplicate server name", until one is renamed.
 - **`namespace: shared`** is valid only with `scope: shared`. A per-session or per-user template with `namespace: shared` is invalid, so instances that hold one user's secrets always get their own namespace and its default-deny policy.
 - **Failed sign-ins** write an `auth.refuse` audit event with the reason, issuer, audience and remote address, and no principal. At most 10 per minute per remote address are written; the rest are counted in a metric.
+
+## 8. Client
+
+**How `toolgate login` finds the IdP.** The gateway serves `GET /.well-known/toolgate-client` without authentication. It returns `{"issuer", "clientID", "scopes", "emailClaim"}` from the gateway settings `oidcIssuerURL`, `oidcCLIClientID` (a public client with the device grant), `oidcCLIScopes` (default `openid email profile offline_access`) and `oidcEmailClaim`.
+- This is the one exception to "every HTTP handler authenticates first". It returns only public client metadata, the same kind of data as the IdP's own discovery document, and never secrets. It is rate-limited like `auth.refuse` (§7), and a test asserts that it is the only unauthenticated route besides health and metrics.
+- `toolgate login --gateway URL` fetches it, runs the device grant with PKCE (`golang.org/x/oauth2`), and saves the gateway URL and the fetched values to `os.UserConfigDir()/toolgate/config.json`. `--issuer`, `--client-id` and `--scopes` override the fetched values, for testing.
+
+**`toolgate status`** shows the gateway URL, the principal (`sub`), and the email from the ID token's `emailClaim`, followed by "(unverified)" unless `email_verified` is `true`. It is for display only. Access is always decided by the gateway.
+
+**`toolgate headers`:**
+- The session ID comes from `TOOLGATE_SESSION` if it is set (manual runs, CI, other harnesses). The gateway treats session IDs as claimed anyway (`SPEC.md` §6).
+- Otherwise it walks its parent processes with `github.com/shirou/gopsutil/v4/process`, on Linux, macOS and Windows alike. The Claude Code process is the first ancestor that has a session file in the runtime directory. Names of executables are never matched.
+- The runtime directory is `$XDG_RUNTIME_DIR/toolgate` when that variable is set, and otherwise `os.UserCacheDir()/toolgate/run`. The SessionStart hook writes to the same directory. The directory is created with mode 0700 and the files with 0600.
+- If no session file appears within 5 s (a constant), it prints "No Claude Code session found. Start Claude Code with the toolgate plugin, or set TOOLGATE_SESSION." to standard error and exits non-zero. Claude Code then reports the MCP connection as failed. It never prints headers without a session.
+
