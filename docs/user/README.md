@@ -2,7 +2,9 @@
 
 For: people who use Claude Code with a toolgate gateway.
 
-toolgate is in early development, and some of these pages are not written yet. They will tell you how to:
+toolgate is a gateway between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. Your admin decides which servers you can use. toolgate starts a server when you need it, checks each tool call against the rules of your admin, and records the call.
+
+This page tells you how to:
 
 - install the toolgate plugin for Claude Code and set the address of your gateway;
 - sign in with `toolgate login`;
@@ -70,6 +72,25 @@ To see the servers that you can use, run `toolgate servers`. It shows the same l
 
 The list depends on the workspace. `toolgate servers` sends the same workspace that Claude Code sends from the current directory. If you set `TOOLGATE_SESSION`, the command uses that session, and the `ENABLED` column shows the servers that are enabled in it.
 
+## Use servers in Claude Code
+
+You do not call the gateway yourself. Ask Claude for what you need, and Claude uses four tools of the `toolgate` server:
+
+- `toolgate_list_servers` shows the servers that you can use.
+- `toolgate_enable_server` turns on a server in this session. If the server is not running, toolgate starts it, and Claude shows the progress. Then the tools of the server become available.
+- `toolgate_disable_server` turns off a server in this session.
+- `toolgate_server_status` shows if a server is running, and why it failed.
+
+The name of each tool of a server starts with the name of the server and two underscores, for example `github__list_issues`. One session can have 32 servers turned on at most.
+
+A server has one of three scopes. Your admin sets the scope:
+
+- `per-session`: the server is only for this session. It stops when you turn it off or when the session ends.
+- `per-user`: your sessions share one copy of the server. It stops some time after none of your sessions use it.
+- `shared`: all users share one copy of the server.
+
+By default, a session ends after 2 hours without requests. Then its servers are turned off. Servers that you turned on stay on when Claude Code connects again.
+
 ## Set your secrets
 
 Some servers need a secret from you, for example a GitHub token. If a secret is missing, Claude tells you the command to run.
@@ -125,3 +146,26 @@ toolgate changes only the settings that it wrote before. It keeps a list of thes
 To get the value from your admin again, delete your value from `~/.claude/settings.json`. If toolgate never wrote the setting, it does not replace a value that is already in the file.
 
 If you are not signed in, the session starts as usual, and Claude Code tells you to run `toolgate login`.
+
+## When toolgate refuses a call
+
+toolgate checks each request. If it refuses a request, Claude gets a short message that tells you why. Claude usually shows it to you. These are the messages, and what to do:
+
+| Message | What it means | What to do |
+|---|---|---|
+| You don't have access to server "NAME". | Your admin did not give you access to this server. | Ask your admin for access. |
+| Server "NAME" can be used only from an attested environment, not from a signed-in user's machine. | The server works only from pods in Kubernetes, not from your computer. The message can also name one tool. | Use the server from an allowed pod, or ask your admin. |
+| Tool "NAME" is blocked by the server's template. | Your admin turned off this tool for all users. | Do the task in a different way. |
+| Refused by rule NAMESPACE/NAME: REASON | A rule of your admin refused the call. The message gives the name of the rule and the reason that your admin wrote. | If you think that the rule is wrong, give your admin the name of the rule. |
+| Secret `NAME` isn't set. Run `toolgate secret set NAME`. | The server needs a secret from you. | Run the command, and then turn on the server again. See [Set your secrets](#set-your-secrets). |
+| You already have 20 servers running, the limit for each user. | You reached the number of servers that one user can run. | Turn off servers that you do not use, or wait until idle servers stop. |
+| The gateway is already running its limit of 200 servers. | The gateway runs as many servers as it can. | Try again later, or ask your admin. |
+| This session already has 32 servers enabled. | One session can have 32 servers turned on at most. | Turn off a server in this session first. |
+
+The numbers in the limit messages are the values that your admin set. A tool that a rule blocks does not show in the list of tools, so Claude does not try to use it.
+
+Each refusal is recorded in the audit log of the gateway with the name of the rule. Your admin can find it there.
+
+If the message says that a server failed to start, the message gives the reason. Run `toolgate servers`, or ask Claude for the status of the server. If the problem continues, give the message to your admin.
+
+If Claude Code cannot connect to the gateway at all, run `toolgate status`. If you are not signed in, run `toolgate login`.
