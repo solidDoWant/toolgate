@@ -97,8 +97,8 @@ clean: ## Remove build artifacts.
 ##@ Helm
 
 .PHONY: chart-lint
-chart-lint: ## Lint the Helm chart in deploy/charts/toolgate (skipped until the chart exists).
-	@if [ -d "$(CHART_DIR)" ]; then helm lint --strict "$(CHART_DIR)"; else echo "chart-lint: no chart in $(CHART_DIR) yet; nothing to lint"; fi
+chart-lint: ## Lint the Helm chart in deploy/charts/toolgate (skipped until its Chart.yaml exists).
+	@if [ -f "$(CHART_DIR)/Chart.yaml" ]; then helm lint --strict "$(CHART_DIR)"; else echo "chart-lint: no chart in $(CHART_DIR) yet; nothing to lint"; fi
 
 ##@ Release
 

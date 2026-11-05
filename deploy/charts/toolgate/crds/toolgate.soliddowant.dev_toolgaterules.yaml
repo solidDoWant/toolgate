@@ -1,0 +1,185 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.23.0
+  name: toolgaterules.toolgate.soliddowant.dev
+spec:
+  group: toolgate.soliddowant.dev
+  names:
+    kind: ToolgateRule
+    listKind: ToolgateRuleList
+    plural: toolgaterules
+    singular: toolgaterule
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.reason
+      name: Reason
+      type: string
+    - jsonPath: .spec.expires
+      name: Expires
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: 'ToolgateRule is a standing block rule: a request matching it
+          is refused.'
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ToolgateRuleSpec says what the rule matches and why it refuses.
+            properties:
+              expires:
+                description: Expires is when the rule stops applying.
+                format: date-time
+                type: string
+              match:
+                description: |-
+                  Match lists the fields a request must match. Every listed field must
+                  match; an omitted field matches anything.
+                properties:
+                  attestation:
+                    description: Attestation is attested or user.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: attestation must be one of attested, user
+                      rule: self in ['attested', 'user']
+                  groups:
+                    items:
+                      maxLength: 256
+                      type: string
+                    maxItems: 1024
+                    type: array
+                  principals:
+                    items:
+                      maxLength: 256
+                      type: string
+                    maxItems: 1024
+                    type: array
+                  servers:
+                    description: Servers are server names.
+                    items:
+                      maxLength: 256
+                      type: string
+                    maxItems: 1024
+                    type: array
+                  sessions:
+                    items:
+                      maxLength: 256
+                      type: string
+                    maxItems: 1024
+                    type: array
+                  tools:
+                    description: Tools are proxied tool names, <server>__<tool>.
+                    items:
+                      maxLength: 256
+                      type: string
+                    maxItems: 1024
+                    type: array
+                  workspaces:
+                    items:
+                      maxLength: 512
+                      type: string
+                    maxItems: 1024
+                    type: array
+                type: object
+              reason:
+                description: Reason is shown in the refusal.
+                maxLength: 1024
+                minLength: 1
+                type: string
+            required:
+            - reason
+            type: object
+          status:
+            description: |-
+              Status is the status every toolgate resource has: toolgate reports
+              whether it accepted the resource, and why not, in its conditions.
+            properties:
+              conditions:
+                description: Conditions report whether toolgate accepted the resource.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 16
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
