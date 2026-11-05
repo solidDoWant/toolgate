@@ -20,6 +20,11 @@ Request handlers express intent by writing rows. The reconciler acts on rows and
 
 **Catalog changes** (`MCPServerTemplate`, `ToolgateRule`) reach every replica through its own informer, not through PostgreSQL. Policy always reads the informer cache. On an informer event, a replica sends `list_changed` to its streams: for a rule, all of them; for a template, those whose session enables it. Only the leader writes the `rule.change` audit event, once per change. The 5 s bound in `SPEC.md` §10 is informer delay plus this fan-out, and a test measures it.
 
+**One controller-runtime manager per replica**, with leader election on (`LeaderElectionID: toolgate-runtime`, `LeaderElectionReleaseOnCancel: true`).
+- The catalog and rule reconcilers must run on **every** replica, because each replica's policy reads its own in-memory catalog. Register them with `controller.Options{NeedLeaderElection: ptr.To(false)}`.
+- These reconcilers write `status` and `rule.change` only while `mgr.Elected()` is closed, so there is one writer. A replica that becomes leader re-queues every template and rule, so statuses are written again.
+- The runtime reconciler runs only on the leader, which is controller-runtime's default for a runnable. Its triggers are notifications fed through a `source.Channel` and the 30 s resync, not watches on custom resources.
+
 **Leader fencing.** A former leader can still run for a short time after losing the Lease. Every reconciler write to PostgreSQL is a compare-and-set on the row's current status (§2). Before each Kubernetes delete, the reconciler checks that it still holds the Lease (controller-runtime's `ReleaseOnCancel` with the renew deadline). The orphan sweep (row 17) always lists objects first and reads rows second, so an object applied after the read can't be taken for an orphan.
 
 Why: one actor on Kubernetes means two replicas can never race to create or delete the same instance. Every interaction below reduces to "a row changed, then the reconciler or a replica reacted", in commit order.
