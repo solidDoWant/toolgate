@@ -22,6 +22,8 @@ const (
 	LabelInstance  = "toolgate.soliddowant.dev/instance"
 	LabelTemplate  = "toolgate.soliddowant.dev/template"
 	LabelManagedBy = "app.kubernetes.io/managed-by"
+	// LabelOwner is the hashed owner principal of an instance namespace.
+	LabelOwner = "toolgate.soliddowant.dev/owner"
 
 	// ManagedByValue is the value of LabelManagedBy.
 	ManagedByValue = "toolgate"
@@ -325,6 +327,11 @@ func claimed(value string, path []string) string {
 		return value
 	}
 
+	return hashClaimed(value)
+}
+
+// hashClaimed hashes a value so it fits a Kubernetes name or label value.
+func hashClaimed(value string) string {
 	sum := sha256.Sum256([]byte(value))
 
 	return hex.EncodeToString(sum[:])[:claimedHashLength]

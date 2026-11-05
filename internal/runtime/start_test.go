@@ -1,0 +1,520 @@
+package runtime_test
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/runtime"
+	"github.com/solidDoWant/toolgate/internal/store/db"
+)
+
+const (
+	instanceID        = "0123456789abcdef0123456789abcdef"
+	instanceNamespace = "tg-" + instanceID
+	templateUID       = "template-uid"
+)
+
+// memoryStore is a StartStore whose compare-and-set writes behave like the
+// SQL ones: a write whose from status doesn't match changes nothing.
+type memoryStore struct {
+	mu         sync.Mutex
+	status     string
+	generation int64
+	reason     string
+	tools      []byte
+	sessions   map[int64]db.Session
+	writes     int
+}
+
+func (m *memoryStore) Session(_ context.Context, id int64) (db.Session, error) {
+	session, found := m.sessions[id]
+	if !found {
+		return db.Session{}, errors.New("no session")
+	}
+
+	return session, nil
+}
+
+func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.status != "pending" {
+		return false, nil
+	}
+
+	m.status, m.generation = "starting", generation
+	m.writes++
+
+	return true, nil
+}
+
+func (m *memoryStore) MarkReady(_ context.Context, _ string, tools []byte) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.status != "starting" {
+		return false, nil
+	}
+
+	m.status, m.tools = "ready", tools
+	m.writes++
+
+	return true, nil
+}
+
+func (m *memoryStore) MarkFailed(_ context.Context, _, from, reason string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.status != from {
+		return false, nil
+	}
+
+	m.status, m.reason = "failed", reason
+	m.writes++
+
+	return true, nil
+}
+
+func (m *memoryStore) snapshot() (string, string, []byte, int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.status, m.reason, m.tools, m.writes
+}
+
+func testTemplate(resources ...string) *v1alpha1.MCPServerTemplate {
+	template := &v1alpha1.MCPServerTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "github", Namespace: "catalog", UID: templateUID, Generation: 3},
+		Spec: v1alpha1.MCPServerTemplateSpec{
+			Scope:        "per-user",
+			StartTimeout: &metav1.Duration{Duration: 5 * time.Minute},
+			Endpoint:     v1alpha1.Endpoint{Service: "server", Port: 8080, Path: "/mcp"},
+		},
+	}
+
+	for _, resource := range resources {
+		template.Spec.Resources = append(template.Spec.Resources, k8sruntime.RawExtension{Raw: []byte(resource)})
+	}
+
+	return template
+}
+
+const configMapResource = `{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"settings"},"data":{"email":"${principal.email}"}}`
+
+type starterFixture struct {
+	starter  *runtime.Starter
+	store    *memoryStore
+	kube     client.Client
+	now      time.Time
+	instance db.Instance
+	listed   []string
+}
+
+func newStarterFixture(t *testing.T, template *v1alpha1.MCPServerTemplate, status string, objects ...client.Object) *starterFixture {
+	t.Helper()
+
+	scheme := k8sruntime.NewScheme()
+	require.NoError(t, clientgoscheme.AddToScheme(scheme))
+
+	fixture := &starterFixture{
+		store: &memoryStore{status: status, generation: 1, sessions: map[int64]db.Session{
+			7: {ID: 7, Principal: "alice", SessionID: "session-1", Workspace: "laptop", Attestation: "user", Email: "alice@example.com", Name: "Alice"},
+		}},
+		kube: clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).
+			WithInterceptorFuncs(interceptor.Funcs{Apply: applyNetworkPolicyAsCreate}).WithReturnManagedFields().Build(),
+		now: time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC),
+	}
+
+	fixture.instance = db.Instance{
+		ID: instanceID, TemplateNs: template.Namespace, TemplateName: template.Name, TemplateUid: templateUID,
+		Generation: 1, Scope: "per-user", ScopeKey: "user:alice", OwnerPrincipal: "alice",
+		RenderSession: pgtype.Int8{Int64: 7, Valid: true}, Desired: "running", Status: status,
+		Namespace:        instanceNamespace,
+		AttemptStartedAt: pgtype.Timestamptz{Time: fixture.now.Add(-time.Minute), Valid: true},
+	}
+
+	fixture.starter = &runtime.Starter{
+		Store:  fixture.store,
+		Client: fixture.kube,
+		Template: func(key types.NamespacedName) (*v1alpha1.MCPServerTemplate, bool) {
+			if key != (types.NamespacedName{Namespace: template.Namespace, Name: template.Name}) {
+				return nil, false
+			}
+
+			return template.DeepCopy(), true
+		},
+		Secrets: runtime.BrokerSecrets(func(context.Context, string, string) ([]byte, time.Time, error) {
+			return nil, time.Time{}, errors.New("no secrets")
+		}),
+		ListTools: func(_ context.Context, endpoint string) ([]*mcp.Tool, error) {
+			fixture.listed = append(fixture.listed, endpoint)
+
+			return []*mcp.Tool{{Name: "search", InputSchema: map[string]any{"type": "object"}}}, nil
+		},
+		GatewayNamespace: "toolgate",
+		GatewayPodLabels: map[string]string{"app.kubernetes.io/name": "toolgate"},
+		Now:              func() time.Time { return fixture.now },
+	}
+
+	return fixture
+}
+
+// applyNetworkPolicyAsCreate stands in for server-side apply of a
+// NetworkPolicy, which the fake client can't merge; other kinds are applied
+// as usual.
+func applyNetworkPolicyAsCreate(ctx context.Context, kube client.WithWatch, object k8sruntime.ApplyConfiguration, options ...client.ApplyOption) error {
+	content, err := k8sruntime.DefaultUnstructuredConverter.ToUnstructured(object)
+	if err != nil {
+		return err
+	}
+
+	if content["kind"] != "NetworkPolicy" {
+		return kube.Apply(ctx, object, options...)
+	}
+
+	policy := &networkingv1.NetworkPolicy{}
+	if err := k8sruntime.DefaultUnstructuredConverter.FromUnstructured(content, policy); err != nil {
+		return err
+	}
+
+	return kube.Create(ctx, policy)
+}
+
+func instanceLabels() map[string]string {
+	return map[string]string{runtime.LabelInstance: instanceID, runtime.LabelManagedBy: runtime.ManagedByValue}
+}
+
+func readyPod() *corev1.Pod {
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Namespace: instanceNamespace, Labels: instanceLabels()},
+		Status: corev1.PodStatus{
+			Phase:      corev1.PodRunning,
+			Conditions: []corev1.PodCondition{{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+		},
+	}
+}
+
+func TestStarterPendingPreparesNamespaceAndApplies(t *testing.T) {
+	fixture := newStarterFixture(t, testTemplate(configMapResource), "pending")
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, _, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "starting", status)
+	assert.Equal(t, int64(3), fixture.store.generation, "the write records the generation it rendered")
+
+	namespace := &corev1.Namespace{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Name: instanceNamespace}, namespace))
+	assert.Equal(t, "toolgate", namespace.Labels["app.kubernetes.io/managed-by"])
+	assert.Equal(t, instanceID, namespace.Labels["toolgate.soliddowant.dev/instance"])
+	assert.Equal(t, "restricted", namespace.Labels["pod-security.kubernetes.io/enforce"])
+
+	serviceAccount := &corev1.ServiceAccount{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: instanceNamespace, Name: "default"}, serviceAccount))
+	require.NotNil(t, serviceAccount.AutomountServiceAccountToken)
+	assert.False(t, *serviceAccount.AutomountServiceAccountToken)
+
+	policies := &networkingv1.NetworkPolicyList{}
+	require.NoError(t, fixture.kube.List(t.Context(), policies, client.InNamespace(instanceNamespace)))
+	require.Len(t, policies.Items, 1)
+
+	policy := policies.Items[0].Spec
+	assert.Empty(t, policy.PodSelector.MatchLabels, "the policy selects every pod")
+	assert.ElementsMatch(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}, policy.PolicyTypes)
+	require.Len(t, policy.Ingress, 1)
+	require.Len(t, policy.Ingress[0].From, 1)
+	assert.Equal(t, map[string]string{"kubernetes.io/metadata.name": "toolgate"}, policy.Ingress[0].From[0].NamespaceSelector.MatchLabels)
+	assert.Equal(t, map[string]string{"app.kubernetes.io/name": "toolgate"}, policy.Ingress[0].From[0].PodSelector.MatchLabels)
+	require.Len(t, policy.Egress, 1)
+	require.Len(t, policy.Egress[0].Ports, 2)
+
+	for _, port := range policy.Egress[0].Ports {
+		assert.Equal(t, int32(53), port.Port.IntVal, "egress is DNS only")
+	}
+
+	configMap := &corev1.ConfigMap{}
+	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: instanceNamespace, Name: "settings"}, configMap))
+	assert.Equal(t, "alice@example.com", configMap.Data["email"], "rendered with the render_session snapshot")
+	assert.Equal(t, instanceID, configMap.Labels[runtime.LabelInstance])
+
+	managers := map[string]bool{}
+	for _, field := range configMap.ManagedFields {
+		managers[field.Manager] = field.Operation == metav1.ManagedFieldsOperationApply
+	}
+
+	assert.Equal(t, map[string]bool{"toolgate": true}, managers, "applied server-side by field manager toolgate")
+}
+
+func TestStarterPendingRenderErrorFails(t *testing.T) {
+	fixture := newStarterFixture(t, testTemplate(configMapResource), "pending")
+	session := fixture.store.sessions[7]
+	session.Email = ""
+	fixture.store.sessions[7] = session
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Contains(t, reason, "${principal.email}")
+
+	configMaps := &corev1.ConfigMapList{}
+	require.NoError(t, fixture.kube.List(t.Context(), configMaps, client.InNamespace(instanceNamespace)))
+	assert.Empty(t, configMaps.Items, "nothing is applied after a render error")
+}
+
+func TestStarterStartingBecomesReady(t *testing.T) {
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Namespace: instanceNamespace, Labels: instanceLabels()},
+		Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP},
+	}
+	fixture := newStarterFixture(t, testTemplate(), "starting", readyPod(), service)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, _, tools, _ := fixture.store.snapshot()
+	assert.Equal(t, "ready", status)
+	assert.Equal(t, []string{"http://server." + instanceNamespace + ".svc:8080/mcp"}, fixture.listed)
+
+	var stored []map[string]any
+	require.NoError(t, json.Unmarshal(tools, &stored))
+	require.Len(t, stored, 1)
+	assert.Equal(t, "search", stored[0]["name"])
+}
+
+func TestStarterStartingWaitsForObjects(t *testing.T) {
+	pod := readyPod()
+	pod.Status.Conditions[0].Status = corev1.ConditionFalse
+	fixture := newStarterFixture(t, testTemplate(), "starting", pod)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, _, _, writes := fixture.store.snapshot()
+	assert.Equal(t, "starting", status)
+	assert.Zero(t, writes)
+	assert.Empty(t, fixture.listed, "MCP isn't tried before every object is current")
+}
+
+func TestStarterStartingKstatusFailure(t *testing.T) {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "server", Namespace: instanceNamespace, Labels: instanceLabels(), Generation: 1},
+		Status: appsv1.DeploymentStatus{
+			ObservedGeneration: 1,
+			Conditions: []appsv1.DeploymentCondition{{
+				Type: appsv1.DeploymentProgressing, Status: corev1.ConditionFalse,
+				Reason: "ProgressDeadlineExceeded", Message: "deadline exceeded",
+			}},
+		},
+	}
+	fixture := newStarterFixture(t, testTemplate(), "starting", readyPod(), deployment)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Contains(t, reason, "Deployment server failed")
+	assert.Empty(t, fixture.listed)
+}
+
+func TestStarterStartingToolListCheckFails(t *testing.T) {
+	fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
+	fixture.starter.ListTools = func(context.Context, string) ([]*mcp.Tool, error) {
+		return []*mcp.Tool{{Name: strings.Repeat("x", 57)}}, nil
+	}
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Equal(t, "Tool `"+strings.Repeat("x", 57)+"` is longer than 64 characters with its `github__` prefix.", reason)
+}
+
+func TestStarterStartingTimeout(t *testing.T) {
+	waitingPod := func() *corev1.Pod {
+		pod := readyPod()
+		pod.Status.Conditions[0].Status = corev1.ConditionFalse
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+			Name: "server",
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+				Reason: "ImagePullBackOff", Message: `Back-off pulling image "example.invalid/missing:1"`,
+			}},
+		}}
+
+		return pod
+	}
+
+	t.Run("[AC-1-18] an image that can't be pulled fails at startTimeout with the image problem", func(t *testing.T) {
+		fixture := newStarterFixture(t, testTemplate(), "starting", waitingPod())
+
+		fixture.now = fixture.instance.AttemptStartedAt.Time.Add(5*time.Minute - time.Nanosecond)
+		require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+		status, _, _, _ := fixture.store.snapshot()
+		assert.Equal(t, "starting", status, "not failed before startTimeout")
+
+		fixture.now = fixture.instance.AttemptStartedAt.Time.Add(5 * time.Minute)
+		require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+		status, reason, _, _ := fixture.store.snapshot()
+		assert.Equal(t, "failed", status)
+		assert.Contains(t, reason, "ImagePullBackOff")
+		assert.Contains(t, reason, "example.invalid/missing:1")
+	})
+
+	t.Run("falls back to the latest Warning event", func(t *testing.T) {
+		pod := readyPod()
+		pod.Status.Conditions[0].Status = corev1.ConditionFalse
+		older := &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: "older", Namespace: instanceNamespace},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "server"},
+			Type:           corev1.EventTypeWarning, Reason: "Old", Message: "old problem",
+			LastTimestamp: metav1.NewTime(time.Date(2026, 11, 5, 11, 0, 0, 0, time.UTC)),
+		}
+		newer := &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: "newer", Namespace: instanceNamespace},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "server"},
+			Type:           corev1.EventTypeWarning, Reason: "Failed", Message: "Failed to pull image",
+			LastTimestamp: metav1.NewTime(time.Date(2026, 11, 5, 11, 30, 0, 0, time.UTC)),
+		}
+		normal := &corev1.Event{
+			ObjectMeta:     metav1.ObjectMeta{Name: "normal", Namespace: instanceNamespace},
+			InvolvedObject: corev1.ObjectReference{Kind: "Pod", Name: "server"},
+			Type:           corev1.EventTypeNormal, Reason: "Pulling", Message: "Pulling image",
+			LastTimestamp: metav1.NewTime(time.Date(2026, 11, 5, 11, 50, 0, 0, time.UTC)),
+		}
+		fixture := newStarterFixture(t, testTemplate(), "starting", pod, older, newer, normal)
+		fixture.now = fixture.instance.AttemptStartedAt.Time.Add(10 * time.Minute)
+
+		require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+		status, reason, _, _ := fixture.store.snapshot()
+		assert.Equal(t, "failed", status)
+		assert.Contains(t, reason, "Failed to pull image")
+		assert.NotContains(t, reason, "old problem")
+		assert.NotContains(t, reason, "Pulling image")
+	})
+}
+
+// A readiness check that finishes after the attempt timed out changes
+// nothing: its compare-and-set on the old row fails.
+func TestStarterLateResultAfterTimeout(t *testing.T) {
+	fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
+
+	timeoutPass := newStarterFixture(t, testTemplate(), "starting", readyPod())
+	timeoutPass.store = fixture.store
+	timeoutPass.starter.Store = fixture.store
+	timeoutPass.now = fixture.instance.AttemptStartedAt.Time.Add(time.Hour)
+
+	fixture.starter.ListTools = func(ctx context.Context, _ string) ([]*mcp.Tool, error) {
+		// The timeout commits while this readiness check still runs.
+		require.NoError(t, timeoutPass.starter.Step(ctx, timeoutPass.instance))
+
+		return []*mcp.Tool{{Name: "search"}}, nil
+	}
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, tools, writes := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Contains(t, reason, "didn't become ready within 5m0s")
+	assert.Nil(t, tools)
+	assert.Equal(t, 1, writes, "only the timeout wrote")
+}
+
+func TestCheckToolList(t *testing.T) {
+	tools := func(count int, name func(int) string) []*mcp.Tool {
+		list := make([]*mcp.Tool, count)
+		for index := range list {
+			list[index] = &mcp.Tool{Name: name(index)}
+		}
+
+		return list
+	}
+	numbered := func(index int) string { return "tool" + strconv.Itoa(index) }
+
+	tests := []struct {
+		name   string
+		tools  []*mcp.Tool
+		reason string
+	}{
+		{name: "name at 64 characters with prefix", tools: tools(1, func(int) string { return strings.Repeat("x", 56) })},
+		{
+			name: "name at 65 characters with prefix", tools: tools(1, func(int) string { return strings.Repeat("x", 57) }),
+			reason: "Tool `" + strings.Repeat("x", 57) + "` is longer than 64 characters with its `github__` prefix.",
+		},
+		{name: "512 tools", tools: tools(512, numbered)},
+		{name: "513 tools", tools: tools(513, numbered), reason: "The server lists 513 tools, more than the limit of 512."},
+		{name: "no tools", tools: nil},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			encoded, reason := runtime.CheckToolList("github", test.tools)
+			assert.Equal(t, test.reason, reason)
+
+			if test.reason == "" {
+				assert.NotNil(t, encoded)
+			}
+		})
+	}
+}
+
+func TestCheckToolListSizeLimit(t *testing.T) {
+	sized := func(total int) []*mcp.Tool {
+		// One tool whose description grows the stored list to total bytes.
+		base, _ := runtime.CheckToolList("github", []*mcp.Tool{{Name: "a", Description: "d"}})
+
+		return []*mcp.Tool{{Name: "a", Description: strings.Repeat("d", total-len(base)+1)}}
+	}
+
+	encoded, reason := runtime.CheckToolList("github", sized(1<<20))
+	require.Empty(t, reason)
+	require.Len(t, encoded, 1<<20)
+
+	_, reason = runtime.CheckToolList("github", sized(1<<20+1))
+	assert.Equal(t, "The server's tool list is 1048577 bytes, more than the limit of 1 MiB.", reason)
+}
+
+func TestMCPToolListerInitializesAndListsTools(t *testing.T) {
+	server := mcp.NewServer(&mcp.Implementation{Name: "upstream", Version: "0"}, nil)
+	mcp.AddTool(server, &mcp.Tool{Name: "search", Description: "Search."},
+		func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{}, nil, nil
+		})
+
+	httpServer := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
+	t.Cleanup(httpServer.Close)
+
+	tools, err := runtime.MCPToolLister(t.Context(), httpServer.URL)
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+	assert.Equal(t, "search", tools[0].Name)
+
+	_, err = runtime.MCPToolLister(t.Context(), httpServer.URL+"/missing\x00")
+	require.Error(t, err)
+}

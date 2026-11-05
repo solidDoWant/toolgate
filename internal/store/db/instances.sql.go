@@ -418,12 +418,18 @@ func (q *Queries) SetInstanceSecretsUsed(ctx context.Context, arg SetInstanceSec
 
 const setInstanceStarting = `-- name: SetInstanceStarting :execrows
 UPDATE instances
-SET status = 'starting', updated_at = now()
-WHERE id = $1 AND status = 'pending'
+SET status = 'starting', generation = $1, updated_at = now()
+WHERE id = $2 AND status = 'pending'
 `
 
-func (q *Queries) SetInstanceStarting(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, setInstanceStarting, id)
+type SetInstanceStartingParams struct {
+	Generation int64
+	ID         string
+}
+
+// Records the generation the objects were rendered and applied with.
+func (q *Queries) SetInstanceStarting(ctx context.Context, arg SetInstanceStartingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setInstanceStarting, arg.Generation, arg.ID)
 	if err != nil {
 		return 0, err
 	}
