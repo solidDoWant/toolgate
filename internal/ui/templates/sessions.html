@@ -1,0 +1,15 @@
+{{define "content"}}
+{{if .Data.Sessions}}
+<table id="sessions">
+<thead><tr>{{if .Data.ShowPrincipal}}<th>Principal</th>{{end}}<th>Session</th><th>Workspace</th><th>Attestation</th><th>Started (UTC)</th><th>Last seen (UTC)</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Sessions}}<tr>
+{{if $.Data.ShowPrincipal}}<td>{{.Principal}}</td>{{end}}<td>{{.SessionID}}</td><td>{{.Workspace}}</td><td>{{.Attestation}}</td><td>{{.CreatedAt.Format "2006-01-02 15:04:05"}}</td><td>{{.LastSeenAt.Format "2006-01-02 15:04:05"}}</td>
+<td><a href="/ui/sessions/{{.ID}}">Open</a></td>
+</tr>
+{{end}}</tbody>
+</table>
+{{else}}
+<p>No open sessions.</p>
+{{end}}
+{{end}}
