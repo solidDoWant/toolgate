@@ -229,13 +229,25 @@ func matchesAny(patterns []glob.Glob, values []string) bool {
 }
 
 func compile(key types.NamespacedName, rule *v1alpha1.ToolgateRule) (*compiledRule, error) {
-	match := rule.Spec.Match
-	compiled := &compiledRule{key: key, reason: rule.Spec.Reason, attestation: match.Attestation}
+	compiled := &compiledRule{key: key, reason: rule.Spec.Reason}
 
 	if rule.Spec.Expires != nil {
 		expires := rule.Spec.Expires.Time
 		compiled.expires = &expires
 	}
+
+	if err := compileMatch(rule.Spec.Match, compiled); err != nil {
+		return nil, err
+	}
+
+	return compiled, nil
+}
+
+// compileMatch compiles the globs of match into compiled. It is the one
+// place a ToolgateRule's match and a temporary block's match are compiled,
+// so both match the same way.
+func compileMatch(match v1alpha1.RuleMatch, compiled *compiledRule) error {
+	compiled.attestation = match.Attestation
 
 	var problems []string
 
@@ -273,8 +285,8 @@ func compile(key types.NamespacedName, rule *v1alpha1.ToolgateRule) (*compiledRu
 	}
 
 	if len(problems) > 0 {
-		return nil, fmt.Errorf("%s", strings.Join(problems, "; "))
+		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 
-	return compiled, nil
+	return nil
 }
