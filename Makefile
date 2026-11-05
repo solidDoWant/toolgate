@@ -52,7 +52,7 @@ test-guard: ## Fail if HEAD deletes or skips an [AC-N-nn] scenario test since it
 	./scripts/ci/test-guard.py --base $(or $(BASE),origin/master)
 
 .PHONY: test-integration
-test-integration: ## Run the integration-tagged tests (PostgreSQL with TLS client certificates and S3 in Docker, a fake OIDC provider in process; they skip cleanly without Docker).
+test-integration: ## Run the integration-tagged tests (PostgreSQL with TLS client certificates and S3 in Docker, a fake OIDC provider and an envtest API server in process; they skip cleanly without Docker or KUBEBUILDER_ASSETS).
 	timeout 30m go test -race -count=1 -tags integration -timeout 25m ./...
 
 .PHONY: test-e2e

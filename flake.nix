@@ -77,6 +77,17 @@
               User = "65532:65532";
             };
           };
+
+        # The control plane binaries for envtest
+        # (sigs.k8s.io/controller-runtime/pkg/envtest): the dev shell points
+        # KUBEBUILDER_ASSETS here, so tests never download binaries.
+        # Kubernetes matches the k8s.io/client-go minor version in go.mod;
+        # etcd 3.6 is the series the Kubernetes release is tested with.
+        envtestAssets = pkgs.linkFarm "toolgate-envtest-assets" [
+          { name = "kube-apiserver"; path = "${pkgs.kubernetes}/bin/kube-apiserver"; }
+          { name = "etcd"; path = "${pkgs.etcd_3_6}/bin/etcd"; }
+          { name = "kubectl"; path = "${pkgs.kubectl}/bin/kubectl"; }
+        ];
       in
       {
         packages = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
@@ -124,6 +135,8 @@
             # Link and anchor check for the Markdown docs (make docs-check).
             pkgs.lychee
           ];
+
+          KUBEBUILDER_ASSETS = "${envtestAssets}";
         });
       });
 }

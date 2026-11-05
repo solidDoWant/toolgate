@@ -7,6 +7,7 @@ Integration tests are Go tests with the `//go:build integration` tag. Run them w
 - `StartPostgres` starts PostgreSQL 17 in Docker. The server accepts TCP connections only over TLS with a client certificate. The common name of the certificate must be the database user. `ConnString` returns a URL that uses the client certificate and verifies the server certificate. `IssueClientCert` makes more client certificates.
 - `StartS3` starts the Versity S3 Gateway (`versity/versitygw`) in Docker and creates one empty bucket. `Client` returns an AWS SDK client for it with path-style addressing.
 - `StartOIDCProvider` starts a fake OIDC provider in the test process. It needs no Docker. The e2e harness can pass its own listener and public issuer URL.
+- `StartEnvtest` starts a real Kubernetes API server and etcd in the test process with envtest (see [envtest tests](#envtest-tests)). It needs no Docker.
 
 The two images are pinned by digest in `internal/testutil`.
 
@@ -24,6 +25,28 @@ To run the device-code flow:
 4. Poll the token endpoint. The access token is a JWT. Its audience is the provider audience and the client ID.
 
 Tokens from the device-code flow expire after 5 minutes. The provider issues no refresh tokens. To test other expiry times, mint the token.
+
+## envtest tests
+
+envtest is the test environment of controller-runtime (`sigs.k8s.io/controller-runtime/pkg/envtest`). It runs `kube-apiserver` and `etcd` as local processes. The dev shell gets both programs from nixpkgs and sets `KUBEBUILDER_ASSETS` to the directory that holds them. The tests download nothing.
+
+`StartEnvtest` installs the toolgate CRDs from `deploy/charts/toolgate/crds`. It returns an `Envtest` value with the REST configuration, the scheme and a controller-runtime client. The client reads from the API server directly and has no cache. The helper stops the API server and etcd when the test ends.
+
+To write an envtest test:
+
+1. Put the test in a file with the `//go:build integration` tag.
+2. Call `env := testutil.StartEnvtest(t)` at the start of the test.
+3. Use `env.Client` to apply, read and update objects.
+
+If `KUBEBUILDER_ASSETS` is not set, `StartEnvtest` skips the test. Run the tests in the dev shell to set it.
+
+### Which kind of test to write
+
+Use the fake client of controller-runtime for unit tests of logic that only reads and writes objects. It is fast, but it does not do server-side apply, status subresources, CEL validation or admission policies as a real API server does.
+
+Use envtest when the result depends on the API server. Examples are server-side apply with field managers, updates through the status subresource, CRD defaults and CEL validation rules.
+
+Use the [kind e2e tests](e2e-tests.md) when the test needs controllers or pods. envtest runs no controllers and no kubelet. A Deployment never gets pods, so tests for real readiness stay in the e2e tier.
 
 ## Without Docker
 
