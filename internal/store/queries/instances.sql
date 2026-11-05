@@ -3,6 +3,20 @@
 -- creation and stop decisions for one template and scope key.
 SELECT pg_advisory_xact_lock(hashtextextended(@template_ns::text || '/' || @template_name::text || '/' || @scope_key::text, 0));
 
+-- name: LockInstanceInsert :exec
+-- Serializes instance inserts gateway-wide, so two enables can't both pass
+-- the instance limits. Taken after LockInstanceScope.
+SELECT pg_advisory_xact_lock(hashtextextended('toolgate-instance-insert', 0));
+
+-- name: CountLiveInstances :one
+SELECT count(*) FROM instances
+WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped');
+
+-- name: CountLiveInstancesOfOwner :one
+SELECT count(*) FROM instances
+WHERE owner_principal = @owner_principal AND owner_principal <> ''
+  AND desired = 'running' AND status NOT IN ('stopping', 'stopped');
+
 -- name: GetLiveInstance :one
 SELECT * FROM instances
 WHERE template_ns = @template_ns AND template_name = @template_name AND scope_key = @scope_key
@@ -20,10 +34,10 @@ SELECT * FROM instances WHERE id = @id;
 -- name: InsertInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace
+    owner_principal, render_session, namespace, attempt_started_at
 ) VALUES (
     @id, @template_ns, @template_name, @template_uid, @generation, @scope, @scope_key,
-    @owner_principal, @render_session, @namespace
+    @owner_principal, @render_session, @namespace, now()
 )
 RETURNING *;
 
@@ -32,7 +46,7 @@ SELECT * FROM instances WHERE status <> 'stopped' ORDER BY id;
 
 -- name: SetInstanceStarting :execrows
 UPDATE instances
-SET status = 'starting', attempt_started_at = now(), updated_at = now()
+SET status = 'starting', updated_at = now()
 WHERE id = @id AND status = 'pending';
 
 -- name: SetInstanceReady :execrows
@@ -54,7 +68,7 @@ WHERE id = @id AND status = @from_status;
 -- Sends a starting or ready instance whose objects are missing back to
 -- pending, at the template's current generation.
 UPDATE instances
-SET status = 'pending', generation = @generation, attempt_started_at = NULL, updated_at = now()
+SET status = 'pending', generation = @generation, updated_at = now()
 WHERE id = @id AND status = @from_status;
 
 -- name: SetInstanceSecretsUsed :execrows

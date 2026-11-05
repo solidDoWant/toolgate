@@ -63,6 +63,8 @@ CREATE UNIQUE INDEX instances_live_idx ON instances (template_ns, template_name,
 
 CREATE INDEX instances_template_scope_idx ON instances (template_ns, template_name, scope_key, created_at DESC);
 CREATE INDEX instances_status_idx ON instances (status);
+CREATE INDEX instances_owner_live_idx ON instances (owner_principal)
+    WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped');
 
 -- user_secrets holds envelope-encrypted secrets. key_id is the Tink key ID
 -- that encrypted the ciphertext.

@@ -11,6 +11,31 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countLiveInstances = `-- name: CountLiveInstances :one
+SELECT count(*) FROM instances
+WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped')
+`
+
+func (q *Queries) CountLiveInstances(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveInstances)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countLiveInstancesOfOwner = `-- name: CountLiveInstancesOfOwner :one
+SELECT count(*) FROM instances
+WHERE owner_principal = $1 AND owner_principal <> ''
+  AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
+`
+
+func (q *Queries) CountLiveInstancesOfOwner(ctx context.Context, ownerPrincipal string) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveInstancesOfOwner, ownerPrincipal)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteStoppedInstancesBefore = `-- name: DeleteStoppedInstancesBefore :execrows
 DELETE FROM instances WHERE status = 'stopped' AND updated_at < $1
 `
@@ -142,10 +167,10 @@ func (q *Queries) GetNewestInstance(ctx context.Context, arg GetNewestInstancePa
 const insertInstance = `-- name: InsertInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace
+    owner_principal, render_session, namespace, attempt_started_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10
+    $8, $9, $10, now()
 )
 RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at
 `
@@ -249,6 +274,17 @@ func (q *Queries) ListInstancesNotStopped(ctx context.Context) ([]Instance, erro
 	return items, nil
 }
 
+const lockInstanceInsert = `-- name: LockInstanceInsert :exec
+SELECT pg_advisory_xact_lock(hashtextextended('toolgate-instance-insert', 0))
+`
+
+// Serializes instance inserts gateway-wide, so two enables can't both pass
+// the instance limits. Taken after LockInstanceScope.
+func (q *Queries) LockInstanceInsert(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockInstanceInsert)
+	return err
+}
+
 const lockInstanceScope = `-- name: LockInstanceScope :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1::text || '/' || $2::text || '/' || $3::text, 0))
 `
@@ -302,7 +338,7 @@ func (q *Queries) SetInstanceFailed(ctx context.Context, arg SetInstanceFailedPa
 
 const setInstancePending = `-- name: SetInstancePending :execrows
 UPDATE instances
-SET status = 'pending', generation = $1, attempt_started_at = NULL, updated_at = now()
+SET status = 'pending', generation = $1, updated_at = now()
 WHERE id = $2 AND status = $3
 `
 
@@ -382,7 +418,7 @@ func (q *Queries) SetInstanceSecretsUsed(ctx context.Context, arg SetInstanceSec
 
 const setInstanceStarting = `-- name: SetInstanceStarting :execrows
 UPDATE instances
-SET status = 'starting', attempt_started_at = now(), updated_at = now()
+SET status = 'starting', updated_at = now()
 WHERE id = $1 AND status = 'pending'
 `
 
