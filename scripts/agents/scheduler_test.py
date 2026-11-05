@@ -606,7 +606,10 @@ class SchedulerTest(unittest.TestCase):
         return [e for e in map(json.loads, log.read_text().splitlines()) if e["event"] == kind] if log.exists() else []
 
     def disable_planner(self):
+        # Pending reasons launch the planner whatever its last start was, so also hold it in
+        # failure backoff: a planner that ran and exited between two polls would clear them.
         self.sched.state["planner"]["last_start"] = s.iso(s.now_utc())
+        self.sched.state["failures"]["planner"] = {"next_allowed": "9999-01-01T00:00:00Z"}
 
     def test_launch_records_session_then_resumes_in_same_worktree(self):
         self.disable_planner()
