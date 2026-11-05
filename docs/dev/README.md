@@ -9,6 +9,8 @@ toolgate is in early development, and these pages are not written yet. They will
 - how acceptance tests are tagged and counted by `make acceptance`;
 - how a release is made.
 
+[Integration tests](integration-tests.md) describes the dependencies that integration tests start.
+
 Until then, read [`SPEC.md`](../../SPEC.md) and the design for the current phase in [`docs/design/`](../design/phase-1.md).
 
 ## The gateway image
