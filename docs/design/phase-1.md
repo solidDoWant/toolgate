@@ -104,7 +104,7 @@ A stop decision runs in a transaction that takes the same advisory lock as enabl
    - lock the `sessions` row `FOR UPDATE`, and restart the session if it has ended (§2);
    - upsert `session_servers`;
    - take the advisory lock, then select the live instance for (template, scope key);
-   - if there is none, insert one in `pending` with the template's current generation and `uid`, the session as `render_session`, and `attempt_started_at = now()`;
+   - if there is none, check the instance limits (§7, "Instance limits"), then insert one in `pending` with the template's current generation and `uid`, the session as `render_session`, and `attempt_started_at = now()`;
    - write `server.enable` (allow), notify, and commit.
 
    On a serialization failure or `unique_violation`, retry the transaction once.
@@ -175,6 +175,7 @@ Each row is one event combined with one operation already in flight, in the orde
 | 31 | Rule reaches its `expires` time | open sessions | Each replica keeps a timer for the earliest future `expires`. When it fires, the replica sends `list_changed` to all its streams. Policy treats expired rules as absent. | unit |
 | 32 | `LISTEN` connection drops | enable waiting, open streams | On reconnect, the replica re-reads every waiter's rows and sends `list_changed` to all its streams. The 10 s tick covers the gap. | integration |
 | 33 | Token for another principal on an existing MCP session | open stream | The request doesn't match the session's binding, so it gets 404 and never sees the other stream. | unit |
+| 34 | Two enables of different servers by one user at the per-user limit | each other | The insert lock serializes them. The first takes the last slot. The second counts again, sees the limit, and is refused. | integration |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
@@ -221,6 +222,13 @@ So a compromised gateway can't write outside toolgate's namespaces, whether or n
   - `X-Toolgate-*` header values 128 characters;
   - `Authorization` 16 KiB;
   - all request headers 64 KiB (`http.Server.MaxHeaderBytes`).
+- **Instance limits.** Each user may have at most `limits.instancesPerUser` live instances (default 20), and the gateway at most `limits.instances` (default 200). Both are chart values, and both must be at least 1.
+  - Per-session and per-user instances count against their `owner_principal`. Shared instances count only against the gateway limit.
+  - Only an insert is limited. Enabling a server whose live instance already exists always works, so a second session can still use a running per-user server at the limit.
+  - Before counting, the insert path takes one more advisory lock, `pg_advisory_xact_lock(hashtextextended('toolgate-instance-insert', 0))`, after the (template, scope key) lock. So two enables can't both pass at the limit. Inserts are rare, so serializing them costs little. Reuse and the reconciler don't take this lock.
+  - At the per-user limit, enable fails with: "You already have 20 servers running, the limit for each user. Disable servers you no longer need, or wait for idle ones to stop." At the gateway limit: "The gateway is already running its limit of 200 servers. Try again later, or ask an admin to raise `limits.instances`." Both are audited as `server.enable` refusals with reason `limit`.
+- **Metrics for cleanup:** `toolgate_instances{scope,status}` counts instance rows that aren't `stopped`. `toolgate_instance_namespaces_stuck` counts instance namespaces that have been `Terminating` for more than 10 minutes. `docs/admin/` gives alert examples for both.
+- **Uninstall:** uninstalling the chart leaves running instance namespaces behind. `docs/admin/` gives the cleanup command `kubectl delete namespace -l toolgate.soliddowant.dev/instance`. Instance namespaces always carry that label, and the shared namespace never does.
 - **Errors to the model** are short sentences naming what to do next, for example "Secret `github-token` isn't set. Run `toolgate secret set github-token`."
 - **Email claims:** `email` is used for matching and rendering only when the `email_verified` claim (name configurable) is `true`. Otherwise it is treated as absent: `access.users` and rules never match by it, and `${principal.email}` fails to render.
 - **Globs** in `ToolgateRule` (`workspaces`, `tools`, and the other list fields) are compiled with `github.com/gobwas/glob` with no separators. So `*` matches any run of characters, including `/`, and `k8s/ci/*` matches `k8s/ci/ReplicaSet/runner-abc`. A rule with a pattern that doesn't compile is invalid, with the reason in its status.
