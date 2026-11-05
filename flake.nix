@@ -40,8 +40,50 @@
         go =
           if pkgs.lib.versionAtLeast pkgs.go.version minimumGoVersion then pkgs.go
           else throw "toolgate: go.mod asks for Go ${minimumGoVersion}, but nixpkgs has Go ${pkgs.go.version}; update flake.lock (nix flake update nixpkgs) or lower go.mod.";
+
+        # The gateway image for one Linux architecture: the static toolgate
+        # binary that `make build-images` built (and checked with
+        # govulncheck), CA certificates, and nothing else. Build it with
+        # `--impure`: the binary is read from TOOLGATE_BINARY, the tag from
+        # TOOLGATE_VERSION. The same binary and nixpkgs give the same image.
+        mkImage = architecture:
+          let
+            binaryPath = builtins.getEnv "TOOLGATE_BINARY";
+            imageVersion = builtins.getEnv "TOOLGATE_VERSION";
+            binary =
+              if binaryPath == "" then
+                throw "toolgate: set TOOLGATE_BINARY to the linux/${architecture} toolgate binary and build with --impure (use `make build-images`)"
+              else
+                builtins.path { path = binaryPath; name = "toolgate-linux-${architecture}"; };
+            root = pkgs.runCommand "toolgate-root-${architecture}" { } ''
+              install -D -m 0555 ${binary} $out/bin/toolgate
+              install -D -m 0444 ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt $out/etc/ssl/certs/ca-certificates.crt
+            '';
+          in
+          pkgs.dockerTools.buildLayeredImage {
+            name = "ghcr.io/soliddowant/toolgate";
+            tag = if imageVersion == "" then "0.0.0-dev" else imageVersion;
+            inherit architecture;
+            # An uncompressed docker archive: `docker load` and `crane push`
+            # both read it.
+            compressor = "none";
+            # Only the root: the binary and the CA bundle are copied into it,
+            # so no other store path (cacert's setup hook) ends up in the
+            # image. Go reads /etc/ssl/certs/ca-certificates.crt by default.
+            contents = [ root ];
+            config = {
+              Entrypoint = [ "/bin/toolgate" ];
+              # A fixed non-root UID and GID; the image has no /etc/passwd.
+              User = "65532:65532";
+            };
+          };
       in
       {
+        packages = pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          image-amd64 = mkImage "amd64";
+          image-arm64 = mkImage "arm64";
+        };
+
         devShells.default = requireGitSource (pkgs.mkShell {
           packages = [
             go
