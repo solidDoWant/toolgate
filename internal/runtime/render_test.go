@@ -224,6 +224,7 @@ spec:
 
 	containers, _, err := unstructured.NestedSlice(deployment.Object, "spec", "template", "spec", "containers")
 	require.NoError(t, err)
+
 	env := containers[0].(map[string]any)["env"].([]any)
 	assert.Equal(t, input.Identity.SessionID, env[0].(map[string]any)["value"], "a value outside names and labels is not hashed")
 	assert.Equal(t, "claimed/laptop", env[1].(map[string]any)["value"])

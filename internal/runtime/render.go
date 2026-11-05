@@ -214,6 +214,7 @@ func (r *renderer) text(text string, path []string) (string, error) {
 		switch {
 		case strings.HasPrefix(rest, "$${"):
 			out.WriteString("${")
+
 			index += 3
 		case strings.HasPrefix(rest, "${"):
 			end := strings.IndexByte(rest[2:], '}')
@@ -229,6 +230,7 @@ func (r *renderer) text(text string, path []string) (string, error) {
 			}
 
 			out.WriteString(value)
+
 			index += 2 + end + 1
 		default:
 			out.WriteByte(text[index])
