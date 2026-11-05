@@ -100,8 +100,12 @@ type callResult struct {
 	err    error
 }
 
+// startCall starts the call with a progress token, so that the gateway
+// sends progress while the call waits.
 func startCall(ctx context.Context, session *mcp.ClientSession, params *mcp.CallToolParams) <-chan callResult {
 	done := make(chan callResult, 1)
+
+	params.SetProgressToken("approval-" + rand.String(8))
 
 	go func() {
 		result, err := session.CallTool(ctx, params)
