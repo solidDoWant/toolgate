@@ -98,26 +98,44 @@ func TestReconcilerReportsInvalidTemplates(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := newReconcilerFixture(t, test.template)
-			key := keyOf(test.template)
-
-			fixture.reconcile(t, key)
-
-			condition := fixture.condition(t, key)
-			require.NotNil(t, condition)
-			assert.Equal(t, metav1.ConditionFalse, condition.Status)
-			assert.Equal(t, catalog.ReasonInvalid, condition.Reason)
-			assert.Contains(t, condition.Message, test.reason)
-			assert.Equal(t, test.template.Generation, condition.ObservedGeneration)
-
-			_, err := fixture.catalog.Offered("github")
-
-			var invalid *catalog.InvalidError
-			require.ErrorAs(t, err, &invalid)
-			assert.Contains(t, invalid.Reason, test.reason)
-			assert.Empty(t, fixture.catalog.List())
+			requireReconciledInvalid(t, test.template, test.reason)
 		})
 	}
+}
+
+// TestAC1_23SecretOutsideSecretIsInvalid checks that the reconciler marks a
+// template using ${secret:...} outside a Secret invalid, with the reason in
+// its status, and does not offer it.
+func TestAC1_23SecretOutsideSecretIsInvalid(t *testing.T) {
+	template := newTemplate("github", catalog.ScopePerSession, podWithEnv("${secret:github-token}"))
+
+	requireReconciledInvalid(t, template, "${secret:github-token} is allowed only in the data or stringData values of a Secret")
+}
+
+// requireReconciledInvalid reconciles the template and requires that its
+// status holds the invalid condition with the reason, and that the catalog
+// refuses to offer it.
+func requireReconciledInvalid(t *testing.T, template *v1alpha1.MCPServerTemplate, reason string) {
+	t.Helper()
+
+	fixture := newReconcilerFixture(t, template)
+	key := keyOf(template)
+
+	fixture.reconcile(t, key)
+
+	condition := fixture.condition(t, key)
+	require.NotNil(t, condition)
+	assert.Equal(t, metav1.ConditionFalse, condition.Status)
+	assert.Equal(t, catalog.ReasonInvalid, condition.Reason)
+	assert.Contains(t, condition.Message, reason)
+	assert.Equal(t, template.Generation, condition.ObservedGeneration)
+
+	_, err := fixture.catalog.Offered(template.Name)
+
+	var invalid *catalog.InvalidError
+	require.ErrorAs(t, err, &invalid)
+	assert.Contains(t, invalid.Reason, reason)
+	assert.Empty(t, fixture.catalog.List())
 }
 
 func TestReconcilerOffersValidTemplates(t *testing.T) {
