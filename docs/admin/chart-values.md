@@ -8,6 +8,15 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| config.audit.payloads | bool | `false` | Store audit payloads: the arguments of each tool call and approval request, and each tool result. Payloads under 64 KiB go in PostgreSQL, larger ones in the S3 bucket. If true, `config.audit.s3.bucket` is required. |
+| config.audit.s3.accessKeyIDKey | string | `"accessKeyID"` | Key in `config.audit.s3.existingSecret` that holds the access key ID. |
+| config.audit.s3.bucket | string | `""` | S3 bucket for large audit payloads. Required when `config.audit.payloads` is true. |
+| config.audit.s3.endpoint | string | `""` | URL of the S3 API, such as `https://s3.example.com`. Empty means the AWS S3 endpoint of `config.audit.s3.region`. |
+| config.audit.s3.existingSecret | string | `""` | Name of an existing Secret in the release namespace with the S3 access key. Empty means the gateway uses the other credential sources of the AWS SDK, such as a web identity token. |
+| config.audit.s3.pathStyle | bool | `false` | Put the bucket name in the URL path instead of the host name. Many S3-compatible servers need true. |
+| config.audit.s3.prefix | string | `""` | Prefix of the payload object keys, such as `toolgate/`. |
+| config.audit.s3.region | string | `""` | S3 region of the bucket, such as `us-east-1`. |
+| config.audit.s3.secretAccessKeyKey | string | `"secretAccessKey"` | Key in `config.audit.s3.existingSecret` that holds the secret access key. |
 | config.catalogNamespaces | list | `[]` | Namespaces whose `MCPServerTemplate` and `ToolgateRule` objects the gateway reads, such as `[toolgate-catalog]`. Empty means the release namespace. |
 | config.crds.enabled | bool | `true` | Install toolgate's CRDs with the chart. `helm upgrade` updates them. If false, install them yourself. |
 | config.crds.keep | bool | `true` | Keep the CRDs, and so every template, rule and settings profile, when the release is uninstalled (`helm.sh/resource-policy: keep`). |

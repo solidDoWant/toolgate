@@ -36,6 +36,27 @@ func (q *Queries) DeleteAuditEventsBefore(ctx context.Context, arg DeleteAuditEv
 	return result.RowsAffected(), nil
 }
 
+const deleteAuditEventsByKey = `-- name: DeleteAuditEventsByKey :execrows
+DELETE FROM audit_events
+WHERE (occurred_at, id) IN (
+    SELECT unnest($1::timestamptz[]), unnest($2::bigint[])
+)
+`
+
+type DeleteAuditEventsByKeyParams struct {
+	OccurredAts []pgtype.Timestamptz
+	Ids         []int64
+}
+
+// Deletes the audit events with the given (occurred_at, id) keys.
+func (q *Queries) DeleteAuditEventsByKey(ctx context.Context, arg DeleteAuditEventsByKeyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteAuditEventsByKey, arg.OccurredAts, arg.Ids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
 INSERT INTO audit_events (
     type, principal, workspace, session, attestation, server, tool,
@@ -77,4 +98,52 @@ func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventPara
 		arg.PayloadRef,
 	)
 	return err
+}
+
+const listExpiredAuditEvents = `-- name: ListExpiredAuditEvents :many
+SELECT occurred_at, id, payload_ref FROM audit_events
+WHERE occurred_at < $1
+  AND (occurred_at, id) > ($2::timestamptz, $3::bigint)
+ORDER BY occurred_at, id
+LIMIT $4
+`
+
+type ListExpiredAuditEventsParams struct {
+	Cutoff          pgtype.Timestamptz
+	AfterOccurredAt pgtype.Timestamptz
+	AfterID         int64
+	BatchSize       int32
+}
+
+type ListExpiredAuditEventsRow struct {
+	OccurredAt pgtype.Timestamptz
+	ID         int64
+	PayloadRef string
+}
+
+// Lists at most batch_size audit events that occurred before cutoff and
+// after the (after_occurred_at, after_id) cursor, in cursor order.
+func (q *Queries) ListExpiredAuditEvents(ctx context.Context, arg ListExpiredAuditEventsParams) ([]ListExpiredAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, listExpiredAuditEvents,
+		arg.Cutoff,
+		arg.AfterOccurredAt,
+		arg.AfterID,
+		arg.BatchSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListExpiredAuditEventsRow{}
+	for rows.Next() {
+		var i ListExpiredAuditEventsRow
+		if err := rows.Scan(&i.OccurredAt, &i.ID, &i.PayloadRef); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

@@ -51,6 +51,11 @@ type Event struct {
 	TraceID   string
 	RequestID string
 	Details   map[string]any
+	// Payload is the event's payload as JSON when it is stored inline, and
+	// PayloadRef the S3 key when it is stored as an object. Payloads.Attach
+	// sets them; they are never written to stdout.
+	Payload    []byte
+	PayloadRef string
 }
 
 // Store writes audit rows. *db.Queries implements it.
@@ -116,6 +121,8 @@ func (r *Recorder) Record(ctx context.Context, event Event) error {
 		TraceID:     event.TraceID,
 		RequestID:   event.RequestID,
 		Details:     encodedDetails,
+		Payload:     event.Payload,
+		PayloadRef:  event.PayloadRef,
 	})
 	if err != nil {
 		return fmt.Errorf("write audit event %s: %w", event.Type, err)

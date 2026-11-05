@@ -14,6 +14,7 @@ import (
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
@@ -42,6 +43,9 @@ type MCPOptions struct {
 	Policy *policy.Engine
 	// AuditOutput receives the audit JSON lines. Nil means io.Discard.
 	AuditOutput io.Writer
+	// AuditPayloads stores the arguments and results of tool calls. Nil
+	// means audit payloads are off.
+	AuditPayloads *audit.Payloads
 	// Logger logs transport errors. Nil means no logging.
 	Logger *slog.Logger
 	// Now returns the current time. Nil means time.Now.
@@ -191,6 +195,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		catalog:      options.Catalog,
 		policy:       options.Policy,
 		auditOutput:  auditOutput,
+		payloads:     options.AuditPayloads,
 		subscribe:    subscribe,
 		sessionTools: endpoint.sessionTools,
 
