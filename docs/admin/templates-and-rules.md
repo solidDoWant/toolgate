@@ -167,7 +167,7 @@ A request matches when it matches every field in `match`. A field that you leave
 
 In each pattern, `*` matches any characters, including `/`. The `reason` is shown to the user and the model in the refusal, after the namespace and name of the rule. After `expires`, the rule no longer applies.
 
-The gateway applies rules when it lists servers, when it lists tools, when a server is turned on, and on every call. A blocked tool does not show in the list of tools. A rule change reaches all open sessions within 5 seconds.
+The gateway applies rules when it lists servers, when it lists tools, when a server is turned on, and on every call. A blocked tool does not show in the list of tools. A rule change reaches all open sessions within 5 seconds. This is also true when a rule reaches its `expires` time.
 
 A rule that matches only `workspaces` that start with `claimed/`, or only `sessions`, does not stop a user who wants to avoid it. The user can send another value. Read [The security model](security-model.md) before you write such a rule.
 
