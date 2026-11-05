@@ -16,9 +16,10 @@ const (
 	maxTrackedAddresses = 10000
 )
 
-// refusalLimiter counts refusals per remote address in fixed one-minute
-// windows.
-type refusalLimiter struct {
+// RateLimiter allows refusalLimit events per refusalWindow for each remote
+// address, counted in fixed one-minute windows. It limits recorded refusals
+// and the unauthenticated client-metadata route.
+type RateLimiter struct {
 	mutex   sync.Mutex
 	now     func() time.Time
 	windows map[string]refusalCount
@@ -29,12 +30,14 @@ type refusalCount struct {
 	count int
 }
 
-func newRefusalLimiter() *refusalLimiter {
-	return &refusalLimiter{now: time.Now, windows: map[string]refusalCount{}}
+// NewRateLimiter returns an empty RateLimiter.
+func NewRateLimiter() *RateLimiter {
+	return &RateLimiter{now: time.Now, windows: map[string]refusalCount{}}
 }
 
-// allow reports whether another refusal from address may be recorded.
-func (l *refusalLimiter) allow(address string) bool {
+// Allow reports whether another event from address is within the limit, and
+// counts it.
+func (l *RateLimiter) Allow(address string) bool {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
@@ -65,7 +68,7 @@ func (l *refusalLimiter) allow(address string) bool {
 	return true
 }
 
-func (l *refusalLimiter) prune(now time.Time) {
+func (l *RateLimiter) prune(now time.Time) {
 	for address, window := range l.windows {
 		if now.Sub(window.start) >= refusalWindow {
 			delete(l.windows, address)

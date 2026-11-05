@@ -41,6 +41,7 @@ logLevel: debug
 		"TOOLGATE_OIDC_ISSUER_URL":            "https://idp.example",
 		"TOOLGATE_OIDC_AUDIENCE":              "toolgate",
 		"TOOLGATE_OIDC_GROUPS_CLAIM":          "roles",
+		"TOOLGATE_OIDC_CLI_CLIENT_ID":         "toolgate-cli",
 		"TOOLGATE_SERVICE_ACCOUNT_NAMESPACES": "ci, agents,",
 	}))
 	require.NoError(t, err)
@@ -57,6 +58,8 @@ logLevel: debug
 		OIDCEmailClaim:           "email",
 		OIDCEmailVerifiedClaim:   "email_verified",
 		OIDCGroupsClaim:          "roles",
+		OIDCCLIClientID:          "toolgate-cli",
+		OIDCCLIScopes:            []string{"openid", "email", "profile", "offline_access"},
 		ServiceAccountNamespaces: []string{"ci", "agents"},
 	}, cfg)
 }
@@ -98,12 +101,14 @@ func TestLoadReportsEveryProblem(t *testing.T) {
 oidcIssuerURL: "idp.example"
 oidcEmailClaim: ""
 oidcGroupsClaim: ""
+oidcCLIScopes: []
 `,
 			wantProblems: []string{
 				`oidcIssuerURL: "idp.example" is not an http or https URL`,
 				"oidcAudience: required",
 				"oidcEmailClaim: must not be empty",
 				"oidcGroupsClaim: must not be empty",
+				"oidcCLIScopes: must not be empty",
 			},
 			wantAbsent: []string{"oidcEmailVerifiedClaim"},
 		},

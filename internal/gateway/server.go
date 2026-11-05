@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,6 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/health"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
+	"github.com/solidDoWant/toolgate/internal/wellknown"
 )
 
 // Bounds on what a client can send before a handler runs.
@@ -36,6 +38,7 @@ type Server struct {
 	logger *slog.Logger
 
 	mux            *http.ServeMux
+	publicRoutes   []string
 	database       *pgxpool.Pool
 	tracerProvider *sdktrace.TracerProvider
 
@@ -68,11 +71,34 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 	}
 
 	health.Register(server.mux, logger, health.Check{Name: "postgresql", Run: database.Ping})
+	server.publicRoutes = append(server.publicRoutes, "GET /healthz", "GET /readyz")
+
+	server.handlePublic("GET "+wellknown.Path, wellknown.Handler(wellknown.ClientMetadata{
+		Issuer:     cfg.OIDCIssuerURL,
+		ClientID:   cfg.OIDCCLIClientID,
+		Scopes:     cfg.OIDCCLIScopes,
+		EmailClaim: cfg.OIDCEmailClaim,
+	}))
 
 	return server, nil
 }
 
-// Handle registers handler for pattern on the main port.
+// handlePublic registers handler for pattern on the main port without
+// authentication. Only the probes and the client metadata document are
+// public (docs/design/phase-1.md §8).
+func (s *Server) handlePublic(pattern string, handler http.Handler) {
+	s.mux.Handle(pattern, handler)
+	s.publicRoutes = append(s.publicRoutes, pattern)
+}
+
+// PublicRoutes returns the patterns served on the main port without
+// authentication.
+func (s *Server) PublicRoutes() []string {
+	return slices.Clone(s.publicRoutes)
+}
+
+// Handle registers handler for pattern on the main port. The handler must
+// authenticate the request itself.
 func (s *Server) Handle(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, handler)
 }
