@@ -66,7 +66,16 @@ type MCPOptions struct {
 	// UpstreamHTTPClient carries forwarded calls. Nil means
 	// http.DefaultClient.
 	UpstreamHTTPClient *http.Client
+	// MCPSessionIdleTimeout is how long an MCP session may go without a
+	// request in progress or an open stream before this replica releases
+	// it. Zero means 30 minutes.
+	MCPSessionIdleTimeout time.Duration
 }
+
+// defaultMCPSessionIdleTimeout is the MCPSessionIdleTimeout when MCPOptions
+// sets none. A client of a released MCP session gets 404 and initializes
+// again (docs/design/phase-1.md §3).
+const defaultMCPSessionIdleTimeout = 30 * time.Minute
 
 // The instance limits when MCPOptions sets none (docs/design/phase-1.md §7).
 const (
@@ -105,6 +114,13 @@ type mcpBinding struct {
 type mcpSession struct {
 	binding mcpBinding
 	tools   *sessionTools
+
+	// The fields below are guarded by mcpEndpoint.mu. active counts the
+	// requests and streams in progress on the session; idle releases it
+	// once active has been zero since lastActive for the idle timeout.
+	active     int
+	lastActive time.Time
+	idle       *time.Timer
 }
 
 // mcpEndpoint serves MCP. It must run behind auth.Middleware with the
@@ -116,6 +132,8 @@ type mcpEndpoint struct {
 	handler   http.Handler
 	sessions  *sessionStore
 	logger    *slog.Logger
+
+	idleTimeout time.Duration
 
 	mu       sync.Mutex
 	bindings map[string]*mcpSession
@@ -143,6 +161,12 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		sessions: &sessionStore{pool: options.Database, auditOutput: auditOutput, now: now},
 		logger:   logger,
 		bindings: make(map[string]*mcpSession),
+
+		idleTimeout: options.MCPSessionIdleTimeout,
+	}
+
+	if endpoint.idleTimeout <= 0 {
+		endpoint.idleTimeout = defaultMCPSessionIdleTimeout
 	}
 
 	subscribe := options.Subscribe
@@ -255,38 +279,52 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 	binding := mcpBinding{principal: identity.Principal, session: identity.Session, workspace: identity.Workspace}
 
+	current := requestContext{identity: identity, session: session}
+	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
+
 	mcpSessionID := request.Header.Get(mcpSessionHeader)
 	if mcpSessionID != "" {
 		// A session this replica doesn't know, or one bound to another
 		// identity, gets 404 so the client initializes again.
-		if bound, found := e.binding(mcpSessionID); !found || bound != binding {
+		known, found := e.acquire(mcpSessionID, binding)
+		if !found {
 			http.Error(writer, "session not found", http.StatusNotFound)
 
 			return
 		}
 
+		// The session counts as in use until the request ends, which
+		// for a GET is when its stream closes.
+		defer e.release(mcpSessionID, known)
+
 		if request.Method == http.MethodDelete {
 			defer e.unbind(mcpSessionID)
 		}
-	}
 
-	current := requestContext{identity: identity, session: session}
-	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
-
-	if mcpSessionID != "" {
-		if known, found := e.session(mcpSessionID); found {
-			known.tools.setCurrent(current)
-		}
+		known.tools.setCurrent(current)
 	}
 
 	if mcpSessionID == "" {
 		// A new MCP session gets its own server, bound once the go-sdk
-		// assigns its ID.
+		// assigns its ID. It is in use until the initialize request ends.
+		var (
+			created   *mcpSession
+			createdID string
+		)
+
 		server := e.newServer()
 		ctx = context.WithValue(ctx, newServerCtxKey{}, server)
 		writer = &bindingWriter{ResponseWriter: writer, onSessionID: func(id string) {
-			e.bind(id, &mcpSession{binding: binding, tools: newSessionTools(server, e.callTool, current)})
+			created = &mcpSession{binding: binding, tools: newSessionTools(server, e.callTool, current), active: 1}
+			createdID = id
+			e.bind(id, created)
 		}}
+
+		defer func() {
+			if created != nil {
+				e.release(createdID, created)
+			}
+		}()
 	}
 
 	e.handler.ServeHTTP(writer, request.WithContext(ctx))
@@ -328,15 +366,6 @@ func (e *mcpEndpoint) tokenInfo(ctx context.Context, _ string, _ *http.Request) 
 	}, nil
 }
 
-func (e *mcpEndpoint) binding(id string) (mcpBinding, bool) {
-	session, found := e.session(id)
-	if !found {
-		return mcpBinding{}, false
-	}
-
-	return session.binding, true
-}
-
 func (e *mcpEndpoint) session(id string) (*mcpSession, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -363,11 +392,83 @@ func (e *mcpEndpoint) bind(id string, session *mcpSession) {
 
 	for existing, known := range e.bindings {
 		if !hasSession(known.tools.server, existing) {
-			delete(e.bindings, existing)
+			e.forget(existing, known)
 		}
 	}
 
 	e.bindings[id] = session
+}
+
+// acquire marks a request on the MCP session id as in progress. It returns
+// false when this replica doesn't hold the session or it is bound to
+// another identity.
+func (e *mcpEndpoint) acquire(id string, binding mcpBinding) (*mcpSession, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	session, found := e.bindings[id]
+	if !found || session.binding != binding {
+		return nil, false
+	}
+
+	session.active++
+
+	return session, true
+}
+
+// release ends a request that acquire started. When it was the session's
+// last one, the idle timer starts.
+func (e *mcpEndpoint) release(id string, session *mcpSession) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	session.active--
+	if session.active > 0 || e.bindings[id] != session {
+		return
+	}
+
+	session.lastActive = time.Now()
+
+	if session.idle == nil {
+		session.idle = time.AfterFunc(e.idleTimeout, func() { e.expire(id, session) })
+
+		return
+	}
+
+	session.idle.Reset(e.idleTimeout)
+}
+
+// expire releases an MCP session that has been idle for the idle timeout:
+// it forgets the binding and closes the go-sdk session, which ends its
+// goroutines. A later request with its ID gets 404.
+func (e *mcpEndpoint) expire(id string, session *mcpSession) {
+	e.mu.Lock()
+
+	// A request may have started, or ended and restarted the timer, since
+	// the timer fired.
+	if e.bindings[id] != session || session.active > 0 || time.Since(session.lastActive) < e.idleTimeout {
+		e.mu.Unlock()
+
+		return
+	}
+
+	e.forget(id, session)
+	e.mu.Unlock()
+
+	for open := range session.tools.server.Sessions() {
+		if open.ID() == id {
+			_ = open.Close()
+		}
+	}
+}
+
+// forget removes a binding and stops its idle timer. The caller holds e.mu.
+func (e *mcpEndpoint) forget(id string, session *mcpSession) {
+	if session.idle != nil {
+		session.idle.Stop()
+	}
+
+	delete(e.bindings, id)
 }
 
 func hasSession(server *mcp.Server, id string) bool {
@@ -384,7 +485,9 @@ func (e *mcpEndpoint) unbind(id string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	delete(e.bindings, id)
+	if session, found := e.bindings[id]; found {
+		e.forget(id, session)
+	}
 }
 
 // bindingWriter reports the Mcp-Session-Id the go-sdk assigns at initialize,
