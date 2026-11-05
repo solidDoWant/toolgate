@@ -124,6 +124,116 @@ func (q *Queries) InsertUISession(ctx context.Context, arg InsertUISessionParams
 	return i, err
 }
 
+const listOpenSessionsForUI = `-- name: ListOpenSessionsForUI :many
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at FROM sessions
+WHERE ended_at IS NULL AND ($1::text = '' OR principal = $1)
+ORDER BY last_seen_at DESC, id DESC
+LIMIT $2
+`
+
+type ListOpenSessionsForUIParams struct {
+	Principal string
+	PageSize  int32
+}
+
+// Lists open sessions, newest activity first. An empty principal matches
+// every principal.
+func (q *Queries) ListOpenSessionsForUI(ctx context.Context, arg ListOpenSessionsForUIParams) ([]Session, error) {
+	rows, err := q.db.Query(ctx, listOpenSessionsForUI, arg.Principal, arg.PageSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.SessionID,
+			&i.Workspace,
+			&i.Attestation,
+			&i.Email,
+			&i.Name,
+			&i.Groups,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.EndedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentDecisions = `-- name: ListRecentDecisions :many
+SELECT id, occurred_at, principal, workspace, session, attestation, server, tool, details
+FROM audit_events
+WHERE type = 'tool.decision' AND principal = $1 AND session = $2
+  AND occurred_at >= $3::timestamptz
+ORDER BY occurred_at DESC, id DESC
+LIMIT $4
+`
+
+type ListRecentDecisionsParams struct {
+	Principal string
+	Session   string
+	Since     pgtype.Timestamptz
+	PageSize  int32
+}
+
+type ListRecentDecisionsRow struct {
+	ID          int64
+	OccurredAt  pgtype.Timestamptz
+	Principal   string
+	Workspace   string
+	Session     string
+	Attestation string
+	Server      string
+	Tool        string
+	Details     []byte
+}
+
+// Lists the newest tool.decision events of one session.
+func (q *Queries) ListRecentDecisions(ctx context.Context, arg ListRecentDecisionsParams) ([]ListRecentDecisionsRow, error) {
+	rows, err := q.db.Query(ctx, listRecentDecisions,
+		arg.Principal,
+		arg.Session,
+		arg.Since,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentDecisionsRow{}
+	for rows.Next() {
+		var i ListRecentDecisionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.Principal,
+			&i.Workspace,
+			&i.Session,
+			&i.Attestation,
+			&i.Server,
+			&i.Tool,
+			&i.Details,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const takeUILogin = `-- name: TakeUILogin :one
 DELETE FROM ui_logins
 WHERE state_hash = $1 AND created_at > now() - interval '10 minutes'

@@ -39,3 +39,20 @@ UPDATE ui_sessions
 SET email = @email, name = @name, groups = @groups, auth_time = @auth_time
 WHERE id_hash = @id_hash AND principal = @principal
   AND expires_at > now() AND last_seen_at > now() - interval '1 hour';
+
+-- name: ListOpenSessionsForUI :many
+-- Lists open sessions, newest activity first. An empty principal matches
+-- every principal.
+SELECT * FROM sessions
+WHERE ended_at IS NULL AND (@principal::text = '' OR principal = @principal)
+ORDER BY last_seen_at DESC, id DESC
+LIMIT @page_size;
+
+-- name: ListRecentDecisions :many
+-- Lists the newest tool.decision events of one session.
+SELECT id, occurred_at, principal, workspace, session, attestation, server, tool, details
+FROM audit_events
+WHERE type = 'tool.decision' AND principal = @principal AND session = @session
+  AND occurred_at >= @since::timestamptz
+ORDER BY occurred_at DESC, id DESC
+LIMIT @page_size;

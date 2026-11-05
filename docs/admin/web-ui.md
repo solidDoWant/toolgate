@@ -55,6 +55,12 @@ If the instance stopped or changed before the request arrived, the page tells th
 
 The navigation shows the Blocks link only to admins.
 
+## The Sessions pages
+
+`/ui/sessions` lists the open sessions. A session is open until the gateway ends it. A user sees only their own sessions. An admin sees all of them.
+
+"Open" on a row shows `/ui/sessions/` followed by the session's number. The page shows the session's servers that are enabled and its 20 newest `tool.decision` events. Each event links to its audit page. A user who asks for another user's session, or for a session that has ended, gets 404. An admin can open any open session. You cannot end a session from the UI.
+
 ## The Secrets page
 
 `/ui/secrets` shows the signed-in user's secrets: each name with the dates it was created and last set. It needs the secrets keyset, like `/api/v1/secrets`, and is not offered without it. It uses the same secret broker as the API, so the CLI and the page show the same secrets. It writes the same `secret.set` and `secret.delete` audit events, with attestation `user` and no workspace or session.
