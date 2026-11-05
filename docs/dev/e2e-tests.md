@@ -17,8 +17,8 @@ Both targets use `scripts/e2e/run.sh`. The script does these steps:
 2. It builds the image of the test MCP server from `test/mcpserver`.
 3. It creates a kind cluster with a new name, `toolgate-<worktree>-<random>`, and loads the two images into it.
 4. It installs Flux.
-5. It installs PostgreSQL and an S3 server in the namespace `toolgate-e2e`. It uses the images that `internal/testutil` pins.
-6. It installs the chart from `deploy/charts/toolgate` as the release `toolgate` in the namespace `toolgate-system`, and waits until the gateway is ready.
+5. It installs PostgreSQL, an S3 server and an OCI registry in the namespace `toolgate-e2e`. PostgreSQL and S3 use the images that `internal/testutil` pins. The script then pushes the test chart (see below) to the registry.
+6. It installs the chart from `deploy/charts/toolgate` as the release `toolgate` in the namespace `toolgate-system`, and waits until the gateway is ready. The value `rbac.extraRules` lets the gateway create the Flux kinds HelmRelease and OCIRepository.
 7. It runs the tests.
 8. It deletes the cluster. It also does this when a step fails.
 
@@ -79,6 +79,15 @@ These settings control the server:
 
 The tests get the image name from `TOOLGATE_E2E_MCPSERVER_IMAGE`. The image is only in the kind cluster, so use `imagePullPolicy: Never`.
 
+## The test chart
+
+`test/e2e/charts/mcpserver` is a Helm chart that runs the test MCP server as the Service `mcp`. Tests use it in templates that contain an OCIRepository and a HelmRelease. Its values are:
+
+- `image`: the image of the test MCP server. If you do not set it, the chart does not install. Tests use this to make a HelmRelease fail.
+- `tools`: the tool names, separated by commas.
+
+The chart is in the registry of the cluster at `TOOLGATE_E2E_CHART_REPOSITORY`, with the tag `0.1.0`. The registry uses plain HTTP, so set `insecure: true` in the OCIRepository.
+
 ## Variables for the tests
 
 `scripts/e2e/run.sh` sets these variables for the tests:
@@ -90,5 +99,6 @@ The tests get the image name from `TOOLGATE_E2E_MCPSERVER_IMAGE`. The image is o
 - `TOOLGATE_E2E_OTLP_LISTEN`: the listen address of the test OTLP receiver. The test process runs it and collects the spans that the gateway sends. The chart's `config.otlpEndpoint` points to it.
 - `TOOLGATE_E2E_S3_ENDPOINT`: the URL of the S3 server in the cluster.
 - `TOOLGATE_E2E_WORKLOAD_NAMESPACE`: a namespace for test pods. The gateway accepts the service account tokens of pods in this namespace, so a test can connect as an attested workload.
+- `TOOLGATE_E2E_CHART_REPOSITORY`: the OCI repository of the test chart, as Flux in the cluster reaches it.
 
 If a variable is not set, the tests that need it skip.

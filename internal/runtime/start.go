@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,8 +88,9 @@ const (
 // `tools/list`, and returns the tools.
 type ToolLister func(ctx context.Context, endpoint string) ([]*mcp.Tool, error)
 
-// statusKinds are the allowed kinds whose readiness kstatus judges from
-// their status. The other allowed kinds are current once they exist.
+// statusKinds are the kinds whose readiness kstatus judges from their
+// status even when the template doesn't list them, such as the pods a
+// Deployment makes. Every kind the template lists is judged too.
 var statusKinds = []schema.GroupVersionKind{
 	{Version: "v1", Kind: "Pod"},
 	{Group: "apps", Version: "v1", Kind: "Deployment"},
@@ -213,16 +215,23 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 	}
 
 	if s.timedOut(instance, template) {
-		reason, err := s.startFailureReason(ctx, instance)
+		reason, err := s.notReadyReason(ctx, instance, template)
 		if err != nil {
 			return err
+		}
+
+		if reason == "" {
+			reason, err = s.startFailureReason(ctx, instance)
+			if err != nil {
+				return err
+			}
 		}
 
 		return s.fail(ctx, instance, StatusStarting, "The server didn't become ready within "+
 			startTimeout(template).String()+": "+reason)
 	}
 
-	current, reason, err := s.objectsCurrent(ctx, instance)
+	current, reason, err := s.objectsCurrent(ctx, instance, template)
 	if err != nil {
 		return err
 	}
@@ -264,11 +273,12 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 // objects failed. An object that is only in progress, such as a restarting
 // pod, is left to the health checks.
 func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
-	if _, found := s.template(instance); !found {
+	template, found := s.template(instance)
+	if !found {
 		return nil
 	}
 
-	_, reason, err := s.objectsCurrent(ctx, instance)
+	_, reason, err := s.objectsCurrent(ctx, instance, template)
 	if err != nil {
 		return err
 	}
@@ -584,22 +594,24 @@ func (s *Starter) apply(ctx context.Context, object *unstructured.Unstructured) 
 	return nil
 }
 
-// objectsCurrent reports whether every status-bearing object of the
-// instance is current by kstatus, or the reason when one has failed.
-func (s *Starter) objectsCurrent(ctx context.Context, instance db.Instance) (bool, string, error) {
+// objectsCurrent reports whether every object of the instance is current,
+// or the reason when one has failed. It judges the template's kinds and
+// statusKinds.
+func (s *Starter) objectsCurrent(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (bool, string, error) {
 	current := true
 
-	for _, kind := range statusKinds {
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))
-
-		if err := s.Client.List(ctx, list, client.InNamespace(instance.Namespace),
-			client.MatchingLabels{LabelInstance: instance.ID}); err != nil {
-			return false, "", fmt.Errorf("list %s in %s: %w", kind.Kind, instance.Namespace, err)
+	for _, kind := range readinessKinds(template) {
+		list, err := s.listKind(ctx, instance, kind)
+		if err != nil {
+			return false, "", err
 		}
 
 		for index := range list.Items {
 			object := &list.Items[index]
+
+			if message, held, ok := readyFalse(object, s.now()); ok && held >= readyFailureHold {
+				return false, truncate(fmt.Sprintf("%s %s failed: %s", kind.Kind, object.GetName(), message), maxReasonBytes), nil
+			}
 
 			result, err := status.Compute(object)
 			if err != nil {
@@ -617,6 +629,113 @@ func (s *Starter) objectsCurrent(ctx context.Context, instance db.Instance) (boo
 	}
 
 	return current, "", nil
+}
+
+// readinessKinds returns statusKinds and the kinds the template lists,
+// each once. Secrets are skipped, because the gateway never reads them, and
+// so is a resource whose kind doesn't parse: the render refuses it before
+// any object is applied.
+func readinessKinds(template *v1alpha1.MCPServerTemplate) []schema.GroupVersionKind {
+	kinds := slices.Clone(statusKinds)
+
+	for _, raw := range template.Spec.Resources {
+		var typeMeta metav1.TypeMeta
+		if err := json.Unmarshal(raw.Raw, &typeMeta); err != nil || typeMeta.Kind == "" || typeMeta.APIVersion == "" {
+			continue
+		}
+
+		kind := typeMeta.GroupVersionKind()
+		if kind.Version == "" || kind == corev1.SchemeGroupVersion.WithKind("Secret") {
+			continue
+		}
+
+		if !slices.Contains(kinds, kind) {
+			kinds = append(kinds, kind)
+		}
+	}
+
+	return kinds
+}
+
+// readyFailureHold is how long an object's Ready condition must stay False
+// at the object's current generation before the object counts as failed.
+// It keeps objects that report Ready=False briefly while they make progress
+// from failing early.
+const readyFailureHold = 60 * time.Second
+
+// readyFalse returns the message of an object's Ready condition and how
+// long it has been False, when the condition is False at the object's
+// current generation. Reconciling doesn't matter: helm-controller keeps
+// Reconciling=True while it retries a failed install.
+func readyFalse(object *unstructured.Unstructured, now time.Time) (string, time.Duration, bool) {
+	conditions, found, err := unstructured.NestedSlice(object.Object, "status", "conditions")
+	if err != nil || !found {
+		return "", 0, false
+	}
+
+	for _, item := range conditions {
+		ready, ok := item.(map[string]any)
+		if !ok || ready["type"] != "Ready" || ready["status"] != string(metav1.ConditionFalse) {
+			continue
+		}
+
+		// The condition's own observedGeneration says which generation it
+		// describes. helm-controller keeps status.observedGeneration at -1
+		// until an install succeeds, but sets it on each condition.
+		observed, found, err := unstructured.NestedInt64(ready, "observedGeneration")
+		if err != nil || !found || observed != object.GetGeneration() {
+			return "", 0, false
+		}
+
+		transition, _ := ready["lastTransitionTime"].(string)
+
+		changed, err := time.Parse(time.RFC3339, transition)
+		if err != nil {
+			return "", 0, false
+		}
+
+		message, _ := ready["message"].(string)
+		if message == "" {
+			message, _ = ready["reason"].(string)
+		}
+
+		return message, now.Sub(changed), true
+	}
+
+	return "", 0, false
+}
+
+// notReadyReason returns the Ready message of the first object of the
+// instance whose Ready condition is False at its current generation, or ""
+// when there is none.
+func (s *Starter) notReadyReason(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (string, error) {
+	for _, kind := range readinessKinds(template) {
+		list, err := s.listKind(ctx, instance, kind)
+		if err != nil {
+			return "", err
+		}
+
+		for index := range list.Items {
+			object := &list.Items[index]
+			if message, _, ok := readyFalse(object, s.now()); ok && message != "" {
+				return truncate(fmt.Sprintf("%s %s: %s", kind.Kind, object.GetName(), message), maxReasonBytes), nil
+			}
+		}
+	}
+
+	return "", nil
+}
+
+func (s *Starter) listKind(ctx context.Context, instance db.Instance, kind schema.GroupVersionKind) (*unstructured.UnstructuredList, error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))
+
+	if err := s.Client.List(ctx, list, client.InNamespace(instance.Namespace),
+		client.MatchingLabels{LabelInstance: instance.ID}); err != nil {
+		return nil, fmt.Errorf("list %s in %s: %w", kind.Kind, instance.Namespace, err)
+	}
+
+	return list, nil
 }
 
 // startFailureReason explains why an instance didn't start: the waiting

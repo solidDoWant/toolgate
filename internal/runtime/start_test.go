@@ -21,6 +21,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -756,4 +757,131 @@ func TestStarterReachesSharedNamespaceInstanceAtRenderedService(t *testing.T) {
 	status, reason, _, _ := fixture.store.snapshot()
 	assert.Equal(t, "ready", status, reason)
 	assert.Equal(t, []string{"http://server-" + instanceID + "." + sharedNamespace + ".svc:8080/mcp"}, fixture.listed)
+}
+
+const helmReleaseResource = `{"apiVersion":"helm.toolkit.fluxcd.io/v2","kind":"HelmRelease","metadata":{"name":"server"},"spec":{"interval":"10m"}}`
+
+// helmRelease returns a HelmRelease of the instance at generation 2 with the
+// given status.
+func helmRelease(observedGeneration int64, conditions ...map[string]any) *unstructured.Unstructured {
+	release := &unstructured.Unstructured{}
+	release.SetAPIVersion("helm.toolkit.fluxcd.io/v2")
+	release.SetKind("HelmRelease")
+	release.SetName("server")
+	release.SetNamespace(instanceNamespace)
+	release.SetLabels(instanceLabels())
+	release.SetGeneration(2)
+
+	items := make([]any, 0, len(conditions))
+	for _, condition := range conditions {
+		items = append(items, condition)
+	}
+
+	release.Object["status"] = map[string]any{"observedGeneration": observedGeneration, "conditions": items}
+
+	return release
+}
+
+// condition returns a condition that changed at 12:00 UTC, the fixture's
+// clock, minus age.
+func condition(kind, status, reason, message string, age time.Duration) map[string]any {
+	return map[string]any{
+		"type": kind, "status": status, "reason": reason, "message": message,
+		"lastTransitionTime": time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC).Add(-age).Format(time.RFC3339),
+	}
+}
+
+// atGeneration sets the observedGeneration of a condition.
+func atGeneration(condition map[string]any, generation int64) map[string]any {
+	condition["observedGeneration"] = generation
+
+	return condition
+}
+
+func TestStarterReadyConditionRule(t *testing.T) {
+	const message = "Helm install failed for release tg/server: the value image is required"
+
+	tests := []struct {
+		name       string
+		release    *unstructured.Unstructured
+		wantStatus string
+		wantReason string
+	}{
+		{
+			name:       "Ready False for exactly 60 s at the current generation fails with the Ready message",
+			release:    helmRelease(-1, atGeneration(condition("Ready", "False", "InstallFailed", message, 60*time.Second), 2)),
+			wantStatus: "failed",
+			wantReason: "HelmRelease server failed: " + message,
+		},
+		{
+			name: "Ready False for 60 s fails whatever Reconciling says",
+			release: helmRelease(-1,
+				condition("Reconciling", "True", "Progressing", "installing", time.Minute),
+				atGeneration(condition("Ready", "False", "InstallFailed", message, 90*time.Second), 2)),
+			wantStatus: "failed",
+			wantReason: "HelmRelease server failed: " + message,
+		},
+		{
+			name:       "Ready False for 59 s waits",
+			release:    helmRelease(-1, atGeneration(condition("Ready", "False", "InstallFailed", message, 59*time.Second), 2)),
+			wantStatus: "starting",
+		},
+		{
+			name:       "Ready False for 60 s at an older condition generation waits",
+			release:    helmRelease(2, atGeneration(condition("Ready", "False", "InstallFailed", message, 5*time.Minute), 1)),
+			wantStatus: "starting",
+		},
+		{
+			name:       "Ready False for 60 s without a condition generation waits",
+			release:    helmRelease(2, condition("Ready", "False", "InstallFailed", message, 5*time.Minute)),
+			wantStatus: "starting",
+		},
+		{
+			name:       "Ready True becomes ready",
+			release:    helmRelease(2, atGeneration(condition("Ready", "True", "InstallSucceeded", "installed", time.Hour), 2)),
+			wantStatus: "ready",
+		},
+		{
+			name: "Stalled fails by kstatus",
+			release: helmRelease(2, condition("Stalled", "True", "RetriesExceeded", "out of retries", 0),
+				condition("Ready", "Unknown", "Progressing", "retrying", 0)),
+			wantStatus: "failed",
+			wantReason: "HelmRelease server failed: out of retries",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "starting", readyPod(), test.release)
+
+			require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+			status, reason, _, _ := fixture.store.snapshot()
+			assert.Equal(t, test.wantStatus, status)
+			assert.Equal(t, test.wantReason, reason)
+		})
+	}
+}
+
+func TestStarterReadyFailsOnReadyConditionRule(t *testing.T) {
+	release := helmRelease(2, atGeneration(condition("Ready", "False", "UpgradeFailed", "Helm upgrade failed", time.Minute), 2))
+	fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "ready", readyPod(), release)
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Equal(t, "HelmRelease server failed: Helm upgrade failed", reason)
+}
+
+func TestStarterTimeoutReasonIsTheNotReadyObjectsMessage(t *testing.T) {
+	release := helmRelease(-1, atGeneration(condition("Ready", "False", "InstallFailed", "chart not found", 10*time.Second), 2))
+	fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "starting", readyPod(), release)
+	fixture.instance.AttemptStartedAt = pgtype.Timestamptz{Time: fixture.now.Add(-10 * time.Minute), Valid: true}
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, reason, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "failed", status)
+	assert.Equal(t, "The server didn't become ready within 5m0s: HelmRelease server: chart not found", reason)
 }

@@ -9,10 +9,13 @@
 #     and the test MCP server image (test/mcpserver);
 #  2. creates a kind cluster with a unique name (toolgate-<worktree>-<random>,
 #     or E2E_CLUSTER) and loads both images into it;
-#  3. installs Flux (`flux install`), then PostgreSQL and the S3 server
-#     (test/e2e/manifests/dependencies.yaml) in the namespace toolgate-e2e;
+#  3. installs Flux (`flux install`), then PostgreSQL, the S3 server and an
+#     OCI registry (test/e2e/manifests/dependencies.yaml) in the namespace
+#     toolgate-e2e, and pushes the test chart (test/e2e/charts/mcpserver) to
+#     the registry;
 #  4. installs the chart from deploy/charts/toolgate as release toolgate in
-#     toolgate-system, with the fresh image, and waits until it is ready;
+#     toolgate-system, with the fresh image and rbac.extraRules for Flux's
+#     HelmRelease and OCIRepository, and waits until it is ready;
 #  5. runs COMMAND with these variables set:
 #       KUBECONFIG                    the cluster's kubeconfig
 #       TOOLGATE_E2E_NAMESPACE        the release namespace
@@ -26,6 +29,8 @@
 #       TOOLGATE_E2E_S3_ENDPOINT      the S3 server inside the cluster
 #       TOOLGATE_E2E_WORKLOAD_NAMESPACE  a namespace whose pods' service
 #                                     account tokens the gateway accepts
+#       TOOLGATE_E2E_CHART_REPOSITORY the OCI repository of the test chart,
+#                                     as Flux inside the cluster reaches it
 #  6. deletes the cluster, also when a step fails. E2E_KEEP_CLUSTER=true
 #     keeps it for debugging.
 #
@@ -37,7 +42,7 @@ set -euo pipefail
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
-for tool in docker kind kubectl helm flux go yq; do
+for tool in docker kind kubectl helm flux go yq curl; do
 	command -v "$tool" >/dev/null || { echo "e2e: $tool is not on PATH (use the dev shell)" >&2; exit 1; }
 done
 
@@ -108,7 +113,19 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 	(select(.kind == "Deployment" and .metadata.name == "postgres") | .spec.template.spec.containers[0].image) = strenv(POSTGRES_IMAGE) |
 	(select(.kind == "Deployment" and .metadata.name == "s3") | .spec.template.spec.containers[0].image) = strenv(S3_IMAGE)
 ' test/e2e/manifests/dependencies.yaml | kubectl -n "$deps_namespace" apply -f - >&2
-kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 --timeout 5m >&2
+kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry --timeout 5m >&2
+
+log "pushing the test chart"
+helm package test/e2e/charts/mcpserver --destination "$work/charts" >&2
+registry_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
+kubectl -n "$deps_namespace" port-forward service/registry "$registry_port:5000" >"$work/registry-forward.log" 2>&1 &
+registry_forward=$!
+for _ in $(seq 60); do
+	curl --silent --fail "http://127.0.0.1:$registry_port/v2/" >/dev/null && break
+	sleep 1
+done
+helm push "$work/charts/mcpserver-0.1.0.tgz" "oci://127.0.0.1:$registry_port/charts" --plain-http >&2
+kill "$registry_forward"
 
 # The fake identity provider runs in the test process, on the host's address
 # in the kind Docker network, so both the tests and the gateway pods reach it
@@ -141,12 +158,14 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
 	--set "config.extraEnv[0].value=$workload_namespace" \
+	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"
 export TOOLGATE_E2E_MCPSERVER_IMAGE="$mcpserver_image"
 export TOOLGATE_E2E_WORKLOAD_NAMESPACE="$workload_namespace"
 export TOOLGATE_E2E_S3_ENDPOINT="http://s3.$deps_namespace.svc:7070"
+export TOOLGATE_E2E_CHART_REPOSITORY="oci://registry.$deps_namespace.svc:5000/charts/mcpserver"
 
 log "running: $*"
 "$@"

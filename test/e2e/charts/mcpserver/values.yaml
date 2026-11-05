@@ -1,0 +1,5 @@
+# image is the test MCP server image. The chart refuses to install without
+# it, so a HelmRelease that leaves it out fails to install.
+image: ""
+# tools are the tool names the server lists.
+tools: env,secrets
