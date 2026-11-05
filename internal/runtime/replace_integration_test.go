@@ -248,6 +248,7 @@ func TestReplace(t *testing.T) {
 			SessionPk: session.ID, TemplateNs: template.Namespace, TemplateName: template.Name,
 		})
 		require.NoError(t, err)
+
 		fixture.setNow(old.ReadyAt.Time.Add(2 * time.Minute))
 		defer fixture.setNow(time.Now())
 

@@ -58,7 +58,7 @@ func (f *fakeServers) LiveInstances(_ context.Context, principal string, include
 
 	instances := []gateway.InstanceEntry{{ID: "own", Server: "github", Scope: "per-user", Owner: principal, Status: "ready", Outdated: true}}
 	if includeShared {
-		instances = append(instances, gateway.InstanceEntry{ID: "shared", Server: "wiki", Scope: "shared", Status: "starting"})
+		instances = append(instances, gateway.InstanceEntry{ID: "shared", Server: "wiki", Scope: "shared", Status: "starting", Outdated: true})
 	}
 
 	return instances, nil
