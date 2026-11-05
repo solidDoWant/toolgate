@@ -154,6 +154,14 @@ type Config struct {
 	// an enable that must start a new instance fails. At least 1. The chart
 	// sets it from `config.limits.instances`.
 	InstanceLimit int `json:"instanceLimit" env:"TOOLGATE_INSTANCE_LIMIT"`
+
+	// How long a session can go without requests before the gateway ends
+	// it. Ending a session disables all of its servers, so its per-session
+	// MCP servers stop. A later request with the same session ID starts the
+	// session again with no servers enabled. The gateway checks every 30
+	// seconds. Write it as a Go duration, such as `2h`. It must be more than
+	// zero. The chart sets it from `config.sessionIdleTimeout`.
+	SessionIdleTimeout Duration `json:"sessionIdleTimeout" env:"TOOLGATE_SESSION_IDLE_TIMEOUT"`
 }
 
 // WatchedNamespaces returns the namespaces whose catalog objects the gateway
@@ -196,6 +204,7 @@ func Default() Config {
 		OIDCCLIScopes:          []string{"openid", "email", "profile", "offline_access"},
 		InstanceLimitPerUser:   20,
 		InstanceLimit:          200,
+		SessionIdleTimeout:     Duration(2 * time.Hour),
 	}
 }
 
@@ -442,6 +451,10 @@ func (c Config) Validate() []error {
 
 	if c.InstanceLimit < 1 {
 		problems = append(problems, errors.New("instanceLimit: must be at least 1"))
+	}
+
+	if c.SessionIdleTimeout <= 0 {
+		problems = append(problems, errors.New("sessionIdleTimeout: must be greater than zero"))
 	}
 
 	return problems

@@ -55,6 +55,10 @@ config:
   # `http://otel-collector:4318`. Empty turns trace export off.
   otlpEndpoint: ""
 
+  # -- How long a session can go without requests before the gateway ends it
+  # and stops its per-session MCP servers, as a Go duration such as `2h`.
+  sessionIdleTimeout: 2h
+
   limits:
     # -- Maximum number of MCP server instances that run for one user at the
     # same time. Per-session and per-user instances count for the user who

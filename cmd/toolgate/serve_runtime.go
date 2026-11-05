@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
@@ -42,6 +44,8 @@ type runtimeOptions struct {
 	secrets         runtime.SecretGetter
 	registerMetrics func(...prometheus.Collector) error
 	logger          *slog.Logger
+	// auditOutput receives the audit lines of the reconciler's writes.
+	auditOutput io.Writer
 	// listener delivers the PostgreSQL notifications. serve runs it.
 	listener *store.Listener
 }
@@ -146,6 +150,15 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Log:             logger,
 	}
 
+	// Idle sessions end before the instances are judged, so their
+	// per-session instances stop in the same pass.
+	sessionEnder := &runtime.SessionEnder{
+		Pool:        pool,
+		IdleTimeout: time.Duration(cfg.SessionIdleTimeout),
+		AuditOutput: options.auditOutput,
+		Log:         logger,
+	}
+
 	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger}
 
 	startStore := runtime.PostgresStartStore{Pool: pool}
@@ -178,7 +191,8 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// has been read.
 	queries := db.New(pool)
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
-		sweep.Pass(teardown.Pass(queries, runtime.FullPass(queries, logger, stops.Step, teardown.Step, starter.Step, monitor.Step))))
+		sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
+			runtime.FullPass(queries, logger, stops.Step, teardown.Step, starter.Step, monitor.Step)))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

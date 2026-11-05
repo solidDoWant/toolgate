@@ -132,6 +132,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			secrets:         userSecrets(broker),
 			registerMetrics: server.RegisterMetrics,
 			logger:          logger,
+			auditOutput:     stdout,
 			listener:        listener,
 		})
 		if err != nil {
