@@ -104,19 +104,10 @@ func (m *metaTools) awaitApproval(ctx context.Context, call approvalCall, found 
 	// Step 4: ask the client to open the approval page. A request that
 	// carries responses never gets input requests back.
 	if responses == nil {
-		return db.Approval{}, &mcp.CallToolResult{
-			InputRequests: mcp.InputRequestMap{id: &mcp.ElicitParams{
-				Mode:          "url",
-				Message:       fmt.Sprintf("Tool `%s` needs approval. Open the page to approve or deny the call.", call.proxiedName()),
-				URL:           m.approvalURL(id),
-				ElicitationID: id,
-			}},
-			RequestState: id,
-		}, nil
+		return db.Approval{}, m.approvalInputRequest(call, id), nil
 	}
 
-	answer, ok := responses[id].(*mcp.ElicitResult)
-	if !ok || answer.Action != elicitAccept {
+	if !approvalAccepted(responses, id) {
 		result, err := m.refusePending(ctx, call, id)
 
 		return db.Approval{}, result, err
@@ -132,6 +123,30 @@ func (m *metaTools) awaitApproval(ctx context.Context, call approvalCall, found 
 	defer m.waiters.release(principal)
 
 	return m.waitForApproval(ctx, call, id)
+}
+
+// approvalInputRequest is step 4 of docs/design/phase-2.md §4: a result
+// asking the client, through the go-sdk's multi round-trip handling, to open
+// the approval page. The elicitation ID and the request state are both the
+// approval ID.
+func (m *metaTools) approvalInputRequest(call approvalCall, id string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		InputRequests: mcp.InputRequestMap{id: &mcp.ElicitParams{
+			Mode:          "url",
+			Message:       fmt.Sprintf("Tool `%s` needs approval. Open the page to approve or deny the call.", call.proxiedName()),
+			URL:           m.approvalURL(id),
+			ElicitationID: id,
+		}},
+		RequestState: id,
+	}
+}
+
+// approvalAccepted reports whether the client answered the approval's
+// elicitation with accept.
+func approvalAccepted(responses mcp.InputResponseMap, id string) bool {
+	answer, ok := responses[id].(*mcp.ElicitResult)
+
+	return ok && answer.Action == elicitAccept
 }
 
 // waitForApproval is step 5 of docs/design/phase-2.md §4. It subscribes

@@ -184,6 +184,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.ui.clientID=toolgate-ui \
 	--set config.ui.adminGroup=toolgate-admins \
 	--set config.ui.publicURL="https://$TOOLGATE_E2E_UI_LISTEN" \
+	--set config.ui.approvalTimeout=1m \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \

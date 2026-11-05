@@ -307,15 +307,7 @@ func connectGatewayInWorkspace(t *testing.T, endpoint, user, session, workspace 
 func connectGatewayWithHeader(t *testing.T, endpoint, user, session string, extra http.Header) *gatewaySession {
 	t.Helper()
 
-	header := extra.Clone()
-	if header == nil {
-		header = http.Header{}
-	}
-
-	header.Set("Authorization", "Bearer "+oidcProvider(t).MintAccessToken(t, testutil.TokenClaims{
-		Subject: user, Email: user + "@example.com", EmailVerified: true,
-	}))
-	header.Set(auth.SessionHeader, session)
+	header := gatewayHeader(t, user, session, extra)
 
 	observed := &gatewaySession{}
 	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "toolgate-e2e", Version: "0"}, &mcp.ClientOptions{
@@ -335,6 +327,24 @@ func connectGatewayWithHeader(t *testing.T, endpoint, user, session string, extr
 	observed.session = connected
 
 	return observed
+}
+
+// gatewayHeader returns extra with a fresh access token of user and the
+// toolgate session ID.
+func gatewayHeader(t *testing.T, user, session string, extra http.Header) http.Header {
+	t.Helper()
+
+	header := extra.Clone()
+	if header == nil {
+		header = http.Header{}
+	}
+
+	header.Set("Authorization", "Bearer "+oidcProvider(t).MintAccessToken(t, testutil.TokenClaims{
+		Subject: user, Email: user + "@example.com", EmailVerified: true,
+	}))
+	header.Set(auth.SessionHeader, session)
+
+	return header
 }
 
 // serverCall is the outcome of one meta tool call.
