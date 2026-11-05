@@ -1,0 +1,71 @@
+# The gateway's dependencies in the e2e cluster: PostgreSQL and an S3 server.
+# scripts/e2e/run.sh sets the images (the ones internal/testutil pins) and
+# creates the Secret `dependencies` with the credentials before applying this.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  selector:
+    matchLabels: {app: postgres}
+  template:
+    metadata:
+      labels: {app: postgres}
+    spec:
+      containers:
+        - name: postgres
+          image: postgres
+          env:
+            - {name: POSTGRES_USER, value: toolgate}
+            - {name: POSTGRES_DB, value: toolgate}
+            - name: POSTGRES_PASSWORD
+              valueFrom: {secretKeyRef: {name: dependencies, key: postgres-password}}
+          ports:
+            - {name: postgres, containerPort: 5432}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, toolgate, -d, toolgate]}
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector: {app: postgres}
+  ports:
+    - {name: postgres, port: 5432, targetPort: postgres}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+spec:
+  selector:
+    matchLabels: {app: s3}
+  template:
+    metadata:
+      labels: {app: s3}
+    spec:
+      containers:
+        - name: s3
+          image: versitygw
+          command: [sh, -c, "mkdir -p /data /meta && exec versitygw --port :7070 posix --sidecar /meta /data"]
+          env:
+            - name: ROOT_ACCESS_KEY_ID
+              valueFrom: {secretKeyRef: {name: dependencies, key: s3-access-key}}
+            - name: ROOT_SECRET_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: dependencies, key: s3-secret-key}}
+          ports:
+            - {name: s3, containerPort: 7070}
+          readinessProbe:
+            tcpSocket: {port: s3}
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+spec:
+  selector: {app: s3}
+  ports:
+    - {name: s3, port: 7070, targetPort: s3}

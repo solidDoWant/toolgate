@@ -115,6 +115,8 @@
             # Kubernetes: kind clusters for e2e, the chart, images.
             pkgs.kind
             pkgs.kubectl
+            # Flux, installed into the e2e cluster (scripts/e2e/run.sh).
+            pkgs.fluxcd
             pkgs.kubernetes-helm
             pkgs.helm-docs
             pkgs.crane

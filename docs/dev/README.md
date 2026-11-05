@@ -11,6 +11,8 @@ toolgate is in early development, and these pages are not written yet. They will
 
 [Integration tests](integration-tests.md) describes the dependencies that integration tests start.
 
+[End-to-end tests](e2e-tests.md) tells how the e2e tests run on kind, and describes the test MCP server.
+
 [Claude Code integration](claude-code-integration.md) tells how the client gets the Claude Code session ID.
 
 Until then, read [`SPEC.md`](../../SPEC.md) and the design for the current phase in [`docs/design/`](../design/phase-1.md).

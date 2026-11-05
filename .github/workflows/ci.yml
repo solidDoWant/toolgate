@@ -99,7 +99,9 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: ./.github/actions/go-cache-save
 
-  # kind on the runner's Docker (kind and kubectl come from the dev shell).
+  # kind on the runner's Docker (kind, kubectl, helm and flux come from the
+  # dev shell). One cluster runs the e2e tests, then the acceptance
+  # scoreboard, which goes to the job summary.
   e2e:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -108,8 +110,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/nix-dev-shell
-      - name: e2e tests
-        run: nix develop -c make test-e2e
+      - name: e2e tests and acceptance scoreboard
+        run: nix develop -c ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
       - name: Save Go caches
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: ./.github/actions/go-cache-save

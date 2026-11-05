@@ -47,6 +47,7 @@ docs/admin/
 docs/dev/
   README.md                What the developer pages will cover.
   integration-tests.md     The dependencies that integration tests start: PostgreSQL, S3, fake OIDC.
+  e2e-tests.md             The e2e harness on kind, the test MCP server, the acceptance scoreboard.
   claude-code-integration.md  How toolgate gets the Claude Code session ID, with the test evidence.
 
 docs/acceptance/
