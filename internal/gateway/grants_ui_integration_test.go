@@ -10,7 +10,6 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 	"time"
 
@@ -191,7 +190,8 @@ func TestAC2_08SessionNarrowedGrant(t *testing.T) {
 
 	form, _ := io.ReadAll(response.Body)
 	_ = response.Body.Close()
-	assert.True(t, strings.Contains(string(form), `<option value="session-1" selected>session-1</option>`), string(form))
+
+	assert.Contains(t, string(form), `<option value="session-1" selected>session-1</option>`)
 	assert.Contains(t, string(form), `<option value="session-2">session-2</option>`)
 
 	page.create(t, fixture, "alice", url.Values{"server": {"github"}, "duration": {"1h"}, "session": {"session-1"}})

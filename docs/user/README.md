@@ -52,6 +52,18 @@ Do these steps after you install the plugin and sign in with `toolgate login`.
 
 If the `toolgate` server shows as failed in step 2, run `toolgate status` in a shell to make sure that you are signed in. Then make sure that the gateway URL in `/plugin configure toolgate@toolgate` is correct.
 
+## Grants
+
+Your admin can mark a server or a tool as `opt-in`. To use it from your own machine, you need a grant. A grant lasts from 1 minute to 7 days. When you need a grant, the refusal gives a link to the form in the web UI.
+
+1. Open the link. If you signed in more than 5 minutes ago, sign in again.
+2. Choose how long the grant lasts.
+3. If only one Claude Code session needs the grant, choose that session.
+4. Click "Create grant".
+5. Ask Claude to try again.
+
+The page `/ui/grants` lists your grants. To stop a grant early, click "Revoke".
+
 ## Tool calls
 
 When Claude calls a tool of a server, for example `test__echo`, the gateway sends the call to the server and returns the result. The gateway refuses a call in these cases:
