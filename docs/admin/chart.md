@@ -84,7 +84,7 @@ rbac:
       verbs: ["create", "patch", "delete", "get", "list", "watch"]
 ```
 
-An instance with a HelmRelease is ready when Flux reports the HelmRelease ready and the server answers MCP requests. If the install fails, the instance fails. The reason is the message of the `Ready` condition of the HelmRelease. The same rule applies to every kind with a `Ready` condition. When the instance stops, the gateway deletes its namespace. Kubernetes keeps the namespace until helm-controller uninstalls the chart. If the uninstall cannot finish, the namespace stays in `Terminating`.
+An instance with a HelmRelease is ready when Flux reports the HelmRelease ready and the server answers MCP requests. If the install keeps failing, the `Ready` condition of the HelmRelease stays `False`. After 60 seconds, the instance fails. The reason is the message of that condition. The same rule applies to every kind with a `Ready` condition. If the instance does not become ready within `startTimeout`, the reason is the `Ready` message of the first object that is not ready. When the instance stops, the gateway deletes its namespace. Kubernetes keeps the namespace until helm-controller uninstalls the chart. If the uninstall cannot finish, the namespace stays in `Terminating`.
 
 Flux's helm-controller installs the chart with its own service account, not with the service account of the gateway. This service account often has `cluster-admin`. So a template with a HelmRelease can install anything that helm-controller can install. This is also true if an attacker controls the gateway. You decide if you trust this.
 

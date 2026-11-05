@@ -215,9 +215,16 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 	}
 
 	if s.timedOut(instance, template) {
-		reason, err := s.startFailureReason(ctx, instance)
+		reason, err := s.notReadyReason(ctx, instance, template)
 		if err != nil {
 			return err
+		}
+
+		if reason == "" {
+			reason, err = s.startFailureReason(ctx, instance)
+			if err != nil {
+				return err
+			}
 		}
 
 		return s.fail(ctx, instance, StatusStarting, "The server didn't become ready within "+
@@ -594,18 +601,15 @@ func (s *Starter) objectsCurrent(ctx context.Context, instance db.Instance, temp
 	current := true
 
 	for _, kind := range readinessKinds(template) {
-		list := &unstructured.UnstructuredList{}
-		list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))
-
-		if err := s.Client.List(ctx, list, client.InNamespace(instance.Namespace),
-			client.MatchingLabels{LabelInstance: instance.ID}); err != nil {
-			return false, "", fmt.Errorf("list %s in %s: %w", kind.Kind, instance.Namespace, err)
+		list, err := s.listKind(ctx, instance, kind)
+		if err != nil {
+			return false, "", err
 		}
 
 		for index := range list.Items {
 			object := &list.Items[index]
 
-			if message, failed := readyConditionFailed(object); failed {
+			if message, held, ok := readyFalse(object, s.now()); ok && held >= readyFailureHold {
 				return false, truncate(fmt.Sprintf("%s %s failed: %s", kind.Kind, object.GetName(), message), maxReasonBytes), nil
 			}
 
@@ -653,57 +657,85 @@ func readinessKinds(template *v1alpha1.MCPServerTemplate) []schema.GroupVersionK
 	return kinds
 }
 
-// readyConditionFailed reports an object whose Ready condition is False at
-// its current generation while it isn't Reconciling, with the condition's
-// message. kstatus reads such an object as current, for example a
-// HelmRelease between helm-controller's install retries.
-func readyConditionFailed(object *unstructured.Unstructured) (string, bool) {
+// readyFailureHold is how long an object's Ready condition must stay False
+// at the object's current generation before the object counts as failed.
+// It keeps objects that report Ready=False briefly while they make progress
+// from failing early.
+const readyFailureHold = 60 * time.Second
+
+// readyFalse returns the message of an object's Ready condition and how
+// long it has been False, when the condition is False at the object's
+// current generation. Reconciling doesn't matter: helm-controller keeps
+// Reconciling=True while it retries a failed install.
+func readyFalse(object *unstructured.Unstructured, now time.Time) (string, time.Duration, bool) {
 	conditions, found, err := unstructured.NestedSlice(object.Object, "status", "conditions")
 	if err != nil || !found {
-		return "", false
+		return "", 0, false
 	}
 
-	var ready map[string]any
-
 	for _, item := range conditions {
-		condition, ok := item.(map[string]any)
-		if !ok {
+		ready, ok := item.(map[string]any)
+		if !ok || ready["type"] != "Ready" || ready["status"] != string(metav1.ConditionFalse) {
 			continue
 		}
 
-		switch condition["type"] {
-		case "Reconciling":
-			if condition["status"] == string(metav1.ConditionTrue) {
-				return "", false
+		// The condition's own observedGeneration says which generation it
+		// describes. helm-controller keeps status.observedGeneration at -1
+		// until an install succeeds, but sets it on each condition.
+		observed, found, err := unstructured.NestedInt64(ready, "observedGeneration")
+		if err != nil || !found || observed != object.GetGeneration() {
+			return "", 0, false
+		}
+
+		transition, _ := ready["lastTransitionTime"].(string)
+
+		changed, err := time.Parse(time.RFC3339, transition)
+		if err != nil {
+			return "", 0, false
+		}
+
+		message, _ := ready["message"].(string)
+		if message == "" {
+			message, _ = ready["reason"].(string)
+		}
+
+		return message, now.Sub(changed), true
+	}
+
+	return "", 0, false
+}
+
+// notReadyReason returns the Ready message of the first object of the
+// instance whose Ready condition is False at its current generation, or ""
+// when there is none.
+func (s *Starter) notReadyReason(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (string, error) {
+	for _, kind := range readinessKinds(template) {
+		list, err := s.listKind(ctx, instance, kind)
+		if err != nil {
+			return "", err
+		}
+
+		for index := range list.Items {
+			object := &list.Items[index]
+			if message, _, ok := readyFalse(object, s.now()); ok && message != "" {
+				return truncate(fmt.Sprintf("%s %s: %s", kind.Kind, object.GetName(), message), maxReasonBytes), nil
 			}
-		case "Ready":
-			ready = condition
 		}
 	}
 
-	if ready == nil || ready["status"] != string(metav1.ConditionFalse) {
-		return "", false
+	return "", nil
+}
+
+func (s *Starter) listKind(ctx context.Context, instance db.Instance, kind schema.GroupVersionKind) (*unstructured.UnstructuredList, error) {
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))
+
+	if err := s.Client.List(ctx, list, client.InNamespace(instance.Namespace),
+		client.MatchingLabels{LabelInstance: instance.ID}); err != nil {
+		return nil, fmt.Errorf("list %s in %s: %w", kind.Kind, instance.Namespace, err)
 	}
 
-	// The Ready condition's own observedGeneration says which generation
-	// it describes. Without one, the object's status.observedGeneration
-	// does. helm-controller keeps status.observedGeneration at -1 until an
-	// install succeeds, but sets it on each condition.
-	observed, found, err := unstructured.NestedInt64(ready, "observedGeneration")
-	if err == nil && !found {
-		observed, found, err = unstructured.NestedInt64(object.Object, "status", "observedGeneration")
-	}
-
-	if err != nil || !found || observed != object.GetGeneration() {
-		return "", false
-	}
-
-	message, _ := ready["message"].(string)
-	if message == "" {
-		message, _ = ready["reason"].(string)
-	}
-
-	return message, true
+	return list, nil
 }
 
 // startFailureReason explains why an instance didn't start: the waiting
