@@ -38,8 +38,9 @@ lint-fix: ## Run golangci-lint and apply its fixes.
 	golangci-lint run --fix ./...
 
 .PHONY: test
-test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard and the acceptance scoreboard tests.
+test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard and the image build tests.
 	go test -race -count=1 ./...
+	./scripts/build-images_test.sh
 	./scripts/agents/scheduler_test.py
 	./scripts/agents/wait-ci_test.sh
 	./scripts/ci/test-guard_test.py
@@ -89,6 +90,10 @@ check-generate: ## Fail if `make generate` changes the tree (committed generated
 build: ## Build bin/toolgate.
 	@mkdir -p "$(BIN_DIR)"
 	CGO_ENABLED=0 go build -ldflags="$(LDFLAGS)" -o "$(BIN_DIR)/toolgate" ./cmd/toolgate
+
+.PHONY: build-images
+build-images: ## Build the gateway image ghcr.io/soliddowant/toolgate:$(VERSION) for linux/amd64 and arm64 (Nix dockerTools), check each binary with govulncheck -mode=binary, and load this machine's image into Docker. PUSH_ALL=true also pushes (releases only).
+	VERSION="$(VERSION)" PUSH_ALL="$(or $(PUSH_ALL),false)" ./scripts/build-images.sh
 
 .PHONY: clean
 clean: ## Remove build artifacts.

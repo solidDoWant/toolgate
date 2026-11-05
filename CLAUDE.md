@@ -49,6 +49,7 @@ See `SPEC.md` §19: `cmd/toolgate`, `internal/`, `api/v1alpha1`, `deploy/charts/
 Run `make help` for the full list, and keep it and this section current as targets are added:
 
 - `make build`: build `bin/toolgate`.
+- `make build-images`: build the gateway image (amd64, arm64) with Nix, check the binaries with `govulncheck -mode=binary`, load it into Docker; `PUSH_ALL=true` also pushes (releases only).
 - `make fmt` / `make lint` (`lint-fix`): format; run every linter and check, reporting all failures before exiting non-zero.
 - `make test`: unit tests with `-race`.
 - `make generate` / `make check-generate`: regenerate CRDs, deepcopy and sqlc code, or fail on drift.
