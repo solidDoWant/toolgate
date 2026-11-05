@@ -67,8 +67,11 @@ func requireNamespaceGone(t *testing.T, admin *kubernetes.Clientset, name, why s
 	}, 3*time.Minute, 2*time.Second)
 }
 
-func TestLeaderChangeRecovery(t *testing.T) {
-	admin := adminClient(t)
+// runningLeader waits until the runtime Lease names a running gateway pod
+// and returns its name. The Lease can still name a pod that an earlier test
+// replaced, until that pod's Lease expires.
+func runningLeader(t *testing.T, admin *kubernetes.Clientset) string {
+	t.Helper()
 
 	var leader string
 
@@ -77,8 +80,19 @@ func TestLeaderChangeRecovery(t *testing.T) {
 
 		leader, err = leaderPod(t.Context(), admin)
 		require.NoError(collect, err)
-		assert.NotEmpty(collect, leader, "a gateway replica holds the runtime Lease")
+		require.NotEmpty(collect, leader, "a gateway replica holds the runtime Lease")
+
+		pod, err := admin.CoreV1().Pods(releaseNamespace()).Get(t.Context(), leader, metav1.GetOptions{})
+		require.NoError(collect, err, "the Lease holder is a pod that exists")
+		assert.Nil(collect, pod.DeletionTimestamp, "the Lease holder is not being deleted")
+		assert.Equal(collect, corev1.PodRunning, pod.Status.Phase)
 	}, 3*time.Minute, 2*time.Second)
+
+	return leader
+}
+
+func TestLeaderChangeRecovery(t *testing.T) {
+	admin := adminClient(t)
 
 	t.Run("[row 17] the leader deletes an instance namespace with no instance row", func(t *testing.T) {
 		name := orphanNamespace(t, admin, "00000000000000000000000000e2e017")
@@ -86,6 +100,8 @@ func TestLeaderChangeRecovery(t *testing.T) {
 	})
 
 	t.Run("[row 17] after the leader is killed the new leader deletes orphans", func(t *testing.T) {
+		leader := runningLeader(t, admin)
+
 		require.NoError(t, admin.CoreV1().Pods(releaseNamespace()).Delete(t.Context(), leader,
 			metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}))
 
