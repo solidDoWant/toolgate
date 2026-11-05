@@ -67,6 +67,7 @@ logLevel: debug
 		InstanceLimitPerUser:     20,
 		InstanceLimit:            200,
 		SessionIdleTimeout:       config.Duration(2 * time.Hour),
+		ApprovalTimeout:          config.Duration(10 * time.Minute),
 		PublicURL:                "https://toolgate.example",
 		OIDCUIClientID:           "toolgate-ui",
 		OIDCUIScopes:             []string{"openid", "email", "profile"},
@@ -207,6 +208,20 @@ leaseNamespace: toolgate
 sessionIdleTimeout: 0s
 `,
 			wantProblems: []string{"sessionIdleTimeout: must be greater than zero"},
+		},
+		{
+			name: "approval timeout under 1 minute",
+			file: `
+approvalTimeout: 59s
+`,
+			wantProblems: []string{"approvalTimeout: must be from 1m to 1h"},
+		},
+		{
+			name: "approval timeout over 1 hour",
+			file: `
+approvalTimeout: 1h0m1s
+`,
+			wantProblems: []string{"approvalTimeout: must be from 1m to 1h"},
 		},
 		{
 			name: "invalid shared namespace",
@@ -371,4 +386,22 @@ func TestWatchedNamespacesAndPodLabels(t *testing.T) {
 	assert.Equal(t, []string{"catalog-a", "catalog-b"}, cfg.WatchedNamespaces())
 
 	assert.Empty(t, config.Config{}.WatchedNamespaces(), "no catalog without Kubernetes")
+}
+
+func TestApprovalTimeoutBounds(t *testing.T) {
+	for _, value := range []string{"1m", "1h"} {
+		t.Run(value, func(t *testing.T) {
+			cfg, err := config.Load("", envFrom(map[string]string{
+				"TOOLGATE_DATABASE_URL":     validDatabaseURL,
+				"TOOLGATE_APPROVAL_TIMEOUT": value,
+				"TOOLGATE_OIDC_ISSUER_URL":  "https://idp.example",
+				"TOOLGATE_OIDC_AUDIENCE":    "toolgate",
+			}))
+			require.NoError(t, err)
+
+			parsed, err := time.ParseDuration(value)
+			require.NoError(t, err)
+			assert.Equal(t, config.Duration(parsed), cfg.ApprovalTimeout)
+		})
+	}
 }

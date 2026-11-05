@@ -68,6 +68,10 @@ type Decision struct {
 	Block string
 	// Reason is a short sentence for the model and the audit log.
 	Reason string
+	// NeedsApproval is set on an allow of a tool with `approval: required`:
+	// the call goes on only with a person's approval
+	// (docs/design/phase-2.md §4).
+	NeedsApproval bool
 }
 
 // Engine decides requests against the standing rules.
@@ -84,7 +88,8 @@ type Engine struct {
 	GrantURL func(server, tool, session string) string
 }
 
-// Decide applies SPEC.md §10 in order: catalog access, environment, blocks.
+// Decide applies SPEC.md §10 in order: catalog access, environment, blocks,
+// approval.
 // It reads the grants and temporary blocks from request.State only.
 func (e *Engine) Decide(request Request) Decision {
 	identity := request.Identity
@@ -143,8 +148,12 @@ func (e *Engine) Decide(request Request) Decision {
 		}
 	}
 
-	return Decision{Allowed: true, Grant: grantID}
+	return Decision{Allowed: true, Grant: grantID, NeedsApproval: override.Approval == ApprovalRequired}
 }
+
+// ApprovalRequired is the ToolOverride.Approval value that makes each call
+// of the tool need a person's approval.
+const ApprovalRequired = "required"
 
 // refuseEnvironment is the refusal of step 2. When a grant would pass it
 // and the gateway has a web UI, the reason links to the page that creates

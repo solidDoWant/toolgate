@@ -50,3 +50,45 @@ UPDATE approvals
 SET used_at = now()
 WHERE id = @id AND status = 'approved' AND used_at IS NULL AND expires_at > now()
 RETURNING *;
+
+-- name: FindUsableApproval :one
+-- Returns the oldest usable approved approval of one exact call.
+SELECT * FROM approvals
+WHERE principal = @principal AND session_pk = @session_pk
+  AND template_ns = @template_ns AND template_name = @template_name
+  AND tool = @tool AND arguments_sha256 = @arguments_sha256
+  AND status = 'approved' AND used_at IS NULL AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1;
+
+-- name: FindPendingApproval :one
+-- Returns the oldest pending approval of one exact call that hasn't
+-- expired.
+SELECT * FROM approvals
+WHERE principal = @principal AND session_pk = @session_pk
+  AND template_ns = @template_ns AND template_name = @template_name
+  AND tool = @tool AND arguments_sha256 = @arguments_sha256
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1;
+
+-- name: ListOverdueApprovals :many
+-- Lists pending approvals whose expires_at is more than 1 minute past, with
+-- their session's client session ID, for the leader's pass.
+SELECT a.id, a.principal, a.workspace, a.template_name, a.tool, s.session_id, s.attestation
+FROM approvals a
+JOIN sessions s ON s.id = a.session_pk
+WHERE a.status = 'pending' AND a.expires_at < now() - interval '1 minute'
+ORDER BY a.expires_at
+LIMIT 1000;
+
+-- name: GetMatchingApproval :one
+-- Returns the approval with this ID only when every field of the call
+-- matches, so a client-sent ID can't name another call's approval. usable
+-- is computed with PostgreSQL's clock.
+SELECT sqlc.embed(approvals),
+       (status = 'approved' AND used_at IS NULL AND expires_at > now())::boolean AS usable
+FROM approvals
+WHERE id = @id AND principal = @principal AND session_pk = @session_pk
+  AND template_ns = @template_ns AND template_name = @template_name
+  AND tool = @tool AND arguments_sha256 = @arguments_sha256;

@@ -302,6 +302,37 @@ func TestAC1_26Rules(t *testing.T) {
 	}
 }
 
+func TestApprovalRequired(t *testing.T) {
+	tools := map[string]v1alpha1.ToolOverride{
+		"delete_repository": {Approval: "required"},
+		"wipe":              {Approval: "required", Blocked: true},
+	}
+	server := template("github", v1alpha1.Access{Users: []string{"alice-sub"}, ServiceAccounts: []string{"system:serviceaccount:ci:runner"}, Environments: "any"}, tools)
+
+	tests := []struct {
+		name          string
+		identity      auth.Identity
+		tool          string
+		allowed       bool
+		needsApproval bool
+	}{
+		{name: "user needs approval", identity: laptopUser(), tool: "delete_repository", allowed: true, needsApproval: true},
+		{name: "attested needs approval", identity: pod("ci"), tool: "delete_repository", allowed: true, needsApproval: true},
+		{name: "other tools need none", identity: laptopUser(), tool: "list_issues", allowed: true},
+		{name: "the server needs none", identity: laptopUser(), allowed: true},
+		{name: "a block refuses first", identity: laptopUser(), tool: "wipe"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			decision := engine(t).Decide(policy.Request{Identity: test.identity, Template: server, Tool: test.tool})
+
+			assert.Equal(t, test.allowed, decision.Allowed, decision.Reason)
+			assert.Equal(t, test.needsApproval, decision.NeedsApproval)
+		})
+	}
+}
+
 func TestAccessIsCheckedBeforeRules(t *testing.T) {
 	decision := engine(t, rule("all", v1alpha1.RuleMatch{}, nil)).Decide(policy.Request{
 		Identity: laptopUser(),

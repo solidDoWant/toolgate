@@ -116,6 +116,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	// reconciler.
 	listener := store.NewListener(server.Database(), logger)
 
+	var approvalURL func(id string) string
+	if cfg.UIEnabled() {
+		approvalURL = func(id string) string {
+			return strings.TrimSuffix(cfg.PublicURL, "/") + "/ui/approvals/" + id
+		}
+	}
+
 	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
 		Database:      server.Database(),
 		Catalog:       templates,
@@ -128,6 +135,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		InstanceLimitPerUser: cfg.InstanceLimitPerUser,
 		InstanceLimit:        cfg.InstanceLimit,
 		SharedNamespace:      cfg.SharedNamespace,
+		ApprovalURL:          approvalURL,
+		ApprovalTimeout:      time.Duration(cfg.ApprovalTimeout),
 	}), true))
 
 	if err := server.Listen(); err != nil {

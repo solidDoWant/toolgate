@@ -23,6 +23,7 @@ const (
 	KindInstance = "instance"
 	KindGrant    = "grant"
 	KindBlock    = "block"
+	KindApproval = "approval"
 )
 
 const (
