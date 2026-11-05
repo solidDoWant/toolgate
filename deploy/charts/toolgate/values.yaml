@@ -68,6 +68,37 @@ config:
     # same time, for all users and shared instances together. At least 1.
     instances: 200
 
+  audit:
+    # -- Store audit payloads: the arguments of each tool call and approval
+    # request, and each tool result. Payloads under 64 KiB go in PostgreSQL,
+    # larger ones in the S3 bucket. If true, `config.audit.s3.bucket` is
+    # required.
+    payloads: false
+    s3:
+      # -- URL of the S3 API, such as `https://s3.example.com`. Empty means
+      # the AWS S3 endpoint of `config.audit.s3.region`.
+      endpoint: ""
+      # -- S3 region of the bucket, such as `us-east-1`.
+      region: ""
+      # -- S3 bucket for large audit payloads. Required when
+      # `config.audit.payloads` is true.
+      bucket: ""
+      # -- Prefix of the payload object keys, such as `toolgate/`.
+      prefix: ""
+      # -- Put the bucket name in the URL path instead of the host name.
+      # Many S3-compatible servers need true.
+      pathStyle: false
+      # -- Name of an existing Secret in the release namespace with the S3
+      # access key. Empty means the gateway uses the other credential sources
+      # of the AWS SDK, such as a web identity token.
+      existingSecret: ""
+      # -- Key in `config.audit.s3.existingSecret` that holds the access key
+      # ID.
+      accessKeyIDKey: accessKeyID
+      # -- Key in `config.audit.s3.existingSecret` that holds the secret
+      # access key.
+      secretAccessKeyKey: secretAccessKey
+
   # -- More environment variables for the gateway container, as a list of
   # Kubernetes `EnvVar` objects.
   extraEnv: []

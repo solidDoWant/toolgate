@@ -163,6 +163,45 @@ type Config struct {
 	// seconds. Write it as a Go duration, such as `2h`. It must be more than
 	// zero. The chart sets it from `config.sessionIdleTimeout`.
 	SessionIdleTimeout Duration `json:"sessionIdleTimeout" env:"TOOLGATE_SESSION_IDLE_TIMEOUT"`
+
+	// Whether the gateway stores audit payloads: the arguments of each tool
+	// call and approval request, and each tool result. A payload under 64 KiB
+	// (65,536 bytes) is stored in its audit row in PostgreSQL. A larger one
+	// is stored as an object in `auditS3Bucket`. If this is `false`, no
+	// arguments or results are stored. If it is `true`, `auditS3Bucket` is
+	// required. The chart sets it from `config.audit.payloads`.
+	AuditPayloads bool `json:"auditPayloads" env:"TOOLGATE_AUDIT_PAYLOADS"`
+
+	// The URL of the S3 API that stores large audit payloads, such as
+	// `https://s3.example.com`. If it is empty, the gateway uses the AWS S3
+	// endpoint of `auditS3Region`. The gateway gets its S3 credentials from
+	// the default chain of the AWS SDK, such as the `AWS_ACCESS_KEY_ID` and
+	// `AWS_SECRET_ACCESS_KEY` environment variables. The chart sets it from
+	// `config.audit.s3.endpoint`.
+	AuditS3Endpoint string `json:"auditS3Endpoint" env:"TOOLGATE_AUDIT_S3_ENDPOINT"`
+
+	// The S3 region of `auditS3Bucket`, such as `us-east-1`. The chart sets
+	// it from `config.audit.s3.region`.
+	AuditS3Region string `json:"auditS3Region" env:"TOOLGATE_AUDIT_S3_REGION"`
+
+	// The S3 bucket that stores large audit payloads. Required when
+	// `auditPayloads` is `true`. If the bucket has object lock, the gateway
+	// locks each object in governance mode for the audit retention time.
+	// Add a lifecycle rule under `auditS3Prefix` that expires current objects
+	// and noncurrent versions after the retention time plus a margin. The
+	// chart sets it from `config.audit.s3.bucket`.
+	AuditS3Bucket string `json:"auditS3Bucket" env:"TOOLGATE_AUDIT_S3_BUCKET"`
+
+	// The prefix of the object keys of audit payloads, such as `toolgate/`.
+	// Each key is `<prefix>payloads/<yyyy>/<mm>/<dd>/<uuid>.json`. The chart
+	// sets it from `config.audit.s3.prefix`.
+	AuditS3Prefix string `json:"auditS3Prefix" env:"TOOLGATE_AUDIT_S3_PREFIX"`
+
+	// Whether the gateway puts the bucket name in the URL path
+	// (`https://s3.example.com/bucket/key`) instead of the host name. Many
+	// S3-compatible servers need `true`. The chart sets it from
+	// `config.audit.s3.pathStyle`.
+	AuditS3PathStyle bool `json:"auditS3PathStyle" env:"TOOLGATE_AUDIT_S3_PATH_STYLE"`
 }
 
 // WatchedNamespaces returns the namespaces whose catalog objects the gateway
@@ -321,6 +360,15 @@ func applyEnv(cfg *Config, getenv func(string) string) []error {
 			}
 		case *string:
 			target.SetString(raw)
+		case *bool:
+			flag, err := strconv.ParseBool(raw)
+			if err != nil {
+				problems = append(problems, fmt.Errorf("%s: %q is not true or false", name, raw))
+
+				continue
+			}
+
+			target.SetBool(flag)
 		case *int:
 			number, err := strconv.Atoi(raw)
 			if err != nil {
@@ -456,6 +504,17 @@ func (c Config) Validate() []error {
 
 	if c.SessionIdleTimeout <= 0 {
 		problems = append(problems, errors.New("sessionIdleTimeout: must be greater than zero"))
+	}
+
+	if c.AuditPayloads && c.AuditS3Bucket == "" {
+		problems = append(problems, errors.New("auditS3Bucket: required when auditPayloads is true"))
+	}
+
+	if c.AuditS3Endpoint != "" {
+		endpoint, err := url.Parse(c.AuditS3Endpoint)
+		if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
+			problems = append(problems, fmt.Errorf("auditS3Endpoint: %q is not an http or https URL", c.AuditS3Endpoint))
+		}
 	}
 
 	return problems
