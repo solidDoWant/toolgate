@@ -39,8 +39,9 @@ func FindBrowser() string {
 
 // StartBrowser starts a headless Chromium with an empty profile and returns
 // a chromedp context for it. Each call is a new browser, with no cookies.
-// The browser stops when tb ends. Without Chromium, the test skips.
-func StartBrowser(tb testing.TB) context.Context {
+// The browser stops when tb ends. Without Chromium, the test skips. extra
+// adds Chromium options.
+func StartBrowser(tb testing.TB, extra ...chromedp.ExecAllocatorOption) context.Context {
 	tb.Helper()
 
 	path := FindBrowser()
@@ -54,6 +55,7 @@ func StartBrowser(tb testing.TB) context.Context {
 		// browser only opens the test's own pages.
 		chromedp.NoSandbox,
 	)
+	options = append(options, extra...)
 
 	allocator, cancelAllocator := chromedp.NewExecAllocator(context.WithoutCancel(tb.Context()), options...)
 	browser, cancelBrowser := chromedp.NewContext(allocator)

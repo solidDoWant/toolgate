@@ -87,6 +87,10 @@ generate-docs: ## Regenerate the gateway configuration reference (docs/admin/con
 	go run ./internal/config/docgen internal/config/config.go docs/admin/configuration.md
 	./scripts/chart-values-docs.sh
 
+.PHONY: vendor-htmx
+vendor-htmx: ## Download htmx 2.0.7 from the npm registry, check its integrity value, and write internal/ui/static/htmx-2.0.7.min.js and SHA256SUMS.
+	./scripts/vendor-htmx.sh
+
 .PHONY: check-generate
 check-generate: ## Fail if `make generate` changes the tree (committed generated code is stale).
 	./scripts/check-generate.sh

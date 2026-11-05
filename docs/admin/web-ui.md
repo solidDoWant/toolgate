@@ -42,6 +42,26 @@ If the IdP does not send `auth_time`, the fresh sign-in fails. The other pages o
 
 Set `config.ui.adminGroup` to the group whose members are admins in the UI. If it is empty, nobody is an admin. The UI reads the groups at sign-in. If you remove a user from the group, the change takes effect at the latest when the user's 8-hour session ends.
 
+## The Servers page
+
+`/ui/servers` is the first page after a sign-in. It shows two lists:
+
+- The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason.
+- The running instances of the user. An admin also sees the shared instances. Each instance shows its status and if it runs an old version of its template.
+
+The navigation shows the Blocks link only to admins.
+
+## Protection of the pages
+
+Each request to the UI that changes something must come from a UI page. The gateway does two checks:
+
+1. It uses `net/http.CrossOriginProtection` from Go. This check refuses a request that a page on another site sends, by the `Sec-Fetch-Site` and `Origin` headers. Your ingress must not remove these headers.
+2. It compares a token in the form with the token of the user's session. A form from another site does not know this token.
+
+If one check fails, the gateway answers 403 and changes nothing.
+
+Each UI response has the header `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'`. Thus the pages load scripts and styles only from the gateway, and no other site can show them in a frame. Pages have `Cache-Control: no-store`. A form body can be at most 64 KiB.
+
 ## Approvals
 
 A template can mark a tool with `approval: required`. Then each call of the tool needs the approval of the user who made the call. The gateway refuses the call and gives a link to the approval page under `/ui/approvals/`. The user approves the request on that page and calls the tool again with the same arguments. An approval lets exactly one call through.

@@ -229,7 +229,10 @@ func TestStepUpFormAndSubmit(t *testing.T) {
 
 	assert.Contains(t, formPage(), "the form")
 
-	response = post(t, browser, env.server.URL+stepUpFormPath, url.Values{})
+	// Every POST carries the session's CSRF token, as the form does.
+	form := url.Values{ui.CSRFField: {ui.Session{CSRFToken: env.sessionRow(t, cookie.Value).CsrfToken}.CSRFTokenValue()}}
+
+	response = post(t, browser, env.server.URL+stepUpFormPath, form)
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, int32(1), env.formSubmits.Load())
 
@@ -240,13 +243,13 @@ func TestStepUpFormAndSubmit(t *testing.T) {
 	assert.NotContains(t, page, "the form")
 
 	// Between 4 and 5 minutes, a submit still works.
-	response = post(t, browser, env.server.URL+stepUpFormPath, url.Values{})
+	response = post(t, browser, env.server.URL+stepUpFormPath, form)
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	assert.Equal(t, int32(2), env.formSubmits.Load())
 
 	env.ageSignIn(t, cookie.Value, 5*time.Minute+30*time.Second)
 
-	response = post(t, browser, env.server.URL+stepUpFormPath, url.Values{})
+	response = post(t, browser, env.server.URL+stepUpFormPath, form)
 	require.Equal(t, http.StatusSeeOther, response.StatusCode)
 	assert.Equal(t, int32(2), env.formSubmits.Load(), "the stale submit changes nothing")
 

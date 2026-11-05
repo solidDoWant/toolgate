@@ -1,9 +1,12 @@
 package ui_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 
@@ -131,4 +134,44 @@ func TestStaticFilesArePublic(t *testing.T) {
 	registrar.mux.ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ui/static/toolgate.css", nil))
 
 	require.Equal(t, http.StatusOK, recorder.Code)
+}
+
+func TestHTMXIsServedWithAOneYearCache(t *testing.T) {
+	_, registrar := newUI(t)
+
+	recorder := httptest.NewRecorder()
+	registrar.mux.ServeHTTP(recorder, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/ui/static/htmx-2.0.7.min.js", nil))
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "public, max-age=31536000, immutable", recorder.Header().Get("Cache-Control"))
+	assert.Equal(t, "default-src 'self'; frame-ancestors 'none'", recorder.Header().Get("Content-Security-Policy"))
+
+	sums, err := os.ReadFile("static/SHA256SUMS")
+	require.NoError(t, err)
+
+	sum := sha256.Sum256(recorder.Body.Bytes())
+	assert.Equal(t, hex.EncodeToString(sum[:])+"  htmx-2.0.7.min.js\n", string(sums), "the served file is the vendored one")
+}
+
+func TestCrossOriginPostsAreRefusedBeforeAnythingElse(t *testing.T) {
+	webUI, registrar := newUI(t)
+
+	var handled bool
+
+	webUI.Handle("POST /ui/probe", ui.User, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { handled = true }))
+
+	for _, target := range []string{"/ui/probe", ui.LogoutPath} {
+		t.Run(target, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, target, nil)
+			request.Header.Set("Sec-Fetch-Site", "cross-site")
+
+			recorder := httptest.NewRecorder()
+			registrar.mux.ServeHTTP(recorder, request)
+
+			assert.Equal(t, http.StatusForbidden, recorder.Code)
+			assert.Equal(t, "default-src 'self'; frame-ancestors 'none'", recorder.Header().Get("Content-Security-Policy"))
+			assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
+			assert.False(t, handled)
+		})
+	}
 }

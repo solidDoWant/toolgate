@@ -135,6 +135,8 @@ type Options struct {
 	Logger   *slog.Logger
 	// HTTPClient, if set, is used to reach the IdP.
 	HTTPClient *http.Client
+	// Servers gives the Servers page its rows. Nil leaves the page out.
+	Servers ServerSource
 }
 
 // UI is the web UI. Create it with New.
@@ -157,7 +159,7 @@ type claimNames struct {
 	email, emailVerified, groups string
 }
 
-// New builds the UI and registers its sign-in routes and `GET /` on
+// New builds the UI and registers its sign-in routes, its pages and `GET /` on
 // registrar. It does not contact the IdP: discovery runs at the first
 // sign-in, so the gateway starts while the IdP is unreachable.
 func New(options Options, registrar Registrar) *UI {
@@ -190,9 +192,13 @@ func New(options Options, registrar Registrar) *UI {
 
 	u.Handle("GET "+LoginPath, Public, http.HandlerFunc(u.login))
 	u.Handle("GET "+CallbackPath, Public, http.HandlerFunc(u.callback))
-	u.Handle("GET "+StaticPath, Public, http.StripPrefix(StaticPath, http.FileServerFS(static)))
+	u.Handle("GET "+StaticPath, Public, staticFilesHandler(http.StripPrefix(StaticPath, http.FileServerFS(static))))
 	u.Handle("POST "+LogoutPath, User, http.HandlerFunc(u.logout))
 	u.Handle("GET /{$}", User, http.RedirectHandler(HomePath, http.StatusSeeOther))
+
+	if options.Servers != nil {
+		u.Handle("GET "+HomePath, User, http.HandlerFunc(u.servers))
+	}
 
 	return u
 }
@@ -226,9 +232,9 @@ func (u *UI) Handle(pattern string, access Access, handler http.Handler) {
 
 	switch access {
 	case Public:
-		u.registrar.HandlePublic(pattern, handler)
+		u.registrar.HandlePublic(pattern, protect(handler))
 	case User, Admin:
-		u.registrar.Handle(pattern, u.requireSession(access, handler))
+		u.registrar.Handle(pattern, protect(u.requireSession(access, requireCSRFToken(handler))))
 	default:
 		panic(fmt.Sprintf("ui: route %s has an unknown access level %d", pattern, access))
 	}
