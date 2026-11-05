@@ -16,6 +16,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/version"
 )
@@ -42,6 +43,11 @@ type MCPOptions struct {
 	Logger *slog.Logger
 	// Now returns the current time. Nil means time.Now.
 	Now func() time.Time
+	// Subscribe returns the PostgreSQL notifications and a function that
+	// ends the subscription (store.Listener.Subscribe). Waiting enables
+	// wake on them. Nil means no notifications: waits rely on the progress
+	// tick alone.
+	Subscribe func() (<-chan store.Event, func())
 }
 
 // requestContext is what a tool handler knows about the request that called
@@ -62,16 +68,24 @@ type mcpBinding struct {
 	workspace string
 }
 
+// mcpSession is one MCP session this replica holds: its binding and its own
+// mcp.Server.
+type mcpSession struct {
+	binding mcpBinding
+	tools   *sessionTools
+}
+
 // mcpEndpoint serves MCP. It must run behind auth.Middleware with the
-// session header required.
+// session header required. Each MCP session gets its own mcp.Server, so a
+// change to one session's proxied tools sends list_changed to it alone.
 type mcpEndpoint struct {
-	server   *mcp.Server
-	handler  http.Handler
-	sessions *sessionStore
-	logger   *slog.Logger
+	newServer func() *mcp.Server
+	handler   http.Handler
+	sessions  *sessionStore
+	logger    *slog.Logger
 
 	mu       sync.Mutex
-	bindings map[string]mcpBinding
+	bindings map[string]*mcpSession
 }
 
 // NewMCPHandler returns the MCP endpoint. Wrap it in auth.Middleware with
@@ -95,20 +109,32 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 	endpoint := &mcpEndpoint{
 		sessions: &sessionStore{pool: options.Database, auditOutput: auditOutput, now: now},
 		logger:   logger,
-		bindings: make(map[string]mcpBinding),
+		bindings: make(map[string]*mcpSession),
 	}
 
-	endpoint.server = mcp.NewServer(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
+	subscribe := options.Subscribe
+	if subscribe == nil {
+		subscribe = func() (<-chan store.Event, func()) { return nil, func() {} }
+	}
 
 	tools := &metaTools{
-		database: options.Database,
-		catalog:  options.Catalog,
-		policy:   options.Policy,
+		database:     options.Database,
+		catalog:      options.Catalog,
+		policy:       options.Policy,
+		auditOutput:  auditOutput,
+		subscribe:    subscribe,
+		sessionTools: endpoint.sessionTools,
 	}
-	tools.register(endpoint.server)
 
-	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return endpoint.server },
-		&mcp.StreamableHTTPOptions{Logger: logger})
+	endpoint.newServer = func() *mcp.Server {
+		server := mcp.NewServer(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
+		tools.register(server)
+		server.AddReceivingMiddleware(tools.syncOnList)
+
+		return server
+	}
+
+	streamable := mcp.NewStreamableHTTPHandler(endpoint.serverFor, &mcp.StreamableHTTPOptions{Logger: logger})
 
 	// The go-sdk takes the request's identity from its TokenInfo. The token
 	// was already verified by auth.Middleware.
@@ -157,15 +183,42 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		if request.Method == http.MethodDelete {
 			defer e.unbind(mcpSessionID)
 		}
-	} else {
-		writer = &bindingWriter{ResponseWriter: writer, onSessionID: func(id string) { e.bind(id, binding) }}
 	}
 
 	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, requestContext{identity: identity, session: session})
+
+	if mcpSessionID == "" {
+		// A new MCP session gets its own server, bound once the go-sdk
+		// assigns its ID.
+		server := e.newServer()
+		ctx = context.WithValue(ctx, newServerCtxKey{}, server)
+		writer = &bindingWriter{ResponseWriter: writer, onSessionID: func(id string) {
+			e.bind(id, &mcpSession{binding: binding, tools: newSessionTools(server)})
+		}}
+	}
+
 	e.handler.ServeHTTP(writer, request.WithContext(ctx))
 }
 
 type requestContextCtxKey struct{}
+
+type newServerCtxKey struct{}
+
+// serverFor returns the mcp.Server of the request's MCP session, or the new
+// server ServeHTTP made for a request that starts one.
+func (e *mcpEndpoint) serverFor(request *http.Request) *mcp.Server {
+	if id := request.Header.Get(mcpSessionHeader); id != "" {
+		if session, found := e.session(id); found {
+			return session.tools.server
+		}
+
+		return nil
+	}
+
+	server, _ := request.Context().Value(newServerCtxKey{}).(*mcp.Server)
+
+	return server
+}
 
 // tokenInfo hands the request's identity and session to the go-sdk. UserID
 // makes the go-sdk refuse a request bound to another identity too.
@@ -184,32 +237,55 @@ func (e *mcpEndpoint) tokenInfo(ctx context.Context, _ string, _ *http.Request) 
 }
 
 func (e *mcpEndpoint) binding(id string) (mcpBinding, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	bound, found := e.bindings[id]
-
-	return bound, found
-}
-
-// bind records a new MCP session's binding and forgets the bindings of
-// sessions the go-sdk has closed.
-func (e *mcpEndpoint) bind(id string, binding mcpBinding) {
-	live := make(map[string]bool)
-	for session := range e.server.Sessions() {
-		live[session.ID()] = true
+	session, found := e.session(id)
+	if !found {
+		return mcpBinding{}, false
 	}
 
+	return session.binding, true
+}
+
+func (e *mcpEndpoint) session(id string) (*mcpSession, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	for existing := range e.bindings {
-		if !live[existing] {
+	session, found := e.bindings[id]
+
+	return session, found
+}
+
+func (e *mcpEndpoint) sessionTools(id string) (*sessionTools, bool) {
+	session, found := e.session(id)
+	if !found {
+		return nil, false
+	}
+
+	return session.tools, true
+}
+
+// bind records a new MCP session and forgets the sessions the go-sdk has
+// closed.
+func (e *mcpEndpoint) bind(id string, session *mcpSession) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	for existing, known := range e.bindings {
+		if !hasSession(known.tools.server, existing) {
 			delete(e.bindings, existing)
 		}
 	}
 
-	e.bindings[id] = binding
+	e.bindings[id] = session
+}
+
+func hasSession(server *mcp.Server, id string) bool {
+	for session := range server.Sessions() {
+		if session.ID() == id {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (e *mcpEndpoint) unbind(id string) {

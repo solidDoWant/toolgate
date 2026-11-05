@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,7 @@ type mcpFixture struct {
 	provider *testutil.OIDCProvider
 	pool     *pgxpool.Pool
 	catalog  *catalog.Catalog
+	rules    *policy.Rules
 	server   *httptest.Server
 }
 
@@ -54,17 +56,30 @@ func newMCPFixture(t *testing.T) *mcpFixture {
 	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audience: provider.Audience})
 	require.NoError(t, err)
 
+	listener := store.NewListener(pool, slog.New(slog.DiscardHandler))
+	listenCtx, stopListening := context.WithCancel(context.Background())
+	t.Cleanup(stopListening)
+
+	go func() { _ = listener.Run(listenCtx) }()
+
+	select {
+	case <-listener.Listening():
+	case <-t.Context().Done():
+	}
+
 	servers := catalog.New()
+	rules := policy.NewRules()
 	handler := gateway.NewMCPHandler(gateway.MCPOptions{
-		Database: pool,
-		Catalog:  servers,
-		Policy:   &policy.Engine{Rules: policy.NewRules()},
+		Database:  pool,
+		Catalog:   servers,
+		Policy:    &policy.Engine{Rules: rules},
+		Subscribe: listener.Subscribe,
 	})
 
 	server := httptest.NewServer(authenticator.Middleware(handler, true))
 	t.Cleanup(server.Close)
 
-	return &mcpFixture{provider: provider, pool: pool, catalog: servers, server: server}
+	return &mcpFixture{provider: provider, pool: pool, catalog: servers, rules: rules, server: server}
 }
 
 func (f *mcpFixture) addTemplate(name, scope string, access v1alpha1.Access) *v1alpha1.MCPServerTemplate {

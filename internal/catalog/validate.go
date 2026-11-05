@@ -238,3 +238,28 @@ func walkStrings(node any, path []string, visit func(path []string, text string,
 		visit(path, value, false)
 	}
 }
+
+// SecretNames returns the names of the user secrets template's resources
+// use through `${secret:<name>}`, sorted and without duplicates.
+func SecretNames(template *v1alpha1.MCPServerTemplate) []string {
+	var names []string
+
+	for _, raw := range template.Spec.Resources {
+		var object any
+		if err := json.Unmarshal(raw.Raw, &object); err != nil {
+			continue
+		}
+
+		walkStrings(object, nil, func(_ []string, text string, _ bool) {
+			for _, variable := range variables(text) {
+				if name, found := strings.CutPrefix(variable, "secret:"); found {
+					names = append(names, name)
+				}
+			}
+		})
+	}
+
+	slices.Sort(names)
+
+	return slices.Compact(names)
+}

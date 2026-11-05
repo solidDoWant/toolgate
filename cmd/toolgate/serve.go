@@ -88,12 +88,17 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	templates := catalog.New()
 	rules := policy.NewRules()
 
+	// One notification listener serves the waiting enables and the runtime
+	// reconciler.
+	listener := store.NewListener(server.Database(), logger)
+
 	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
 		Database:    server.Database(),
 		Catalog:     templates,
 		Policy:      &policy.Engine{Rules: rules},
 		AuditOutput: stdout,
 		Logger:      logger,
+		Subscribe:   listener.Subscribe,
 	}), true))
 
 	if err := server.Listen(); err != nil {
@@ -110,6 +115,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	go func() { _ = listener.Run(ctx) }()
+
 	var runtimeResult chan error
 
 	if cfg.LeaseNamespace != "" {
@@ -121,6 +128,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			secrets:         userSecrets(broker),
 			registerMetrics: server.RegisterMetrics,
 			logger:          logger,
+			listener:        listener,
 		})
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)
