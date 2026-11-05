@@ -34,7 +34,8 @@
 #       TOOLGATE_E2E_UI_LISTEN        loopback address the web UI's public
 #                                     URL (config.ui.publicURL, https) names;
 #                                     a test serves a TLS proxy to a gateway
-#                                     pod there
+#                                     pod there. The chart makes the group
+#                                     toolgate-admins the web UI admins.
 #       TOOLGATE_E2E_RESOLVER_LISTEN  address the test process serves the test
 #                                     resolver on over HTTPS; the chart's
 #                                     resolver `test` points at it
@@ -181,6 +182,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.oidc.issuerURL="$TOOLGATE_E2E_OIDC_ISSUER" \
 	--set config.oidc.audience=toolgate \
 	--set config.ui.clientID=toolgate-ui \
+	--set config.ui.adminGroup=toolgate-admins \
 	--set config.ui.publicURL="https://$TOOLGATE_E2E_UI_LISTEN" \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
