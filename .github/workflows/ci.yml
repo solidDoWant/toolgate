@@ -62,6 +62,9 @@ jobs:
         run: nix develop -c make lint
       - name: Generated code is current
         run: nix develop -c make check-generate
+      - name: Save Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: ./.github/actions/go-cache-save
 
   unit:
     needs: changes
@@ -78,6 +81,9 @@ jobs:
         run: nix develop -c make test
       - name: Build
         run: nix develop -c make build
+      - name: Save Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: ./.github/actions/go-cache-save
 
   integration:
     needs: changes
@@ -89,6 +95,9 @@ jobs:
       - uses: ./.github/actions/nix-dev-shell
       - name: Integration tests
         run: nix develop -c make test-integration
+      - name: Save Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: ./.github/actions/go-cache-save
 
   # kind on the runner's Docker (kind and kubectl come from the dev shell).
   e2e:
@@ -101,6 +110,9 @@ jobs:
       - uses: ./.github/actions/nix-dev-shell
       - name: e2e tests
         run: nix develop -c make test-e2e
+      - name: Save Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: ./.github/actions/go-cache-save
 
   # The human-facing Markdown: links and anchors, agent-prose tells and the
   # page index fail the job; the style report is advisory and only goes to
@@ -116,6 +128,8 @@ jobs:
           # The merge base with the PR's base branch, for the style report.
           fetch-depth: 0
       - uses: ./.github/actions/nix-dev-shell
+        with:
+          go: 'false'
       - name: Links, agent prose and page index
         run: nix develop -c make docs-check
       - name: Style report (advisory)
