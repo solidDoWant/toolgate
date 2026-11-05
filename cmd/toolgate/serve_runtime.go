@@ -195,8 +195,8 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// has been read.
 	queries := db.New(pool)
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
-		sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, teardown.Step, starter.Step, monitor.Step)))))
+		runtime.RowCleanup(queries, sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
+			runtime.FullPass(queries, logger, stops.Step, teardown.Step, starter.Step, monitor.Step))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
