@@ -19,8 +19,8 @@ Same rules as phase 1. The tag is `[AC-3-nn]`. This checklist is at feature leve
 
 ## Instance health
 
-- **AC-3-13 Custom health check.** A template declares a health check (an HTTP probe or a cheap MCP tool call) for its server. When the check starts failing after the instance is `ready`, the instance leaves `ready` within the check's interval times its threshold, plus one check timeout, with the check's reason. Open sessions get `list_changed`. A template without a custom check behaves as before.
-- **AC-3-14 Object health after ready.** When an object of a `ready` instance later reports failure (for example a HelmRelease going `Ready=False` for 60 s), the instance leaves `ready` with that object's reason.
+- **AC-3-13 Custom health check.** A template declares an HTTP health check (a Service, port and path) for its server. When the check starts failing after the instance is `ready`, toolgate stops sending it tool calls within the check's interval times its threshold, plus one check timeout: its tools are withdrawn with `list_changed`, and calls fail with the check's reason. toolgate then repairs it as the template's `onFailure` says (replace it, re-apply its objects, or nothing), at most `maxRepairs` times in 30 minutes, and the tools come back when the check passes again. A template without a custom check behaves as before.
+- **AC-3-14 Object health after ready.** When an object of a `ready` instance later reports failure (for example a HelmRelease going `Ready=False` for 60 s), the instance's tools are withdrawn with that object's reason, and it's repaired as for AC-3-13.
 
 ## Migrations
 
