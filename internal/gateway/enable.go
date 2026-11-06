@@ -543,6 +543,10 @@ func (m *metaTools) recordRefusal(ctx context.Context, current requestContext, t
 
 func refusalDetails(decision policy.Decision) map[string]any {
 	details := map[string]any{"decision": "refuse", "step": decision.Step, "reason": decision.Reason}
+	if decision.Denied != "" {
+		details["reason"] = policy.ReasonDenied
+	}
+
 	if decision.Rule != "" {
 		details["rule"] = decision.Rule
 	}

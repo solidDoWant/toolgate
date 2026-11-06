@@ -74,7 +74,14 @@ type Decision struct {
 	// the call goes on only with a person's approval
 	// (docs/design/phase-2.md §4).
 	NeedsApproval bool
+	// Denied is set when a deny entry refused at step 4, and says where it
+	// was made. Such a refusal is never asked about
+	// (docs/design/phase-4.md §7, "A deny is never asked about").
+	Denied DeniedIn
 }
+
+// ReasonDenied is the audit reason of a step-4 refusal by a deny entry.
+const ReasonDenied = "denied"
 
 // Engine decides requests against the standing rules.
 type Engine struct {
@@ -150,7 +157,12 @@ func (e *Engine) Decide(request Request) Decision {
 		}
 	}
 
-	if !request.State.Scope.allows(identity, server) {
+	scope := request.State.Scope.decide(identity, server, request.Tool)
+	if scope.denied != "" {
+		return Decision{Step: StepWorkspaceScope, Grant: grantID, Denied: scope.denied, Reason: deniedRefusal(identity, server, request.Tool, scope.denied)}
+	}
+
+	if !scope.allowed {
 		return Decision{Step: StepWorkspaceScope, Grant: grantID, Reason: WorkspaceScopeRefusal(identity, server)}
 	}
 
@@ -166,6 +178,22 @@ func WorkspaceScopeRefusal(identity auth.Identity, server string) string {
 	}
 
 	return fmt.Sprintf("Server `%s` isn't allowed in sessions without a verified workspace. To allow all your servers in them, set the default for unverified sessions to all on the Workspaces page, or run `toolgate workspace defaults --unverified all`.", server)
+}
+
+// deniedRefusal is the reason of a step-4 refusal by a deny entry: it names
+// the tool, or the server for a decision about the whole server, and where
+// the entry was made (docs/design/phase-4.md §7).
+func deniedRefusal(identity auth.Identity, server, tool string, where DeniedIn) string {
+	subject := server
+	if tool != "" {
+		subject = proxiedName(server, tool)
+	}
+
+	if where == DeniedInWorkspace {
+		return fmt.Sprintf("`%s` is denied in workspace `%s`.", subject, identity.Workspace)
+	}
+
+	return fmt.Sprintf("`%s` is denied in this session.", subject)
 }
 
 // ApprovalRequired is the ToolOverride.Approval value that makes each call

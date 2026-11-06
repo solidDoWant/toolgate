@@ -24,7 +24,26 @@ FROM temporary_blocks
 WHERE expires_at > now()
 ORDER BY created_at, id`
 
-	userScopeSQL = `SELECT verified_default, unverified_default FROM user_scopes WHERE principal = $1`
+	userScopeSQL = `SELECT verified_default, unverified_default, unverified_list FROM user_scopes WHERE principal = $1`
+
+	unverifiedServersSQL = `SELECT vs.server
+FROM unverified_servers vs
+JOIN user_scopes us ON us.id = vs.scope_id
+WHERE us.principal = $1
+ORDER BY vs.server`
+
+	workspaceEntriesSQL = `SELECT se.server, se.tool, se.effect
+FROM scope_entries se
+JOIN user_scopes us ON us.id = se.scope_id
+WHERE us.principal = $1 AND se.workspace = $2
+ORDER BY se.id`
+
+	// effect is NULL to read both effects.
+	sessionEntriesSQL = `SELECT se.server, se.tool, se.effect
+FROM scope_entries se
+JOIN sessions s ON s.id = se.session_pk
+WHERE s.principal = $1 AND s.session_id = $2 AND ($3::text IS NULL OR se.effect = $3)
+ORDER BY se.id`
 
 	// One row per server, or one row with a NULL server for an empty list.
 	workspaceListSQL = `SELECT wls.server
@@ -47,8 +66,11 @@ type ScopeQuery struct {
 	// Load reads the principal's user_scopes row.
 	Load bool
 	// Workspace and Session are the request's verified workspace and its
-	// session ID. When Workspace is empty, the list and the session's
-	// additions aren't read: an unverified session has neither.
+	// session ID. When Workspace is empty, the list, the workspace's
+	// entries, the session's additions and its allow entries aren't read:
+	// an unverified session has none of them. It reads the unverified allow
+	// list and the session's deny entries instead
+	// (docs/design/phase-4.md §7).
 	Workspace string
 	Session   string
 }
@@ -110,7 +132,7 @@ func queueScopeQueries(batch *pgx.Batch, principal string, scope ScopeQuery, row
 		defer result.Close()
 
 		if result.Next() {
-			if err := result.Scan(&rows.VerifiedDefault, &rows.UnverifiedDefault); err != nil {
+			if err := result.Scan(&rows.VerifiedDefault, &rows.UnverifiedDefault, &rows.UnverifiedList); err != nil {
 				return err
 			}
 		}
@@ -119,8 +141,24 @@ func queueScopeQueries(batch *pgx.Batch, principal string, scope ScopeQuery, row
 	})
 
 	if scope.Workspace == "" {
+		batch.Queue(unverifiedServersSQL, principal).Query(func(result pgx.Rows) error {
+			servers, err := pgx.CollectRows(result, pgx.RowTo[string])
+			if len(servers) > 0 {
+				rows.UnverifiedServers = servers
+			}
+
+			return err
+		})
+
+		if scope.Session != "" {
+			queueEntries(batch, sessionEntriesSQL, true, rows, principal, scope.Session, policy.EffectDeny)
+		}
+
 		return
 	}
+
+	queueEntries(batch, workspaceEntriesSQL, false, rows, principal, scope.Workspace)
+	queueEntries(batch, sessionEntriesSQL, true, rows, principal, scope.Session, nil)
 
 	batch.Queue(workspaceListSQL, principal, scope.Workspace).Query(func(result pgx.Rows) error {
 		servers, err := pgx.CollectRows(result, pgx.RowTo[pgtype.Text])
@@ -144,6 +182,22 @@ func queueScopeQueries(batch *pgx.Batch, principal string, scope ScopeQuery, row
 		if len(additions) > 0 {
 			rows.Additions = additions
 		}
+
+		return err
+	})
+}
+
+// queueEntries adds one scope entry query to batch and appends its rows to
+// rows.Entries, marked as the session's when session is set.
+func queueEntries(batch *pgx.Batch, query string, session bool, rows *policy.ScopeRows, arguments ...any) {
+	batch.Queue(query, arguments...).Query(func(result pgx.Rows) error {
+		entries, err := pgx.CollectRows(result, func(row pgx.CollectableRow) (policy.ScopeEntry, error) {
+			entry := policy.ScopeEntry{Session: session}
+			err := row.Scan(&entry.Server, &entry.Tool, &entry.Effect)
+
+			return entry, err
+		})
+		rows.Entries = append(rows.Entries, entries...)
 
 		return err
 	})

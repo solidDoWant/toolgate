@@ -46,10 +46,11 @@ func (e additionEnable) server() string { return e.template.Name }
 func (e additionEnable) workspace() string { return VerifiedWorkspace(e.current.identity) }
 
 // asksForAddition reports whether an enable refused only by the
-// workspace-scope step asks the user: only in a verified workspace, and only
-// on a gateway with the web UI.
+// workspace-scope step asks the user: only in a verified workspace, only
+// on a gateway with the web UI, and never for a deny entry's refusal
+// (docs/design/phase-4.md §7, "A deny is never asked about").
 func (m *metaTools) asksForAddition(current requestContext, decision policy.Decision) bool {
-	return !decision.Allowed && decision.Step == policy.StepWorkspaceScope &&
+	return !decision.Allowed && decision.Step == policy.StepWorkspaceScope && decision.Denied == "" &&
 		VerifiedWorkspace(current.identity) != "" && m.approvalURL != nil
 }
 
@@ -359,8 +360,14 @@ func (m *metaTools) decideAddition(ctx context.Context, enable additionEnable, i
 	case request.Status == accessExpired:
 		return true, m.refuseAddition(ctx, enable, reasonAdditionTimeout, id, m.additionTimeoutMessage(enable, id))
 	case request.Status == accessApproved:
-		// Approved, but its effect is gone again, such as by a deny.
-		return true, m.refuseAddition(ctx, enable, policy.StepWorkspaceScope, id, decision.Reason)
+		// Approved, but still refused, such as by a deny entry, which a
+		// server approval never deletes (docs/design/phase-4.md §7).
+		reason := policy.StepWorkspaceScope
+		if decision.Denied != "" {
+			reason = policy.ReasonDenied
+		}
+
+		return true, m.refuseAddition(ctx, enable, reason, id, decision.Reason)
 	case row.Overdue:
 		won, err := m.expireServerRequest(ctx, enable, request)
 		if err != nil {
