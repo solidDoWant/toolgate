@@ -209,6 +209,11 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 
 			return found && string(template.UID) == instance.TemplateUid && len(template.Spec.DeclaredTools) > 0
 		},
+		RunningTemplate: func(instance db.Instance) (*v1alpha1.MCPServerTemplate, bool) {
+			template, found := options.catalog.Running(types.NamespacedName{Namespace: instance.TemplateNs, Name: instance.TemplateName})
+
+			return template, found && string(template.UID) == instance.TemplateUid
+		},
 	}
 
 	starter := &runtime.Starter{
@@ -254,6 +259,16 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, repairer.Step, teardown.Step, starter.Step, monitor.Step))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
+		return nil, fmt.Errorf("kubernetes manager: %w", err)
+	}
+
+	// The search rebuilder needs leader election, so it syncs every template
+	// each time this replica gets the Lease.
+	searchRows := &runtime.SearchRebuilder{
+		Pool: pool, Fence: lease, Templates: options.catalog.LastValidByUID,
+		Changes: options.catalog.Subscribe, Loaded: options.catalog.Loaded(), Log: logger,
+	}
+	if err := mgr.Add(manager.RunnableFunc(searchRows.Run)); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
 

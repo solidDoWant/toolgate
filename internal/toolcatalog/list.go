@@ -44,8 +44,16 @@ func DeclaredTools(template *v1alpha1.MCPServerTemplate) []*mcp.Tool {
 // generation (docs/design/phase-4.md §3). Learned holds the stored lists in
 // any order. Curate the result before showing it.
 func CatalogList(template *v1alpha1.MCPServerTemplate, learned []Learned) ([]*mcp.Tool, bool, error) {
+	tools, _, found, err := CatalogListGeneration(template, learned)
+
+	return tools, found, err
+}
+
+// CatalogListGeneration is CatalogList that also returns the generation the
+// list came from: the template's own for declared tools.
+func CatalogListGeneration(template *v1alpha1.MCPServerTemplate, learned []Learned) ([]*mcp.Tool, int64, bool, error) {
 	if len(template.Spec.DeclaredTools) > 0 {
-		return DeclaredTools(template), true, nil
+		return DeclaredTools(template), template.Generation, true, nil
 	}
 
 	var best *Learned
@@ -62,13 +70,13 @@ func CatalogList(template *v1alpha1.MCPServerTemplate, learned []Learned) ([]*mc
 	}
 
 	if best == nil {
-		return nil, false, nil
+		return nil, 0, false, nil
 	}
 
 	var tools []*mcp.Tool
 	if err := json.Unmarshal(best.Tools, &tools); err != nil {
-		return nil, false, fmt.Errorf("decode the learned tools of generation %d: %w", best.Generation, err)
+		return nil, 0, false, fmt.Errorf("decode the learned tools of generation %d: %w", best.Generation, err)
 	}
 
-	return tools, true, nil
+	return tools, best.Generation, true, nil
 }

@@ -201,6 +201,18 @@ func (q *Queries) DeleteToolSearchForTemplate(ctx context.Context, templateUid s
 	return err
 }
 
+const deleteToolSearchOfTemplates = `-- name: DeleteToolSearchOfTemplates :execrows
+DELETE FROM tool_search WHERE template_uid = ANY($1::text[])
+`
+
+func (q *Queries) DeleteToolSearchOfTemplates(ctx context.Context, templateUids []string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteToolSearchOfTemplates, templateUids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteToolSearchTool = `-- name: DeleteToolSearchTool :exec
 DELETE FROM tool_search WHERE template_uid = $1 AND upstream_name = $2
 `
@@ -294,6 +306,45 @@ func (q *Queries) InsertScopeEntry(ctx context.Context, arg InsertScopeEntryPara
 		&i.RequestID,
 	)
 	return i, err
+}
+
+const insertToolSearch = `-- name: InsertToolSearch :exec
+INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document)
+VALUES ($1, $2, $3, $4, $5, $6,
+    setweight(to_tsvector('english', $7::text), 'A')
+    || setweight(to_tsvector('english', $8::text), 'B')
+    || setweight(to_tsvector('english', $9::text), 'C')
+    || setweight(to_tsvector('english', $10::text), 'D'))
+`
+
+type InsertToolSearchParams struct {
+	TemplateUid      string
+	TemplateNs       string
+	TemplateName     string
+	SourceGeneration int64
+	UpstreamName     string
+	ExposedName      string
+	NamePart         string
+	DescriptionPart  string
+	ServerPart       string
+	InputPart        string
+}
+
+// The document has four weighted parts (docs/design/phase-4.md §5).
+func (q *Queries) InsertToolSearch(ctx context.Context, arg InsertToolSearchParams) error {
+	_, err := q.db.Exec(ctx, insertToolSearch,
+		arg.TemplateUid,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.SourceGeneration,
+		arg.UpstreamName,
+		arg.ExposedName,
+		arg.NamePart,
+		arg.DescriptionPart,
+		arg.ServerPart,
+		arg.InputPart,
+	)
+	return err
 }
 
 const listScopeEntries = `-- name: ListScopeEntries :many
@@ -494,6 +545,30 @@ func (q *Queries) ListToolSearchForTemplate(ctx context.Context, templateUid str
 	return items, nil
 }
 
+const listToolSearchUIDs = `-- name: ListToolSearchUIDs :many
+SELECT DISTINCT template_uid FROM tool_search
+`
+
+func (q *Queries) ListToolSearchUIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listToolSearchUIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var template_uid string
+		if err := rows.Scan(&template_uid); err != nil {
+			return nil, err
+		}
+		items = append(items, template_uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnverifiedServers = `-- name: ListUnverifiedServers :many
 SELECT server FROM unverified_servers WHERE scope_id = $1 ORDER BY server
 `
@@ -516,6 +591,15 @@ func (q *Queries) ListUnverifiedServers(ctx context.Context, scopeID int64) ([]s
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockToolSearch = `-- name: LockToolSearch :exec
+SELECT pg_advisory_xact_lock(hashtextextended('toolsearch/' || $1::text, 0))
+`
+
+func (q *Queries) LockToolSearch(ctx context.Context, templateUid string) error {
+	_, err := q.db.Exec(ctx, lockToolSearch, templateUid)
+	return err
 }
 
 const setUserScopeUnverifiedList = `-- name: SetUserScopeUnverifiedList :exec
@@ -559,38 +643,6 @@ func (q *Queries) UpsertToolCatalog(ctx context.Context, arg UpsertToolCatalogPa
 		arg.TemplateName,
 		arg.Tools,
 		arg.InstanceID,
-	)
-	return err
-}
-
-const upsertToolSearch = `-- name: UpsertToolSearch :exec
-INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document)
-VALUES ($1, $2, $3, $4, $5, $6, to_tsvector('simple', $7::text))
-ON CONFLICT (template_uid, upstream_name) DO UPDATE
-SET template_ns = EXCLUDED.template_ns, template_name = EXCLUDED.template_name,
-    source_generation = EXCLUDED.source_generation, exposed_name = EXCLUDED.exposed_name,
-    document = EXCLUDED.document, rebuilt_at = now()
-`
-
-type UpsertToolSearchParams struct {
-	TemplateUid      string
-	TemplateNs       string
-	TemplateName     string
-	SourceGeneration int64
-	UpstreamName     string
-	ExposedName      string
-	Document         string
-}
-
-func (q *Queries) UpsertToolSearch(ctx context.Context, arg UpsertToolSearchParams) error {
-	_, err := q.db.Exec(ctx, upsertToolSearch,
-		arg.TemplateUid,
-		arg.TemplateNs,
-		arg.TemplateName,
-		arg.SourceGeneration,
-		arg.UpstreamName,
-		arg.ExposedName,
-		arg.Document,
 	)
 	return err
 }

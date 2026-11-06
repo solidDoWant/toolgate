@@ -16,13 +16,23 @@ SELECT * FROM tool_catalog WHERE template_uid = @template_uid ORDER BY generatio
 -- name: DeleteToolCatalogBefore :exec
 DELETE FROM tool_catalog WHERE template_uid = @template_uid AND generation < @generation;
 
--- name: UpsertToolSearch :exec
+-- name: InsertToolSearch :exec
+-- The document has four weighted parts (docs/design/phase-4.md §5).
 INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document)
-VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name, to_tsvector('simple', @document::text))
-ON CONFLICT (template_uid, upstream_name) DO UPDATE
-SET template_ns = EXCLUDED.template_ns, template_name = EXCLUDED.template_name,
-    source_generation = EXCLUDED.source_generation, exposed_name = EXCLUDED.exposed_name,
-    document = EXCLUDED.document, rebuilt_at = now();
+VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name,
+    setweight(to_tsvector('english', @name_part::text), 'A')
+    || setweight(to_tsvector('english', @description_part::text), 'B')
+    || setweight(to_tsvector('english', @server_part::text), 'C')
+    || setweight(to_tsvector('english', @input_part::text), 'D'));
+
+-- name: LockToolSearch :exec
+SELECT pg_advisory_xact_lock(hashtextextended('toolsearch/' || @template_uid::text, 0));
+
+-- name: ListToolSearchUIDs :many
+SELECT DISTINCT template_uid FROM tool_search;
+
+-- name: DeleteToolSearchOfTemplates :execrows
+DELETE FROM tool_search WHERE template_uid = ANY(@template_uids::text[]);
 
 -- name: ListToolSearchForTemplate :many
 SELECT template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, rebuilt_at
