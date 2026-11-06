@@ -30,6 +30,7 @@ var ErrTooLarge = errors.New("the upstream response is larger than the limit")
 // every HTTP response it receives. It is safe for concurrent use.
 type Budget struct {
 	mu        sync.Mutex
+	limit     int64
 	remaining int64
 	exceeded  bool
 }
@@ -39,9 +40,19 @@ type budgetKey struct{}
 // WithBudget returns a context whose requests through Transport may read
 // limit response bytes in total, and the budget that counts them.
 func WithBudget(ctx context.Context, limit int64) (context.Context, *Budget) {
-	budget := &Budget{remaining: limit}
+	budget := &Budget{limit: limit, remaining: limit}
 
 	return context.WithValue(ctx, budgetKey{}, budget), budget
+}
+
+// Reset gives the budget its full limit again and clears the exceeded
+// flag, for the next operation that shares the context.
+func (b *Budget) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.remaining = b.limit
+	b.exceeded = false
 }
 
 // Exceeded reports whether a response tried to read past the budget.
