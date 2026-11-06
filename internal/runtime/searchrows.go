@@ -269,7 +269,17 @@ func (r *SearchRebuilder) embedStale(ctx context.Context, current map[string]*v1
 		return nil
 	}
 
-	uids, err := db.New(r.Pool).ListToolSearchUIDsNeedingEmbedding(ctx, r.Embedder.Model())
+	// A probe gives the length of the vectors the endpoint returns now. If it
+	// fails, the rows are compared by model only.
+	dimensions := int32(-1)
+
+	if vectors, probeErr := r.Embedder.EmbedFor(ctx, embeddings.OperationDocument, []string{"dimension probe"}); probeErr == nil && len(vectors) == 1 {
+		dimensions = int32(len(vectors[0]))
+	}
+
+	uids, err := db.New(r.Pool).ListToolSearchUIDsNeedingEmbedding(ctx, db.ListToolSearchUIDsNeedingEmbeddingParams{
+		Model: r.Embedder.Model(), Dimensions: dimensions,
+	})
 	if err != nil {
 		return fmt.Errorf("list tool search rows to embed: %w", err)
 	}

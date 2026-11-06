@@ -19,7 +19,7 @@ How it works:
 
 - The leader gateway embeds each tool when it rebuilds the search rows. If you change `model`, it embeds all tools again.
 - Each search embeds the task text once.
-- If the endpoint is down, slow or returns an error, the search uses words only and still answers. The result then has a `note` that tells the model the search used keywords only, and how to reword the request. The metric `toolgate_tool_search_embedding_errors_total` counts the failures. Its `use` label is `query` or `document`, and its `reason` label is `error` or `circuit_open`.
+- If the endpoint is down, slow or returns an error, the search uses words only and still answers. The result then has a `note` that tells the model the search used keywords only, and how to reword the request. The metric `toolgate_tool_search_embedding_errors_total` counts the failures. Its `use` label is `query` or `document`, and its `reason` label is `error`, `circuit_open` or `dimension_mismatch`. The last one means stored vectors have another length than the query vector, for example after the model behind the endpoint changed. Those rows match by words only, and the leader re-embeds them on its next sync.
 - After a call fails, the gateway skips that endpoint for 30 seconds and then tries it again. One server outage does not add the timeout to every search. A skipped call counts with the reason `circuit_open`.
 - A search that finds nothing returns an empty list and a `note` that asks for a specific action and object. This is a normal result, not an error.
 - A tool that could not be embedded is tried again at the next sync.
