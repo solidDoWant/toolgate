@@ -701,3 +701,36 @@ func TestToolSearchNotes(t *testing.T) {
 		assert.Equal(t, before, calls.Load())
 	})
 }
+
+// A request writes its effective search mode to the session row: the header
+// first, else the setting, and a later request with another mode changes it.
+func TestSessionRecordsToolSearchMode(t *testing.T) {
+	fixture := newMCPFixture(t)
+
+	stored := func(session string) bool {
+		var mode bool
+
+		require.NoError(t, fixture.pool.QueryRow(t.Context(),
+			`SELECT tool_search FROM sessions WHERE session_id = $1`, session).Scan(&mode))
+
+		return mode
+	}
+
+	on := searching(alice())
+	on.session = "search-on"
+	off := alice()
+	off.session = "search-off"
+
+	fixture.connect(t, on)
+	fixture.connect(t, off)
+
+	assert.True(t, stored("search-on"))
+	assert.False(t, stored("search-off"))
+
+	// The same session switches mode with its next request.
+	switched := on
+	switched.search = "off"
+	fixture.connect(t, switched)
+
+	assert.False(t, stored("search-on"))
+}

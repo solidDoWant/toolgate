@@ -8,7 +8,7 @@ A metric label is either a fixed set of values or the name of a template that yo
 
 A series is one metric with one set of label values. A metrics backend uses memory for each series, so toolgate keeps the number small and stable.
 
-Each replica exports at most `300 + 10 × T` series, where `T` is the number of templates. The metrics with a `server` label add up to 12 series for each template: 6 call outcomes, 2 start outcomes, 1 health failure series and 3 repair actions. A test in the toolgate source checks this limit, with 10 templates and every outcome and revision, and checks that every label value belongs to a fixed set. The test also counts every outcome of every kind of approval request.
+Each replica exports at most `300 + 10 × T` series, where `T` is the number of templates. A histogram counts as one series for each bucket, plus the `+Inf` bucket, the sum and the count. The embeddings request duration histogram has 10 buckets, so it adds 26 series (13 for each of its two operations). The metrics with a `server` label add up to 12 series for each template: 6 call outcomes, 2 start outcomes, 1 health failure series and 3 repair actions. A test in the toolgate source checks this limit, with 10 templates and every outcome and revision, and checks that every label value belongs to a fixed set. The test also counts every outcome of every kind of approval request.
 
 The process and Go metrics add about 50 series. The Go metrics are the basic memory and garbage collector set, not the full runtime list.
 
@@ -26,12 +26,18 @@ When the leader changes, the new leader sets the metrics within 30 seconds.
 
 ## Sessions and instances
 
-`toolgate_sessions{verified}` is a gauge of the sessions that have not ended. The label `verified` is `true` when the gateway attested the workspace of the session, and `false` otherwise. Both series are always present on the leader, and they are 0 when no session is open.
+`toolgate_sessions{tool_search, verified}` is a gauge of the sessions that have not ended. The label `tool_search` is `on` when the latest request of the session used [tool search](tool-search.md), and `off` otherwise. The label `verified` is `true` when the gateway attested the workspace of the session, and `false` otherwise. All four series are always present on the leader, and they are 0 when no session is open.
 
 To scale a server with KEDA on the number of open sessions, use this query:
 
 ```promql
-sum(max by (verified) (toolgate_sessions))
+sum(max by (tool_search, verified) (toolgate_sessions))
+```
+
+To see how many sessions use tool search:
+
+```promql
+sum(max by (tool_search) (toolgate_sessions{tool_search="on"}))
 ```
 
 `toolgate_instances{scope, status}` is a gauge of the instances that are not stopped. The label `scope` is `per-session`, `per-user` or `shared`. The label `status` is `pending`, `starting`, `ready`, `failed` or `stopping`. The label `revision` is the MCP revision the gateway uses with the instance: `2025-11-25` or `2026-07-28`. An instance that is not ready yet counts as `2025-11-25`.
@@ -97,6 +103,22 @@ sum(toolgate_calls_waiting_for_start)
 
 ```promql
 sum by (server) (increase(toolgate_instance_repairs_total{action="gave_up"}[1h])) > 0
+```
+
+## Tool search embeddings
+
+`toolgate_embeddings_request_duration_seconds{operation}` is a histogram of the time of one request to the embeddings endpoint. The label `operation` is `query` for the embedding of a search query, and `document` for the embedding of tool descriptions when the gateway builds the search index. It records requests that reached the endpoint, failed ones too. A call that the open circuit skipped records nothing. The buckets run from 0.01 s to 10 s.
+
+```promql
+histogram_quantile(0.95, sum by (le, operation) (rate(toolgate_embeddings_request_duration_seconds_bucket[5m])))
+```
+
+`toolgate_tool_search_embedding_errors_total{use, reason}` counts the calls that failed or were skipped. The label `use` is `query` or `document`. The label `reason` is `error` for a failed call, and `circuit_open` for a call skipped because the circuit is open after repeated failures. While embeddings fail, search still works with word matching only.
+
+Suggested alert on embedding errors:
+
+```promql
+sum by (use) (increase(toolgate_tool_search_embedding_errors_total[15m])) > 0
 ```
 
 ## Auth and telemetry

@@ -61,17 +61,41 @@ type Client struct {
 // Metrics counts failed and skipped calls of the model endpoints. One value
 // is shared by the embeddings clients.
 type Metrics struct {
-	errors *prometheus.CounterVec
+	errors   *prometheus.CounterVec
+	duration *prometheus.HistogramVec
 }
+
+// The operations of the embeddings endpoint (the `operation` label of the
+// duration histogram, and the `use` label of the error counter).
+const (
+	OperationQuery    = "query"
+	OperationDocument = "document"
+)
 
 // NewMetrics returns the counter `toolgate_tool_search_embedding_errors_total`,
 // labelled by use (`query` or `document`) and reason (`error`, or
 // `circuit_open` for a call skipped while the circuit is open).
 func NewMetrics() *Metrics {
-	return &Metrics{errors: prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "toolgate_tool_search_embedding_errors_total",
-		Help: "Failed or skipped calls of the tool search model endpoints, by use (query or document) and reason (error or circuit_open).",
-	}, []string{"use", "reason"})}
+	return &Metrics{
+		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_embedding_errors_total",
+			Help: "Failed or skipped calls of the tool search model endpoints, by use (query or document) and reason (error or circuit_open).",
+		}, []string{"use", "reason"}),
+		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "toolgate_embeddings_request_duration_seconds",
+			Help:    "Time of one request to the embeddings endpoint, by operation (query or document).",
+			Buckets: DurationBuckets,
+		}, []string{"operation"}),
+	}
+}
+
+// DurationBuckets are the upper bounds, in seconds, of the request duration
+// histogram. The default request timeout is 2 s.
+var DurationBuckets = []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10}
+
+// Duration returns the duration histogram of an operation, for tests.
+func (m *Metrics) Duration(operation string) prometheus.Observer {
+	return m.duration.WithLabelValues(operation)
 }
 
 // Counter returns the counter of a use and reason, for tests.
@@ -82,7 +106,9 @@ func (m *Metrics) Counter(use, reason string) prometheus.Counter {
 func (m *Metrics) count(use, reason string) { m.errors.WithLabelValues(use, reason).Inc() }
 
 // Collectors returns the metrics.
-func (m *Metrics) Collectors() []prometheus.Collector { return []prometheus.Collector{m.errors} }
+func (m *Metrics) Collectors() []prometheus.Collector {
+	return []prometheus.Collector{m.errors, m.duration}
+}
 
 // New returns a client, or an error when the URL is not an http(s) URL or the
 // model is empty.
@@ -156,12 +182,19 @@ type response struct {
 // BatchSize texts per request and gives each request the client's timeout.
 // An error never holds the text or the API key.
 func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	return c.EmbedFor(ctx, OperationQuery, texts)
+}
+
+// EmbedFor is Embed for an operation (OperationQuery or OperationDocument).
+// It records the duration of each request that reached the endpoint, whether
+// it succeeded or not. A call the open circuit skipped records nothing.
+func (c *Client) EmbedFor(ctx context.Context, operation string, texts []string) ([][]float32, error) {
 	vectors := make([][]float32, 0, len(texts))
 
 	for start := 0; start < len(texts); start += BatchSize {
 		end := min(start+BatchSize, len(texts))
 
-		batch, err := c.embedBatch(ctx, texts[start:end])
+		batch, err := c.embedBatch(ctx, operation, texts[start:end])
 		if err != nil {
 			return nil, err
 		}
@@ -172,12 +205,15 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	return vectors, nil
 }
 
-func (c *Client) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+func (c *Client) embedBatch(ctx context.Context, operation string, texts []string) ([][]float32, error) {
 	if !c.breaker.allow() {
 		return nil, ErrCircuitOpen
 	}
 
+	started := time.Now()
 	vectors, err := c.callBatch(ctx, texts)
+
+	c.metrics.duration.WithLabelValues(operation).Observe(time.Since(started).Seconds())
 	c.breaker.record(err != nil)
 
 	return vectors, err

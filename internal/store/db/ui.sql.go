@@ -125,7 +125,7 @@ func (q *Queries) InsertUISession(ctx context.Context, arg InsertUISessionParams
 }
 
 const listOpenSessionsForUI = `-- name: ListOpenSessionsForUI :many
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id FROM sessions
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id, tool_search FROM sessions
 WHERE ended_at IS NULL AND ($1::text = '' OR principal = $1)
 ORDER BY last_seen_at DESC, id DESC
 LIMIT $2
@@ -161,6 +161,7 @@ func (q *Queries) ListOpenSessionsForUI(ctx context.Context, arg ListOpenSession
 			&i.EndedAt,
 			&i.Kind,
 			&i.LastSearchID,
+			&i.ToolSearch,
 		); err != nil {
 			return nil, err
 		}

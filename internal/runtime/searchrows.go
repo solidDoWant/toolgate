@@ -91,7 +91,7 @@ func insertToolSearch(ctx context.Context, queries *db.Queries, uid string, temp
 			texts[index] = partsOf[index].EmbeddingText()
 		}
 
-		embedded, err := embedder.Embed(ctx, texts)
+		embedded, err := embedder.EmbedFor(ctx, embeddings.OperationDocument, texts)
 		if err != nil {
 			embedder.CountError("document", err)
 

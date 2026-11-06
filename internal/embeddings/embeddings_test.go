@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -95,4 +96,49 @@ func TestNewValidates(t *testing.T) {
 func TestFormatVector(t *testing.T) {
 	assert.Equal(t, "[0.5,1,-2.25]", embeddings.FormatVector([]float32{0.5, 1, -2.25}))
 	assert.Equal(t, "", embeddings.FormatVector(nil))
+}
+
+func TestEmbedRecordsRequestDuration(t *testing.T) {
+	const delay = 30 * time.Millisecond
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(delay)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"index": 0, "embedding": []float32{1}}}}))
+	}))
+	defer server.Close()
+
+	metrics := embeddings.NewMetrics()
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(metrics.Collectors()...)
+
+	client, err := embeddings.New(embeddings.Options{URL: server.URL, Model: "m"}, metrics)
+	require.NoError(t, err)
+
+	_, err = client.EmbedFor(t.Context(), embeddings.OperationQuery, []string{"a"})
+	require.NoError(t, err)
+	_, err = client.EmbedFor(t.Context(), embeddings.OperationDocument, []string{"a"})
+	require.NoError(t, err)
+	_, err = client.EmbedFor(t.Context(), embeddings.OperationDocument, []string{"b"})
+	require.NoError(t, err)
+
+	families, err := registry.Gather()
+	require.NoError(t, err)
+
+	counts := map[string]uint64{}
+
+	for _, family := range families {
+		if family.GetName() != "toolgate_embeddings_request_duration_seconds" {
+			continue
+		}
+
+		for _, metric := range family.GetMetric() {
+			operation := metric.GetLabel()[0].GetValue()
+			counts[operation] = metric.GetHistogram().GetSampleCount()
+
+			assert.GreaterOrEqual(t, metric.GetHistogram().GetSampleSum(), delay.Seconds()*float64(counts[operation]))
+			assert.Len(t, metric.GetHistogram().GetBucket(), len(embeddings.DurationBuckets))
+		}
+	}
+
+	assert.Equal(t, map[string]uint64{"query": 1, "document": 2}, counts)
 }

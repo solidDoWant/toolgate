@@ -40,12 +40,12 @@ type sessionStore struct {
 // resolve returns the live session row for identity, creating it or
 // restarting it when it ended. A live session whose stored workspace differs
 // from the request's gets errWorkspaceChanged.
-func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity) (db.Session, error) {
+func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, searchMode bool) (db.Session, error) {
 	queries := db.New(s.pool)
 
 	session, err := queries.GetSession(ctx, db.GetSessionParams{Principal: identity.Principal, SessionID: identity.Session})
 	if errors.Is(err, pgx.ErrNoRows) {
-		created, found, createErr := s.create(ctx, identity)
+		created, found, createErr := s.create(ctx, identity, searchMode)
 		if createErr != nil {
 			return db.Session{}, createErr
 		}
@@ -73,12 +73,12 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity) (db.
 		return db.Session{}, errWorkspaceChanged
 	}
 
-	return s.refresh(ctx, session, identity)
+	return s.refresh(ctx, session, identity, searchMode)
 }
 
 // create inserts the session and writes session.start in one transaction.
 // found is false when the session already existed.
-func (s *sessionStore) create(ctx context.Context, identity auth.Identity) (session db.Session, found bool, err error) {
+func (s *sessionStore) create(ctx context.Context, identity auth.Identity, searchMode bool) (session db.Session, found bool, err error) {
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
@@ -92,6 +92,7 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity) (sess
 			Kind:        identity.Kind,
 			Email:       identity.Email,
 			Groups:      snapshotGroups(identity),
+			ToolSearch:  searchMode,
 		})
 		if errors.Is(createErr, pgx.ErrNoRows) {
 			return nil
@@ -184,8 +185,9 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 }
 
 // refresh writes the identity snapshot when it changed, and otherwise moves
-// last_seen_at forward at most once a minute.
-func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity auth.Identity) (db.Session, error) {
+// last_seen_at forward at most once a minute. A change of the tool search
+// mode is written at once.
+func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity auth.Identity, searchMode bool) (db.Session, error) {
 	queries := db.New(s.pool)
 	groups := snapshotGroups(identity)
 
@@ -198,6 +200,7 @@ func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity
 			Kind:        session.Kind,
 			Email:       identity.Email,
 			Groups:      groups,
+			ToolSearch:  searchMode,
 		})
 		if err != nil {
 			return db.Session{}, fmt.Errorf("update session snapshot: %w", err)
@@ -206,8 +209,10 @@ func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity
 		return updated, nil
 	}
 
-	if s.now().Sub(session.LastSeenAt.Time) >= lastSeenInterval {
-		if err := queries.TouchSession(ctx, session.ID); err != nil {
+	if session.ToolSearch != searchMode || s.now().Sub(session.LastSeenAt.Time) >= lastSeenInterval {
+		session.ToolSearch = searchMode
+
+		if err := queries.TouchSession(ctx, db.TouchSessionParams{ID: session.ID, ToolSearch: searchMode}); err != nil {
 			return db.Session{}, fmt.Errorf("update session last_seen_at: %w", err)
 		}
 	}

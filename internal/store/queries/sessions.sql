@@ -2,19 +2,20 @@
 -- Creates the session or, for an existing one, writes this request's
 -- identity snapshot and moves last_seen_at forward. It does not restart an
 -- ended session (RestartSession does).
-INSERT INTO sessions (principal, session_id, workspace, attestation, kind, email, name, groups)
-VALUES (@principal, @session_id, @workspace, @attestation, @kind, @email, @name, @groups)
+INSERT INTO sessions (principal, session_id, workspace, attestation, kind, email, name, groups, tool_search)
+VALUES (@principal, @session_id, @workspace, @attestation, @kind, @email, @name, @groups, @tool_search)
 ON CONFLICT (principal, session_id) DO UPDATE
     SET email = EXCLUDED.email,
         name = EXCLUDED.name,
         groups = EXCLUDED.groups,
+        tool_search = EXCLUDED.tool_search,
         last_seen_at = now()
 RETURNING *;
 
 -- name: CreateSession :one
 -- Creates the session. It returns no row when the session already exists.
-INSERT INTO sessions (principal, session_id, workspace, attestation, kind, email, name, groups)
-VALUES (@principal, @session_id, @workspace, @attestation, @kind, @email, @name, @groups)
+INSERT INTO sessions (principal, session_id, workspace, attestation, kind, email, name, groups, tool_search)
+VALUES (@principal, @session_id, @workspace, @attestation, @kind, @email, @name, @groups, @tool_search)
 ON CONFLICT (principal, session_id) DO NOTHING
 RETURNING *;
 
@@ -28,7 +29,7 @@ SELECT * FROM sessions WHERE id = @id;
 SELECT * FROM sessions WHERE id = @id FOR UPDATE;
 
 -- name: TouchSession :exec
-UPDATE sessions SET last_seen_at = now() WHERE id = @id;
+UPDATE sessions SET last_seen_at = now(), tool_search = @tool_search WHERE id = @id;
 
 -- name: RestartSession :one
 UPDATE sessions
@@ -141,5 +142,5 @@ WHERE ss.session_pk = @id AND s.id = ss.session_pk
 RETURNING ss.template_name;
 
 -- name: CountOpenSessionsByAttestation :many
--- Counts sessions that have not ended, by attestation, for the open-session gauge.
-SELECT attestation, count(*) AS total FROM sessions WHERE ended_at IS NULL GROUP BY attestation;
+-- Counts sessions that have not ended, by attestation and tool search mode, for the open-session gauge.
+SELECT attestation, tool_search, count(*) AS total FROM sessions WHERE ended_at IS NULL GROUP BY attestation, tool_search;
