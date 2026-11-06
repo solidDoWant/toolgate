@@ -65,6 +65,13 @@ type elicitingOptions struct {
 func (f *mcpFixture) connectEliciting(t *testing.T, options elicitingOptions) *elicitingClient {
 	t.Helper()
 
+	return f.connectElicitingAs(t, alice(), options)
+}
+
+// connectElicitingAs is connectEliciting for user.
+func (f *mcpFixture) connectElicitingAs(t *testing.T, user user, options elicitingOptions) *elicitingClient {
+	t.Helper()
+
 	client := &elicitingClient{}
 	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "eliciting", Version: "0"}, &mcp.ClientOptions{
 		Capabilities: &mcp.ClientCapabilities{Elicitation: &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}}},
@@ -88,7 +95,7 @@ func (f *mcpFixture) connectEliciting(t *testing.T, options elicitingOptions) *e
 	})
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   f.server.URL,
-		HTTPClient: &http.Client{Transport: headerTransport{header: f.headers(t, alice())}},
+		HTTPClient: &http.Client{Transport: headerTransport{header: f.headers(t, user)}},
 	}
 
 	session, err := mcpClient.Connect(t.Context(), transport, &mcp.ClientSessionOptions{ProtocolVersion: options.revision})

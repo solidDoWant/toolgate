@@ -59,8 +59,25 @@ const (
 // Access-request statuses and kinds (the access_requests columns).
 const (
 	accessPending    = "pending"
+	accessApproved   = "approved"
+	accessDenied     = "denied"
+	accessExpired    = "expired"
 	accessKindChange = "change"
+	accessKindServer = "server"
 )
+
+// Choices of a server request's approval (the access_requests.decided_scope
+// column).
+const (
+	// AdditionSession allows the server for the request's session only.
+	AdditionSession = "session"
+	// AdditionWorkspace adds the server to the workspace's list.
+	AdditionWorkspace = "workspace"
+)
+
+// MaxSessionAdditions is the most servers added to one session for that
+// session only: the enabled-server limit.
+const MaxSessionAdditions = MaxEnabledServers
 
 // Audit event types of workspace scoping and access requests.
 const (
@@ -329,6 +346,150 @@ func (w *Workspaces) ApproveChangeRequest(ctx context.Context, tx pgx.Tx, identi
 	}
 
 	return w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove)
+}
+
+// ApproveServerRequest approves identity's pending server request with
+// choice, AdditionSession or AdditionWorkspace, and writes its effect in tx
+// (docs/design/phase-3.md §10, "Session additions" step 6). It locks the
+// request's sessions row, then the user_scopes row, for both choices. The
+// approval page calls it after checking the step-up. Any error leaves tx to
+// be rolled back, so the request stays pending; a *WorkspaceError says why
+// to the user.
+func (w *Workspaces) ApproveServerRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id, choice string) error {
+	if choice != AdditionSession && choice != AdditionWorkspace {
+		return workspaceError(http.StatusBadRequest, "Choose this session or this workspace.")
+	}
+
+	queries := db.New(tx)
+
+	pending, err := queries.GetAccessRequestOfPrincipal(ctx, db.GetAccessRequestOfPrincipalParams{ID: id, Principal: identity.Principal})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAccessRequestUndecidable
+	}
+
+	if err != nil {
+		return fmt.Errorf("read access request: %w", err)
+	}
+
+	if pending.Kind != accessKindServer || !pending.SessionPk.Valid || !pending.Server.Valid {
+		return ErrAccessRequestUndecidable
+	}
+
+	session, err := queries.LockSession(ctx, pending.SessionPk.Int64)
+	if err != nil {
+		return fmt.Errorf("lock session: %w", err)
+	}
+
+	scope, err := lockUserScope(ctx, queries, identity.Principal)
+	if err != nil {
+		return err
+	}
+
+	request, err := queries.ApproveAccessRequest(ctx, db.ApproveAccessRequestParams{
+		ID: id, Principal: identity.Principal, DecidedBy: pgtype.Text{String: identity.Principal, Valid: true},
+		DecidedScope: pgtype.Text{String: choice, Valid: true},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrAccessRequestUndecidable
+	}
+
+	if err != nil {
+		return fmt.Errorf("approve access request: %w", err)
+	}
+
+	server := request.Server.String
+
+	if choice == AdditionSession {
+		err = w.addToSession(ctx, queries, tx, identity, request, session, server)
+	} else {
+		err = w.addToWorkspaceList(ctx, queries, tx, identity, request, scope, server)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove)
+}
+
+// addToSession is the "session" choice of a server request: the session
+// must still be open in the request's verified workspace.
+func (w *Workspaces) addToSession(ctx context.Context, queries *db.Queries, tx pgx.Tx, identity auth.Identity,
+	request db.AccessRequest, session db.Session, server string,
+) error {
+	if session.EndedAt.Valid {
+		return workspaceError(http.StatusConflict, "This session has ended.")
+	}
+
+	if session.Workspace != request.Workspace || session.Attestation != auth.AttestationAttested || !request.Verified {
+		return workspaceError(http.StatusConflict, "This session is now in another workspace.")
+	}
+
+	present, err := queries.HasSessionAddition(ctx, db.HasSessionAdditionParams{SessionPk: session.ID, Server: server})
+	if err != nil {
+		return fmt.Errorf("read session additions: %w", err)
+	}
+
+	if !present {
+		count, err := queries.CountSessionAdditions(ctx, session.ID)
+		if err != nil {
+			return fmt.Errorf("count session additions: %w", err)
+		}
+
+		if count >= MaxSessionAdditions {
+			return workspaceError(http.StatusConflict, "This session already has %d added servers. Remove one, then approve again.", MaxSessionAdditions)
+		}
+	}
+
+	if err := queries.InsertSessionAddition(ctx, db.InsertSessionAdditionParams{SessionPk: session.ID, Server: server, RequestID: request.ID}); err != nil {
+		return fmt.Errorf("insert session addition: %w", err)
+	}
+
+	event := scopeEvent(identity, TypeSessionAddition, session.Workspace, map[string]any{"request": request.ID})
+	event.Session, event.Attestation, event.Server = session.SessionID, session.Attestation, server
+
+	if err := audit.NewRecorder(w.auditOutput, queries).Record(ctx, event); err != nil {
+		return err
+	}
+
+	return store.Notify(ctx, tx, store.KindSession, strconv.FormatInt(session.ID, 10))
+}
+
+// addToWorkspaceList is the "workspace" choice of a server request: it adds
+// the server to the request's workspace list, creating the list when there
+// is none, within the list limits.
+func (w *Workspaces) addToWorkspaceList(ctx context.Context, queries *db.Queries, tx pgx.Tx, identity auth.Identity,
+	request db.AccessRequest, scope db.UserScope, server string,
+) error {
+	list, err := queries.GetWorkspaceList(ctx, db.GetWorkspaceListParams{ScopeID: scope.ID, Workspace: request.Workspace})
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		count, err := queries.CountWorkspaceLists(ctx, scope.ID)
+		if err != nil {
+			return fmt.Errorf("count workspace lists: %w", err)
+		}
+
+		if count >= MaxWorkspaceLists {
+			return workspaceError(http.StatusConflict, "You already have %d workspace lists. Remove one, then approve again.", MaxWorkspaceLists)
+		}
+	case err != nil:
+		return fmt.Errorf("read workspace list: %w", err)
+	default:
+		current, err := queries.ListWorkspaceListServerNames(ctx, list.ID)
+		if err != nil {
+			return fmt.Errorf("read workspace list: %w", err)
+		}
+
+		if !slices.Contains(current, server) && len(current) >= MaxWorkspaceListServers {
+			return workspaceError(http.StatusConflict,
+				"Workspace `%s`'s list already has %d servers. Remove one, then approve again.", request.Workspace, MaxWorkspaceListServers)
+		}
+	}
+
+	_, err = w.change(ctx, tx, identity, WorkspaceChange{Action: WorkspaceAllow, Workspace: request.Workspace, Servers: []string{server}}, request.ID, widenApply)
+
+	return err
 }
 
 // DenyAccessRequest compare-and-sets identity's pending access request to

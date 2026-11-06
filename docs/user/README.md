@@ -248,6 +248,28 @@ Some changes give more access: adding a server to a list, setting a default to a
 
 If you change a list with `toolgate workspace allow` or `toolgate workspace defaults` and the change gives more access, the command prints a link to an approval page. The page shows your list or defaults before and after the change. Click Approve to apply the change, after a fresh sign-in, or click Deny. Only you can open the page. When the request is no longer waiting, the page shows its status.
 
+### Allow a server that is not on the list
+
+In a verified workspace, Claude can ask to turn on a server that is not on the effective list. Then toolgate asks you. If Claude Code can open a page for you, it opens the approval page. If it cannot, the error gives the link: "Server `immich` isn't allowed in workspace `coder/alice/mail`. Allow it at ..., then enable it again."
+
+The approval page shows the server, the session and the workspace. Select one of these buttons:
+
+- "Allow for this session" adds the server to this session only. Other sessions in the workspace do not get it. When the session ends, toolgate removes the server again.
+- "Always allow in this workspace" adds the server to your list for the workspace. If the workspace has no list, toolgate makes a list with only this server.
+- "Deny" refuses the server.
+
+Both "Allow" buttons need a fresh sign-in, no more than 5 minutes old. If Claude Code waits on the page, the server turns on after you allow it. If not, tell Claude to turn the server on again.
+
+If nobody decides in time, the request expires. Your admin sets this time (10 minutes by default). If the session ends first, the request expires too. In an unverified session, toolgate never asks. It refuses the server and tells you how to change the default for unverified sessions.
+
+toolgate refuses an approval in these cases, and the request stays open:
+
+- The session ended. The page shows "This session has ended."
+- The session moved to another workspace, or lost its verified workspace. The page shows "This session is now in another workspace."
+- The session already has 32 servers that you added for it only, the list already has 64 servers, or you already have 200 lists. Remove one, then approve again.
+
+To remove a server that you added to one session, run `toolgate workspace deny --session ID SERVER`.
+
 ## The headers that Claude Code sends
 
 The toolgate plugin tells Claude Code to run `toolgate headers` before it connects to the gateway. This command prints three request headers as JSON:

@@ -125,3 +125,72 @@ LIMIT 1000;
 UPDATE access_requests SET status = 'expired'
 WHERE id = @id AND status = 'pending'
 RETURNING *;
+
+-- name: GetMatchingServerRequest :one
+-- Returns the server request named by a client's request state, only when
+-- every field matches this enable, with whether its expires_at has passed.
+SELECT sqlc.embed(access_requests), (expires_at <= now())::boolean AS overdue
+FROM access_requests
+WHERE id = @id AND principal = @principal AND kind = 'server' AND session_pk = @session_pk
+  AND server = @server AND workspace = @workspace AND verified;
+
+-- name: FindPendingServerRequest :one
+-- Returns the oldest pending server request of one session and server that
+-- hasn't expired.
+SELECT * FROM access_requests
+WHERE principal = @principal AND kind = 'server' AND session_pk = @session_pk
+  AND server = @server AND workspace = @workspace AND verified
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1;
+
+-- name: InsertServerRequestWithinLimit :one
+-- Inserts a pending server request for a session in a verified workspace
+-- unless the principal already has pending_limit pending access requests;
+-- then it returns no row. Run it after LockPrincipalAccessRequests in the
+-- same transaction.
+INSERT INTO access_requests (id, principal, kind, session_pk, workspace, verified, server, expires_at)
+SELECT @id, @principal, 'server', @session_pk, @workspace, true, @server, now() + @approval_timeout::interval
+WHERE (
+    SELECT count(*) FROM access_requests WHERE principal = @principal AND status = 'pending'
+) < @pending_limit::bigint
+RETURNING *;
+
+-- name: GetAccessRequestForWait :one
+-- Returns an access request and whether its expires_at has passed, by
+-- PostgreSQL's clock, for an enable waiting on it.
+SELECT sqlc.embed(access_requests), (expires_at <= now())::boolean AS overdue
+FROM access_requests
+WHERE id = @id;
+
+-- name: ExpireDueAccessRequest :one
+-- Marks a pending access request whose expires_at has passed expired. It
+-- returns no row otherwise.
+UPDATE access_requests SET status = 'expired'
+WHERE id = @id AND status = 'pending' AND expires_at <= now()
+RETURNING *;
+
+-- name: ExpireSessionServerRequests :many
+-- Marks the pending server requests of an ending session expired and
+-- returns them.
+UPDATE access_requests SET status = 'expired'
+WHERE session_pk = @session_pk AND kind = 'server' AND status = 'pending'
+RETURNING *;
+
+-- name: DeleteAllSessionAdditions :exec
+-- Deletes every session addition of an ending session.
+DELETE FROM session_additions WHERE session_pk = @session_pk;
+
+-- name: CountSessionAdditions :one
+SELECT count(*) FROM session_additions WHERE session_pk = @session_pk;
+
+-- name: HasSessionAddition :one
+SELECT EXISTS (
+    SELECT 1 FROM session_additions WHERE session_pk = @session_pk AND server = @server
+)::boolean;
+
+-- name: InsertSessionAddition :exec
+-- Adds a server to one session. An existing row is kept.
+INSERT INTO session_additions (session_pk, server, request_id)
+VALUES (@session_pk, @server, @request_id)
+ON CONFLICT DO NOTHING;

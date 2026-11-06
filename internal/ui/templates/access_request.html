@@ -4,6 +4,7 @@
 <dt>Request</dt><dd>{{.ID}}</dd>
 <dt>Kind</dt><dd>{{.Kind}}</dd>
 {{with .Server}}<dt>Server</dt><dd>{{.}}</dd>
+{{end}}{{with .Session}}<dt>Session</dt><dd>{{.}}</dd>
 {{end}}<dt>Workspace</dt><dd>{{.Workspace}}</dd>
 <dt>Requested</dt><dd>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
 <dt>Expires</dt><dd>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
@@ -33,6 +34,18 @@
 {{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <button type="submit">Approve</button>
+</form>
+{{end}}{{else if eq .Kind "server"}}{{if .StepUpURL}}<p>Allowing needs a fresh sign-in.</p>
+<a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
+{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="scope" value="session">
+<button type="submit" id="allow-session">Allow for this session</button>
+</form>
+<form method="post" action="/ui/approvals/{{.ID}}/approve">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="scope" value="workspace">
+<button type="submit" id="allow-workspace">Always allow in this workspace</button>
 </form>
 {{end}}{{end}}<form method="post" action="/ui/approvals/{{.ID}}/deny">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">

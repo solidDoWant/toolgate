@@ -11,6 +11,7 @@
 - When the web UI is on, the policy has a new step, workspace scope, after the blocks and before approval. A signed-in user's session can use only the servers on its effective list. The list comes from the user's list for a verified workspace, or from the user's defaults. The step only refuses. Service accounts and SPIFFE workloads skip it, and it is off when the web UI is off. See `docs/user/README.md` and `docs/admin/web-ui.md`.
 - The gateway API has `GET /api/v1/workspaces`, `POST /api/v1/workspaces/changes` and `GET /api/v1/access-requests/{id}`. A change that removes access applies at once. A change that gives more access becomes an access request that the user approves in the browser. See `docs/admin/web-ui.md`.
 - The web UI has a Workspaces page, `/ui/workspaces`, where users choose their defaults and lists. A change that gives more access needs a fresh sign-in. The approval page also shows the change requests of the CLI, with the list before and after the change. See `docs/user/README.md`.
+- In a verified workspace, turning on a server that is not on the effective list asks the user. The approval page offers "Allow for this session" and "Always allow in this workspace", and both need a fresh sign-in. When a session ends, toolgate removes the servers that the user added to it only. See `docs/user/README.md`.
 
 ## 0.2.0
 

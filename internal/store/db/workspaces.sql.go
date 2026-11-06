@@ -87,6 +87,17 @@ func (q *Queries) ApproveAccessRequest(ctx context.Context, arg ApproveAccessReq
 	return i, err
 }
 
+const countSessionAdditions = `-- name: CountSessionAdditions :one
+SELECT count(*) FROM session_additions WHERE session_pk = $1
+`
+
+func (q *Queries) CountSessionAdditions(ctx context.Context, sessionPk int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countSessionAdditions, sessionPk)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countWorkspaceLists = `-- name: CountWorkspaceLists :one
 SELECT count(*) FROM workspace_lists WHERE scope_id = $1
 `
@@ -96,6 +107,16 @@ func (q *Queries) CountWorkspaceLists(ctx context.Context, scopeID int64) (int64
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const deleteAllSessionAdditions = `-- name: DeleteAllSessionAdditions :exec
+DELETE FROM session_additions WHERE session_pk = $1
+`
+
+// Deletes every session addition of an ending session.
+func (q *Queries) DeleteAllSessionAdditions(ctx context.Context, sessionPk int64) error {
+	_, err := q.db.Exec(ctx, deleteAllSessionAdditions, sessionPk)
+	return err
 }
 
 const deleteWorkspaceList = `-- name: DeleteWorkspaceList :exec
@@ -175,6 +196,160 @@ func (q *Queries) ExpireAccessRequest(ctx context.Context, id string) (AccessReq
 	return i, err
 }
 
+const expireDueAccessRequest = `-- name: ExpireDueAccessRequest :one
+UPDATE access_requests SET status = 'expired'
+WHERE id = $1 AND status = 'pending' AND expires_at <= now()
+RETURNING id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope
+`
+
+// Marks a pending access request whose expires_at has passed expired. It
+// returns no row otherwise.
+func (q *Queries) ExpireDueAccessRequest(ctx context.Context, id string) (AccessRequest, error) {
+	row := q.db.QueryRow(ctx, expireDueAccessRequest, id)
+	var i AccessRequest
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.Kind,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.Verified,
+		&i.Server,
+		&i.Change,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.DecidedScope,
+	)
+	return i, err
+}
+
+const expireSessionServerRequests = `-- name: ExpireSessionServerRequests :many
+UPDATE access_requests SET status = 'expired'
+WHERE session_pk = $1 AND kind = 'server' AND status = 'pending'
+RETURNING id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope
+`
+
+// Marks the pending server requests of an ending session expired and
+// returns them.
+func (q *Queries) ExpireSessionServerRequests(ctx context.Context, sessionPk pgtype.Int8) ([]AccessRequest, error) {
+	rows, err := q.db.Query(ctx, expireSessionServerRequests, sessionPk)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AccessRequest{}
+	for rows.Next() {
+		var i AccessRequest
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.Kind,
+			&i.SessionPk,
+			&i.Workspace,
+			&i.Verified,
+			&i.Server,
+			&i.Change,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.DecidedAt,
+			&i.DecidedBy,
+			&i.DecidedScope,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const findPendingServerRequest = `-- name: FindPendingServerRequest :one
+SELECT id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope FROM access_requests
+WHERE principal = $1 AND kind = 'server' AND session_pk = $2
+  AND server = $3 AND workspace = $4 AND verified
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1
+`
+
+type FindPendingServerRequestParams struct {
+	Principal string
+	SessionPk pgtype.Int8
+	Server    pgtype.Text
+	Workspace string
+}
+
+// Returns the oldest pending server request of one session and server that
+// hasn't expired.
+func (q *Queries) FindPendingServerRequest(ctx context.Context, arg FindPendingServerRequestParams) (AccessRequest, error) {
+	row := q.db.QueryRow(ctx, findPendingServerRequest,
+		arg.Principal,
+		arg.SessionPk,
+		arg.Server,
+		arg.Workspace,
+	)
+	var i AccessRequest
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.Kind,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.Verified,
+		&i.Server,
+		&i.Change,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.DecidedScope,
+	)
+	return i, err
+}
+
+const getAccessRequestForWait = `-- name: GetAccessRequestForWait :one
+SELECT access_requests.id, access_requests.principal, access_requests.kind, access_requests.session_pk, access_requests.workspace, access_requests.verified, access_requests.server, access_requests.change, access_requests.status, access_requests.created_at, access_requests.expires_at, access_requests.decided_at, access_requests.decided_by, access_requests.decided_scope, (expires_at <= now())::boolean AS overdue
+FROM access_requests
+WHERE id = $1
+`
+
+type GetAccessRequestForWaitRow struct {
+	AccessRequest AccessRequest
+	Overdue       bool
+}
+
+// Returns an access request and whether its expires_at has passed, by
+// PostgreSQL's clock, for an enable waiting on it.
+func (q *Queries) GetAccessRequestForWait(ctx context.Context, id string) (GetAccessRequestForWaitRow, error) {
+	row := q.db.QueryRow(ctx, getAccessRequestForWait, id)
+	var i GetAccessRequestForWaitRow
+	err := row.Scan(
+		&i.AccessRequest.ID,
+		&i.AccessRequest.Principal,
+		&i.AccessRequest.Kind,
+		&i.AccessRequest.SessionPk,
+		&i.AccessRequest.Workspace,
+		&i.AccessRequest.Verified,
+		&i.AccessRequest.Server,
+		&i.AccessRequest.Change,
+		&i.AccessRequest.Status,
+		&i.AccessRequest.CreatedAt,
+		&i.AccessRequest.ExpiresAt,
+		&i.AccessRequest.DecidedAt,
+		&i.AccessRequest.DecidedBy,
+		&i.AccessRequest.DecidedScope,
+		&i.Overdue,
+	)
+	return i, err
+}
+
 const getAccessRequestOfPrincipal = `-- name: GetAccessRequestOfPrincipal :one
 SELECT id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope FROM access_requests WHERE id = $1 AND principal = $2
 `
@@ -206,6 +381,57 @@ func (q *Queries) GetAccessRequestOfPrincipal(ctx context.Context, arg GetAccess
 	return i, err
 }
 
+const getMatchingServerRequest = `-- name: GetMatchingServerRequest :one
+SELECT access_requests.id, access_requests.principal, access_requests.kind, access_requests.session_pk, access_requests.workspace, access_requests.verified, access_requests.server, access_requests.change, access_requests.status, access_requests.created_at, access_requests.expires_at, access_requests.decided_at, access_requests.decided_by, access_requests.decided_scope, (expires_at <= now())::boolean AS overdue
+FROM access_requests
+WHERE id = $1 AND principal = $2 AND kind = 'server' AND session_pk = $3
+  AND server = $4 AND workspace = $5 AND verified
+`
+
+type GetMatchingServerRequestParams struct {
+	ID        string
+	Principal string
+	SessionPk pgtype.Int8
+	Server    pgtype.Text
+	Workspace string
+}
+
+type GetMatchingServerRequestRow struct {
+	AccessRequest AccessRequest
+	Overdue       bool
+}
+
+// Returns the server request named by a client's request state, only when
+// every field matches this enable, with whether its expires_at has passed.
+func (q *Queries) GetMatchingServerRequest(ctx context.Context, arg GetMatchingServerRequestParams) (GetMatchingServerRequestRow, error) {
+	row := q.db.QueryRow(ctx, getMatchingServerRequest,
+		arg.ID,
+		arg.Principal,
+		arg.SessionPk,
+		arg.Server,
+		arg.Workspace,
+	)
+	var i GetMatchingServerRequestRow
+	err := row.Scan(
+		&i.AccessRequest.ID,
+		&i.AccessRequest.Principal,
+		&i.AccessRequest.Kind,
+		&i.AccessRequest.SessionPk,
+		&i.AccessRequest.Workspace,
+		&i.AccessRequest.Verified,
+		&i.AccessRequest.Server,
+		&i.AccessRequest.Change,
+		&i.AccessRequest.Status,
+		&i.AccessRequest.CreatedAt,
+		&i.AccessRequest.ExpiresAt,
+		&i.AccessRequest.DecidedAt,
+		&i.AccessRequest.DecidedBy,
+		&i.AccessRequest.DecidedScope,
+		&i.Overdue,
+	)
+	return i, err
+}
+
 const getWorkspaceList = `-- name: GetWorkspaceList :one
 SELECT id, scope_id, workspace, created_at, updated_at FROM workspace_lists WHERE scope_id = $1 AND workspace = $2
 `
@@ -226,6 +452,24 @@ func (q *Queries) GetWorkspaceList(ctx context.Context, arg GetWorkspaceListPara
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const hasSessionAddition = `-- name: HasSessionAddition :one
+SELECT EXISTS (
+    SELECT 1 FROM session_additions WHERE session_pk = $1 AND server = $2
+)::boolean
+`
+
+type HasSessionAdditionParams struct {
+	SessionPk int64
+	Server    string
+}
+
+func (q *Queries) HasSessionAddition(ctx context.Context, arg HasSessionAdditionParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasSessionAddition, arg.SessionPk, arg.Server)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const insertChangeRequestWithinLimit = `-- name: InsertChangeRequestWithinLimit :one
@@ -278,6 +522,77 @@ func (q *Queries) InsertChangeRequestWithinLimit(ctx context.Context, arg Insert
 		&i.DecidedScope,
 	)
 	return i, err
+}
+
+const insertServerRequestWithinLimit = `-- name: InsertServerRequestWithinLimit :one
+INSERT INTO access_requests (id, principal, kind, session_pk, workspace, verified, server, expires_at)
+SELECT $1, $2, 'server', $3, $4, true, $5, now() + $6::interval
+WHERE (
+    SELECT count(*) FROM access_requests WHERE principal = $2 AND status = 'pending'
+) < $7::bigint
+RETURNING id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope
+`
+
+type InsertServerRequestWithinLimitParams struct {
+	ID              string
+	Principal       string
+	SessionPk       pgtype.Int8
+	Workspace       string
+	Server          pgtype.Text
+	ApprovalTimeout pgtype.Interval
+	PendingLimit    int64
+}
+
+// Inserts a pending server request for a session in a verified workspace
+// unless the principal already has pending_limit pending access requests;
+// then it returns no row. Run it after LockPrincipalAccessRequests in the
+// same transaction.
+func (q *Queries) InsertServerRequestWithinLimit(ctx context.Context, arg InsertServerRequestWithinLimitParams) (AccessRequest, error) {
+	row := q.db.QueryRow(ctx, insertServerRequestWithinLimit,
+		arg.ID,
+		arg.Principal,
+		arg.SessionPk,
+		arg.Workspace,
+		arg.Server,
+		arg.ApprovalTimeout,
+		arg.PendingLimit,
+	)
+	var i AccessRequest
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.Kind,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.Verified,
+		&i.Server,
+		&i.Change,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.DecidedScope,
+	)
+	return i, err
+}
+
+const insertSessionAddition = `-- name: InsertSessionAddition :exec
+INSERT INTO session_additions (session_pk, server, request_id)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type InsertSessionAdditionParams struct {
+	SessionPk int64
+	Server    string
+	RequestID string
+}
+
+// Adds a server to one session. An existing row is kept.
+func (q *Queries) InsertSessionAddition(ctx context.Context, arg InsertSessionAdditionParams) error {
+	_, err := q.db.Exec(ctx, insertSessionAddition, arg.SessionPk, arg.Server, arg.RequestID)
+	return err
 }
 
 const insertWorkspaceList = `-- name: InsertWorkspaceList :one
