@@ -33,7 +33,7 @@ func runHeaders(t *testing.T) (int, string, string) {
 func identityThroughGateway(t *testing.T, provider *testutil.OIDCProvider, headers map[string]string) (auth.Identity, int) {
 	t.Helper()
 
-	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audience: provider.Audience})
+	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audiences: []string{provider.Audience}})
 	require.NoError(t, err)
 
 	var identity auth.Identity

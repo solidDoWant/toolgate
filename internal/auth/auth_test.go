@@ -55,8 +55,8 @@ func newFixture(t *testing.T, options auth.Options, requireSession bool) fixture
 	rec := &recorder{}
 
 	options.IssuerURL = provider.Issuer
-	if options.Audience == "" {
-		options.Audience = provider.Audience
+	if options.Audiences == nil {
+		options.Audiences = []string{provider.Audience}
 	}
 
 	options.Recorder = rec
@@ -142,7 +142,7 @@ func TestAC1_03BadTokensAreRefused(t *testing.T) {
 					Audience: []string{"another-service"},
 				})
 			},
-			wantReason: "invalid token",
+			wantReason: "audience not allowed",
 		},
 		{
 			name: "[AC-1-03] token from another issuer",
@@ -497,7 +497,7 @@ func TestRefusalsAreRecordedAtMostTenPerMinutePerAddress(t *testing.T) {
 func TestNewRequiresIssuerAndAudience(t *testing.T) {
 	t.Parallel()
 
-	_, err := auth.New(t.Context(), auth.Options{Audience: "toolgate"})
+	_, err := auth.New(t.Context(), auth.Options{Audiences: []string{"toolgate"}})
 	require.Error(t, err)
 
 	_, err = auth.New(t.Context(), auth.Options{IssuerURL: "http://127.0.0.1:1"})

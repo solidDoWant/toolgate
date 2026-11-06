@@ -49,7 +49,7 @@ func TestLazyAuthenticatorWaitsForTheIdentityProvider(t *testing.T) {
 
 	authenticator := &lazyAuthenticator{
 		ctx:     t.Context(),
-		options: auth.Options{IssuerURL: proxy.URL, Audience: provider.Audience},
+		options: auth.Options{IssuerURL: proxy.URL, Audiences: []string{provider.Audience}},
 		logger:  slog.New(slog.DiscardHandler),
 	}
 

@@ -58,13 +58,13 @@ func startGatewayWithProfiles(t *testing.T, provider *testutil.OIDCProvider, kub
 	cfg.MetricsListenAddress = "127.0.0.1:0"
 	cfg.DatabaseURL = "postgres://toolgate@127.0.0.1:1/toolgate?connect_timeout=1"
 	cfg.OIDCIssuerURL = provider.Issuer
-	cfg.OIDCAudience = provider.Audience
+	cfg.OIDCAudience = config.Audiences{provider.Audience}
 	cfg.OIDCCLIClientID = provider.ClientID
 
 	server, err := gateway.New(t.Context(), cfg, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
-	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audience: provider.Audience})
+	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audiences: []string{provider.Audience}})
 	require.NoError(t, err)
 
 	handler := &settings.Handler{Reader: kube, Namespaces: []string{"toolgate"}, Log: slog.New(slog.DiscardHandler)}

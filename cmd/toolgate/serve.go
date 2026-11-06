@@ -318,7 +318,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 		ctx: context.WithoutCancel(ctx),
 		options: auth.Options{
 			IssuerURL:          cfg.OIDCIssuerURL,
-			Audience:           cfg.OIDCAudience,
+			Audiences:          cfg.OIDCAudience,
 			EmailClaim:         cfg.OIDCEmailClaim,
 			EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
 			GroupsClaim:        cfg.OIDCGroupsClaim,

@@ -58,7 +58,7 @@ logLevel: debug
 		LogLevel:                 "debug",
 		OTLPEndpoint:             "http://collector:4318",
 		OIDCIssuerURL:            "https://idp.example",
-		OIDCAudience:             "toolgate",
+		OIDCAudience:             config.Audiences{"toolgate"},
 		OIDCEmailClaim:           "email",
 		OIDCEmailVerifiedClaim:   "email_verified",
 		OIDCGroupsClaim:          "roles",
