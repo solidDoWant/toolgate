@@ -177,6 +177,10 @@ toolgate gets the session ID from a file that the plugin writes when a Claude Co
 
 The workspace name is the value of the `TOOLGATE_WORKSPACE` environment variable when you set it. If you do not set it, toolgate uses the name of your computer and the name of your project. The project name is the name of the repository at the git remote `origin`. If there is no such remote, it is the name of the current directory. toolgate changes each character that is not a letter, a digit, `.`, `_` or `-` to `-`, and keeps the first 128 characters. For example, on the computer `laptop` in a clone of `github.com/acme/widgets`, the workspace is `laptop-widgets`. The gateway shows this name to your admin's rules as `claimed/laptop-widgets`.
 
+### Headers for telemetry
+
+If your admin sends Claude Code telemetry to the gateway, Claude Code runs `toolgate otel-headers`. This command prints two request headers as JSON: `Authorization` and `X-Toolgate-Workspace`. They are the same as in `toolgate headers`: a new access token, and the workspace name. It does not print a session ID and it does not wait for one. If you are not signed in, it shows "not signed in", prints no headers and exits with a non-zero code. Your access token must be valid for at least 5 minutes, because Claude Code runs the command only every 4 minutes.
+
 ## Settings from your admin
 
 Your admin can give you Claude Code settings, for example permissions or environment variables. When a Claude Code session starts, the plugin runs `toolgate hook session-start`. This command gets the settings for you from the gateway and writes them into `~/.claude/settings.json`.
