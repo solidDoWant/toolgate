@@ -62,7 +62,8 @@ docs/dev/
 docs/acceptance/
   phase-1.md               The owner's checklist for phase 1: the core gateway.
   phase-2.md               The owner's checklist for phase 2: the security model and the web UI.
-  phase-3.md               The owner's checklist for phase 3: remote servers and telemetry.
+  phase-3.md               The owner's checklist for phase 3: telemetry, attestation, scoping and operations.
+  phase-4.md               The owner's checklist for phase 4: tool search and curation.
 
 docs/design/
   phase-1.md               The design for phase 1: who does what, state, and the interaction table.
