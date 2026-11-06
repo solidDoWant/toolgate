@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -253,7 +254,7 @@ func TestCallForwarding(t *testing.T) {
 		assert.Equal(t, "error", fixture.auditRows(t, "tool.result")[0].Details["outcome"])
 	})
 
-	t.Run("a call of a server that isn't enabled is refused with not-enabled and audited", func(t *testing.T) {
+	t.Run("a call of an allowed server that isn't enabled enables it with first-call and is forwarded", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -261,22 +262,38 @@ func TestCallForwarding(t *testing.T) {
 		client := fixture.connectObserved(t, alice())
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
 
-		// Another session of alice sees no github tools; a direct call is
-		// refused all the same.
+		// Another session of alice has not enabled the server; its call
+		// enables it.
 		secondUser := alice()
 		secondUser.session = "session-2"
-		second := fixture.connect(t, secondUser)
+		second := fixture.connectObserved(t, secondUser)
 
-		result := callTool(t, second, "github__echo", map[string]any{"text": "x"})
+		result := callTool(t, second.session, "github__echo", map[string]any{"text": "x"})
+		require.False(t, result.IsError, resultText(result))
+
+		enables := fixture.auditRows(t, "server.enable")
+		require.NotEmpty(t, enables)
+		last := enables[len(enables)-1]
+		assert.Equal(t, "first-call", last.Details["reason"])
+		assert.Equal(t, "session-2", last.Session)
+		assert.Equal(t, "allow", last.Details["decision"])
+		require.Eventually(t, func() bool { return second.listChangedCount() > 0 }, waitTimeout, 10*time.Millisecond)
+	})
+
+	t.Run("a call of a server the policy refuses is refused and audited without enabling it", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		fixture.addEnableTemplate("github", "per-user", v1alpha1.Access{Users: []string{"bob"}, Environments: "any"})
+		fixture.startUpstream(t, "github")
+
+		client := fixture.connect(t, alice())
+
+		result := callTool(t, client, "github__echo", map[string]any{"text": "x"})
 		assert.True(t, result.IsError)
-		assert.Equal(t, "Server `github` isn't enabled in this session. Call `toolgate_enable_server` first.", resultText(result))
 
 		decisions := fixture.auditRows(t, "tool.decision")
 		require.Len(t, decisions, 1)
 		assert.Equal(t, "refuse", decisions[0].Details["decision"])
-		assert.Equal(t, "not-enabled", decisions[0].Details["reason"])
-		assert.Equal(t, "session-2", decisions[0].Session)
-		assert.Equal(t, "echo", decisions[0].Tool)
+		assert.Empty(t, fixture.auditRows(t, "server.enable"))
 		assert.Empty(t, fixture.auditRows(t, "tool.result"))
 	})
 
@@ -455,15 +472,14 @@ func TestCallInteractions(t *testing.T) {
 
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
 
+		// A later call enables the server again (docs/design/phase-4.md §4).
 		later := callTool(t, client.session, "github__slow", nil)
-		assert.True(t, later.IsError)
-		assert.Equal(t, "Server `github` isn't enabled in this session. Call `toolgate_enable_server` first.", resultText(later))
+		require.False(t, later.IsError, resultText(later))
 
 		decisions := fixture.auditRows(t, "tool.decision")
 		require.Len(t, decisions, 2)
 		assert.Equal(t, "allow", decisions[0].Details["decision"])
-		assert.Equal(t, "not-enabled", decisions[1].Details["reason"])
-		assert.Len(t, upstream.started, 0, "the later call reached the upstream server")
+		assert.Equal(t, "allow", decisions[1].Details["decision"])
 	})
 
 	t.Run("row 20: an upstream tool change sends list_changed with the new list to sessions using the server", func(t *testing.T) {

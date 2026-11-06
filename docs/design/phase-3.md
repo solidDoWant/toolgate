@@ -823,7 +823,7 @@ AC-3-19. In a session with a verified workspace, an enable whose only refusal is
 
 **Where session-only rows end.** Ending a session deletes them and expires its pending `server` requests (State). A restarted session starts with none and inherits no pending request, and other sessions in the workspace never see them, because they are keyed by `session_pk`. Before then, `toolgate workspace deny --session ID` removes them.
 
-**Calls** of a server outside the effective list never elicit. They're refused with the message in "Effects". Only enable asks, because that's when the person is deciding what the session needs.
+**Calls** of a server outside the effective list also ask, as phase 4 §4 step 3 says.
 
 ### Tests
 

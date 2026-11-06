@@ -115,7 +115,7 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	// Steps 3 and 4.
-	instance, err := m.enableInTransaction(ctx, current, template, requestID, lazy)
+	instance, err := m.enableInTransaction(ctx, current, template, enableOptions{requestID: requestID, lazy: lazy})
 
 	var limitErr *instanceLimitError
 	if errors.As(err, &limitErr) {
@@ -273,19 +273,30 @@ func (m *metaTools) checkSecrets(ctx context.Context, current requestContext, te
 	return nil
 }
 
+// enableOptions are the parts of an enable that differ between an enable
+// tool call and a call that enables its server.
+type enableOptions struct {
+	// requestID is the approved session addition, if any.
+	requestID string
+	// reason is written to server.enable, such as first-call.
+	reason string
+	// lazy is true for an `onCall` server with a catalog list.
+	lazy bool
+}
+
 // enableInTransaction runs Enable steps 3 and 4: it adds the server to the
 // session's enabled set and returns the live instance, inserting a pending
 // one when there is none. requestID, when set, is the session addition's
 // access request, recorded with the allow. A serialization failure or
 // unique violation is retried once.
-func (m *metaTools) enableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string, lazy bool) (db.Instance, error) {
+func (m *metaTools) enableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, options enableOptions) (db.Instance, error) {
 	var instance db.Instance
 
 	attempt := func() error {
 		return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
 			var err error
 
-			instance, err = m.enableTx(ctx, tx, current, template, requestID, lazy)
+			instance, err = m.enableTx(ctx, tx, current, template, options)
 
 			return err
 		})
@@ -299,7 +310,7 @@ func (m *metaTools) enableInTransaction(ctx context.Context, current requestCont
 	return instance, err
 }
 
-func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string, lazy bool) (db.Instance, error) {
+func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate, options enableOptions) (db.Instance, error) {
 	queries := db.New(tx)
 
 	if err := m.lockSession(ctx, tx, current); err != nil {
@@ -309,6 +320,12 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 	enabled, err := m.isEnabled(ctx, queries, current.session.ID, template)
 	if err != nil {
 		return db.Instance{}, err
+	}
+
+	// A call that enables its server finds it already enabled when another
+	// call of the session got there first: that call wrote server.enable.
+	if enabled && options.reason == reasonFirstCall {
+		return db.Instance{}, nil
 	}
 
 	if !enabled {
@@ -329,7 +346,7 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 	}
 
 	var instance db.Instance
-	if lazy {
+	if options.lazy {
 		instance, err = m.retryInstance(ctx, queries, current, template)
 	} else {
 		instance, err = m.liveOrNewInstance(ctx, queries, current, template)
@@ -344,8 +361,12 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 		details["instance"] = instance.ID
 	}
 
-	if requestID != "" {
-		details[sessionAdditionRequest] = requestID
+	if options.requestID != "" {
+		details[sessionAdditionRequest] = options.requestID
+	}
+
+	if options.reason != "" {
+		details["reason"] = options.reason
 	}
 
 	return instance, m.recordEnable(ctx, tx, current, template, instance, details)

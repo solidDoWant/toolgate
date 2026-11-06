@@ -216,15 +216,22 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	server, exposed, _ := strings.Cut(request.Params.Name, toolSeparator)
 	tool := exposed
 
-	// Step 1: the server must be enabled in this session.
+	// Step 1: find the server and the tool. A server that isn't enabled in
+	// this session is still found, since a call of an allowed server enables
+	// it (docs/design/phase-4.md §4).
 	template, enabled, err := m.enabledTemplate(ctx, current, server)
 	if err != nil {
 		return nil, err
 	}
 
 	if !enabled {
-		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonNotEnabled},
-			fmt.Sprintf("Server `%s` isn't enabled in this session. Call `%s` first.", server, ToolEnableServer))
+		offered, offerErr := m.catalog.Offered(server)
+		if offerErr != nil {
+			return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonNotOffered},
+				fmt.Sprintf("Server `%s` has no tool `%s`.", server, exposed))
+		}
+
+		template = offered
 	}
 
 	// The exposed name maps to the upstream name from the template alone. A
@@ -240,6 +247,15 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	if !offered {
 		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonNotOffered},
 			fmt.Sprintf("Server `%s` has no tool `%s`.", server, exposed))
+	}
+
+	// Steps 2 and 3: a server that isn't enabled yet is enabled by the call
+	// when policy allows it.
+	if !enabled {
+		result, err := m.enableForCall(ctx, request, current, template, tool)
+		if result != nil || err != nil {
+			return result, err
+		}
 	}
 
 	// Step 2: its live instance must be ready. A call to an instance that is

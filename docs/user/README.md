@@ -70,9 +70,8 @@ If the grant form says that you have no access, or the grant does not match you,
 
 ## Tool calls
 
-When Claude calls a tool of a server, for example `test__echo`, the gateway sends the call to the server and returns the result. The gateway refuses a call in these cases:
+When Claude calls a tool of a server, for example `test__echo`, the gateway sends the call to the server and returns the result. You do not need to turn the server on first. If the server is allowed for you, the call turns it on. If it is not allowed in your workspace, the gateway asks you to allow it, in the same way as when Claude turns the server on. The gateway refuses a call in these cases:
 
-- The server is not turned on in this session. Turn it on with `toolgate_enable_server` first.
 - The server is not ready, for example because it failed. The error gives the status and the reason. `toolgate_server_status` shows them too.
 - A rule from your admin blocks the tool. The error gives the reason of the rule.
 - The request is larger than 4 MiB. Send smaller tool arguments.
