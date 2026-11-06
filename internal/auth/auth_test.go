@@ -435,7 +435,25 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 			name:           "[AC-1-10] missing session header on MCP requests",
 			requireSession: true,
 			headers:        map[string]string{},
+			wantStatus:     http.StatusOK,
+		},
+		{
+			name:           "session header with the reserved mcp. prefix on MCP requests",
+			requireSession: true,
+			headers:        map[string]string{"X-Toolgate-Session": "mcp.0123456789abcdef0123456789abcdef"},
 			wantStatus:     http.StatusBadRequest,
+		},
+		{
+			name:           "session header with the reserved mcp. prefix elsewhere",
+			requireSession: false,
+			headers:        map[string]string{"X-Toolgate-Session": "mcp.x"},
+			wantStatus:     http.StatusBadRequest,
+		},
+		{
+			name:           "session header that only contains mcp",
+			requireSession: true,
+			headers:        map[string]string{"X-Toolgate-Session": "mcpx.1"},
+			wantStatus:     http.StatusOK,
 		},
 		{
 			name:           "missing session header where it is not required",
@@ -540,9 +558,9 @@ func TestMCPRequestsThatNeedNoSessionHeader(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:       "a 2025-11-25 request other than server/discover",
+			name:       "a 2025-11-25 request goes on, for the MCP endpoint to tie to its MCP session",
 			headers:    map[string]string{"Mcp-Protocol-Version": "2025-11-25", "Mcp-Method": "tools/list"},
-			wantStatus: http.StatusBadRequest,
+			wantStatus: http.StatusOK,
 		},
 	}
 

@@ -94,6 +94,14 @@ spec:
 
 Change `parentRefs` and `hostnames` to the names of your cluster. The Service has the full name of the release, `toolgate` for a release named `toolgate`.
 
+## 5. Sessions and session affinity
+
+A connector does not send the `X-Toolgate-Session` header of the toolgate plugin. So the gateway ties the toolgate session of a connector to its MCP session (the `Mcp-Session-Id` header). Each connection has its own session, with its own enabled servers. The session has the claimed workspace `claimed/default`, so it is not verified. The settings for unverified sessions decide what it can use. In the audit log, its session ID is `mcp.` followed by the `Mcp-Session-Id`.
+
+The session ends when the connector deletes its MCP session, or when the MCP session has no requests for 30 minutes. The gateway then writes `session.end` and stops the per-session instances of the session. The session never resumes.
+
+Only the replica that started an MCP session knows it. If a request reaches another replica, or the replica stops, the connector gets HTTP 404 and connects again. It then gets a new session with no enabled servers. The old session ends after `sessionIdleTimeout`. To prevent this, configure session affinity on the `Mcp-Session-Id` header in the proxy in front of the gateway. For example, use an Istio `DestinationRule` with `consistentHash.httpHeaderName: Mcp-Session-Id`.
+
 ## What users need to know
 
 - Approval and step-up links point at `config.ui.publicURL`, which stays internal. A connector user opens these links in a browser that can reach the internal URL.

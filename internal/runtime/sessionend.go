@@ -99,14 +99,55 @@ func (e *SessionEnder) Run(ctx context.Context) error {
 // the resume window. If a request moved last_seen_at forward first, it does
 // nothing.
 func (e *SessionEnder) end(ctx context.Context, id int64, timeout pgtype.Interval) error {
-	err := pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
+	ended, err := endSession(ctx, e.Pool, e.output(), id, "idle", func(queries *db.Queries) (db.Session, error) {
+		return queries.EndIdleSession(ctx, db.EndIdleSessionParams{ID: id, IdleTimeout: timeout})
+	})
+	if err != nil {
+		return fmt.Errorf("end idle session %d: %w", id, err)
+	}
+
+	if ended {
+		e.Log.InfoContext(ctx, "session ended after idle timeout", slog.Int64("session", id))
+	}
+
+	return nil
+}
+
+// EndSession ends the live session id at once, with the same transaction as
+// an idle end: ended_at, session.end with its enabled servers and reason, the
+// session additions and pending requests, and a notification on
+// session:<id>. The gateway uses it for a session tied to an MCP session
+// that closed (docs/design/phase-4.md §9). A session that already ended is
+// left as it is.
+func EndSession(ctx context.Context, pool *pgxpool.Pool, auditOutput io.Writer, id int64, reason string) error {
+	if auditOutput == nil {
+		auditOutput = io.Discard
+	}
+
+	_, err := endSession(ctx, pool, auditOutput, id, reason, func(queries *db.Queries) (db.Session, error) {
+		return queries.EndLiveSession(ctx, id)
+	})
+	if err != nil {
+		return fmt.Errorf("end session %d: %w", id, err)
+	}
+
+	return nil
+}
+
+// endSession is the end transaction. update sets ended_at and returns the
+// row, or pgx.ErrNoRows when the session must not end; then nothing else is
+// done and ended is false.
+func endSession(ctx context.Context, pool *pgxpool.Pool, auditOutput io.Writer, id int64, reason string,
+	update func(queries *db.Queries) (db.Session, error),
+) (ended bool, err error) {
+	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
 		if _, err := queries.LockSession(ctx, id); err != nil {
 			return fmt.Errorf("lock session: %w", err)
 		}
 
-		ended, err := queries.EndIdleSession(ctx, db.EndIdleSessionParams{ID: id, IdleTimeout: timeout})
+		session, err := update(queries)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -120,19 +161,19 @@ func (e *SessionEnder) end(ctx context.Context, id int64, timeout pgtype.Interva
 			return err
 		}
 
-		err = audit.NewRecorder(e.output(), queries).Record(ctx, audit.Event{
+		err = audit.NewRecorder(auditOutput, queries).Record(ctx, audit.Event{
 			Type:        "session.end",
-			Principal:   ended.Principal,
-			Workspace:   ended.Workspace,
-			Session:     ended.SessionID,
-			Attestation: ended.Attestation,
-			Details:     map[string]any{"reason": "idle", "servers": servers},
+			Principal:   session.Principal,
+			Workspace:   session.Workspace,
+			Session:     session.SessionID,
+			Attestation: session.Attestation,
+			Details:     map[string]any{"reason": reason, "servers": servers},
 		})
 		if err != nil {
 			return err
 		}
 
-		if err := e.endSessionAdditions(ctx, tx, ended); err != nil {
+		if err := endSessionAdditions(ctx, tx, auditOutput, session); err != nil {
 			return err
 		}
 
@@ -140,15 +181,12 @@ func (e *SessionEnder) end(ctx context.Context, id int64, timeout pgtype.Interva
 			return err
 		}
 
-		e.Log.InfoContext(ctx, "session ended after idle timeout", slog.Int64("session", id))
+		ended = true
 
 		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("end idle session %d: %w", id, err)
-	}
 
-	return nil
+	return ended, err
 }
 
 // endSessionAdditions deletes the session additions of a session that is
@@ -156,7 +194,7 @@ func (e *SessionEnder) end(ctx context.Context, id int64, timeout pgtype.Interva
 // notifying approval:<id> for each, in the ending transaction
 // (docs/design/phase-3.md §10, "State"). A restart reuses the sessions row,
 // so nothing of the old session may apply to it.
-func (e *SessionEnder) endSessionAdditions(ctx context.Context, tx pgx.Tx, ended db.Session) error {
+func endSessionAdditions(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, ended db.Session) error {
 	queries := db.New(tx)
 
 	if err := queries.DeleteAllSessionAdditions(ctx, ended.ID); err != nil {
@@ -168,7 +206,7 @@ func (e *SessionEnder) endSessionAdditions(ctx context.Context, tx pgx.Tx, ended
 		return fmt.Errorf("expire server requests: %w", err)
 	}
 
-	recorder := audit.NewRecorder(e.output(), queries)
+	recorder := audit.NewRecorder(auditOutput, queries)
 
 	for _, request := range expired {
 		attestation := "user"

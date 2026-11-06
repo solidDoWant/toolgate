@@ -20,14 +20,17 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/solidDoWant/toolgate/internal/mcprequest"
 )
 
 // Header names and limits.
 const (
 	SessionHeader   = "X-Toolgate-Session"
 	WorkspaceHeader = "X-Toolgate-Workspace"
+
+	// MCPSessionPrefix starts the ID of a session tied to an MCP session,
+	// which the MCP endpoint makes for a client that sends no session
+	// header. A session header with it is refused.
+	MCPSessionPrefix = "mcp."
 
 	// MaxAuthorizationBytes bounds the Authorization header.
 	MaxAuthorizationBytes = 16 << 10
@@ -294,25 +297,34 @@ func (a *Authenticator) Collectors() []prometheus.Collector {
 
 // Middleware authenticates every request before next runs. A request without
 // a valid token gets 401. Then the identity headers are checked: a value not
-// matching `^[A-Za-z0-9._-]{1,128}$` gets 400, and so does a missing session
-// header when requireSession is set (MCP requests). The 401 of an MCP request
-// names the protected resource metadata, if it is set, so a standard MCP
-// client can find the IdP (docs/design/phase-4.md §9). next finds the
-// identity with IdentityFrom.
-func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.Handler {
+// matching `^[A-Za-z0-9._-]{1,128}$` gets 400, and so does a session header
+// starting with the reserved `mcp.` prefix, so a claimed session ID never
+// names a session tied to an MCP session. Set mcp for the MCP endpoint: its
+// session header is optional, and a request without it leaves
+// Identity.Session empty for the endpoint to fill in. The 401 of an MCP
+// request names the protected resource metadata, if it is set, so a
+// standard MCP client can find the IdP (docs/design/phase-4.md §9). next
+// finds the identity with IdentityFrom.
+func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		identity, claims, refusal := a.authenticate(request)
 		if refusal != nil {
 			a.refuse(request, *refusal)
-			writer.Header().Set("WWW-Authenticate", a.challenge(requireSession, refusal.Reason != reasonMissingToken))
+			writer.Header().Set("WWW-Authenticate", a.challenge(mcp, refusal.Reason != reasonMissingToken))
 			http.Error(writer, "Sign in again: run `toolgate login`.", http.StatusUnauthorized)
 
 			return
 		}
 
-		session, sessionSet, sessionValid := headerValue(request, SessionHeader)
-		if !sessionValid || (requireSession && !sessionSet && !sessionOptional(request)) {
-			http.Error(writer, "The X-Toolgate-Session header is missing or invalid. It must match ^[A-Za-z0-9._-]{1,128}$.", http.StatusBadRequest)
+		session, _, sessionValid := headerValue(request, SessionHeader)
+		if !sessionValid {
+			http.Error(writer, "The X-Toolgate-Session header is invalid. It must match ^[A-Za-z0-9._-]{1,128}$.", http.StatusBadRequest)
+
+			return
+		}
+
+		if strings.HasPrefix(session, MCPSessionPrefix) {
+			http.Error(writer, "The X-Toolgate-Session header can't start with `"+MCPSessionPrefix+"`: that prefix is reserved for sessions tied to an MCP session.", http.StatusBadRequest)
 
 			return
 		}
@@ -358,15 +370,6 @@ func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.
 
 		next.ServeHTTP(writer, request.WithContext(WithIdentity(request.Context(), identity)))
 	})
-}
-
-// sessionOptional reports whether an MCP request may come without the
-// session header here. A server/discover makes no session on any revision. A
-// 2026-07-28 request without one is refused by the MCP endpoint itself, with
-// a JSON-RPC error a dual-era client falls back on (docs/design/phase-4.md
-// §8).
-func sessionOptional(request *http.Request) bool {
-	return mcprequest.Stateless(request) || mcprequest.IsDiscover(request)
 }
 
 // reasonMissingToken is the refusal reason of a request that sent no bearer

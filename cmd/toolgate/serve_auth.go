@@ -66,7 +66,7 @@ func (l *lazyAuthenticator) get() (*auth.Authenticator, error) {
 
 // Middleware is auth.Authenticator.Middleware once the identity provider
 // was discovered; before that it refuses every request with 503.
-func (l *lazyAuthenticator) Middleware(next http.Handler, requireSession bool) http.Handler {
+func (l *lazyAuthenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 	var (
 		mu      sync.Mutex
 		guarded http.Handler
@@ -86,7 +86,7 @@ func (l *lazyAuthenticator) Middleware(next http.Handler, requireSession bool) h
 				return
 			}
 
-			handler = authenticator.Middleware(next, requireSession)
+			handler = authenticator.Middleware(next, mcp)
 
 			mu.Lock()
 			guarded = handler
