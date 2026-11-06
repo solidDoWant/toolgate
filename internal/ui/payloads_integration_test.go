@@ -45,7 +45,7 @@ func (e *uiEnv) insertPayloadEvent(t *testing.T, payloads *audit.Payloads, event
 	require.NoError(t, payloads.Attach(t.Context(), &event, payload))
 
 	at := time.Now().UTC().Truncate(time.Microsecond)
-	require.NoError(t, store.EnsureAuditPartitions(t.Context(), e.pool, at))
+	require.NoError(t, store.CreateAuditPartitions(t.Context(), e.pool, at))
 
 	var inline any
 	if event.Payload != nil {
@@ -70,7 +70,7 @@ func (e *uiEnv) insertInlinePayloadEvent(t *testing.T, principal, raw string) st
 	t.Helper()
 
 	at := time.Now().UTC().Truncate(time.Microsecond)
-	require.NoError(t, store.EnsureAuditPartitions(t.Context(), e.pool, at))
+	require.NoError(t, store.CreateAuditPartitions(t.Context(), e.pool, at))
 
 	var id int64
 

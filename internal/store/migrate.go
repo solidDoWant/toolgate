@@ -41,7 +41,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
 
-	return EnsureAuditPartitions(ctx, pool, time.Now())
+	return EnsureAuditPartitions(ctx, pool)
 }
 
 // SchemaVersions returns the highest migration version recorded in the
@@ -83,11 +83,25 @@ func newProvider(pool *pgxpool.Pool, options ...goose.ProviderOption) (*goose.Pr
 	return provider, closeDB, nil
 }
 
-// EnsureAuditPartitions creates the monthly audit_events partitions for the
-// month of now and the month after, if they don't exist. It is safe to run
-// from several gateways at once.
-func EnsureAuditPartitions(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
-	month := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+// EnsureAuditPartitions calls toolgate_ensure_audit_partitions(), which
+// creates the monthly audit_events partitions for the month of the database's
+// now() and the month after, if they don't exist. The function runs with its
+// owner's rights, so a role with data rights only can call it, and it is safe
+// to run from several gateways at once.
+func EnsureAuditPartitions(ctx context.Context, pool *pgxpool.Pool) error {
+	if _, err := pool.Exec(ctx, "SELECT toolgate_ensure_audit_partitions()"); err != nil {
+		return fmt.Errorf("ensure audit partitions: %w", err)
+	}
+
+	return nil
+}
+
+// CreateAuditPartitions creates the monthly audit_events partitions for the
+// month of at, in UTC, and the month after, if they don't exist. It needs
+// the right to create tables. Tests use it to hold rows dated in any month;
+// the gateway uses EnsureAuditPartitions.
+func CreateAuditPartitions(ctx context.Context, pool *pgxpool.Pool, at time.Time) error {
+	month := time.Date(at.UTC().Year(), at.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
 
 	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", int64(partitionLockKey)); err != nil {

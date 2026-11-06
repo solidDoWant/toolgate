@@ -43,6 +43,26 @@ The gateway writes each audit event as one line of JSON to its standard output, 
 
 The gateway deletes audit events that are older than 90 days. It deletes them in batches, once an hour.
 
+### Audit partitions
+
+The audit table in PostgreSQL has one partition (a part of the table) for each month. The gateway creates the partitions for this month and the next month when it starts. The replica that holds the leader Lease creates them again when it gets the Lease, and then every 24 hours. If the gateway cannot write an audit row, it refuses the tool call. So without a partition for the current month, every tool call fails.
+
+If a call to create the partitions fails, the leader logs an error and tries again after a delay. The delay starts at 1 second and doubles up to 5 minutes. Each failure adds 1 to the counter `toolgate_audit_partition_errors_total`.
+
+This Prometheus alert rule is an example:
+
+```yaml
+groups:
+  - name: toolgate-audit
+    rules:
+      - alert: ToolgateAuditPartitionErrors
+        expr: increase(toolgate_audit_partition_errors_total[1h]) > 0
+        annotations:
+          summary: The gateway cannot create the partitions of the audit table.
+```
+
+If the alert fires, read the error in the logs of the leader pod. The database creates the partitions with the rights of the role that ran the migrations. That role must still own the audit table.
+
 ### Store tool arguments and results
 
 The gateway can also store audit payloads. A payload is the arguments of a tool call or an approval request, or the result of a tool call. Payloads are off by default. To turn them on, set these chart values:

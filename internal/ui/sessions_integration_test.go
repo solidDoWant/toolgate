@@ -47,7 +47,7 @@ func (e *uiEnv) insertGatewaySession(t *testing.T, principal, sessionID string, 
 func (e *uiEnv) insertDecision(t *testing.T, eventType, principal, sessionID, tool string, at time.Time) {
 	t.Helper()
 
-	require.NoError(t, store.EnsureAuditPartitions(t.Context(), e.pool, at))
+	require.NoError(t, store.CreateAuditPartitions(t.Context(), e.pool, at))
 
 	_, err := e.pool.Exec(t.Context(),
 		`INSERT INTO audit_events (occurred_at, type, principal, session, server, tool, details)
