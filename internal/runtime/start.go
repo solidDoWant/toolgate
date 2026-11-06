@@ -287,8 +287,9 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 // failed: kstatus reports it failed, or its Ready condition has been False
 // for ReadyFailureHold at its generation. The Repairer then repairs it. An
 // object that is only in progress, such as a restarting pod, is left to the
-// health checks. When no object has failed, an unhealthy instance without a
-// custom health check becomes healthy again; with one, its checker decides.
+// health checks. When no object has failed, an unhealthy instance becomes
+// healthy again, unless a custom health check set that state: its checker
+// decides then.
 func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
 	template, found := s.template(instance)
 	if !found {
@@ -306,7 +307,8 @@ func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
 	case reason != "" && !unhealthy:
 		_, err = s.Store.SetHealth(ctx, instance, false, reason)
 	case reason == "" && unhealthy:
-		if _, custom, _ := decodeHealthCheck(instance.HealthCheck); custom {
+		// With a custom check, its checker clears the unhealthy state it set.
+		if _, custom, _ := decodeHealthCheck(instance.HealthCheck); custom && isCheckReason(instance.UnhealthyReason) {
 			return nil
 		}
 

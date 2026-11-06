@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
@@ -178,7 +179,9 @@ func (h *healthChecker) step(ctx context.Context) bool {
 		h.failures = 0
 		h.passes++
 
-		if unhealthy && h.passes >= h.check.SuccessThreshold {
+		// Only clear an unhealthy state this check set. One set by object
+		// health is cleared when the object is ready again.
+		if unhealthy && isCheckReason(current.UnhealthyReason) && h.passes >= h.check.SuccessThreshold {
 			h.passes = 0
 			h.setHealth(ctx, current, true, "")
 		}
@@ -211,11 +214,11 @@ func (h *healthChecker) probe(ctx context.Context) string {
 
 	status, err := probe(probeCtx, h.check.url(h.instance.Namespace))
 	if err != nil {
-		return fmt.Sprintf("GET %s failed: %v", h.check.shownURL(), err)
+		return fmt.Sprintf(checkReasonPrefix+"%s failed: %v", h.check.shownURL(), err)
 	}
 
 	if status != int(h.check.HTTP.ExpectedStatus) {
-		return fmt.Sprintf("GET %s answered %d, expected %d", h.check.shownURL(), status, h.check.HTTP.ExpectedStatus)
+		return fmt.Sprintf(checkReasonPrefix+"%s answered %d, expected %d", h.check.shownURL(), status, h.check.HTTP.ExpectedStatus)
 	}
 
 	return ""
@@ -226,4 +229,13 @@ func (h *healthChecker) setHealth(ctx context.Context, current db.Instance, heal
 		h.monitor.logger().WarnContext(ctx, "recording instance health", slog.String("instance", h.instance.ID),
 			slog.String("error", err.Error()))
 	}
+}
+
+// checkReasonPrefix starts every unhealthy reason the custom check writes.
+// It tells those reasons apart from the ones object health writes.
+const checkReasonPrefix = "GET "
+
+// isCheckReason reports whether reason was written by the custom check.
+func isCheckReason(reason string) bool {
+	return strings.HasPrefix(reason, checkReasonPrefix)
 }

@@ -925,6 +925,7 @@ func TestStarterReadyObjectHealth(t *testing.T) {
 		// wantUnhealthy and wantReason are the health after the step.
 		wantUnhealthy bool
 		wantReason    string
+		objectReason  string
 	}{
 		{
 			name:          "Ready False for exactly 60 s at the condition's generation marks it unhealthy with the object's message",
@@ -971,6 +972,14 @@ func TestStarterReadyObjectHealth(t *testing.T) {
 			wantUnhealthy: true,
 			wantReason:    "GET http://mcp:8080/healthz answered 503, expected 200",
 		},
+		{
+			name:         "ready again: an instance a custom check did not mark becomes healthy",
+			pod:          readyPod(),
+			release:      helmRelease(2, atGeneration(condition("Ready", "True", "UpgradeSucceeded", "upgraded", time.Second), 2)),
+			unhealthy:    true,
+			objectReason: "HelmRelease server failed: out of retries",
+			healthCheck:  customCheck,
+		},
 	}
 
 	for _, test := range tests {
@@ -981,6 +990,11 @@ func TestStarterReadyObjectHealth(t *testing.T) {
 			if test.unhealthy {
 				fixture.store.unhealthy = true
 				fixture.store.unhealthyReason = "GET http://mcp:8080/healthz answered 503, expected 200"
+
+				if test.objectReason != "" {
+					fixture.store.unhealthyReason = test.objectReason
+				}
+
 				fixture.instance.UnhealthySince = pgtype.Timestamptz{Time: fixture.now.Add(-time.Minute), Valid: true}
 				fixture.instance.UnhealthyReason = fixture.store.unhealthyReason
 			}
