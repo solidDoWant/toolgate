@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -54,6 +55,10 @@ type PostgresStartStore struct {
 	// declares its tools. The gateway then learns nothing from the
 	// instance. Nil means no template declares tools.
 	DeclaresTools func(instance db.Instance) bool
+	// RunningTemplate returns the last valid generation of the template an
+	// instance runs from. Each learned list rebuilds the template's search
+	// rows from it. Nil means no rows are rebuilt here.
+	RunningTemplate func(instance db.Instance) (*v1alpha1.MCPServerTemplate, bool)
 }
 
 // Session implements StartStore.
@@ -196,7 +201,7 @@ func (s PostgresStartStore) change(ctx context.Context, id string, update func(*
 // same transaction it stores the list as the catalog row of the instance's
 // template generation, unless the template declares tools.
 func (s PostgresStartStore) changeAndLearn(ctx context.Context, id string, tools []byte, update func(*db.Queries) (int64, error)) (bool, error) {
-	return s.changeWith(ctx, id, update, func(queries *db.Queries) error {
+	return s.changeWith(ctx, id, update, func(tx pgx.Tx, queries *db.Queries) error {
 		instance, err := queries.GetInstance(ctx, id)
 		if err != nil {
 			return fmt.Errorf("get instance %s: %w", id, err)
@@ -206,8 +211,6 @@ func (s PostgresStartStore) changeAndLearn(ctx context.Context, id string, tools
 			return nil
 		}
 
-		// The search rows of the template are rebuilt here, in the same
-		// transaction, once tool search exists.
 		if err := queries.UpsertToolCatalog(ctx, db.UpsertToolCatalogParams{
 			TemplateUid: instance.TemplateUid, Generation: instance.Generation,
 			TemplateNs: instance.TemplateNs, TemplateName: instance.TemplateName,
@@ -216,11 +219,20 @@ func (s PostgresStartStore) changeAndLearn(ctx context.Context, id string, tools
 			return fmt.Errorf("learn tools of instance %s: %w", id, err)
 		}
 
-		return nil
+		if s.RunningTemplate == nil {
+			return nil
+		}
+
+		template, found := s.RunningTemplate(instance)
+		if !found {
+			return nil
+		}
+
+		return RebuildToolSearch(ctx, tx, instance.TemplateUid, template)
 	})
 }
 
-func (s PostgresStartStore) changeWith(ctx context.Context, id string, update func(*db.Queries) (int64, error), afterChange func(*db.Queries) error) (bool, error) {
+func (s PostgresStartStore) changeWith(ctx context.Context, id string, update func(*db.Queries) (int64, error), afterChange func(pgx.Tx, *db.Queries) error) (bool, error) {
 	changed := false
 
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
@@ -236,7 +248,7 @@ func (s PostgresStartStore) changeWith(ctx context.Context, id string, update fu
 		changed = true
 
 		if afterChange != nil {
-			if err := afterChange(db.New(tx)); err != nil {
+			if err := afterChange(tx, db.New(tx)); err != nil {
 				return err
 			}
 		}

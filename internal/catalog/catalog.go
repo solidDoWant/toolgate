@@ -286,3 +286,20 @@ func (c *Catalog) Running(key types.NamespacedName) (*v1alpha1.MCPServerTemplate
 
 	return current.lastValid.DeepCopy(), true
 }
+
+// LastValidByUID returns a copy of the last valid generation of every
+// template that has one, keyed by UID.
+func (c *Catalog) LastValidByUID() map[string]*v1alpha1.MCPServerTemplate {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	valid := make(map[string]*v1alpha1.MCPServerTemplate, len(c.entries))
+
+	for key, current := range c.entries {
+		if current.lastValid != nil && key.Name != ReservedServerName {
+			valid[string(current.lastValid.UID)] = current.lastValid.DeepCopy()
+		}
+	}
+
+	return valid
+}

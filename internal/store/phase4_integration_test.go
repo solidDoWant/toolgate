@@ -147,14 +147,14 @@ func TestPhase4Tables(t *testing.T) {
 	require.Len(t, catalog, 1)
 	assert.EqualValues(t, 2, catalog[0].Generation)
 
-	require.NoError(t, queries.UpsertToolSearch(ctx, db.UpsertToolSearchParams{
+	require.NoError(t, queries.InsertToolSearch(ctx, db.InsertToolSearchParams{
 		TemplateUid: "uid-1", TemplateNs: "ns", TemplateName: "gh", SourceGeneration: 2,
-		UpstreamName: "create_issue", ExposedName: "gh__create_issue", Document: "create issue in a repository",
+		UpstreamName: "create_issue", ExposedName: "gh__create_issue", NamePart: "create issue", DescriptionPart: "create issue in a repository",
 	}))
 
 	var matches int
 	require.NoError(t, pool.QueryRow(ctx,
-		"SELECT count(*) FROM tool_search WHERE document @@ plainto_tsquery('simple', 'repository')").Scan(&matches))
+		"SELECT count(*) FROM tool_search WHERE document @@ plainto_tsquery('english', 'repository')").Scan(&matches))
 	assert.Equal(t, 1, matches)
 
 	// Found tools and the unverified list.

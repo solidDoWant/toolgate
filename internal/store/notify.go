@@ -27,6 +27,9 @@ const (
 	// KindScope names a user_scopes row by its ID: the user's defaults,
 	// lists or session additions changed.
 	KindScope = "scope"
+	// KindToolSearch names a template by its UID: the leader rebuilt the
+	// template's tool search rows.
+	KindToolSearch = "toolsearch"
 )
 
 const (

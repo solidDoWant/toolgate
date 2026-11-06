@@ -54,9 +54,40 @@ func (c *CatalogCleaner) Run(ctx context.Context) error {
 		}
 	}
 
+	if err := c.deleteSearchRows(ctx, existing); err != nil {
+		problems = append(problems, err)
+	}
+
 	if _, err := c.Queries.DeleteToolCatalogOlderThanNewestTwo(ctx); err != nil {
 		problems = append(problems, fmt.Errorf("delete old tool catalog generations: %w", err))
 	}
 
 	return errors.Join(problems...)
+}
+
+// deleteSearchRows deletes the tool search rows of templates that no longer
+// exist.
+func (c *CatalogCleaner) deleteSearchRows(ctx context.Context, existing map[string]bool) error {
+	stored, err := c.Queries.ListToolSearchUIDs(ctx)
+	if err != nil {
+		return fmt.Errorf("list tool search templates: %w", err)
+	}
+
+	var gone []string
+
+	for _, uid := range stored {
+		if !existing[uid] {
+			gone = append(gone, uid)
+		}
+	}
+
+	if len(gone) == 0 {
+		return nil
+	}
+
+	if _, err := c.Queries.DeleteToolSearchOfTemplates(ctx, gone); err != nil {
+		return fmt.Errorf("delete tool search of removed templates: %w", err)
+	}
+
+	return nil
 }
