@@ -48,6 +48,36 @@ func (q *Queries) CountLiveEnablers(ctx context.Context, arg CountLiveEnablersPa
 	return count, err
 }
 
+const countOpenSessionsByAttestation = `-- name: CountOpenSessionsByAttestation :many
+SELECT attestation, count(*) AS total FROM sessions WHERE ended_at IS NULL GROUP BY attestation
+`
+
+type CountOpenSessionsByAttestationRow struct {
+	Attestation string
+	Total       int64
+}
+
+// Counts sessions that have not ended, by attestation, for the open-session gauge.
+func (q *Queries) CountOpenSessionsByAttestation(ctx context.Context) ([]CountOpenSessionsByAttestationRow, error) {
+	rows, err := q.db.Query(ctx, countOpenSessionsByAttestation)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountOpenSessionsByAttestationRow{}
+	for rows.Next() {
+		var i CountOpenSessionsByAttestationRow
+		if err := rows.Scan(&i.Attestation, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countSessionServers = `-- name: CountSessionServers :one
 SELECT count(*) FROM session_servers WHERE session_pk = $1
 `

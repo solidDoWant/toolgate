@@ -139,3 +139,7 @@ USING sessions s
 WHERE ss.session_pk = @id AND s.id = ss.session_pk
   AND s.ended_at IS NOT NULL AND s.ended_at < now() - @resume_window::interval
 RETURNING ss.template_name;
+
+-- name: CountOpenSessionsByAttestation :many
+-- Counts sessions that have not ended, by attestation, for the open-session gauge.
+SELECT attestation, count(*) AS total FROM sessions WHERE ended_at IS NULL GROUP BY attestation;
