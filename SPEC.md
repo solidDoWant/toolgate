@@ -313,7 +313,7 @@ Each phase ends with a release an admin can deploy: image `ghcr.io/soliddowant/t
 
 1. **Core gateway** (`docs/acceptance/phase-1.md`). Sign-in from Claude Code and pods, the meta tools, templates of plain Kubernetes objects, all three scopes, per-user secrets through the CLI, standing block rules, settings sync, audit log, gateway traces, chart and CLI release.
 2. **Security model and web UI** (`docs/acceptance/phase-2.md`). Web UI, grants with step-up, approvals through elicitation, temporary blocks, per-tool rules in full, HelmRelease templates, resolvers, S3 payloads, instance restart.
-3. **SaaS servers and telemetry** (`docs/acceptance/phase-3.md`). Remote MCP servers with per-user OAuth brokered by toolgate, OTLP ingest with identity stamping, SPIFFE JWT-SVID attestation, CLI audit and session commands.
+3. **Telemetry, attestation and operations** (`docs/acceptance/phase-3.md`). OTLP ingest with identity stamping, SPIFFE JWT-SVID attestation, CLI audit and session commands, custom health checks for running instances, and an optional migration Job with a separate database credential. Remote MCP servers with per-user OAuth are deferred to the backlog.
 
 A phase's design (`docs/design/phase-N.md`, with its interaction table) is reviewed before its issues are filed.
 
