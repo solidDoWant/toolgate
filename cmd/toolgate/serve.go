@@ -137,11 +137,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	engine := &policy.Engine{Rules: rules}
 	ruleView := &ruleLister{}
 
+	workspaces := gateway.NewWorkspaces(server.Database(), templates, stdout, time.Duration(cfg.ApprovalTimeout))
+
 	if cfg.UIEnabled() {
 		engine.GrantURL = ui.GrantLink(cfg.PublicURL)
 
 		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), ruleView,
-			gateway.NewGrants(server.Database(), templates, stdout), broker, payloads, stdout, logger); err != nil {
+			gateway.NewGrants(server.Database(), templates, stdout), workspaces, broker, payloads, stdout, logger); err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
 			return 1
@@ -156,7 +158,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}
 
 	(&workspacesapi.Handler{
-		Workspaces:  gateway.NewWorkspaces(server.Database(), templates, stdout, time.Duration(cfg.ApprovalTimeout)),
+		Workspaces:  workspaces,
 		Enabled:     cfg.UIEnabled(),
 		ApprovalURL: approvalURL,
 		Log:         logger,
@@ -439,7 +441,7 @@ const maxClientSecretBytes = 4 << 10
 
 // registerUI serves the web UI under `/ui/` and `GET /`. It reads the UI
 // client's secret, when one is configured, before the gateway starts.
-func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, rules ui.RuleSource, grants ui.GrantSource, broker *secrets.Broker, payloads *audit.Payloads, stdout io.Writer, logger *slog.Logger) error {
+func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSource, rules ui.RuleSource, grants ui.GrantSource, workspaces ui.WorkspaceSource, broker *secrets.Broker, payloads *audit.Payloads, stdout io.Writer, logger *slog.Logger) error {
 	var clientSecret string
 
 	if cfg.OIDCUIClientSecretFile != "" {
@@ -470,6 +472,7 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 			logger:   logger,
 		},
 		Grants:          grants,
+		Workspaces:      workspaces,
 		Logger:          logger,
 		Servers:         servers,
 		Pool:            server.Database(),
