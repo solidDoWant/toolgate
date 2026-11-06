@@ -81,6 +81,13 @@ func RuntimeDir() (string, error) {
 	return filepath.Join(cacheDir, tokenstore.DirName, "run"), nil
 }
 
+// ErrSignInAgain is returned by AccessToken when the IdP refuses the stored
+// refresh token, because it expired or was revoked.
+var ErrSignInAgain = errors.New("the IdP ended this sign-in")
+
+// SignInAgainMessage is what the commands print for ErrSignInAgain.
+const SignInAgainMessage = "Sign in again: run `toolgate login`."
+
 // AccessToken uses the stored refresh token to get a new access token from
 // the IdP the CLI signed in with. When the IdP rotates the refresh token, the
 // new one is stored.
@@ -111,6 +118,11 @@ func AccessToken(ctx context.Context, httpClient *http.Client, settings login.Se
 
 	token, err := config.TokenSource(ctx, &oauth2.Token{RefreshToken: refreshToken}).Token()
 	if err != nil {
+		var retrieveErr *oauth2.RetrieveError
+		if errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "invalid_grant" {
+			return "", fmt.Errorf("%w: %w", ErrSignInAgain, err)
+		}
+
 		return "", fmt.Errorf("refresh the access token: %w", err)
 	}
 

@@ -30,14 +30,64 @@ const (
 // ErrNotFound is returned by Load when no token is stored.
 var ErrNotFound = errors.New("no refresh token stored")
 
-// Store saves, loads and deletes the refresh token.
-type Store struct {
-	dir string
+// Mode says where a Store keeps the refresh token.
+type Mode string
+
+const (
+	// ModeAuto tries the keychain and falls back to the file. Loading reads
+	// the keychain first and then the file. An empty Mode means ModeAuto.
+	ModeAuto Mode = "auto"
+	// ModeKeychain uses only the OS keychain.
+	ModeKeychain Mode = "keychain"
+	// ModeFile uses only the file.
+	ModeFile Mode = "file"
+)
+
+// ParseMode checks that value names a Mode. The empty string is ModeAuto.
+func ParseMode(value string) (Mode, error) {
+	switch Mode(value) {
+	case "", ModeAuto:
+		return ModeAuto, nil
+	case ModeKeychain:
+		return ModeKeychain, nil
+	case ModeFile:
+		return ModeFile, nil
+	default:
+		return "", fmt.Errorf("unknown token store %q: use auto, keychain or file", value)
+	}
 }
 
-// New returns a Store whose fallback file lives in dir.
+// Store saves, loads and deletes the refresh token.
+type Store struct {
+	dir  string
+	mode Mode
+	used Mode
+}
+
+// New returns a Store in ModeAuto whose file lives in dir.
 func New(dir string) *Store {
-	return &Store{dir: dir}
+	return NewWithMode(dir, ModeAuto)
+}
+
+// NewWithMode returns a Store that keeps the token as mode says, with its
+// file in dir. An empty mode means ModeAuto.
+func NewWithMode(dir string, mode Mode) *Store {
+	if mode == "" {
+		mode = ModeAuto
+	}
+
+	return &Store{dir: dir, mode: mode}
+}
+
+// Used returns the place the last Save wrote to: ModeKeychain or ModeFile.
+// It is empty before a Save succeeds.
+func (s *Store) Used() Mode {
+	return s.used
+}
+
+// Path returns the token file's path.
+func (s *Store) Path() string {
+	return s.path()
 }
 
 // Default returns a Store whose fallback file lives in os.UserConfigDir()/toolgate.
@@ -54,14 +104,28 @@ func (s *Store) path() string {
 	return filepath.Join(s.dir, FileName)
 }
 
-// Save stores token in the keychain. If the keychain can't be used, it writes
-// the token to the fallback file with mode 0600 instead.
+// ErrKeychainUnusable is returned when a Store in ModeKeychain can't reach
+// the OS keychain.
+var ErrKeychainUnusable = errors.New("the OS keychain is not usable; sign in again with `toolgate login --token-store file`")
+
+// Save stores token as the Store's mode says. In ModeAuto it tries the
+// keychain and, if that can't be used, writes the file with mode 0600.
 func (s *Store) Save(token string) error {
 	if token == "" {
 		return errors.New("refresh token is empty")
 	}
 
-	if err := keyring.Set(KeychainService, KeychainUser, token); err == nil {
+	if s.mode == ModeFile {
+		return s.saveFile(token)
+	}
+
+	err := keyring.Set(KeychainService, KeychainUser, token)
+	if err != nil && s.mode == ModeKeychain {
+		return fmt.Errorf("%w: %w", ErrKeychainUnusable, err)
+	}
+
+	if err == nil {
+		s.used = ModeKeychain
 		// A file left from a time without a keychain holds an older token.
 		// Remove it so the keychain holds the only copy.
 		if err := os.Remove(s.path()); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -71,7 +135,17 @@ func (s *Store) Save(token string) error {
 		return nil
 	}
 
-	return s.writeFile(token)
+	return s.saveFile(token)
+}
+
+func (s *Store) saveFile(token string) error {
+	if err := s.writeFile(token); err != nil {
+		return err
+	}
+
+	s.used = ModeFile
+
+	return nil
 }
 
 // writeFile writes token to the fallback file atomically, so a reader never
@@ -113,11 +187,23 @@ func (s *Store) writeFile(token string) error {
 	return nil
 }
 
-// Load returns the stored token, from the keychain first and then from the
-// fallback file. It returns ErrNotFound when neither holds one.
+// Load returns the stored token. In ModeAuto it reads the keychain first and
+// then the file; in the other modes only the store the mode names. It returns
+// ErrNotFound when that place holds none.
 func (s *Store) Load() (string, error) {
-	if token, err := keyring.Get(KeychainService, KeychainUser); err == nil && token != "" {
-		return token, nil
+	if s.mode != ModeFile {
+		token, err := keyring.Get(KeychainService, KeychainUser)
+		if err == nil && token != "" {
+			return token, nil
+		}
+
+		if s.mode == ModeKeychain {
+			if err == nil || errors.Is(err, keyring.ErrNotFound) {
+				return "", ErrNotFound
+			}
+
+			return "", fmt.Errorf("%w: %w", ErrKeychainUnusable, err)
+		}
 	}
 
 	content, err := os.ReadFile(s.path())

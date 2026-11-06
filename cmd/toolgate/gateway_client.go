@@ -50,7 +50,7 @@ func signedInGateway(ctx context.Context) (gatewayAccess, error) {
 		return gatewayAccess{}, err
 	}
 
-	accessToken, err := headers.AccessToken(ctx, nil, settings, tokenstore.New(dir))
+	accessToken, err := headers.AccessToken(ctx, nil, settings, tokenStoreFor(dir, settings))
 	if errors.Is(err, tokenstore.ErrNotFound) {
 		return gatewayAccess{}, errNotSignedIn
 	}

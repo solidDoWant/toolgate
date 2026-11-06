@@ -34,6 +34,7 @@ func signIn(args []string, stdout, stderr io.Writer) int {
 	issuer := flags.String("issuer", "", "IdP issuer URL, instead of the gateway's (for testing)")
 	clientID := flags.String("client-id", "", "IdP client ID, instead of the gateway's (for testing)")
 	scopes := flags.String("scopes", "", "space-separated scopes, instead of the gateway's (for testing)")
+	tokenStore := flags.String("token-store", os.Getenv(tokenStoreEnv), "where to keep the refresh token: auto, keychain or file (env "+tokenStoreEnv+")")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -45,7 +46,20 @@ func signIn(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if err := runSignIn(*gateway, *issuer, *clientID, strings.Fields(*scopes), stdout); err != nil {
+	mode, err := tokenstore.ParseMode(*tokenStore)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "toolgate login: %v\n", err)
+
+		return 2
+	}
+
+	if err := runSignIn(*gateway, *issuer, *clientID, strings.Fields(*scopes), mode, stdout); err != nil {
+		if errors.Is(err, login.ErrCodeExpired) {
+			_, _ = fmt.Fprintln(stderr, err)
+
+			return 1
+		}
+
 		_, _ = fmt.Fprintf(stderr, "toolgate login: %v\n", err)
 
 		return 1
@@ -54,7 +68,7 @@ func signIn(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runSignIn(gateway, issuer, clientID string, scopes []string, stdout io.Writer) error {
+func runSignIn(gateway, issuer, clientID string, scopes []string, mode tokenstore.Mode, stdout io.Writer) error {
 	dir, err := configDir()
 	if err != nil {
 		return err
@@ -72,13 +86,15 @@ func runSignIn(gateway, issuer, clientID string, scopes []string, stdout io.Writ
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	store := tokenstore.NewWithMode(dir, mode)
+
 	settings, err := login.Run(ctx, login.Options{
 		Gateway:  gateway,
 		Issuer:   issuer,
 		ClientID: clientID,
 		Scopes:   scopes,
 		Prompt:   stdout,
-		Tokens:   tokenstore.New(dir),
+		Tokens:   store,
 	})
 	if err != nil {
 		return err
@@ -88,7 +104,14 @@ func runSignIn(gateway, issuer, clientID string, scopes []string, stdout io.Writ
 		return err
 	}
 
-	_, _ = fmt.Fprintf(stdout, "Signed in as %s.\n", displayName(settings))
+	where := "the OS keychain"
+	if store.Used() == tokenstore.ModeFile {
+		where = store.Path()
+	}
+
+	_, _ = fmt.Fprintf(stdout, "Signed in as %s (sub %s).\nThe refresh token is stored in %s.\n"+
+		"Sessions on this machine act as you until the IdP ends this sign-in or you run `toolgate logout`.\n",
+		displayName(settings), shortSubject(settings.Subject), where)
 
 	return nil
 }
@@ -104,7 +127,7 @@ func status(stdout, stderr io.Writer) int {
 
 	settings, err := login.LoadSettings(dir)
 	if err == nil {
-		_, err = tokenstore.New(dir).Load()
+		_, err = tokenStoreFor(dir, settings).Load()
 	}
 
 	if errors.Is(err, login.ErrNotSignedIn) || errors.Is(err, tokenstore.ErrNotFound) {
@@ -135,6 +158,33 @@ func emailDisplay(settings login.Settings) string {
 	}
 
 	return settings.Email + " (unverified)"
+}
+
+// tokenStoreEnv names the environment variable that sets login's
+// --token-store.
+const tokenStoreEnv = "TOOLGATE_TOKEN_STORE"
+
+// tokenStoreFor returns the store the sign-in saved in settings. A sign-in
+// from before settings named a store keeps the keychain-then-file behaviour.
+func tokenStoreFor(dir string, settings login.Settings) *tokenstore.Store {
+	mode, err := tokenstore.ParseMode(settings.TokenStore)
+	if err != nil {
+		mode = tokenstore.ModeAuto
+	}
+
+	return tokenstore.NewWithMode(dir, mode)
+}
+
+// shortSubject shortens a long subject for display.
+func shortSubject(subject string) string {
+	const keep = 4
+
+	runes := []rune(subject)
+	if len(runes) <= 2*keep {
+		return subject
+	}
+
+	return string(runes[:keep]) + "…"
 }
 
 func displayName(settings login.Settings) string {

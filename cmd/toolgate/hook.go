@@ -100,7 +100,7 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 	if err == nil {
 		var accessToken string
 
-		accessToken, err = headers.AccessToken(ctx, nil, clientSettings, tokenstore.New(dir))
+		accessToken, err = headers.AccessToken(ctx, nil, clientSettings, tokenStoreFor(dir, clientSettings))
 		if err == nil {
 			notes = append(notes, syncSettings(ctx, clientSettings.Gateway, accessToken, dir)...)
 

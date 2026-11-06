@@ -49,6 +49,9 @@ type OIDCOptions struct {
 	// OmitAuthTime makes the provider leave auth_time out of the ID tokens
 	// of the UI's sign-ins, as some IdPs do.
 	OmitAuthTime bool
+	// DeviceCodeLifetime is how long a device code stays valid. Default
+	// 5 minutes.
+	DeviceCodeLifetime time.Duration
 }
 
 // OIDCUser is a user of the fake OIDC provider.
@@ -154,6 +157,11 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		authRequests: &uiAuthRequests{authTimes: map[string]time.Time{}},
 	}
 
+	deviceLifetime := options.DeviceCodeLifetime
+	if deviceLifetime == 0 {
+		deviceLifetime = 5 * time.Minute
+	}
+
 	config := &op.Config{
 		CryptoKey:      sha256.Sum256([]byte("toolgate fake OIDC provider")),
 		CodeMethodS256: true,
@@ -161,7 +169,7 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		GrantTypeRefreshToken: true,
 		SupportedUILocales:    []language.Tag{language.English},
 		DeviceAuthorization: op.DeviceAuthorizationConfig{
-			Lifetime:     5 * time.Minute,
+			Lifetime:     deviceLifetime,
 			PollInterval: time.Second,
 			UserFormPath: "/device",
 			UserCode:     op.UserCodeBase20,
@@ -192,6 +200,19 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		storage:    store,
 		server:     server,
 	}, nil
+}
+
+// RevokeRefreshTokens makes the provider refuse every refresh token of
+// subject from now on, as an IdP does when an admin ends a user's sign-ins.
+func (p *OIDCProvider) RevokeRefreshTokens(subject string) {
+	p.storage.revokedMu.Lock()
+	defer p.storage.revokedMu.Unlock()
+
+	if p.storage.revoked == nil {
+		p.storage.revoked = map[string]bool{}
+	}
+
+	p.storage.revoked[subject] = true
 }
 
 // Close stops the provider.
@@ -417,6 +438,9 @@ type oidcStorage struct {
 	uiClient     *uiClient
 	omitAuthTime bool
 	authRequests *uiAuthRequests
+
+	revokedMu sync.Mutex
+	revoked   map[string]bool
 }
 
 func (s *oidcStorage) GetClientByClientID(_ context.Context, clientID string) (op.Client, error) {
@@ -438,6 +462,14 @@ func (s *oidcStorage) TokenRequestByRefreshToken(ctx context.Context, refreshTok
 	request, err := s.Storage.TokenRequestByRefreshToken(ctx, refreshToken)
 	if err != nil {
 		return nil, err
+	}
+
+	s.revokedMu.Lock()
+	revoked := s.revoked[request.GetSubject()]
+	s.revokedMu.Unlock()
+
+	if revoked {
+		return nil, errors.New("refresh token revoked")
 	}
 
 	if request.GetClientID() != "" {

@@ -247,7 +247,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 
 | Command | Phase | What it does |
 |---|---|---|
-| `toolgate login [--gateway URL]` | 1 | Device-code sign-in, stores the refresh token. It learns the IdP from the gateway's `/.well-known/toolgate-client` |
+| `toolgate login [--gateway URL] [--token-store auto\|keychain\|file]` | 1 | Device-code sign-in, stores the refresh token. It learns the IdP from the gateway's `/.well-known/toolgate-client`. The store used is saved in `config.json` as `tokenStore` and is the only store later runs use (`TOOLGATE_TOKEN_STORE` sets the flag; phase 3 design §10) |
 | `toolgate logout`, `toolgate status` | 1 | |
 | `toolgate headers` | 1 | `headersHelper` output: `Authorization`, `X-Toolgate-Session` (from the file the SessionStart hook writes), `X-Toolgate-Workspace` |
 | `toolgate hook session-start` | 1 | SessionStart hook: check sign-in, fetch the settings profile, merge it, print context |
