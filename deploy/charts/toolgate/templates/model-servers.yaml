@@ -1,17 +1,15 @@
 {{- /*
-The optional embeddings and rerank servers of tool search: a model cache
-claim, a hook Job that downloads each model at a pinned revision, and a
+The optional embeddings server of tool search: a model cache claim, a hook
+Job that downloads the model at a pinned revision, and a
 Deployment and Service that run text-embeddings-inference offline from the
 downloaded directory. No NetworkPolicy: cluster admins add that.
 */ -}}
 {{- $values := .Values.embeddings -}}
 {{- $servers := list -}}
 {{- if $values.server.enabled }}{{ $servers = append $servers (dict "key" "server" "name" "embeddings" "dir" "embeddings") }}{{ end -}}
-{{- if $values.reranker.enabled }}{{ $servers = append $servers (dict "key" "reranker" "name" "reranker" "dir" "reranker") }}{{ end -}}
 {{- if $servers }}
 {{- $claim := include "toolgate.modelClaim" . -}}
 {{- if not $values.server.cache.existingClaim }}
-{{- if not (and $values.reranker.enabled $values.reranker.cache.existingClaim (not $values.server.enabled)) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -32,12 +30,10 @@ spec:
   storageClassName: {{ . }}
   {{- end }}
 {{- end }}
-{{- end }}
 {{- range $entry := $servers }}
 {{- $server := index $values $entry.key }}
 {{- $fullname := printf "%s-%s" (include "toolgate.fullname" $) $entry.name }}
 {{- $claimName := $claim }}
-{{- if and (eq $entry.key "reranker") $values.reranker.cache.existingClaim }}{{ $claimName = $values.reranker.cache.existingClaim }}{{ end }}
 {{- if not (regexMatch "^[0-9a-f]{40}$" (toString $server.modelRevision)) }}
 {{- fail (printf "embeddings.%s.modelRevision must be a full 40-character commit SHA of the model repository" $entry.key) }}
 {{- end }}

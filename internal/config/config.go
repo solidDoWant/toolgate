@@ -304,28 +304,6 @@ type Config struct {
 	// seconds. A search that runs out of time uses words only.
 	ToolSearchEmbeddingsTimeout Duration `json:"toolSearchEmbeddingsTimeout" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_TIMEOUT"`
 
-	// The base URL of a rerank endpoint (`POST <url>/rerank`, the Hugging
-	// Face text-embeddings-inference route), such as a second instance of that
-	// server that serves `BAAI/bge-reranker-base`. If it is set, each search
-	// sends the query and the 20 best tools to it and returns the best 5 in
-	// its order. If it is empty, there is no reranking. `toolSearchRerankModel`
-	// is then required. The chart sets it from `config.toolSearchRerank.url`.
-	ToolSearchRerankURL string `json:"toolSearchRerankURL" env:"TOOLGATE_TOOL_SEARCH_RERANK_URL"`
-
-	// The model name of the rerank endpoint, such as
-	// `BAAI/bge-reranker-base`.
-	ToolSearchRerankModel string `json:"toolSearchRerankModel" env:"TOOLGATE_TOOL_SEARCH_RERANK_MODEL"`
-
-	// The path of a file that holds an API key for the rerank endpoint, sent
-	// as `Authorization: Bearer`. Mount it from a Kubernetes Secret. Empty
-	// means no key.
-	ToolSearchRerankAPIKeyFile string `json:"toolSearchRerankAPIKeyFile" env:"TOOLGATE_TOOL_SEARCH_RERANK_API_KEY_FILE"`
-
-	// How long one request to the rerank endpoint may take. Write it as a Go
-	// duration, such as `2s`. It must be from 100 milliseconds to 30 seconds.
-	// A search that runs out of time returns the order without reranking.
-	ToolSearchRerankTimeout Duration `json:"toolSearchRerankTimeout" env:"TOOLGATE_TOOL_SEARCH_RERANK_TIMEOUT"`
-
 	// The URL of the S3 API that stores large audit payloads, such as
 	// `https://s3.example.com`. If it is empty, the gateway uses the AWS S3
 	// endpoint of `auditS3Region`. The gateway gets its S3 credentials from
@@ -627,7 +605,6 @@ func Default() Config {
 		ApprovalTimeout:        Duration(10 * time.Minute),
 
 		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
-		ToolSearchRerankTimeout:     Duration(2 * time.Second),
 	}
 }
 
@@ -1013,7 +990,6 @@ func (c Config) Validate() []error {
 	}
 
 	problems = append(problems, c.validateToolSearchEmbeddings()...)
-	problems = append(problems, c.validateToolSearchRerank()...)
 	problems = append(problems, c.validateUI()...)
 	problems = append(problems, c.validateResolvers()...)
 	problems = append(problems, c.validateSPIFFETrustDomains()...)
@@ -1162,30 +1138,6 @@ func (c Config) validateToolSearchEmbeddings() []error {
 
 	if c.ToolSearchEmbeddingsTimeout < Duration(100*time.Millisecond) || c.ToolSearchEmbeddingsTimeout > Duration(30*time.Second) {
 		problems = append(problems, errors.New("toolSearchEmbeddingsTimeout: must be from 100ms to 30s"))
-	}
-
-	return problems
-}
-
-// validateToolSearchRerank checks the rerank settings of tool search.
-func (c Config) validateToolSearchRerank() []error {
-	if c.ToolSearchRerankURL == "" {
-		return nil
-	}
-
-	var problems []error
-
-	endpoint, err := url.Parse(c.ToolSearchRerankURL)
-	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
-		problems = append(problems, errors.New("toolSearchRerankURL: must be an http:// or https:// URL"))
-	}
-
-	if c.ToolSearchRerankModel == "" {
-		problems = append(problems, errors.New("toolSearchRerankModel: required when toolSearchRerankURL is set"))
-	}
-
-	if c.ToolSearchRerankTimeout < Duration(100*time.Millisecond) || c.ToolSearchRerankTimeout > Duration(30*time.Second) {
-		problems = append(problems, errors.New("toolSearchRerankTimeout: must be from 100ms to 30s"))
 	}
 
 	return problems

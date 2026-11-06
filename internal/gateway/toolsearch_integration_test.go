@@ -447,16 +447,10 @@ func TestAC4_03SearchQuality(t *testing.T) {
 	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: endpoint.Model, Timeout: 30 * time.Second})
 	require.NoError(t, err)
 
-	rerankEndpoint := testutil.StartReranker(t)
-
-	reranker, err := embeddings.NewReranker(embeddings.Options{URL: rerankEndpoint.URL, Model: rerankEndpoint.Model, Timeout: 60 * time.Second}, nil)
-	require.NoError(t, err)
-
-	// Each replica is made with the endpoints set in active and activeRerank.
-	active, activeRerank := embedder, (*embeddings.Reranker)(nil)
+	// Each replica is made with the endpoint set in active.
+	active := embedder
 	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) {
 		options.Embedder = active
-		options.Reranker = activeRerank
 	})
 	fixture.embedder = embedder
 
@@ -475,7 +469,7 @@ func TestAC4_03SearchQuality(t *testing.T) {
 		fixture.declareTools(t, template, declaredTools...)
 	}
 
-	score := func(label string) float64 {
+	score := func(label string) int {
 		client := fixture.connect(t, searching(alice()))
 		hits := 0
 
@@ -493,25 +487,23 @@ func TestAC4_03SearchQuality(t *testing.T) {
 		rate := float64(hits) / float64(len(tasks.Tasks))
 		t.Logf("%s top-5 hits: %d of %d (%.1f%%)", label, hits, len(tasks.Tasks), rate*100)
 
-		return rate
+		return hits
 	}
 
-	// The words-only and hybrid scores are for information; only hybrid
-	// search with the reranker gates.
-	score("hybrid")
+	// The words-only score is for information; only hybrid search gates.
+	hybrid := score("hybrid")
 
-	activeRerank = reranker
-	fixture.server = fixture.replica(t)
-
-	reranked := score("hybrid and rerank")
-
-	active, activeRerank = nil, nil
+	active = nil
 	fixture.server = fixture.replica(t)
 
 	score("words only")
 
-	assert.GreaterOrEqual(t, reranked, 0.9)
+	assert.GreaterOrEqual(t, hybrid, minToolSearchHits)
 }
+
+// minToolSearchHits is the number of fixture tasks whose expected tool must be
+// in the top 5 with embeddings configured (59 of 66).
+const minToolSearchHits = 59
 
 func contains(values []string, want string) bool {
 	for _, value := range values {
@@ -673,61 +665,4 @@ func TestToolSearchNotes(t *testing.T) {
 		// sent nothing.
 		assert.Equal(t, before, calls.Load())
 	})
-}
-
-// TestToolSearchRerank checks that the reranker's order decides the result,
-// that it cuts the result to the limit, and that a failing reranker leaves the
-// fused order without a note.
-func TestToolSearchRerank(t *testing.T) {
-	var healthy atomic.Bool
-
-	rerankServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !healthy.Load() {
-			w.WriteHeader(http.StatusInternalServerError)
-
-			return
-		}
-
-		var in struct {
-			Texts []string `json:"texts"`
-		}
-		assert.NoError(t, json.NewDecoder(r.Body).Decode(&in))
-
-		out := make([]map[string]any, len(in.Texts))
-		for index, text := range in.Texts {
-			score := 0.0
-			if strings.Contains(text, "winner") {
-				score = 1
-			}
-
-			out[index] = map[string]any{"index": index, "score": score}
-		}
-
-		assert.NoError(t, json.NewEncoder(w).Encode(out))
-	}))
-	t.Cleanup(rerankServer.Close)
-
-	reranker, err := embeddings.NewReranker(embeddings.Options{URL: rerankServer.URL, Model: "r"}, nil)
-	require.NoError(t, err)
-
-	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Reranker = reranker })
-	template := fixture.addEnableTemplate("srv", "per-user", anyone)
-	fixture.declareTools(t, template,
-		declared("a_plain", "report the weather"),
-		declared("b_plain", "report the weather"),
-		declared("c_winner", "report the weather winner"),
-	)
-	session := fixture.connect(t, searching(alice()))
-
-	healthy.Store(true)
-
-	found, _ := findTools(t, session, "report weather", 1)
-	assert.Equal(t, []string{"srv__c_winner"}, foundNames(found))
-	assert.Empty(t, found.Note)
-
-	healthy.Store(false)
-
-	found, _ = findTools(t, session, "report weather", 2)
-	assert.Len(t, found.Tools, 2)
-	assert.Empty(t, found.Note, "a failed reranker leaves no note")
 }

@@ -82,7 +82,6 @@ type metaTools struct {
 	metrics *runtime.Metrics
 	// embedder embeds search queries; nil means words only.
 	embedder    *embeddings.Client
-	reranker    *embeddings.Reranker
 	database    *pgxpool.Pool
 	catalog     *catalog.Catalog
 	policy      *policy.Engine

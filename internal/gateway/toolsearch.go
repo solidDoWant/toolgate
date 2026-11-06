@@ -75,9 +75,6 @@ type FindToolsResult struct {
 }
 
 const (
-	// rerankPool is the number of best tools a reranker orders.
-	rerankPool = 20
-
 	noteDegraded         = "Search by meaning is unavailable right now, so these are keyword matches only. If none fits, reword the request with the action and the object (for example \"list Slack channels\"), or try again later."
 	noteNoResult         = "No tool matched. Reword the request with a specific action and object (for example \"list Slack channels\")."
 	noteNoResultDegraded = "No tool matched, and search by meaning is unavailable right now. Reword the request with a specific action and object (for example \"list Slack channels\"), or try again later."
@@ -214,17 +211,8 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 	result := FindToolsResult{Tools: []FoundTool{}}
 	kept := []db.SearchToolsRow{}
 
-	// With a reranker, the loop collects the best rerankPool tools and the
-	// reranker picks the first limit of them.
-	pool := limit
-	if m.reranker != nil {
-		pool = max(limit, rerankPool)
-	}
-
-	texts := []string{}
-
 	for _, row := range rows {
-		if len(result.Tools) >= pool {
+		if len(result.Tools) >= limit {
 			break
 		}
 
@@ -272,24 +260,6 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 		})
 
 		kept = append(kept, row)
-		texts = append(texts, toolcatalog.SearchPartsOf(template, curated).EmbeddingText())
-	}
-
-	if m.reranker != nil && len(result.Tools) > 1 {
-		if order, rerankErr := m.reranker.Rerank(ctx, input.Query, texts); rerankErr == nil {
-			ranked := FindToolsResult{Tools: make([]FoundTool, len(order))}
-			rankedRows := make([]db.SearchToolsRow, len(order))
-
-			for position, index := range order {
-				ranked.Tools[position], rankedRows[position] = result.Tools[index], kept[index]
-			}
-
-			result, kept = ranked, rankedRows
-		}
-	}
-
-	if len(result.Tools) > limit {
-		result.Tools, kept = result.Tools[:limit], kept[:limit]
 	}
 
 	result.Note = findToolsNote(len(result.Tools), degraded)

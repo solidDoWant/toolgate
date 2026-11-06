@@ -22,19 +22,16 @@ func TestModelServersAreOffByDefault(t *testing.T) {
 
 	for name := range names {
 		assert.NotContains(t, name, "embeddings")
-		assert.NotContains(t, name, "reranker")
 	}
 }
 
 func TestModelServersRenderAndWireTheGateway(t *testing.T) {
-	manifests := renderQuickStart(t, "--set", "embeddings.server.enabled=true", "--set", "embeddings.reranker.enabled=true")
+	manifests := renderQuickStart(t, "--set", "embeddings.server.enabled=true")
 	names := kindsNamed(manifests)
 
 	for _, name := range []string{
 		"Deployment/" + releaseName + "-embeddings", "Service/" + releaseName + "-embeddings",
 		"Job/" + releaseName + "-embeddings-download",
-		"Deployment/" + releaseName + "-reranker", "Service/" + releaseName + "-reranker",
-		"Job/" + releaseName + "-reranker-download",
 		"PersistentVolumeClaim/" + releaseName + "-models",
 	} {
 		assert.True(t, names[name], "renders %s", name)
@@ -50,7 +47,6 @@ func TestModelServersRenderAndWireTheGateway(t *testing.T) {
 
 	text := all.String()
 	assert.Contains(t, text, "http://"+releaseName+"-embeddings."+releaseNamespace+".svc:80")
-	assert.Contains(t, text, "http://"+releaseName+"-reranker."+releaseNamespace+".svc:80")
 	assert.Contains(t, text, "HF_HUB_OFFLINE")
 }
 

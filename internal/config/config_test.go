@@ -75,7 +75,6 @@ logLevel: debug
 		OIDCUIScopes:                []string{"openid", "email", "profile"},
 		AdminGroup:                  "toolgate-admins",
 		ToolSearchEmbeddingsTimeout: config.Duration(2 * time.Second),
-		ToolSearchRerankTimeout:     config.Duration(2 * time.Second),
 	}, cfg)
 }
 

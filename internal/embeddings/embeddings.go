@@ -59,18 +59,18 @@ type Client struct {
 }
 
 // Metrics counts failed and skipped calls of the model endpoints. One value
-// is shared by the embeddings client and the reranker.
+// is shared by the embeddings clients.
 type Metrics struct {
 	errors *prometheus.CounterVec
 }
 
 // NewMetrics returns the counter `toolgate_tool_search_embedding_errors_total`,
-// labelled by use (`query`, `document` or `rerank`) and reason (`error`, or
+// labelled by use (`query` or `document`) and reason (`error`, or
 // `circuit_open` for a call skipped while the circuit is open).
 func NewMetrics() *Metrics {
 	return &Metrics{errors: prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "toolgate_tool_search_embedding_errors_total",
-		Help: "Failed or skipped calls of the tool search model endpoints, by use (query, document or rerank) and reason (error or circuit_open).",
+		Help: "Failed or skipped calls of the tool search model endpoints, by use (query or document) and reason (error or circuit_open).",
 	}, []string{"use", "reason"})}
 }
 

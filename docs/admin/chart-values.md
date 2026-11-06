@@ -56,10 +56,6 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.toolSearchEmbeddings.model | string | `""` | Model name sent to the endpoint, such as `BAAI/bge-small-en-v1.5`. Required when `url` is set. Changing it embeds all tools again. |
 | config.toolSearchEmbeddings.timeout | string | `""` | How long one request to the endpoint may take, as a Go duration. Empty means 2s. |
 | config.toolSearchEmbeddings.url | string | `""` | Base URL of an endpoint that speaks the OpenAI embeddings API (`POST <url>/v1/embeddings`), such as `http://tei.tools.svc:80`. Empty means search uses words only. |
-| config.toolSearchRerank.apiKeyFile | string | `""` | Path of a file that holds an API key for the endpoint. Empty means no key. |
-| config.toolSearchRerank.model | string | `""` | Model name, such as `BAAI/bge-reranker-base`. Required when `url` is set. |
-| config.toolSearchRerank.timeout | string | `""` | How long one request may take, as a Go duration. Empty means 2s. |
-| config.toolSearchRerank.url | string | `""` | Base URL of a rerank endpoint (`POST <url>/rerank`, the Hugging Face text-embeddings-inference route). Empty means no reranking. |
 | config.ui.adminGroup | string | `""` | Group whose members are web UI admins. Empty means nobody is an admin. |
 | config.ui.approvalTimeout | string | `"10m"` | How long a call that needs approval waits for a person, and how long an approved request stays usable, as a Go duration from `1m` to `1h`. |
 | config.ui.clientID | string | `""` | OIDC client ID of the web UI. The web UI is on only when this is set. The identity provider must allow the redirect URI `config.ui.publicURL` + `/ui/auth/callback`. |
@@ -72,14 +68,6 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | embeddings.downloader.image.repository | string | `"ghcr.io/astral-sh/uv"` | Image that runs the model download Job: a pinned `uv`, which runs the `hf` command of huggingface_hub. |
 | embeddings.downloader.image.tag | string | `"0.9-python3.13-bookworm-slim"` |  |
 | embeddings.downloader.ttlSecondsAfterFinished | int | `3600` | Seconds a finished Job stays before Kubernetes removes it. |
-| embeddings.reranker.cache.existingClaim | string | `""` | Name of an existing claim. If empty, the reranker uses the claim of `embeddings.server.cache` (under its own directory). |
-| embeddings.reranker.enabled | bool | `false` | Run the rerank server, a second instance for the reranker model. |
-| embeddings.reranker.image.digest | string | `"sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"` |  |
-| embeddings.reranker.image.repository | string | `"ghcr.io/huggingface/text-embeddings-inference"` |  |
-| embeddings.reranker.image.tag | string | `"cpu-1.9"` |  |
-| embeddings.reranker.model | string | `"BAAI/bge-reranker-base"` |  |
-| embeddings.reranker.modelRevision | string | `"2cfc18c9415c912f9d8155881c133215df768a70"` |  |
-| embeddings.reranker.resources | object | `{"limits":{"memory":"4Gi"},"requests":{"cpu":"500m","memory":"4Gi"}}` | Memory request equals the limit; there is no CPU limit. About 3.2 GiB are in use after the model is loaded and has served requests. |
 | embeddings.server.cache.accessModes | list | `["ReadWriteMany"]` | Access modes of the claim the chart creates. |
 | embeddings.server.cache.existingClaim | string | `""` | Name of an existing PersistentVolumeClaim for the model files. Recommended: an RWX claim you create, so it survives uninstall and the pre-upgrade Job can mount it while the server runs. If empty, the chart creates a claim `<release>-toolgate-models` that Helm keeps. |
 | embeddings.server.cache.size | string | `"5Gi"` | Size of the claim the chart creates. |

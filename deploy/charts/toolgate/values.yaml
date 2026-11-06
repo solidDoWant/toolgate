@@ -147,23 +147,6 @@ config:
     # Empty means 2s.
     timeout: ""
 
-  # Optional reranking for tool search. With `url` set, each search sends the
-  # query and the 20 best tools to a rerank endpoint and returns the best 5 in
-  # its order. The chart sets this itself when `embeddings.reranker.enabled`
-  # is true.
-  toolSearchRerank:
-    # -- Base URL of a rerank endpoint (`POST <url>/rerank`, the Hugging Face
-    # text-embeddings-inference route). Empty means no reranking.
-    url: ""
-    # -- Model name, such as `BAAI/bge-reranker-base`. Required when `url` is
-    # set.
-    model: ""
-    # -- Path of a file that holds an API key for the endpoint. Empty means no
-    # key.
-    apiKeyFile: ""
-    # -- How long one request may take, as a Go duration. Empty means 2s.
-    timeout: ""
-
   audit:
     # -- Store audit payloads: the arguments of each tool call and approval
     # request, and each tool result. Payloads under 64 KiB go in PostgreSQL,
@@ -487,13 +470,12 @@ resources:
               app.kubernetes.io/instance: "{{ .Release.Name }}"
               app.kubernetes.io/controller: gateway
 
-# Optional model servers for tool search. Both are off by default. Each runs
+# Optional model server for tool search. It is off by default. It runs
 # Hugging Face text-embeddings-inference from a local model directory, with no
 # network access needed. A hook Job downloads the model before install and
 # upgrade, so that is the only pod that needs internet egress. The chart adds
 # no NetworkPolicy; cluster admins do that. When a server is on, the chart
-# sets `config.toolSearchEmbeddings` or `config.toolSearchRerank` itself,
-# unless you set `url` there.
+# sets `config.toolSearchEmbeddings` itself, unless you set `url` there.
 embeddings:
   server:
     # -- Run the embeddings server.
@@ -531,27 +513,6 @@ embeddings:
       storageClassName: ""
       # -- Access modes of the claim the chart creates.
       accessModes: [ReadWriteMany]
-  reranker:
-    # -- Run the rerank server, a second instance for the reranker model.
-    enabled: false
-    image:
-      repository: ghcr.io/huggingface/text-embeddings-inference
-      tag: cpu-1.9
-      digest: sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
-    model: BAAI/bge-reranker-base
-    modelRevision: 2cfc18c9415c912f9d8155881c133215df768a70
-    # -- Memory request equals the limit; there is no CPU limit. About 3.2 GiB
-    # are in use after the model is loaded and has served requests.
-    resources:
-      requests:
-        cpu: 500m
-        memory: 4Gi
-      limits:
-        memory: 4Gi
-    cache:
-      # -- Name of an existing claim. If empty, the reranker uses the claim of
-      # `embeddings.server.cache` (under its own directory).
-      existingClaim: ""
   downloader:
     image:
       # -- Image that runs the model download Job: a pinned `uv`, which runs

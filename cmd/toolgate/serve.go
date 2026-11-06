@@ -130,14 +130,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	searchReranker, err := newToolSearchReranker(cfg, searchMetrics)
-	if err != nil {
-		logger.Error("gateway failed to start", "error", err)
-
-		return 1
-	}
-
-	if searchEmbedder != nil || searchReranker != nil {
+	if searchEmbedder != nil {
 		if err := server.RegisterMetrics(searchMetrics.Collectors()...); err != nil {
 			logger.Error("gateway failed to start", "error", err)
 
@@ -224,7 +217,6 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		SessionIdleTimeout:   testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
 		ToolSearch:           cfg.ToolSearch,
 		Embedder:             searchEmbedder,
-		Reranker:             searchReranker,
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {

@@ -19,9 +19,6 @@ const EmbeddingsImage = "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@s
 // EmbeddingsModel is the model the embeddings server loads.
 const EmbeddingsModel = "BAAI/bge-small-en-v1.5"
 
-// RerankModel is the model the rerank server loads.
-const RerankModel = "BAAI/bge-reranker-base"
-
 const embeddingsPort = "80/tcp"
 
 // Embeddings is a running server of the OpenAI embeddings API.
@@ -39,14 +36,6 @@ func StartEmbeddings(tb testing.TB) *Embeddings {
 	tb.Helper()
 
 	return startModelServer(tb, EmbeddingsModel)
-}
-
-// StartReranker starts a second server for RerankModel, which answers
-// `POST /rerank`. It is otherwise like StartEmbeddings.
-func StartReranker(tb testing.TB) *Embeddings {
-	tb.Helper()
-
-	return startModelServer(tb, RerankModel)
 }
 
 func startModelServer(tb testing.TB, model string) *Embeddings {
