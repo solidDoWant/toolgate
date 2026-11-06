@@ -1,4 +1,4 @@
-# Phase 3 acceptance checklist: telemetry, attestation and operations
+# Phase 3 acceptance checklist: telemetry, attestation, scoping and operations
 
 Same rules as phase 1. The tag is `[AC-3-nn]`. This checklist is at feature level. The owner reviews it again, with the phase 3 design, before phase 3 starts.
 
@@ -26,6 +26,15 @@ Same rules as phase 1. The tag is `[AC-3-nn]`. This checklist is at feature leve
 
 - **AC-3-15 Separate migration credential.** With `config.database.migrateOnStart: false` and a migration secret, `helm install` and `helm upgrade` apply the migrations through a hook Job before the new gateway pods start. The gateway then runs with a database user that has only data rights. With the default values, behaviour is unchanged.
 
+## Workspace and session scoping
+
+- **AC-3-16 Attested user session.** A client sends the user's own access token plus a workspace attestation token (a projected service-account token, or a SPIFFE JWT-SVID) from a pod or VM whose owner labels name that user. toolgate treats the session as the user (their principal, groups, secrets, per-user instances and grants), with attestation `attested` and the workspace verified from the cluster, such as `coder/<owner>/<workspace name>`. If the attestation token belongs to a workload owned by someone else, the session falls back to `user` attestation with a claimed workspace, and `auth.refuse` records why.
+- **AC-3-17 Workspace access list.** A user sets an allow list of servers for one of their workspaces, in the web UI or with `toolgate workspace allow`. A session in that workspace lists and can enable only those servers, and its other servers' tools are withdrawn. A change reaches open sessions within 5 seconds. The list never grants more than the user's own access.
+- **AC-3-18 Defaults.** A user chooses what their verified workspaces with no list get (nothing, or all their servers), and what their unverified sessions get (nothing, or all their servers). The default for both is nothing. The choices apply as AC-3-17 does.
+- **AC-3-19 Session addition.** When a session enables a server that its workspace's list doesn't include, the user is asked in the browser (URL elicitation, or a link for clients without elicitation) to allow it for this session only or always for this workspace. Approving needs a step-up. A session-only approval ends when the session ends, and other sessions in the workspace don't get it. "Always" adds the server to the workspace's list.
+- **AC-3-20 Device sign-in from a workspace.** In a workspace with no browser, `toolgate login` prints a verification URL and code. After the user approves on another device, the workspace's sessions act as that user, unattended, until the refresh token expires or is revoked.
+- **AC-3-21 Sign-in through another service.** With `TOOLGATE_TOKEN_COMMAND` set to a command that prints the user's access token (for example Coder's `coder external-auth access-token toolgate`), a workspace's sessions act as that user with no `toolgate login` in the workspace. The gateway accepts tokens from the same issuer for any audience in its configured list, verified like the first audience.
+
 ## Release
 
-- **AC-3-12 Release.** Release `0.3.0` is published, with docs for telemetry, SPIFFE attestation, health checks and the migration Job.
+- **AC-3-12 Release.** Release `0.3.0` is published, with docs for telemetry, SPIFFE attestation, health checks, the migration Job, and workspace and session scoping.
