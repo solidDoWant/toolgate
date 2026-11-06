@@ -216,6 +216,10 @@ workload_namespace=toolgate-workloads
 kubectl create namespace "$workload_namespace" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-database \
 	--from-literal=url="postgres://toolgate:$postgres_password@postgres.$deps_namespace.svc:5432/toolgate?sslmode=disable" >&2
+mkdir -p "$work/keyset"
+go run ./test/keyset/cmd/keyset "$work/keyset/keyset.json" >&2
+kubectl -n "$release_namespace" create secret generic toolgate-secrets-keyset \
+	--from-file=keyset.json="$work/keyset/keyset.json" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-resolver-ca \
 	--from-file=ca.pem="$TOOLGATE_E2E_RESOLVER_CERT" >&2
 ./scripts/chart-deps.sh >&2
@@ -232,13 +236,17 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.ui.approvalTimeout=1m \
 	--set 'config.extraEnv[1].name=TOOLGATE_OTLP_INGEST' \
 	--set 'config.extraEnv[1].value=true' \
+	--set 'config.extraEnv[2].name=TOOLGATE_SECRETS_KEYSET_FILE' \
+	--set 'config.extraEnv[2].value=/etc/toolgate/secrets-keyset/keyset.json' \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
 	--set "config.extraEnv[0].value=$workload_namespace" \
 	--set-json "config.resolvers=[{\"name\":\"test\",\"url\":\"https://$TOOLGATE_E2E_RESOLVER_LISTEN/resolve\",\"audience\":\"toolgate-resolver-test\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
+	--set-json "config.workspaceAttestation={\"namespaces\":[\"$workload_namespace\"],\"match\":{\"by\":\"claim\",\"claim\":\"sub\",\"key\":\"username\"},\"workspaceID\":\"coder/{username}/{workspace}\",\"spiffeIDPattern\":\"spiffe://allowed.test/coder/{username}/{workspace}\"}" \
 	--set-json "config.spiffe.trustDomains=[{\"name\":\"allowed.test\",\"bundleEndpointURL\":\"https://$TOOLGATE_E2E_SPIFFE_LISTEN\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}}}' \
+	--set-json 'resources.persistence.secrets-keyset={"type":"secret","name":"toolgate-secrets-keyset","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/secrets-keyset","readOnly":true}]}}}' \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--wait --timeout 5m >&2
 

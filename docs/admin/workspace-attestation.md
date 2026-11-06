@@ -57,6 +57,28 @@ kubectl auth can-i --as=system:serviceaccount:coder:<workspace service account> 
 
 Run it for `create` and `update`, and for `virtualmachines` and `virtualmachineinstances` too, if you use KubeVirt.
 
+## Give the client its token
+
+The client reads the workload token from one of three variables. The user documentation describes them: `TOOLGATE_ATTESTATION_TOKEN_FILE`, `TOOLGATE_ATTESTATION_SPIFFE_SOCKET` and `TOOLGATE_ATTESTATION_TOKEN_REQUEST`. Set at most one of them in the workspace.
+
+For a pod, mount a projected token with the audience `toolgate` and set `TOOLGATE_ATTESTATION_TOKEN_FILE` to its path:
+
+```yaml
+volumes:
+  - name: toolgate-attestation
+    projected:
+      sources:
+        - serviceAccountToken: {audience: toolgate, expirationSeconds: 3600, path: token}
+```
+
+For a KubeVirt virtual machine, a guest cannot get a projected token with its own audience. So the client asks for one. Mount the `serviceAccount` disk of the virtual machine and set `TOOLGATE_ATTESTATION_TOKEN_REQUEST` to the directory where the guest mounts it. Then:
+
+- Give the guest egress to the Kubernetes API server. Set `TOOLGATE_KUBE_API` if the URL is not `https://kubernetes.default.svc`.
+- Create one service account for each workspace. The template can create it.
+- Add a Role in the workspace namespace that allows `create` on `serviceaccounts/token` with `resourceNames` set to the service account of the workspace. Bind it to that service account.
+
+The API server binds a token only to a pod that runs as that service account. If several virtual machines share one service account, a guest can bind a token to the pod of another virtual machine. That pod names its own owner, so the guest gets nothing without the user token of that owner. One service account for each workspace removes the case.
+
 ## KubeVirt virtual machines
 
 A token from a KubeVirt guest is bound to the `virt-launcher` pod of the virtual machine. KubeVirt copies the labels of the virtual machine template to that pod. So set the keys in `spec.template.metadata` of the `VirtualMachine`, not in its own `metadata`. The gateway does not read virtual machine objects.

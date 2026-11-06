@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/solidDoWant/toolgate/internal/client/attestation"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
 	"github.com/solidDoWant/toolgate/internal/client/tokencommand"
 	"github.com/solidDoWant/toolgate/internal/version"
@@ -105,6 +106,15 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 func checkCredentialChoice() error {
 	if spiffe.Socket() != "" && tokencommand.Command() != "" {
 		return fmt.Errorf("Set only one of %s and %s.", spiffe.SocketEnv, tokencommand.Env) //nolint:staticcheck // user-facing sentence
+	}
+
+	source := attestation.FromEnv()
+	if err := source.Validate(); err != nil {
+		return err
+	}
+
+	if spiffe.Socket() != "" && source.Configured() {
+		return fmt.Errorf("Set only one of %s and %s.", spiffe.SocketEnv, strings.Join(source.Names(), " and ")) //nolint:staticcheck // user-facing sentence
 	}
 
 	return nil

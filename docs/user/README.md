@@ -249,6 +249,22 @@ These errors name the cause and never show the output of the command:
 
 Do not set `TOOLGATE_SPIFFE_SOCKET` as well. Every command then exits with `Set only one of TOOLGATE_SPIFFE_SOCKET and TOOLGATE_TOKEN_COMMAND.` Your admin sets up the gateway first: see [Coder workspaces](../admin/coder.md).
 
+### Prove where your session runs (attestation)
+
+Use this in a workspace that your admin attests, for example a Coder workspace. You sign in as usual. In addition, toolgate sends a workload token that proves where the session runs. If the gateway finds that the workload belongs to you, the session is attested, and its workspace is verified, for example `coder/alice/dev`. Then you can use `opt-in` servers without a grant.
+
+Set at most one of these variables:
+
+- `TOOLGATE_ATTESTATION_TOKEN_FILE`: the path of a projected service-account token with the audience `toolgate`. toolgate reads the file on each run, because Kubernetes rotates it.
+- `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`: the address of a SPIFFE Workload API. toolgate gets a new JWT-SVID for the audience `toolgate` on each run, within 5 seconds.
+- `TOOLGATE_ATTESTATION_TOKEN_REQUEST`: for a KubeVirt virtual machine. The value is the directory of the mounted `serviceAccount` disk, which holds `token`, `namespace` and `ca.crt`. toolgate asks the Kubernetes API server for a token with the audience `toolgate` that lasts 600 seconds. It uses the URL in `TOOLGATE_KUBE_API`, or `https://kubernetes.default.svc` when that is not set. The virtual machine must be able to reach the API server. toolgate asks again on each run.
+
+Every command that calls the gateway sends the token in the `X-Toolgate-Attestation` header: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions` and `audit tail`. `toolgate headers` adds the header to its output.
+
+If toolgate cannot get the token, the command shows the reason, never the token, and exits with a non-zero code. It sends no request, because a request without the attestation would change the attestation of your session without a warning. If the Kubernetes API server refuses a token request, the command shows its status and message.
+
+If you set more than one of the variables, every command exits with `Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET and TOOLGATE_ATTESTATION_TOKEN_REQUEST.` You cannot combine them with `TOOLGATE_SPIFFE_SOCKET`.
+
 ## Settings from your admin
 
 Your admin can give you Claude Code settings, for example permissions or environment variables. When a Claude Code session starts, the plugin runs `toolgate hook session-start`. This command gets the settings for you from the gateway and writes them into `~/.claude/settings.json`.
