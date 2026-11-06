@@ -51,7 +51,7 @@ func startGateway(t *testing.T, provider *testutil.OIDCProvider, clientID string
 	cfg.MetricsListenAddress = "127.0.0.1:0"
 	cfg.DatabaseURL = "postgres://toolgate@127.0.0.1:1/toolgate?connect_timeout=1"
 	cfg.OIDCIssuerURL = provider.Issuer
-	cfg.OIDCAudience = provider.Audience
+	cfg.OIDCAudience = config.Audiences{provider.Audience}
 	cfg.OIDCCLIClientID = clientID
 
 	server, err := gateway.New(t.Context(), cfg, slog.New(slog.DiscardHandler))

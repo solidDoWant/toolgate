@@ -42,7 +42,7 @@ settings from `config`.
   (dict "name" "TOOLGATE_DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $config.database.existingSecret "key" $config.database.secretKey)))
   (dict "name" "TOOLGATE_MIGRATE_ON_START" "value" (toString $config.database.migrateOnStart))
   (dict "name" "TOOLGATE_OIDC_ISSUER_URL" "value" $config.oidc.issuerURL)
-  (dict "name" "TOOLGATE_OIDC_AUDIENCE" "value" $config.oidc.audience)
+  (dict "name" "TOOLGATE_OIDC_AUDIENCE" "value" (join "," $config.oidc.audience))
 -}}
 {{- range $setting, $name := dict "emailClaim" "TOOLGATE_OIDC_EMAIL_CLAIM" "emailVerifiedClaim" "TOOLGATE_OIDC_EMAIL_VERIFIED_CLAIM" "groupsClaim" "TOOLGATE_OIDC_GROUPS_CLAIM" }}
 {{- with index $config.oidc $setting }}

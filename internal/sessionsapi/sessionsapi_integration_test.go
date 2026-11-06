@@ -41,7 +41,7 @@ func newFixture(t *testing.T) fixture {
 	require.NoError(t, store.Migrate(t.Context(), pool))
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
-	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audience: provider.Audience})
+	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audiences: []string{provider.Audience}})
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()

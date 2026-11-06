@@ -8,6 +8,12 @@ This page tells you which facts about a request toolgate can trust, what it prot
 
 Every request to the gateway carries a token. The gateway refuses a request with 401 when the token is missing, expired, for another audience or from another issuer. Each refusal goes to the audit log as an `auth.refuse` event.
 
+### More than one audience
+
+The `oidcAudience` setting can list 1 to 8 audiences. Each audience is the client ID of an OIDC client at the same identity provider. The gateway accepts the access tokens of each client in the list. A token that has none of the audiences gets 401, and its `auth.refuse` event has the reason "audience not allowed" and the audiences of the token.
+
+Each client in the list can sign users in to toolgate. Thus, add only clients that you made for toolgate. For example, for Coder, make a separate provider for toolgate. Do not add the provider that Coder uses for its own sign-in. The identity provider must also give a person the same `sub` (subject) in each client. If it does not, one person gets two principals, and rules for one of them do not apply to the other.
+
 The gateway decides about each tool call before it sends the call to a server. It records each decision in the audit log as a `tool.decision` event, and the result as a `tool.result` event. It refuses a call in these cases:
 
 1. The user is not in the `access` lists of the template.

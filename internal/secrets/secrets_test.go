@@ -349,7 +349,7 @@ func newAPIServer(t *testing.T, broker *secrets.Broker, recorder *memoryRecorder
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 
-	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audience: provider.Audience})
+	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audiences: []string{provider.Audience}})
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()

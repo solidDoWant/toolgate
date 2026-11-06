@@ -34,7 +34,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.limits.instances | int | `200` | Maximum number of MCP server instances that the gateway runs at the same time, for all users and shared instances together. At least 1. |
 | config.limits.instancesPerUser | int | `20` | Maximum number of MCP server instances that run for one user at the same time. Per-session and per-user instances count for the user who started them. Shared instances do not count. At least 1. |
 | config.logging.level | string | `"info"` | Lowest level of the JSON log lines: `debug`, `info`, `warn` or `error`. |
-| config.oidc.audience | string | `""` | Audience that users' access tokens must contain, such as `toolgate`. Required. |
+| config.oidc.audience | string or list | `""` | Audiences that users' access tokens may be for: one value such as `toolgate`, or a list of 1 to 8 such as `[toolgate, coder-toolgate]`. Each is the client ID of a client at `config.oidc.issuerURL`. Required. The gateway accepts access tokens of every listed client, so list only clients made for toolgate. |
 | config.oidc.emailClaim | string | `""` | Access token claim that holds the user's email address. Empty means the gateway's default, `email`. |
 | config.oidc.emailVerifiedClaim | string | `""` | Access token claim that tells whether the identity provider verified the email address. Empty means the gateway's default, `email_verified`. |
 | config.oidc.groupsClaim | string | `""` | Access token claim that holds the user's groups. Empty means the gateway's default, `groups`. |

@@ -46,8 +46,11 @@ config:
     # -- Issuer URL of the OIDC identity provider that users sign in with,
     # such as `https://idp.example.com/realms/main`. Required.
     issuerURL: ""
-    # -- Audience that users' access tokens must contain, such as
-    # `toolgate`. Required.
+    # -- (string or list) Audiences that users' access tokens may be for: one value such as
+    # `toolgate`, or a list of 1 to 8 such as `[toolgate, coder-toolgate]`.
+    # Each is the client ID of a client at `config.oidc.issuerURL`.
+    # Required. The gateway accepts access tokens of every listed client, so
+    # list only clients made for toolgate.
     audience: ""
     # -- Access token claim that holds the user's email address. Empty means
     # the gateway's default, `email`.
