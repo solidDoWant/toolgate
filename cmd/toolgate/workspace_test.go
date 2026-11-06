@@ -28,6 +28,8 @@ type fakeWorkspaceGateway struct {
 	statuses []string
 	polls    int
 	expires  time.Time
+	// listedWorkspace replaces the first workspace name in the list, JSON-encoded.
+	listedWorkspace string
 }
 
 func (f *fakeWorkspaceGateway) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -43,8 +45,13 @@ func (f *fakeWorkspaceGateway) ServeHTTP(writer http.ResponseWriter, request *ht
 			current = `"` + f.current + `"`
 		}
 
+		name := `"coder/alice/mail"`
+		if f.listedWorkspace != "" {
+			name = f.listedWorkspace
+		}
+
 		_, _ = io.WriteString(writer, `{"current":`+current+`,"defaults":{"verified":"all","unverified":"none"},`+
-			`"workspaces":[{"workspace":"coder/alice/mail","servers":["k8s","github"],"updatedAt":"2026-01-02T03:04:05Z"},`+
+			`"workspaces":[{"workspace":`+name+`,"servers":["k8s","github"],"updatedAt":"2026-01-02T03:04:05Z"},`+
 			`{"workspace":"coder/alice/empty","servers":[],"updatedAt":"2026-01-02T03:04:05Z"}]}`)
 	case request.Method == http.MethodPost && request.URL.Path == "/api/v1/workspaces/changes":
 		var body map[string]any
@@ -285,4 +292,17 @@ func TestWorkspaceStopsWaitingOnInterrupt(t *testing.T) {
 
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr.String(), "stopped waiting")
+}
+
+func TestWorkspaceListEscapesControlCharacters(t *testing.T) {
+	encoded, err := json.Marshal("\x1b]0;PWNED\x07\x1b[2K\rFORGED")
+	require.NoError(t, err)
+
+	run := runWorkspaceWith(t, &fakeWorkspaceGateway{listedWorkspace: string(encoded)}, testNow, "list")
+
+	require.Equal(t, 0, run.code, run.stderr)
+	assert.NotContains(t, run.stdout, "\x1b")
+	assert.NotContains(t, run.stdout, "\x07")
+	assert.NotContains(t, run.stdout, "\r")
+	assert.Contains(t, run.stdout, `\x1b]0;PWNED\a\x1b[2K\rFORGED`)
 }

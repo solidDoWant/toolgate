@@ -236,7 +236,11 @@ func formatEvent(event audittail.Event) string {
 	for index, field := range fields {
 		if field == "" {
 			fields[index] = "-"
+
+			continue
 		}
+
+		fields[index] = terminalSafe(field)
 	}
 
 	return strings.Join(fields, " ")
