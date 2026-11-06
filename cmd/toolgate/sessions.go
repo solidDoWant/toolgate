@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -65,7 +66,16 @@ func listSessionsWith(ctx context.Context, access gatewayAccess, stdout io.Write
 	}
 
 	table := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(table, "SESSION\tWORKSPACE\tLAST SEEN\tSERVERS")
+	// The entry columns are shown only when some session has entries.
+	withEntries := slices.ContainsFunc(list.Sessions, func(each sessionsapi.Session) bool {
+		return len(each.Allowed) > 0 || len(each.Denied) > 0
+	})
+
+	if withEntries {
+		_, _ = fmt.Fprintln(table, "SESSION\tWORKSPACE\tLAST SEEN\tSERVERS\tALLOWED\tDENIED")
+	} else {
+		_, _ = fmt.Fprintln(table, "SESSION\tWORKSPACE\tLAST SEEN\tSERVERS")
+	}
 
 	for _, session := range list.Sessions {
 		names := make([]string, 0, len(session.Servers))
@@ -83,7 +93,14 @@ func listSessionsWith(ctx context.Context, access gatewayAccess, stdout io.Write
 			workspace = "-"
 		}
 
-		_, _ = fmt.Fprintf(table, "%s\t%s\t%s\t%s\n", session.Session, workspace, session.LastSeenAt.UTC().Format(time.RFC3339), servers)
+		lastSeen := session.LastSeenAt.UTC().Format(time.RFC3339)
+
+		if withEntries {
+			_, _ = fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\n", session.Session, workspace, lastSeen, servers,
+				joinedOrDash(session.Allowed), joinedOrDash(session.Denied))
+		} else {
+			_, _ = fmt.Fprintf(table, "%s\t%s\t%s\t%s\n", session.Session, workspace, lastSeen, servers)
+		}
 	}
 
 	if err := table.Flush(); err != nil {

@@ -124,10 +124,11 @@ ORDER BY s.last_seen_at DESC, s.id DESC, ss.template_ns, ss.template_name;
 
 -- name: ListForgettableSessions :many
 -- The sessions that ended longer ago than the resume window and still have
--- enabled servers.
+-- enabled servers or deny scope entries.
 SELECT s.* FROM sessions s
 WHERE s.ended_at IS NOT NULL AND s.ended_at < now() - @resume_window::interval
-  AND EXISTS (SELECT 1 FROM session_servers ss WHERE ss.session_pk = s.id)
+  AND (EXISTS (SELECT 1 FROM session_servers ss WHERE ss.session_pk = s.id)
+    OR EXISTS (SELECT 1 FROM scope_entries e WHERE e.session_pk = s.id AND e.effect = 'deny'))
 ORDER BY s.id;
 
 -- name: ForgetEndedSessionServers :many

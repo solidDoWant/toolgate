@@ -30,6 +30,8 @@ type fakeWorkspaceGateway struct {
 	expires  time.Time
 	// listedWorkspace replaces the first workspace name in the list, JSON-encoded.
 	listedWorkspace string
+	// listBody replaces the whole list body when set.
+	listBody string
 }
 
 func (f *fakeWorkspaceGateway) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
@@ -48,6 +50,12 @@ func (f *fakeWorkspaceGateway) ServeHTTP(writer http.ResponseWriter, request *ht
 		name := `"coder/alice/mail"`
 		if f.listedWorkspace != "" {
 			name = f.listedWorkspace
+		}
+
+		if f.listBody != "" {
+			_, _ = io.WriteString(writer, f.listBody)
+
+			return
 		}
 
 		_, _ = io.WriteString(writer, `{"current":`+current+`,"defaults":{"verified":"all","unverified":"none"},`+
@@ -134,6 +142,18 @@ func TestWorkspaceList(t *testing.T) {
 	assert.Equal(t, "workload", gateway.headers[0].Get("X-Toolgate-Attestation"))
 }
 
+func TestWorkspaceListEntries(t *testing.T) {
+	gateway := &fakeWorkspaceGateway{listBody: `{"current":null,"defaults":{"verified":"all","unverified":"none"},"workspaces":[` +
+		`{"workspace":"coder/alice/mail","servers":["k8s"],"tools":["github__open_issue"],"denied":["slack"],"updatedAt":"2026-01-02T03:04:05Z"},` +
+		`{"workspace":"coder/alice/nolist","servers":null,"tools":[],"denied":["github__delete_repository"],"updatedAt":"2026-01-02T03:04:05Z"}]}`}
+	run := runWorkspaceWith(t, gateway, testNow, "list")
+
+	require.Equal(t, 0, run.code, run.stderr)
+	assert.Regexp(t, `(?m)^WORKSPACE\s+SERVERS\s+TOOLS\s+DENIED\s+UPDATED$`, run.stdout)
+	assert.Regexp(t, `(?m)^coder/alice/mail\s+k8s\s+github__open_issue\s+slack\s+2026-01-02T03:04:05Z$`, run.stdout)
+	assert.Regexp(t, `(?m)^coder/alice/nolist\s+\(no list\)\s+-\s+github__delete_repository\s+2026-01-02T03:04:05Z$`, run.stdout)
+}
+
 func TestWorkspaceChanges(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -147,6 +167,8 @@ func TestWorkspaceChanges(t *testing.T) {
 			map[string]any{"action": "allow", "workspace": "w1", "servers": []any{"k8s"}}},
 		{"flag after servers", "", []string{"deny", "k8s", "--workspace", "w1"},
 			map[string]any{"action": "deny", "workspace": "w1", "servers": []any{"k8s"}}},
+		{"deny of a tool in a session", "", []string{"deny", "--session", "s1", "github__delete_repository", "k8s"},
+			map[string]any{"action": "deny", "session": "s1", "servers": []any{"github__delete_repository", "k8s"}}},
 		{"deny uses the current workspace", "cur", []string{"deny", "k8s"},
 			map[string]any{"action": "deny", "workspace": "cur", "servers": []any{"k8s"}}},
 		{"deny --session", "cur", []string{"deny", "--session", "s1", "k8s"},

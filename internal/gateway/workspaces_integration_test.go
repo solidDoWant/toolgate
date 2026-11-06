@@ -199,13 +199,18 @@ func (a *workspaceAPI) list(t *testing.T, client user) workspacesapi.List {
 	return list
 }
 
-// lists maps each of the user's workspace lists to its servers.
+// lists maps each of the user's workspace lists to its servers, leaving out
+// workspaces that have scope entries but no list.
 func (a *workspaceAPI) lists(t *testing.T, client user) map[string][]string {
 	t.Helper()
 
 	lists := map[string][]string{}
+
 	for _, each := range a.list(t, client).Workspaces {
-		lists[each.Workspace] = each.Servers
+		// A workspace with only scope entries has no list.
+		if each.Servers != nil {
+			lists[each.Workspace] = each.Servers
+		}
 	}
 
 	return lists
@@ -319,9 +324,11 @@ func TestAC3_17WorkspaceLists(t *testing.T) {
 		assert.Less(t, time.Since(started), scopeChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, elsewhere.session))
 
+		// A deny also inserts a deny entry (docs/design/phase-4.md §7), so the
+		// refusal names the deny.
 		refused := callTool(t, elsewhere.session, "github__echo", map[string]any{"text": "out"})
 		require.True(t, refused.IsError)
-		assert.Equal(t, verifiedRefusal("github"), resultText(refused))
+		assert.Equal(t, "`github__echo` is denied in workspace `"+aliceWorkspace+"`.", resultText(refused))
 
 		changes := fixture.auditRows(t, gateway.TypeWorkspaceChange)
 		require.Len(t, changes, 2)
@@ -372,29 +379,38 @@ func TestAC3_17WorkspaceLists(t *testing.T) {
 		assert.Equal(t, map[string][]string{aliceWorkspace: {"github"}}, api.lists(t, attestedAlice()), "the entry stays")
 	})
 
-	t.Run("deny with no list answers 409, denying the last server keeps an empty list, and only clear deletes it", func(t *testing.T) {
+	t.Run("deny with no list makes no list, denying the last server keeps an empty list, and only clear deletes it", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
+		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
 
-		status, body := api.change(t, attestedAlice(), workspacesapi.Change{Action: "deny", Servers: []string{"github"}})
-		assert.Equal(t, http.StatusConflict, status)
-		assert.Equal(t, "Workspace `"+aliceWorkspace+"` has no list. Add one with `toolgate workspace allow` first.", body)
-
-		api.widen(t, attestedAlice(), workspacesapi.Change{Action: "allow", Servers: []string{"github"}})
+		// Phase 4 drops phase 3's 409: the deny inserts a deny entry
+		// (docs/design/phase-4.md §7, row 206).
 		api.applyChange(t, attestedAlice(), workspacesapi.Change{Action: "deny", Servers: []string{"github"}})
+		assert.Empty(t, api.lists(t, attestedAlice()))
+
+		api.widen(t, attestedAlice(), workspacesapi.Change{Action: "allow", Servers: []string{"slack"}})
+		api.applyChange(t, attestedAlice(), workspacesapi.Change{Action: "deny", Servers: []string{"slack"}})
 		assert.Equal(t, map[string][]string{aliceWorkspace: {}}, api.lists(t, attestedAlice()))
+
+		// A deny entry outlasts the list; delete slack's, so the list and
+		// the default alone decide slack below.
+		_, err := fixture.pool.Exec(t.Context(), `DELETE FROM scope_entries WHERE server = 'slack'`)
+		require.NoError(t, err)
 
 		api.widen(t, attestedAlice(), workspacesapi.Change{Action: "defaults", Verified: "all"})
 
 		client := fixture.connectObserved(t, attestedAlice())
-		assertBlockedInWorkspace(t, listServers(t, client.session), "github")
+		assertBlockedInWorkspace(t, listServers(t, client.session), "slack")
 
-		// With the default all, clearing the list widens.
+		// With the default all, clearing the list widens; the deny entry stays
+		// (row 243).
 		id := api.requestChange(t, attestedAlice(), workspacesapi.Change{Action: "clear"})
 		assert.Equal(t, map[string][]string{aliceWorkspace: {}}, api.lists(t, attestedAlice()))
 		require.NoError(t, api.approve(t, id))
 		assert.Empty(t, api.lists(t, attestedAlice()))
-		assertNotBlocked(t, listServers(t, client.session), "github")
+		assertNotBlocked(t, listServers(t, client.session), "slack")
+		assertDenied(t, listServers(t, client.session), "github", "denied in this workspace")
 
 		cleared := fixture.auditRows(t, gateway.TypeWorkspaceChange)
 		assert.Equal(t, true, cleared[len(cleared)-1].Details["cleared"])

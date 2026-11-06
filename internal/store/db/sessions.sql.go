@@ -329,12 +329,13 @@ func (q *Queries) LatestSessionOfPrincipal(ctx context.Context, principal string
 const listForgettableSessions = `-- name: ListForgettableSessions :many
 SELECT s.id, s.principal, s.session_id, s.workspace, s.attestation, s.email, s.name, s.groups, s.created_at, s.last_seen_at, s.ended_at, s.kind FROM sessions s
 WHERE s.ended_at IS NOT NULL AND s.ended_at < now() - $1::interval
-  AND EXISTS (SELECT 1 FROM session_servers ss WHERE ss.session_pk = s.id)
+  AND (EXISTS (SELECT 1 FROM session_servers ss WHERE ss.session_pk = s.id)
+    OR EXISTS (SELECT 1 FROM scope_entries e WHERE e.session_pk = s.id AND e.effect = 'deny'))
 ORDER BY s.id
 `
 
 // The sessions that ended longer ago than the resume window and still have
-// enabled servers.
+// enabled servers or deny scope entries.
 func (q *Queries) ListForgettableSessions(ctx context.Context, resumeWindow pgtype.Interval) ([]Session, error) {
 	rows, err := q.db.Query(ctx, listForgettableSessions, resumeWindow)
 	if err != nil {

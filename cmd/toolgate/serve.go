@@ -103,14 +103,6 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	(&sessionsapi.Handler{
-		Queries:     db.New(server.Database()),
-		IdleTimeout: testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
-		Log:         logger,
-	}).Register(server, func(next http.Handler) http.Handler {
-		return authenticator.Middleware(next, false)
-	})
-
 	tail := audittail.New(audittail.Options{
 		Queries:    db.New(server.Database()),
 		AdminGroup: cfg.AdminGroup,
@@ -139,6 +131,15 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	ruleView := &ruleLister{}
 
 	workspaces := gateway.NewWorkspaces(server.Database(), templates, stdout, time.Duration(cfg.ApprovalTimeout))
+
+	(&sessionsapi.Handler{
+		Queries:     db.New(server.Database()),
+		IdleTimeout: testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
+		Entries:     workspaces,
+		Log:         logger,
+	}).Register(server, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
 
 	if cfg.UIEnabled() {
 		engine.GrantURL = ui.GrantLink(cfg.PublicURL)

@@ -25,6 +25,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/testtime"
+	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 )
 
 // Workspace scoping limits (docs/design/phase-3.md §10, "State").
@@ -143,6 +144,20 @@ type WorkspaceScopes struct {
 	VerifiedDefault   string
 	UnverifiedDefault string
 	Lists             []WorkspaceList
+	// Entries are the scope entries of each workspace that has any, with or
+	// without a list.
+	Entries map[string]ScopeEntries
+}
+
+// ScopeEntries are the scope entries of one target, by exposed name:
+// `<server>__<tool>` for a tool, or the server name for a whole server.
+type ScopeEntries struct {
+	// Allowed are the allow entries.
+	Allowed []string
+	// Denied are the deny entries.
+	Denied []string
+	// UpdatedAt is when the newest entry was made.
+	UpdatedAt time.Time
 }
 
 // Workspaces reads and writes a user's workspace lists and defaults and
@@ -183,7 +198,7 @@ func VerifiedWorkspace(identity auth.Identity) string {
 // user_scopes row has both defaults none and no lists.
 func (w *Workspaces) Scopes(ctx context.Context, principal string) (WorkspaceScopes, error) {
 	queries := db.New(w.database)
-	scopes := WorkspaceScopes{VerifiedDefault: ScopeNone, UnverifiedDefault: ScopeNone, Lists: []WorkspaceList{}}
+	scopes := WorkspaceScopes{VerifiedDefault: ScopeNone, UnverifiedDefault: ScopeNone, Lists: []WorkspaceList{}, Entries: map[string]ScopeEntries{}}
 
 	row, err := queries.GetUserScope(ctx, principal)
 
@@ -212,7 +227,69 @@ func (w *Workspaces) Scopes(ctx context.Context, principal string) (WorkspaceSco
 		}
 	}
 
+	entries, err := queries.ListScopeEntries(ctx, row.ID)
+	if err != nil {
+		return WorkspaceScopes{}, fmt.Errorf("read scope entries: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.Workspace.Valid {
+			scopes.Entries[entry.Workspace.String] = w.addEntry(scopes.Entries[entry.Workspace.String], entry)
+		}
+	}
+
 	return scopes, nil
+}
+
+// SessionEntries returns the scope entries of each of the sessions, by
+// sessions row ID.
+func (w *Workspaces) SessionEntries(ctx context.Context, sessionPKs []int64) (map[int64]ScopeEntries, error) {
+	rows, err := db.New(w.database).ListScopeEntriesOfSessions(ctx, sessionPKs)
+	if err != nil {
+		return nil, fmt.Errorf("read scope entries: %w", err)
+	}
+
+	entries := map[int64]ScopeEntries{}
+
+	for _, entry := range rows {
+		if entry.SessionPk.Valid {
+			entries[entry.SessionPk.Int64] = w.addEntry(entries[entry.SessionPk.Int64], entry)
+		}
+	}
+
+	return entries, nil
+}
+
+// addEntry adds entry to entries by its exposed name: a tool's upstream name
+// is mapped by the server's current curation, or kept when the catalog
+// doesn't offer the server.
+func (w *Workspaces) addEntry(entries ScopeEntries, entry db.ScopeEntry) ScopeEntries {
+	name := entry.Server
+
+	if entry.Tool != "" {
+		tool := entry.Tool
+		if template, err := w.catalog.Offered(entry.Server); err == nil {
+			tool = toolcatalog.ExposedName(template, entry.Tool)
+		}
+
+		name = ProxiedToolName(entry.Server, tool)
+	}
+
+	if entries.Allowed == nil {
+		entries.Allowed, entries.Denied = []string{}, []string{}
+	}
+
+	if entry.Effect == policy.EffectDeny {
+		entries.Denied = append(entries.Denied, name)
+	} else {
+		entries.Allowed = append(entries.Allowed, name)
+	}
+
+	if created := entry.CreatedAt.Time.UTC(); created.After(entries.UpdatedAt) {
+		entries.UpdatedAt = created
+	}
+
+	return entries
 }
 
 // Apply applies a change of identity's, widening or narrowing. The caller
@@ -575,6 +652,14 @@ func (w *Workspaces) validate(identity auth.Identity, change WorkspaceChange) (W
 		}
 
 		for _, server := range change.Servers {
+			if change.Action == WorkspaceDeny {
+				if err := validateScopeItem(server); err != nil {
+					return change, err
+				}
+
+				continue
+			}
+
 			if server == "" || len(server) > maxServerNameLength {
 				return change, workspaceError(http.StatusBadRequest, "A server name has 1 to %d characters.", maxServerNameLength)
 			}
@@ -688,22 +773,8 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 		return applied, notifyScope()
 	}
 
-	if change.Session != "" {
-		removed, err := queries.RemoveSessionAdditions(ctx, db.RemoveSessionAdditionsParams{SessionPk: session.ID, Servers: change.Servers})
-		if err != nil {
-			return WorkspaceResult{}, fmt.Errorf("remove session additions: %w", err)
-		}
-
-		for _, server := range removed {
-			event := scopeEvent(identity, TypeSessionAddition, session.Workspace, map[string]any{"removed": true})
-			event.Session, event.Attestation, event.Server = change.Session, session.Attestation, server
-
-			if err := recorder.Record(ctx, event); err != nil {
-				return WorkspaceResult{}, err
-			}
-		}
-
-		return applied, store.Notify(ctx, tx, store.KindSession, strconv.FormatInt(session.ID, 10))
+	if change.Action == WorkspaceDeny {
+		return applied, w.deny(ctx, tx, identity, change, scope, session, via)
 	}
 
 	list, err := queries.GetWorkspaceList(ctx, db.GetWorkspaceListParams{ScopeID: scope.ID, Workspace: change.Workspace})
@@ -762,23 +833,6 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 		if _, err := queries.AddWorkspaceListServers(ctx, db.AddWorkspaceListServersParams{ListID: list.ID, Servers: added}); err != nil {
 			return WorkspaceResult{}, fmt.Errorf("add servers: %w", err)
 		}
-	case WorkspaceDeny:
-		if !hasList {
-			return WorkspaceResult{}, workspaceError(http.StatusConflict,
-				"Workspace `%s` has no list. Add one with `toolgate workspace allow` first.", change.Workspace)
-		}
-
-		removed, err = queries.RemoveWorkspaceListServers(ctx, db.RemoveWorkspaceListServersParams{ListID: list.ID, Servers: change.Servers})
-		if err != nil {
-			return WorkspaceResult{}, fmt.Errorf("remove servers: %w", err)
-		}
-
-		err = queries.RemoveWorkspaceSessionAdditions(ctx, db.RemoveWorkspaceSessionAdditionsParams{
-			Principal: identity.Principal, Workspace: change.Workspace, Servers: change.Servers,
-		})
-		if err != nil {
-			return WorkspaceResult{}, fmt.Errorf("remove session additions: %w", err)
-		}
 	case WorkspaceClear:
 		if hasList && scope.VerifiedDefault == ScopeAll && mode != widenApply {
 			return w.notWidened(ctx, tx, identity, change, mode)
@@ -790,6 +844,14 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 			}
 
 			removed, cleared = current, true
+		}
+
+		// A clear keeps the workspace's deny entries (docs/design/phase-4.md §7).
+		err := queries.DeleteWorkspaceScopeEntriesOfEffect(ctx, db.DeleteWorkspaceScopeEntriesOfEffectParams{
+			ScopeID: scope.ID, Workspace: pgtype.Text{String: change.Workspace, Valid: true}, Effect: policy.EffectAllow,
+		})
+		if err != nil {
+			return WorkspaceResult{}, fmt.Errorf("delete allow entries: %w", err)
 		}
 	}
 

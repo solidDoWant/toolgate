@@ -201,6 +201,18 @@ func endSessionAdditions(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, 
 		return fmt.Errorf("delete session additions: %w", err)
 	}
 
+	// The session's deny entries stay until it is forgotten, so a resume
+	// can't undo a deny (docs/design/phase-4.md §2, "Ending a session").
+	if err := queries.DeleteSessionScopeEntries(ctx, db.DeleteSessionScopeEntriesParams{
+		SessionPk: pgtype.Int8{Int64: ended.ID, Valid: true}, Effect: "allow",
+	}); err != nil {
+		return fmt.Errorf("delete allow entries: %w", err)
+	}
+
+	if err := queries.DeleteSessionFoundTools(ctx, ended.ID); err != nil {
+		return fmt.Errorf("delete found tools: %w", err)
+	}
+
 	expired, err := queries.ExpireSessionServerRequests(ctx, pgtype.Int8{Int64: ended.ID, Valid: true})
 	if err != nil {
 		return fmt.Errorf("expire server requests: %w", err)
@@ -253,7 +265,12 @@ func (e *SessionEnder) forget(ctx context.Context, id int64, window pgtype.Inter
 			return fmt.Errorf("delete enabled servers: %w", err)
 		}
 
-		if len(servers) == 0 {
+		denies, err := queries.DeleteForgottenSessionDenyEntries(ctx, db.DeleteForgottenSessionDenyEntriesParams{ID: id, ResumeWindow: window})
+		if err != nil {
+			return fmt.Errorf("delete deny entries: %w", err)
+		}
+
+		if len(servers) == 0 && denies == 0 {
 			return nil
 		}
 
@@ -265,7 +282,7 @@ func (e *SessionEnder) forget(ctx context.Context, id int64, window pgtype.Inter
 			Workspace:   session.Workspace,
 			Session:     session.SessionID,
 			Attestation: session.Attestation,
-			Details:     map[string]any{"servers": servers},
+			Details:     map[string]any{"servers": nonNilNames(servers), "denyEntries": denies},
 		})
 		if err != nil {
 			return err
@@ -311,4 +328,12 @@ func interval(value, fallback time.Duration) pgtype.Interval {
 	}
 
 	return pgtype.Interval{Microseconds: value.Microseconds(), Valid: true}
+}
+
+func nonNilNames(names []string) []string {
+	if names == nil {
+		return []string{}
+	}
+
+	return names
 }

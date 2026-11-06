@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -30,8 +31,8 @@ const workspaceUsage = `Usage: toolgate workspace <command>
 Commands:
   list                                   Show your defaults and workspace lists
   allow [--workspace ID] SERVER...       Add servers to a workspace's list
-  deny [--workspace ID | --session ID] SERVER...
-                                         Remove servers from a list, or from one session
+  deny [--workspace ID | --session ID] SERVER|SERVER__TOOL...
+                                         Deny servers or tools in a workspace, or in one session
   clear [--workspace ID]                 Delete a workspace's list
   defaults [--verified none|all] [--unverified none|all]
                                          Show or set the defaults
@@ -150,7 +151,7 @@ func parseWorkspaceArgs(command string, args []string, stderr io.Writer) (worksp
 		flags.StringVar(&options.workspace, "workspace", "", "workspace `ID` (default: this machine's verified workspace)")
 	case "deny":
 		flags.StringVar(&options.workspace, "workspace", "", "workspace `ID` (default: this machine's verified workspace)")
-		flags.StringVar(&options.session, "session", "", "remove servers added to this session `ID` only")
+		flags.StringVar(&options.session, "session", "", "deny in this open session `ID` of yours only")
 	case "defaults":
 		flags.StringVar(&options.verified, "verified", "", "default for verified workspaces: none or all")
 		flags.StringVar(&options.unverified, "unverified", "", "default for unverified sessions: none or all")
@@ -308,15 +309,31 @@ func printWorkspaces(ctx context.Context, env workspaceEnv, access gatewayAccess
 	_, _ = fmt.Fprintln(env.stdout)
 
 	table := tabwriter.NewWriter(env.stdout, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(table, "WORKSPACE\tSERVERS\tUPDATED")
+	// The entry columns are shown only when some workspace has entries.
+	withEntries := slices.ContainsFunc(list.Workspaces, func(each workspacesapi.Workspace) bool {
+		return len(each.Tools) > 0 || len(each.Denied) > 0
+	})
+
+	if withEntries {
+		_, _ = fmt.Fprintln(table, "WORKSPACE\tSERVERS\tTOOLS\tDENIED\tUPDATED")
+	} else {
+		_, _ = fmt.Fprintln(table, "WORKSPACE\tSERVERS\tUPDATED")
+	}
 
 	for _, entry := range list.Workspaces {
-		servers := "-"
-		if len(entry.Servers) > 0 {
-			servers = terminalSafe(strings.Join(entry.Servers, ","))
+		servers := joinedOrDash(entry.Servers)
+		if entry.Servers == nil {
+			servers = "(no list)"
 		}
 
-		_, _ = fmt.Fprintf(table, "%s\t%s\t%s\n", terminalSafe(entry.Workspace), servers, entry.UpdatedAt.UTC().Format(time.RFC3339))
+		updated := entry.UpdatedAt.UTC().Format(time.RFC3339)
+
+		if withEntries {
+			_, _ = fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\n", terminalSafe(entry.Workspace), servers,
+				joinedOrDash(entry.Tools), joinedOrDash(entry.Denied), updated)
+		} else {
+			_, _ = fmt.Fprintf(table, "%s\t%s\t%s\n", terminalSafe(entry.Workspace), servers, updated)
+		}
 	}
 
 	if err := table.Flush(); err != nil {
@@ -324,6 +341,15 @@ func printWorkspaces(ctx context.Context, env workspaceEnv, access gatewayAccess
 	}
 
 	return nil
+}
+
+// joinedOrDash joins names with commas for the terminal, or is "-" for none.
+func joinedOrDash(names []string) string {
+	if len(names) == 0 {
+		return "-"
+	}
+
+	return terminalSafe(strings.Join(names, ","))
 }
 
 // postChange sends a change. A 202 makes it wait for the approval.
