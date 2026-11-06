@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
+	"github.com/solidDoWant/toolgate/internal/client/spiffe"
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 )
 
@@ -30,6 +32,10 @@ type gatewayAccess struct {
 // signedInGateway loads the sign-in settings and gets a new access token with
 // the stored refresh token.
 func signedInGateway(ctx context.Context) (gatewayAccess, error) {
+	if socket := spiffe.Socket(); socket != "" {
+		return spiffeGateway(ctx, socket)
+	}
+
 	dir, err := configDir()
 	if err != nil {
 		return gatewayAccess{}, err
@@ -54,6 +60,41 @@ func signedInGateway(ctx context.Context) (gatewayAccess, error) {
 	}
 
 	return gatewayAccess{gateway: strings.TrimRight(settings.Gateway, "/"), accessToken: accessToken}, nil
+}
+
+// spiffeGateway gets a JWT-SVID from the Workload API. It never falls back
+// to the stored sign-in. The gateway URL comes from the saved sign-in, or
+// from TOOLGATE_GATEWAY when none is saved.
+func spiffeGateway(ctx context.Context, socket string) (gatewayAccess, error) {
+	gateway, err := spiffeGatewayURL()
+	if err != nil {
+		return gatewayAccess{}, err
+	}
+
+	token, err := spiffe.FetchToken(ctx, socket)
+	if err != nil {
+		return gatewayAccess{}, err
+	}
+
+	return gatewayAccess{gateway: gateway, accessToken: token}, nil
+}
+
+// spiffeGatewayURL returns the gateway URL for a command that uses the SPIFFE
+// credential.
+func spiffeGatewayURL() (string, error) {
+	if dir, err := configDir(); err == nil {
+		settings, err := login.LoadSettings(dir)
+		if err == nil && settings.Gateway != "" {
+			return strings.TrimRight(settings.Gateway, "/"), nil
+		}
+	}
+
+	gateway := strings.TrimRight(strings.TrimSpace(os.Getenv(spiffe.GatewayEnv)), "/")
+	if gateway == "" {
+		return "", fmt.Errorf("no gateway URL: sign in with toolgate login, or set %s", spiffe.GatewayEnv)
+	}
+
+	return gateway, nil
 }
 
 // do sends a request to the gateway with the access token. A response that

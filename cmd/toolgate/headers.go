@@ -11,6 +11,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
+	"github.com/solidDoWant/toolgate/internal/client/spiffe"
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 )
 
@@ -75,17 +76,7 @@ func buildHeaders(ctx context.Context) (map[string]string, error) {
 // credentialHeaders returns the Authorization and workspace headers shared
 // by `toolgate headers` and `toolgate otel-headers`.
 func credentialHeaders(ctx context.Context) (map[string]string, error) {
-	dir, err := configDir()
-	if err != nil {
-		return nil, err
-	}
-
-	settings, err := login.LoadSettings(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	accessToken, err := headers.AccessToken(ctx, nil, settings, tokenstore.New(dir))
+	accessToken, err := bearerToken(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +95,27 @@ func credentialHeaders(ctx context.Context) (map[string]string, error) {
 		"Authorization":      "Bearer " + accessToken,
 		auth.WorkspaceHeader: workspace,
 	}, nil
+}
+
+// bearerToken returns the token for the gateway: a fresh JWT-SVID when
+// TOOLGATE_SPIFFE_SOCKET is set, otherwise the stored sign-in's access token.
+// A failed fetch never falls back to the sign-in.
+func bearerToken(ctx context.Context) (string, error) {
+	if socket := spiffe.Socket(); socket != "" {
+		return spiffe.FetchToken(ctx, socket)
+	}
+
+	dir, err := configDir()
+	if err != nil {
+		return "", err
+	}
+
+	settings, err := login.LoadSettings(dir)
+	if err != nil {
+		return "", err
+	}
+
+	return headers.AccessToken(ctx, nil, settings, tokenstore.New(dir))
 }
 
 // printOtelHeaders runs `toolgate otel-headers`: it prints the headers for

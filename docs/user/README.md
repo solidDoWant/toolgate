@@ -206,6 +206,14 @@ The workspace name is the value of the `TOOLGATE_WORKSPACE` environment variable
 
 If your admin sends Claude Code telemetry to the gateway, Claude Code runs `toolgate otel-headers`. This command prints two request headers as JSON: `Authorization` and `X-Toolgate-Workspace`. They are the same as in `toolgate headers`: a new access token, and the workspace name. It does not print a session ID and it does not wait for one. If you are not signed in, it shows "not signed in", prints no headers and exits with a non-zero code. Your access token must be valid for at least 5 minutes, because Claude Code runs the command only every 4 minutes.
 
+### Sign in with a workload identity (SPIFFE)
+
+Use this in a place that runs a SPIFFE Workload API, for example a Coder workspace with a SPIRE agent, when your admin has set it up. Set the variable `TOOLGATE_SPIFFE_SOCKET` to the address of the Workload API, for example `unix:///run/spire/agent.sock`.
+
+Then these commands do not use your stored sign-in: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions` and `audit tail`. Each run gets a new JWT-SVID (the token that proves the identity of the workload) for the audience `toolgate` and sends it as the access token. If toolgate cannot get the token within 5 seconds, the command shows the error and exits with a non-zero code. It never uses your stored sign-in instead, because that would change who you are without a warning.
+
+If you have not signed in with `toolgate login`, set `TOOLGATE_GATEWAY` to the gateway URL. `toolgate headers` and `toolgate otel-headers` do not need it, because they do not call the gateway. toolgate does not read `SPIFFE_ENDPOINT_SOCKET`, because other tools may set it.
+
 ## Settings from your admin
 
 Your admin can give you Claude Code settings, for example permissions or environment variables. When a Claude Code session starts, the plugin runs `toolgate hook session-start`. This command gets the settings for you from the gateway and writes them into `~/.claude/settings.json`.

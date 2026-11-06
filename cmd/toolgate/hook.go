@@ -16,6 +16,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/settingssync"
+	"github.com/solidDoWant/toolgate/internal/client/spiffe"
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 	"github.com/solidDoWant/toolgate/internal/settings"
 )
@@ -86,6 +87,10 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 		notes = append(notes, "toolgate: the session could not be recorded, so the toolgate MCP servers may not connect: "+err.Error())
 	}
 
+	if socket := spiffe.Socket(); socket != "" {
+		return strings.Join(append(notes, spiffeSettingsNotes(ctx, socket)...), "\n")
+	}
+
 	dir, err := configDir()
 	if err != nil {
 		return strings.Join(append(notes, "toolgate: "+err.Error()), "\n")
@@ -108,6 +113,22 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 	}
 
 	return strings.Join(append(notes, "toolgate: sign-in failed ("+err.Error()+"). Run `toolgate login` in a terminal, then restart Claude Code."), "\n")
+}
+
+// spiffeSettingsNotes syncs the settings with a JWT-SVID. It never falls
+// back to the stored sign-in.
+func spiffeSettingsNotes(ctx context.Context, socket string) []string {
+	access, err := spiffeGateway(ctx, socket)
+	if err != nil {
+		return []string{"toolgate: the SPIFFE sign-in failed (" + err.Error() + ")."}
+	}
+
+	dir, err := configDir()
+	if err != nil {
+		return []string{"toolgate: " + err.Error()}
+	}
+
+	return syncSettings(ctx, access.gateway, access.accessToken, dir)
 }
 
 // writeSessionFile writes the session ID from the hook input to the session
