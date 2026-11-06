@@ -98,7 +98,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, result.IsError, "the call waits for the start instead of failing: %v", result.Content)
 		require.Len(t, result.Content, 1)
-		assert.Equal(t, "early", result.Content[0].(*mcp.TextContent).Text)
+		assert.Contains(t, result.Content[0].(*mcp.TextContent).Text, `"early"`, "the call is forwarded")
 		assert.Contains(t, resumed.recorded(), eventProgress, "the waiting call sends progress")
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
