@@ -33,6 +33,7 @@ Same rules as phase 1. The tag is `[AC-3-nn]`. This checklist is at feature leve
 - **AC-3-18 Defaults.** A user chooses what their verified workspaces with no list get (nothing, or all their servers), and what their unverified sessions get (nothing, or all their servers). The default for both is nothing. The choices apply as AC-3-17 does.
 - **AC-3-19 Session addition.** When a session enables a server that its workspace's list doesn't include, the user is asked in the browser (URL elicitation, or a link for clients without elicitation) to allow it for this session only or always for this workspace. Approving needs a step-up. A session-only approval ends when the session ends, and other sessions in the workspace don't get it. "Always" adds the server to the workspace's list.
 - **AC-3-20 Device sign-in from a workspace.** In a workspace with no browser, `toolgate login` prints a verification URL and code. After the user approves on another device, the workspace's sessions act as that user, unattended, until the refresh token expires or is revoked.
+- **AC-3-21 Sign-in through another service.** With `TOOLGATE_TOKEN_COMMAND` set to a command that prints the user's access token (for example Coder's `coder external-auth access-token toolgate`), a workspace's sessions act as that user with no `toolgate login` in the workspace. The gateway accepts tokens from the same issuer for any audience in its configured list, verified like the first audience.
 
 ## Release
 
