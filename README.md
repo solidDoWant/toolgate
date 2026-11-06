@@ -8,7 +8,7 @@ Admins deploy toolgate with Helm and Flux, and keep the catalog of servers and t
 
 ## Status
 
-toolgate is in early development. Nothing works yet, and there is no release. Autonomous agents build it, one phase at a time. The owner's checklist for each phase is in [`docs/acceptance/`](docs/acceptance/phase-1.md).
+toolgate is in early development. The first release is not published yet. Autonomous agents build it, one phase at a time. The owner's checklist for each phase is in [`docs/acceptance/`](docs/acceptance/phase-1.md).
 
 ## More information
 

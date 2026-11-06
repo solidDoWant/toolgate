@@ -7,7 +7,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 ## Deploy
 
 - [Quick start](quick-start.md): install the chart in a test cluster with the smallest set of values.
-- [The Helm chart](chart.md): what the chart installs, and why its permissions are safe.
+- [The Helm chart](chart.md): what the chart installs, why its permissions are safe, and the optional migration Job for split database roles.
 - [Chart values reference](chart-values.md): every value of the chart. This page is generated from the chart.
 - [Gateway configuration reference](configuration.md): every setting of `toolgate serve`. This page is generated from the code.
 - [Pod sign-in](pod-sign-in.md): how pods sign in with a Kubernetes service-account token.
@@ -17,6 +17,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 ## Write the catalog and rules
 
 - [Templates and rules](templates-and-rules.md): how to write `MCPServerTemplate` and `ToolgateRule` objects.
+- [Health checks](templates-and-rules.md#health-checks): how to make toolgate check a running server and repair it.
 - [Settings profiles](settings-profiles.md): how to give Claude Code settings to your users.
 - [Telemetry](telemetry.md): how to send the OpenTelemetry data of Claude Code through the gateway, and how to read tokens and cost for each user.
 - [The security model](security-model.md): what toolgate protects against, and what a claimed workspace or session cannot protect against.
