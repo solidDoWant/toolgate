@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.2.0
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This release adds a web UI and more control over tool calls. Users sign in to the web UI to see their servers, sessions, secrets and audit events. Users can get a grant for an `opt-in` server, and approve a tool call before it runs. Admins can add temporary blocks, get values for templates from resolvers, store tool arguments and results in S3, and use any namespaced kind in a template.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.2.0`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.2.0`. Follow `docs/admin/quick-start.md`. To turn on the web UI, follow `docs/admin/web-ui.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+- Back up your PostgreSQL database before you upgrade. The gateway applies new database migrations when it starts, and you cannot undo them. ([#190](https://github.com/solidDoWant/toolgate/pull/190))
+- If you must keep audit events for more than 90 days, copy them out of PostgreSQL before you upgrade. The gateway now deletes audit events that are older than 90 days, once an hour. ([#190](https://github.com/solidDoWant/toolgate/pull/190))
+- Look at all RBAC roles that you bound to the service account of the gateway. The admission policy no longer limits the kinds that the gateway can write. RBAC now decides the kinds. The admission policy still keeps every write in the namespaces of toolgate, and still refuses cluster-scoped objects. ([#191](https://github.com/solidDoWant/toolgate/pull/191))
+
+### Web UI
+
+- The gateway has a web UI under `/ui/`. Users sign in with your identity provider, through a separate OIDC client with PKCE. Set `config.ui.publicURL` and `config.ui.clientID` to turn it on. A sign-in lasts 8 hours, or ends after 1 hour without use. ([#193](https://github.com/solidDoWant/toolgate/pull/193))
+- Members of the group in `config.ui.adminGroup` are admins in the UI. Admins see the events, sessions and shared instances of all users. ([#193](https://github.com/solidDoWant/toolgate/pull/193))
+- Two actions need a fresh sign-in, less than 5 minutes old: creating a grant and approving a tool call. The UI sends the user back to the identity provider for it. ([#199](https://github.com/solidDoWant/toolgate/pull/199))
+- The Servers page shows the servers that the user can use, and the running instances of the user. An outdated instance has a Restart button, which starts a new instance from the current template. An instance is outdated when its template changed, or when a secret that it uses changed. ([#200](https://github.com/solidDoWant/toolgate/pull/200), [#206](https://github.com/solidDoWant/toolgate/pull/206), [#221](https://github.com/solidDoWant/toolgate/pull/221))
+- The Sessions pages show the open sessions of the user, with their servers and newest tool decisions. ([#210](https://github.com/solidDoWant/toolgate/pull/210))
+- The Secrets page sets and deletes the secrets of the user, from a text box or a file. It never shows a value. ([#208](https://github.com/solidDoWant/toolgate/pull/208))
+- The Audit page lists audit events, with filters and a time range of up to 31 days. A user sees only their own events. ([#205](https://github.com/solidDoWant/toolgate/pull/205))
+- Each change in the UI must come from a UI page. The gateway refuses a request from another site, and a form without the token of the session. Each page has a strict Content Security Policy and is not stored in a cache. The UI uses no scripts from other sites. ([#200](https://github.com/solidDoWant/toolgate/pull/200))
+
+### Grants and blocks
+
+- A user can create a grant in the UI to use an `opt-in` server or tool from their own machine, for 1 minute to 7 days. A grant can be for all sessions of the user or for one session. When a call needs a grant, the refusal gives a link to the form. A user can revoke a grant at any time. ([#194](https://github.com/solidDoWant/toolgate/pull/194), [#212](https://github.com/solidDoWant/toolgate/pull/212))
+- Admins can add a temporary block on the Blocks page. A block refuses the matching tools for all users until it expires, from 1 minute to 30 days. Open sessions get the change within 5 seconds. The page also lists the `ToolgateRule` objects from Git, read-only. ([#194](https://github.com/solidDoWant/toolgate/pull/194), [#211](https://github.com/solidDoWant/toolgate/pull/211))
+
+### Approvals
+
+- A template can mark a tool with `approval: required`. Each call of that tool then needs the approval of the user who made the call, on a page of the UI. One approval lets one call through. ([#202](https://github.com/solidDoWant/toolgate/pull/202), [#207](https://github.com/solidDoWant/toolgate/pull/207))
+- If Claude Code supports URL elicitation (a request from the gateway to open a web page), the call waits while the user approves or denies it. Otherwise the call fails with a link, and the user calls the tool again after the approval. Set the time that a request waits with `config.ui.approvalTimeout`. The default is 10 minutes. ([#209](https://github.com/solidDoWant/toolgate/pull/209))
+
+### Templates and secrets
+
+- A template can contain any namespaced kind that the cluster has, for example a Flux `HelmRelease`. To let the gateway create more kinds, add rules to `rbac.extraRules`. ([#191](https://github.com/solidDoWant/toolgate/pull/191))
+- An instance with a `HelmRelease`, or any object with a `Ready` condition, is ready when that condition is `True`. If it stays `False` for 60 seconds, the instance fails with the message of the condition. ([#195](https://github.com/solidDoWant/toolgate/pull/195))
+- A template can use `${resolver:NAME}` in a Secret. A resolver is an HTTPS service that you list in `config.resolvers`. It gives a short-lived value for the user, for example a GitHub App token. The gateway replaces the instance before the value expires. ([#213](https://github.com/solidDoWant/toolgate/pull/213))
+
+### Audit log
+
+- The gateway can store audit payloads: the arguments of each tool call and approval request, and each tool result. Set `config.audit.payloads` to `true` and give an S3 bucket in `config.audit.s3`. Payloads under 64 KiB go in PostgreSQL, larger ones go to S3. If the bucket has object lock, the gateway locks each object for 90 days. ([#192](https://github.com/solidDoWant/toolgate/pull/192))
+- The audit event page in the UI shows the payload of the event, and a link downloads it. The browser does not need access to S3. ([#216](https://github.com/solidDoWant/toolgate/pull/216))
+
+### Claude Code plugin and CLI
+
+- The plugin and the `toolgate` command did not change in this release, except for the version number. Users of 0.1.0 can keep their installation.
+
+### Known issues
+
+- Nobody tested the manual scenario AC-2-11 before this release. The owner tests it when they deploy it.
+- `govulncheck ./...` reports [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0 and [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1. The security audit of this phase also found GO-2026-6253. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
+
+Internal work: a browser test harness, the e2e job split across parallel kind clusters, the acceptance scoreboard for all phases, the phase 2 and phase 3 design documents, and the agent scheduler. ([#161](https://github.com/solidDoWant/toolgate/pull/161), [#163](https://github.com/solidDoWant/toolgate/pull/163), [#166](https://github.com/solidDoWant/toolgate/pull/166), [#170](https://github.com/solidDoWant/toolgate/pull/170), [#189](https://github.com/solidDoWant/toolgate/pull/189), [#197](https://github.com/solidDoWant/toolgate/pull/197), [#198](https://github.com/solidDoWant/toolgate/pull/198), [#201](https://github.com/solidDoWant/toolgate/pull/201), [#204](https://github.com/solidDoWant/toolgate/pull/204), [#215](https://github.com/solidDoWant/toolgate/pull/215), [#217](https://github.com/solidDoWant/toolgate/pull/217), [#218](https://github.com/solidDoWant/toolgate/pull/218), [#219](https://github.com/solidDoWant/toolgate/pull/219))
+
 ## 0.1.0
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This is the first release. It covers sign-in, servers in a session, templates in three scopes, user secrets, block rules, settings sync, the audit log and traces.
