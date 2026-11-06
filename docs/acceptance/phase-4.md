@@ -1,4 +1,4 @@
-# Phase 4 acceptance checklist: tool search and curation
+# Phase 4 acceptance checklist: tool search, curation and MCP revisions
 
 Same rules as phase 1. The tag is `[AC-4-nn]`. This checklist is at feature level. The owner reviews it again, with the phase 4 design, before phase 4 starts.
 
@@ -13,6 +13,13 @@ Same rules as phase 1. The tag is `[AC-4-nn]`. This checklist is at feature leve
 - **AC-4-04 Tool filtering.** A template can list the upstream tools it exposes (an allow list) or hides (a deny list). Hidden tools are absent from `tools/list` and search, and calls to them are refused, even when called by name.
 - **AC-4-05 Name and description overrides.** A template can give a tool a different exposed name, description or input-schema description text. Clients see the override, while calls reach the upstream tool by its own name. Overridden names follow the phase 1 naming and length rules.
 
+## MCP protocol revisions
+
+toolgate prefers revision 2025-11-25 (stateful sessions) on both sides, and uses 2026-07-28 (stateless) only with a peer that supports nothing older.
+
+- **AC-4-07 Upstream on either revision.** An instance whose MCP server speaks 2025-11-25, or both revisions, is reached on 2025-11-25 as before. An instance whose server speaks only 2026-07-28 becomes `ready`, passes health checks, serves its tools, and its tool-list changes reach open sessions. A probe that fails for a transient reason doesn't fix the instance on the wrong revision.
+- **AC-4-08 Client on either revision.** A client that supports 2025-11-25 is served on 2025-11-25, including a client that tries 2026-07-28 first. A client that speaks only 2026-07-28 can list, enable and disable servers, get `toolsListChanged` through `subscriptions/listen`, call tools and complete approvals. Its tool lists are marked `cacheScope: "private"`, so one session never sees another's tools.
+
 ## Release
 
-- **AC-4-06 Release.** Release `0.4.0` is published, with docs for tool search and tool curation.
+- **AC-4-06 Release.** Release `0.4.0` is published, with docs for tool search, tool curation and the supported MCP revisions.
