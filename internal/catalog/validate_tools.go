@@ -3,6 +3,7 @@ package catalog
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -88,8 +89,19 @@ func validateOverrides(template *v1alpha1.MCPServerTemplate) []string {
 		problems = append(problems, fmt.Sprintf("`tools` has %d entries, more than the limit of %d.", len(template.Spec.Tools), maxOverrides))
 	}
 
-	for upstream, override := range template.Spec.Tools {
+	upstreams := slices.Sorted(maps.Keys(template.Spec.Tools))
+	owners := map[string]string{}
+
+	for _, upstream := range upstreams {
+		override := template.Spec.Tools[upstream]
+
 		if override.Name != "" {
+			if first, found := owners[override.Name]; found {
+				problems = append(problems, fmt.Sprintf("Tool name `%s` is the name of both `%s` and `%s`.", override.Name, first, upstream))
+			} else {
+				owners[override.Name] = upstream
+			}
+
 			switch {
 			case !toolcatalog.ExposedNamePattern.MatchString(override.Name):
 				problems = append(problems, fmt.Sprintf("`tools.%s.name` must match %s.", upstream, toolcatalog.ExposedNamePattern))
