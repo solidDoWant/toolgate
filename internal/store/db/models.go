@@ -118,18 +118,19 @@ type ScopeEntry struct {
 }
 
 type Session struct {
-	ID          int64
-	Principal   string
-	SessionID   string
-	Workspace   string
-	Attestation string
-	Email       string
-	Name        string
-	Groups      []string
-	CreatedAt   pgtype.Timestamptz
-	LastSeenAt  pgtype.Timestamptz
-	EndedAt     pgtype.Timestamptz
-	Kind        string
+	ID           int64
+	Principal    string
+	SessionID    string
+	Workspace    string
+	Attestation  string
+	Email        string
+	Name         string
+	Groups       []string
+	CreatedAt    pgtype.Timestamptz
+	LastSeenAt   pgtype.Timestamptz
+	EndedAt      pgtype.Timestamptz
+	Kind         string
+	LastSearchID pgtype.UUID
 }
 
 type SessionAddition struct {
@@ -145,6 +146,16 @@ type SessionFoundTool struct {
 	TemplateName string
 	UpstreamName string
 	FoundAt      pgtype.Timestamptz
+	SearchID     pgtype.UUID
+	Rank         pgtype.Int4
+}
+
+type SessionOpenSearch struct {
+	SessionPk      int64
+	SearchID       pgtype.UUID
+	SearchedAt     pgtype.Timestamptz
+	Degraded       bool
+	EmbeddingModel string
 }
 
 type SessionServer struct {

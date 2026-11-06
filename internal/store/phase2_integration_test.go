@@ -152,10 +152,10 @@ func TestPhase2MigrationKeepsPhase1Rows(t *testing.T) {
 
 	snapshot := func() string {
 		var rows string
-		// sessions.kind came with a later migration; its own test checks it.
+		// sessions.kind and last_search_id came with later migrations; their own tests check them.
 		require.NoError(t, pool.QueryRow(ctx, `SELECT
 			(SELECT json_agg(json_build_object('id', id, 'status', status, 'updated_at', updated_at, 'trace', trace_context)) FROM instances) || '' ||
-			(SELECT json_agg(to_jsonb(sessions) - 'kind') FROM sessions)`).Scan(&rows))
+			(SELECT json_agg(to_jsonb(sessions) - 'kind' - 'last_search_id') FROM sessions)`).Scan(&rows))
 
 		return rows
 	}

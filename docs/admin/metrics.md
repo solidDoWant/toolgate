@@ -127,6 +127,10 @@ sum(increase(toolgate_auth_refusals_dropped_total[1h]))
 increase(toolgate_audit_payload_errors_total[1h]) > 0
 ```
 
+## Tool search quality
+
+The counters `toolgate_tool_search_total`, `toolgate_tool_search_hits_total` (extra label `rank`), `toolgate_tool_search_researches_total` and `toolgate_tool_search_no_call_total` show how well tool search works in real use. They have the labels `degraded` and `embedding_model`. See [Tool search](tool-search.md#search-quality-in-use).
+
 ## Approvals
 
 `toolgate_approval_requests_total{kind, outcome}` counts approval and access requests that reached an outcome. The label `kind` is `tool` (a tool call that needs approval), `server` (a request to enable a server), `scope` or `change`. The label `outcome` is `approved`, `denied`, `expired` or `cancelled`. A request is `cancelled` when its session ended before anyone decided.

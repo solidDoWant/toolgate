@@ -264,7 +264,12 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 
 	result.Note = findToolsNote(len(result.Tools), degraded)
 
-	if err := m.recordFound(ctx, request, current, kept); err != nil {
+	search, err := newSearchRecord(degraded, kept)
+	if err != nil {
+		return nil, FindToolsResult{}, err
+	}
+
+	if err := m.recordFound(ctx, request, current, search); err != nil {
 		return nil, FindToolsResult{}, err
 	}
 
@@ -345,12 +350,11 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 // session row, pushes out the oldest beyond MaxFoundTools, and drops rows of
 // templates that are no longer offered. When the set changed, it notifies
 // the session's streams, and syncs this MCP session at once.
-func (m *metaTools) recordFound(ctx context.Context, request *mcp.CallToolRequest, current requestContext, found []db.SearchToolsRow) error {
-	if len(found) == 0 {
-		return nil
-	}
-
+func (m *metaTools) recordFound(ctx context.Context, request *mcp.CallToolRequest, current requestContext, search searchRecord) error {
+	found := search.found
 	changed := false
+
+	var researched *db.TakeOpenSearchRow
 
 	err := pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
 		queries := db.New(tx)
@@ -387,6 +391,11 @@ func (m *metaTools) recordFound(ctx context.Context, request *mcp.CallToolReques
 			}
 		}
 
+		researched, err = m.recordSearch(ctx, queries, current, search)
+		if err != nil {
+			return err
+		}
+
 		if err := queries.TrimSessionFoundTools(ctx, db.TrimSessionFoundToolsParams{SessionPk: current.session.ID, Keep: MaxFoundTools}); err != nil {
 			return fmt.Errorf("trim found tools: %w", err)
 		}
@@ -405,6 +414,12 @@ func (m *metaTools) recordFound(ctx context.Context, request *mcp.CallToolReques
 	})
 	if err != nil {
 		return err
+	}
+
+	m.metrics.ObserveSearch(search.degraded, m.embeddingModel())
+
+	if researched != nil {
+		m.metrics.ObserveSearchResearch(researched.Degraded, researched.EmbeddingModel)
 	}
 
 	if changed {

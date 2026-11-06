@@ -89,6 +89,12 @@ type Metrics struct {
 	// Repairs counts repairs by server and action.
 	Repairs *prometheus.CounterVec
 
+	// Searches, SearchHits, SearchResearches and SearchNoCalls count the
+	// outcomes of tool searches (see searchquality.go).
+	Searches         *prometheus.CounterVec
+	SearchHits       *prometheus.CounterVec
+	SearchResearches *prometheus.CounterVec
+	SearchNoCalls    *prometheus.CounterVec
 	// ApprovalsPending counts pending approval and access requests, by
 	// kind.
 	ApprovalsPending *prometheus.GaugeVec
@@ -165,6 +171,22 @@ func NewMetrics() *Metrics {
 			Name: "toolgate_instance_repairs_total",
 			Help: "Repairs of unhealthy instances, by server and action.",
 		}, []string{"server", "action"}),
+		Searches: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_total",
+			Help: "Tool searches, by whether search was degraded (keywords only) and the embedding model configured.",
+		}, []string{"degraded", "embedding_model"}),
+		SearchHits: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_hits_total",
+			Help: "Searches followed by a call of a returned tool, by the rank of that tool, whether search was degraded and the embedding model.",
+		}, []string{"rank", "degraded", "embedding_model"}),
+		SearchResearches: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_researches_total",
+			Help: "Searches followed by a new search before any call of a returned tool, by whether search was degraded and the embedding model.",
+		}, []string{"degraded", "embedding_model"}),
+		SearchNoCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_no_call_total",
+			Help: "Searches with no call and no newer search when the session ended or after 30 minutes, by whether search was degraded and the embedding model. Counted by the replica holding the leader Lease.",
+		}, []string{"degraded", "embedding_model"}),
 		ApprovalsPending: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "toolgate_approval_requests_pending",
 			Help: "Approval and access requests waiting for a decision, by kind. Set by the replica holding the leader Lease.",
@@ -180,6 +202,7 @@ func NewMetrics() *Metrics {
 func (m *Metrics) Collectors() []prometheus.Collector {
 	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions, m.ToolCalls, m.ToolCallDuration,
 		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs,
+		m.Searches, m.SearchHits, m.SearchResearches, m.SearchNoCalls,
 		m.ApprovalsPending, m.Leader}
 }
 

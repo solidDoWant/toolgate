@@ -264,6 +264,12 @@ func (m *metaTools) proxyCall(ctx context.Context, request *mcp.CallToolRequest)
 			fmt.Sprintf("Server `%s` has no tool `%s`.", server, exposed))
 	}
 
+	// A call of a tool the session's latest search returned is a hit,
+	// recorded before anything else is decided.
+	if err := m.recordSearchHit(ctx, current, template, tool); err != nil {
+		return nil, err
+	}
+
 	// Steps 2 and 3: a server that isn't enabled yet is enabled by the call
 	// when policy allows it.
 	if !enabled {

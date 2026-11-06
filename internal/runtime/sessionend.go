@@ -45,6 +45,8 @@ type SessionEnder struct {
 	// AuditOutput receives the session.end audit lines. Nil discards them.
 	AuditOutput io.Writer
 	Log         *slog.Logger
+	// Metrics counts searches with no follow-up call. Nil means none.
+	Metrics *Metrics
 }
 
 // Pass wraps a full pass so that idle sessions are ended before it, and
@@ -77,6 +79,10 @@ func (e *SessionEnder) Run(ctx context.Context) error {
 		if err := e.end(ctx, session.ID, timeout); err != nil {
 			problems = append(problems, err)
 		}
+	}
+
+	if err := e.settleSearches(ctx); err != nil {
+		problems = append(problems, err)
 	}
 
 	window := interval(e.ResumeWindow, DefaultSessionResumeWindow)
