@@ -38,4 +38,7 @@ runs:
       shell: bash
       env:
         GOMOD_HIT: ${{ steps.gomod.outputs.cache-hit }}
-      run: echo "TOOLGATE_GOMOD_CACHE_HIT=${GOMOD_HIT:-false}" >> "$GITHUB_ENV"
+      run: |
+        echo "TOOLGATE_GOMOD_CACHE_HIT=${GOMOD_HIT:-false}" >> "$GITHUB_ENV"
+        # go-cache-save trims build cache entries this job didn't use.
+        echo "TOOLGATE_JOB_START=$(date +%s)" >> "$GITHUB_ENV"
