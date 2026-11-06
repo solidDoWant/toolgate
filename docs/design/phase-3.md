@@ -475,6 +475,12 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 162 | UI turned off (`oidcUIClientID` removed) | lists exist | Settings are read at start. After the restart scoping is off, so access widens, as for row 153. The rows stay, and the workspace API answers 409 with "Workspace scoping is off, because this gateway has no web UI." | unit |
 | 163 | "Session" approval | `session_additions` row already there | `ON CONFLICT DO NOTHING` keeps the row, and the approval succeeds. | unit |
 | 164 | `toolgate workspace deny --session ID` | additions in that session | Deletes them in one transaction, which locks the `sessions` row and then `user_scopes`, and notifies `session:<id>`. Lists don't change. | unit |
+| 165 | Session ends (idle) | servers enabled | The rows stay. Per-session instances stop (session not live). `session.end` lists the set. | integration |
+| 166 | Request for the ended session within `sessionResumeWindow` | same workspace and attestation | The session restarts with its set. Each server's instance is inserted or reused without waiting, and the tools arrive with `list_changed`. `session.resume` lists the set. | AC-3-22 |
+| 167 | Same, from another workspace or attestation | — | The set is cleared, as in phase 1. `session.start` is written. | AC-3-22 |
+| 168 | A rule or workspace list added during the pause | resume | The refused servers are dropped with `server.disable`. The rest are restored. | integration |
+| 169 | `sessionResumeWindow` passes | session still ended | The reconciler deletes the rows and writes `session.forget`. A later request starts empty. | unit |
+| 170 | Resume | instance limit reached | That server is dropped with `server.disable`, reason `limit`. The others are restored. | unit |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
@@ -823,6 +829,17 @@ AC-3-19. In a session with a verified workspace, an enable whose only refusal is
 - **AC-3-19 (browser, chromedp as in phase 2):** "this session" and "always", the step-up, a second session not getting a session-only addition, and the end of the session removing it. The no-elicitation path and the unverified session's refusal are integration tests.
 - **AC-3-20 (e2e):** `toolgate login --token-store file` against the fake IdP with no D-Bus session. The device code is approved by the test, and a later `toolgate headers` from a process without the login's environment gets a token. The test opens an MCP session with those headers and checks it acts as the user. Then the fake IdP revokes the refresh token, and `headers` fails with "Sign in again".
 - **AC-3-21 (integration):** the CLI runs with an empty config directory (no sign-in), `TOOLGATE_GATEWAY`, and `TOOLGATE_TOKEN_COMMAND` printing a fake-IdP token for the second audience. The test opens an MCP session with `toolgate headers`' output, and checks the principal and groups through `toolgate sessions` and an enable of a group-only server. Second-audience tokens with a bad signature, an expired `exp` or a wrong issuer each get 401, and an unlisted audience is refused. Unit tests cover the timeout, the size limit, the cache, the lock and the 401 retry.
+
+## 11. Resuming an ended session
+
+AC-3-22. Claude Code resumes a session with the same session ID after a long pause, for example a usage limit. Phase 1 §2 cleared a session's enabled set when it ended, so the model had to enable every server again. Now the set is kept for `sessionResumeWindow` (default 24 h, 1 h to 7 days) after the session ends, and restored on resume.
+
+- **Ending a session** (phase 1 §2) no longer deletes its `session_servers` rows. In the same transaction it sets `ended_at`, writes `session.end` with the list of enabled servers, and notifies, as before. Per-session instances stop because the session isn't live: phase 1's per-session stop condition becomes "its session has no `session_servers` row for the template, **or its session has ended**". Per-user and shared instances already count only live sessions. So nothing runs during the pause.
+- **A request for an ended session within the window restarts it with its set** (phase 1 §2's restart, changed). In one transaction it locks the row and clears `ended_at`. It keeps the `session_servers` rows only if the request's workspace and attestation equal the stored ones. That's the same rule as §10's session approvals, so a resumed session never carries servers into another workspace. Otherwise it deletes them, as phase 1 did. It writes `session.resume` with the list of restored servers, or `session.start` when nothing is restored. Then, for each restored server, it runs the insert part of phase 1 §3 enable step 4: the advisory lock, a live instance or a new `pending` row, and the instance limits. It doesn't wait. A server that fails the limits or policy now is removed from the set, with a `server.disable` event naming the reason.
+- **What the model sees:** the restored servers' tools arrive with `list_changed` as each instance becomes ready. A call before then gets phase 1's `not-ready` refusal, saying the server is starting. A server whose start fails behaves as phase 1 row 12: still enabled, no tools.
+- **After the window,** the reconciler's 30 s pass deletes the `session_servers` rows of sessions ended longer ago than `sessionResumeWindow`, writing `session.forget`. A later request then starts with an empty set, as before.
+- **Policy** is decided again for every restored server (phase 1 §3 enable step 1), so a rule, a workspace list or a lost access added during the pause applies. Restoring never widens what the session could do when it ended.
+- **Audit:** `session.end`, `session.resume` and `session.forget` carry the enabled set. So the audit log shows what a session had, when it paused, and what came back.
 
 ## Decisions on the draft's open questions
 
