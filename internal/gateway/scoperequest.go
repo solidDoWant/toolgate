@@ -346,7 +346,7 @@ func (w *Workspaces) insertScopeRequest(ctx context.Context, tx pgx.Tx, identity
 		return WorkspaceResult{}, err
 	}
 
-	return WorkspaceResult{Request: id}, nil
+	return WorkspaceResult{Request: id, Inserted: true}, nil
 }
 
 // DecodeScopeChange decodes the change JSON of a scope request.

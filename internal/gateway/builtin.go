@@ -31,11 +31,11 @@ const (
 	builtinDeny       = "deny"
 )
 
-// MaxScopeToolItems is the most servers and tools one toolgate_deny call
-// names.
+// MaxScopeToolItems is the most servers and tools one toolgate_allow or
+// toolgate_deny call names.
 const MaxScopeToolItems = 32
 
-const builtinDenySchema = `{"type":"object","properties":{` +
+const builtinScopeSchema = `{"type":"object","properties":{` +
 	`"workspace":{"type":"string","description":"A workspace ID, such as coder/alice/dev."},` +
 	`"session":{"type":"string","description":"The session ID of one of your open sessions."},` +
 	`"servers":{"type":"array","items":{"type":"string"},"minItems":1,"maxItems":32,` +
@@ -61,7 +61,7 @@ func BuiltinTemplate() *v1alpha1.MCPServerTemplate {
 	template.UID = builtinUID
 	template.Generation = 1
 	template.Spec = v1alpha1.MCPServerTemplateSpec{
-		Description: "Your own workspace scope: list what each workspace and session may use, and deny servers or tools in them.",
+		Description: "Your own workspace scope: list what each workspace and session may use, and allow or deny servers or tools in them.",
 		Scope:       catalog.ScopeShared,
 		Start:       catalog.StartOnCall,
 		Access:      v1alpha1.Access{AllUsers: true, Environments: policy.EnvironmentAny},
@@ -71,10 +71,16 @@ func BuiltinTemplate() *v1alpha1.MCPServerTemplate {
 				"its denied ones, and each open session's additions and denials.",
 			InputSchema: &runtime.RawExtension{Raw: []byte(`{"type":"object"}`)},
 		}, {
+			Name: builtinAllow,
+			Description: "Ask to allow servers or tools in one of your workspaces or open sessions with a verified workspace. " +
+				"Name exactly one of `workspace` and `session`, and 1 to 32 items: a server name, or `<server>__<tool>` for one tool. " +
+				"Nothing changes until you approve the change in your browser, at the link this tool returns.",
+			InputSchema: &runtime.RawExtension{Raw: []byte(builtinScopeSchema)},
+		}, {
 			Name: builtinDeny,
 			Description: "Deny servers or tools in one of your workspaces or open sessions, at once. Name exactly one of " +
 				"`workspace` and `session`, and 1 to 32 items: a server name, or `<server>__<tool>` for one tool.",
-			InputSchema: &runtime.RawExtension{Raw: []byte(builtinDenySchema)},
+			InputSchema: &runtime.RawExtension{Raw: []byte(builtinScopeSchema)},
 		}},
 	}
 
@@ -126,15 +132,22 @@ type CurrentScope struct {
 
 // callBuiltin runs an allowed call of a built-in tool for the caller's own
 // identity, through the same methods as the API, and returns its result
-// and outcome as forward does.
-func (m *metaTools) callBuiltin(ctx context.Context, current requestContext, tool string, arguments json.RawMessage) (*mcp.CallToolResult, string) {
+// and outcome as forward does. A non-nil error is a cancel or a disconnect
+// while toolgate_allow waits, which writes no result.
+func (m *metaTools) callBuiltin(ctx context.Context, current requestContext, request *mcp.CallToolRequest, tool string, arguments json.RawMessage) (*mcp.CallToolResult, string, error) {
 	switch tool {
 	case builtinListScopes:
-		return m.listScopes(ctx, current)
+		result, outcome := m.listScopes(ctx, current)
+
+		return result, outcome, nil
+	case builtinAllow:
+		return m.allowScope(ctx, current, request, arguments)
 	case builtinDeny:
-		return m.denyScope(ctx, current, arguments)
+		result, outcome := m.denyScope(ctx, current, arguments)
+
+		return result, outcome, nil
 	default:
-		return errorResult(fmt.Sprintf("Server `%s` has no tool `%s`.", BuiltinServerName, tool)), "error"
+		return errorResult(fmt.Sprintf("Server `%s` has no tool `%s`.", BuiltinServerName, tool)), "error", nil
 	}
 }
 
@@ -163,7 +176,7 @@ func (m *metaTools) listScopes(ctx context.Context, current requestContext) (*mc
 	}, "ok"
 }
 
-// scopeToolInput is the input of toolgate_deny.
+// scopeToolInput is the input of toolgate_allow and toolgate_deny.
 type scopeToolInput struct {
 	Workspace string   `json:"workspace"`
 	Session   string   `json:"session"`
@@ -173,19 +186,9 @@ type scopeToolInput struct {
 // denyScope runs toolgate_deny: the same deny as the API and the CLI, for
 // the caller's own identity (docs/design/phase-4.md §7, "toolgate_deny").
 func (m *metaTools) denyScope(ctx context.Context, current requestContext, arguments json.RawMessage) (*mcp.CallToolResult, string) {
-	var input scopeToolInput
-	if len(arguments) > 0 {
-		if err := json.Unmarshal(arguments, &input); err != nil {
-			return errorResult("The input is `workspace` or `session`, and `servers`, a list of names."), "error"
-		}
-	}
-
-	if (input.Workspace == "") == (input.Session == "") {
-		return errorResult("Name exactly one of `workspace` and `session`."), "error"
-	}
-
-	if len(input.Servers) == 0 || len(input.Servers) > MaxScopeToolItems {
-		return errorResult(fmt.Sprintf("Name 1 to %d servers or tools.", MaxScopeToolItems)), "error"
+	input, refusal := parseScopeToolInput(arguments)
+	if refusal != "" {
+		return errorResult(refusal), "error"
 	}
 
 	change := WorkspaceChange{Action: WorkspaceDeny, Workspace: input.Workspace, Session: input.Session, Servers: input.Servers}

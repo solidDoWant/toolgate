@@ -222,13 +222,13 @@ func TestBuiltinServerSearchRows(t *testing.T) {
 			assert.Equal(t, gateway.BuiltinServerName, row.TemplateName)
 		}
 
-		assert.ElementsMatch(t, []string{"list_scopes", "deny"}, upstream)
+		assert.ElementsMatch(t, []string{"list_scopes", "allow", "deny"}, upstream)
 
 		cleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: fixture.catalog.UIDs}
 		require.NoError(t, cleaner.Run(t.Context()))
 
 		rows, err = queries.ListToolSearchForTemplate(t.Context(), uid)
 		require.NoError(t, err)
-		assert.Len(t, rows, 2)
+		assert.Len(t, rows, 3)
 	})
 }

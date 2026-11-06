@@ -132,6 +132,9 @@ func workspaceError(status int, format string, arguments ...any) *WorkspaceError
 type WorkspaceResult struct {
 	Applied bool
 	Request string
+	// Inserted is true when this call inserted the request, so the user
+	// hasn't seen it yet.
+	Inserted bool
 }
 
 // WorkspaceList is one of a user's workspace lists.
