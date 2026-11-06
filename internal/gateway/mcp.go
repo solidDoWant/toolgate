@@ -470,6 +470,14 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
+	// The MCP session ended while this request was on its way, so the
+	// client initializes again (docs/design/phase-4.md §9).
+	if errors.Is(err, errSessionEnded) {
+		http.Error(writer, "session not found", http.StatusNotFound)
+
+		return
+	}
+
 	if err != nil {
 		e.logger.ErrorContext(request.Context(), "session lookup failed", "error", err)
 		http.Error(writer, "The gateway can't reach its database. Try again later.", http.StatusServiceUnavailable)

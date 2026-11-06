@@ -1,9 +1,13 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
 // StatelessBindings returns how many stateless bindings the MCP handler
@@ -55,4 +59,17 @@ func (w *ApprovalWaiters) Release(principal string) { w.waiters.release(principa
 // the MCP handler.
 func WaitingCalls(handler http.Handler, principal string) int {
 	return handler.(*mcpEndpoint).waiters.count(principal)
+}
+
+// WrapEndSession wraps how the endpoint ends a session tied to an MCP
+// session, so a test can hold it after the end transaction commits.
+func WrapEndSession(handler http.Handler, wrap func(next func(ctx context.Context, id int64, reason string) error) func(ctx context.Context, id int64, reason string) error) {
+	endpoint := handler.(*mcpEndpoint)
+	endpoint.endSession = wrap(endpoint.endSession)
+}
+
+// ResolveSession runs the endpoint's session lookup for identity, as a
+// request that passed the MCP session binding check does.
+func ResolveSession(ctx context.Context, handler http.Handler, identity auth.Identity) (db.Session, error) {
+	return handler.(*mcpEndpoint).sessions.resolve(ctx, identity, false)
 }
