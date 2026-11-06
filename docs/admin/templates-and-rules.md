@@ -146,7 +146,7 @@ A `shared` template cannot use `${secret:…}`, `${resolver:…}`, `${principal.
 
 ## Resolvers
 
-A resolver is an HTTPS service that gives the gateway a short-lived value for one user, for example a GitHub App token. You list resolvers in the chart value `config.resolvers`. Each one has a `name`, an `https://` `url`, an `audience`, a `timeout` (default `10s`, at most `60s`) and an optional `caFile`. A `caFile` is a PEM file of the certificate authorities that sign the certificate of the resolver. Mount it into the gateway pods with `resources.persistence`. A template that names a resolver that is not in the list is not valid, and its `Valid` condition gives the reason.
+A resolver is an HTTPS service that gives the gateway a short-lived value for one user, for example a GitHub App token. You list resolvers in the chart value `config.resolvers`. Each one has a `name`, an `https://` `url`, an `audience`, a `timeout` (default `10s`, at most `60s`) and an optional `caFile`. A `caFile` is a PEM file of the certificate authorities that sign the certificate of the resolver. Mount it into the gateway pods with `resources.persistence` and `advancedMounts.gateway.gateway`. A template that names a resolver that is not in the list is not valid, and its `Valid` condition gives the reason.
 
 When the gateway starts an instance, it calls each resolver that the template names one time. The request is a `POST` with a JSON body:
 

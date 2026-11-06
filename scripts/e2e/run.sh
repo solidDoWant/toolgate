@@ -200,7 +200,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set "config.extraEnv[0].value=$workload_namespace" \
 	--set-json "config.resolvers=[{\"name\":\"test\",\"url\":\"https://$TOOLGATE_E2E_RESOLVER_LISTEN/resolve\",\"audience\":\"toolgate-resolver-test\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json "config.spiffe.trustDomains=[{\"name\":\"allowed.test\",\"bundleEndpointURL\":\"https://$TOOLGATE_E2E_SPIFFE_LISTEN\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
-	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","globalMounts":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}' \
+	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}}}' \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--wait --timeout 5m >&2
 

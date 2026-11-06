@@ -21,6 +21,10 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.crds.enabled | bool | `true` | Install toolgate's CRDs with the chart. `helm upgrade` updates them. If false, install them yourself. |
 | config.crds.keep | bool | `true` | Keep the CRDs, and so every template, rule and settings profile, when the release is uninstalled (`helm.sh/resource-policy: keep`). |
 | config.database.existingSecret | string | `""` | Name of an existing Secret in the release namespace that holds the PostgreSQL connection string. Required. |
+| config.database.migrateOnStart | bool | `true` | Whether the gateway creates and updates its tables when it starts. Set false when the gateway's database user has data rights only. Then run the migrations with `config.database.migrationSecret`, or run `toolgate migrate` yourself. |
+| config.database.migrationEgress | list | `[]` | Egress rules (the `egress` list of a Kubernetes `NetworkPolicy`) that let the migration Job reach PostgreSQL. Required when the Job renders. The chart adds DNS (port 53) itself. |
+| config.database.migrationSecret | string | `""` | Name of an existing Secret in the release namespace that holds the connection string of the database role that owns the tables. When it is set and `config.database.migrateOnStart` is false, a Helm hook Job runs `toolgate migrate` with it before every install and upgrade. Hooks need Helm or Flux: `helm template | kubectl apply` skips them. |
+| config.database.migrationSecretKey | string | `"url"` | Key in `config.database.migrationSecret` that holds the connection string. |
 | config.database.secretKey | string | `"url"` | Key in `config.database.existingSecret` that holds the connection string. |
 | config.extraEnv | list | `[]` | More environment variables for the gateway container, as a list of Kubernetes `EnvVar` objects. |
 | config.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
