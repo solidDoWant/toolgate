@@ -240,7 +240,7 @@ func awaitApprovalWake(ctx context.Context, events <-chan store.Event, tick <-ch
 	}
 }
 
-// decideWhileWaiting decides steps 1 to 3 of docs/design/phase-2.md §3
+// decideWhileWaiting decides steps 1 to 4 (docs/design/phase-3.md §10)
 // again with fresh policy state. A refusal ends the wait.
 func (m *metaTools) decideWhileWaiting(ctx context.Context, call approvalCall, id string) (*mcp.CallToolResult, error) {
 	template := call.template

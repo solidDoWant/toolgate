@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Upgrade notes for admins
+
+- **After upgrading with the web UI on, every user sees no servers until they choose their defaults on the Workspaces page.**
+
+### Workspace scoping
+
+- When the web UI is on, the policy has a new step, workspace scope, after the blocks and before approval. A signed-in user's session can use only the servers on its effective list. The list comes from the user's list for a verified workspace, or from the user's defaults. The step only refuses. Service accounts and SPIFFE workloads skip it, and it is off when the web UI is off. See `docs/user/README.md` and `docs/admin/web-ui.md`.
+
 ## 0.2.0
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This release adds a web UI and more control over tool calls. Users sign in to the web UI to see their servers, sessions, secrets and audit events. Users can get a grant for an `opt-in` server, and approve a tool call before it runs. Admins can add temporary blocks, get values for templates from resolvers, store tool arguments and results in S3, and use any namespaced kind in a template.

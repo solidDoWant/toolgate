@@ -24,6 +24,9 @@ const (
 	StepRule        = "rule"
 	// StepTemporaryBlock is a live temporary block made by an admin.
 	StepTemporaryBlock = "temporary-block"
+	// StepWorkspaceScope is a server outside the effective list of a
+	// signed-in user's session (docs/design/phase-3.md §10).
+	StepWorkspaceScope = "workspace-scope"
 )
 
 // Values of access.environments and its per-tool override.
@@ -88,7 +91,7 @@ type Engine struct {
 }
 
 // Decide applies SPEC.md §10 in order: catalog access, environment, blocks,
-// approval.
+// workspace scope, approval.
 // It reads the grants and temporary blocks from request.State only.
 func (e *Engine) Decide(request Request) Decision {
 	identity := request.Identity
@@ -147,7 +150,22 @@ func (e *Engine) Decide(request Request) Decision {
 		}
 	}
 
+	if !request.State.Scope.allows(identity, server) {
+		return Decision{Step: StepWorkspaceScope, Grant: grantID, Reason: WorkspaceScopeRefusal(identity, server)}
+	}
+
 	return Decision{Allowed: true, Grant: grantID, NeedsApproval: override.Approval == ApprovalRequired}
+}
+
+// WorkspaceScopeRefusal is the reason of a step-4 refusal: in a verified
+// workspace it names the workspace's list, in an unverified session the
+// default for unverified sessions (docs/design/phase-3.md §10).
+func WorkspaceScopeRefusal(identity auth.Identity, server string) string {
+	if identity.Attestation == attestationAttested {
+		return fmt.Sprintf("Server `%s` isn't in the list for workspace `%s`. Allow it in the Workspaces page or with `toolgate workspace allow %s`.", server, identity.Workspace, server)
+	}
+
+	return fmt.Sprintf("Server `%s` isn't allowed in sessions without a verified workspace. To allow all your servers in them, set the default for unverified sessions to all on the Workspaces page, or run `toolgate workspace defaults --unverified all`.", server)
 }
 
 // ApprovalRequired is the ToolOverride.Approval value that makes each call

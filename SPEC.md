@@ -98,7 +98,7 @@ Every authenticated request has an **identity**:
 ## 7. MCP surface
 
 **Meta tools**, always present:
-- `toolgate_list_servers()`: the catalog entries this identity may enable, with name, description, scope, whether each is enabled in this session, its status (`stopped`, `starting`, `ready`, `failed`, `blocked`) and why it is blocked if it is.
+- `toolgate_list_servers()`: the catalog entries this identity may enable, with name, description, scope, whether each is enabled in this session, its status (`stopped`, `starting`, `ready`, `failed`, `blocked`) and why it is blocked if it is. In a session with a verified workspace (phase 3), a server outside the workspace's effective list (§10) shows as `blocked`, with the reason "not allowed in this workspace; enable it to ask". In a session without one, such a server is left out.
 - `toolgate_enable_server(name)`: checks policy, starts or reuses the instance, waits for it to be ready while sending MCP progress notifications, then adds its tools and sends `notifications/tools/list_changed`. It returns the tools added. A timeout or failure returns an error naming the reason (image pull, readiness timeout, policy). It is idempotent.
 - `toolgate_disable_server(name)`: removes the server's tools from this session and sends `list_changed`. A per-session instance stops when no session uses it.
 - `toolgate_server_status(name)`: status, the reason for the last failure, and the time the instance became ready.
@@ -201,7 +201,8 @@ With `shared`, all instances go in one configured namespace and are told apart b
    - `opt-in` needs `attested`, or (phase 2) a live grant for this principal and this server or tool.
    - In phase 1 there are no grants, so `opt-in` behaves like `attested`.
 3. **Blocks:** any matching `ToolgateRule`, or (phase 2) any live temporary block, refuses.
-4. **Approval** (phase 2): a tool with `approval: required` waits for a person's approval (§14).
+4. **Workspace scope** (phase 3): for a signed-in user (identity kind `user`), the server must be in the session's effective list, else it's refused. In a verified workspace, the effective list is the user's list for that workspace if there is one, else all or none of the user's servers by the user's default for verified workspaces, plus the servers added to this session only. Without a verified workspace, it's all or none by the user's default for unverified sessions, and nothing more. A claimed workspace never selects a list, and a claimed session ID never adds servers. A user with no defaults set has `none` for both. This step only refuses. Service accounts and SPIFFE workloads skip it, and it's off on a gateway without the web UI. A server that leaves the list stays enabled with no tools, and its tools come back when it returns.
+5. **Approval** (phase 2): a tool with `approval: required` waits for a person's approval (§14). A call waiting for approval is decided again on each wake, through step 4.
 
 **`ToolgateRule`:**
 ```yaml
@@ -219,7 +220,7 @@ spec:
 ```
 In globs, `*` matches any run of characters, including `/`. A template that doesn't set `access.environments` gets `opt-in`. Rules only refuse. Grants never come from rules. A rule matching only claimed fields (a `claimed/…` workspace or a session) still applies, but the docs say plainly that a client can avoid it by claiming something else.
 
-**When decisions run:** on `list_servers`, on `tools/list` (blocked tools are left out), on `enable_server` and on every call. A rule change reaches every open session within 5 seconds (`LISTEN/NOTIFY`, then `list_changed`).
+**When decisions run:** on `list_servers`, on `tools/list` (blocked tools are left out), on `enable_server` and on every call. A rule change, and (phase 3) a change to a user's workspace lists or defaults, reaches every open session within 5 seconds (`LISTEN/NOTIFY`, then `list_changed`).
 
 ## 11. Secrets
 

@@ -48,6 +48,18 @@ func (q *Queries) GetUserScope(ctx context.Context, principal string) (UserScope
 	return i, err
 }
 
+const getUserScopePrincipal = `-- name: GetUserScopePrincipal :one
+SELECT principal FROM user_scopes WHERE id = $1
+`
+
+// The principal of a user_scopes row, for a scope:<id> notification.
+func (q *Queries) GetUserScopePrincipal(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRow(ctx, getUserScopePrincipal, id)
+	var principal string
+	err := row.Scan(&principal)
+	return principal, err
+}
+
 const getWorkspaceListServers = `-- name: GetWorkspaceListServers :many
 SELECT wl.id AS list_id, wls.server
 FROM user_scopes us
