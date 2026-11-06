@@ -13,7 +13,7 @@ You need Docker and the dev shell. The dev shell gives `kind`, `kubectl`, `helm`
 
 Both targets use `scripts/e2e/run.sh`. The script does these steps:
 
-1. It builds the gateway image from your checkout with `scripts/build-images.sh`.
+1. It builds the gateway image from your checkout with `scripts/build-images.sh` and the `e2e` build tag (`GO_TAGS=e2e`). See [The test time scale](#the-test-time-scale).
 2. It builds the image of the test MCP server from `test/mcpserver`.
 3. It creates a kind cluster with a new name, `toolgate-<worktree>-<random>`, and loads the two images into it.
 4. It installs Flux.
@@ -23,6 +23,19 @@ Both targets use `scripts/e2e/run.sh`. The script does these steps:
 8. It deletes the cluster. It also does this when a step fails.
 
 If you set `E2E_CLUSTER`, the script uses that cluster name. If you set `E2E_KEEP_CLUSTER=true`, the script keeps the cluster after the tests, so that you can look at it. You must then delete the cluster yourself with `kind delete cluster --name <name>`.
+
+## The test time scale
+
+Some tests wait for product durations, for example the 1-minute minimum of an approval timeout. To make these tests faster, the e2e gateway image can make such durations shorter.
+
+The package `internal/testtime` has the function `Scale(d)`. Gateway code calls it on a fixed wait or a minimum duration:
+
+- In a normal build, such as the release image from `make build-images`, `Scale` returns `d` unchanged. It never reads an environment variable.
+- In a build with the `e2e` build tag, `Scale` multiplies `d` by the value of `TOOLGATE_TEST_TIME_SCALE`. If the variable is not set, or its value is not a positive number, `Scale` returns `d` unchanged.
+
+`scripts/e2e/run.sh` builds the gateway image with the `e2e` tag. It sets `TOOLGATE_TEST_TIME_SCALE` to `0.1` in the chart (through `config.extraEnv`) and for the tests. To use a different value, set `TOOLGATE_TEST_TIME_SCALE` before you run the script. The default values of the chart never set the variable.
+
+The e2e tests are built with the `e2e` tag too, so they read the same scale. To get the deadline for a scaled wait, call `scaled(d)` in `test/e2e`. Do not write the scaled number of seconds in the test. `TestTimeScaleMatchesGateway` makes sure that the gateway and the tests use the same value.
 
 ## Run one shard
 
@@ -95,6 +108,7 @@ The chart is in the registry of the cluster at `TOOLGATE_E2E_CHART_REPOSITORY`, 
 `scripts/e2e/run.sh` sets these variables for the tests:
 
 - `KUBECONFIG`: the kubeconfig file of the cluster.
+- `TOOLGATE_TEST_TIME_SCALE`: the factor of the [test time scale](#the-test-time-scale), `0.1` by default.
 - `TOOLGATE_E2E_NAMESPACE`: the release namespace, `toolgate-system`.
 - `TOOLGATE_E2E_MCPSERVER_IMAGE`: the image of the test MCP server.
 - `TOOLGATE_E2E_OIDC_LISTEN` and `TOOLGATE_E2E_OIDC_ISSUER`: the listen address and the issuer URL of the fake identity provider.

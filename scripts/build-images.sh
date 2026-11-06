@@ -14,7 +14,8 @@
 #
 # Environment: VERSION (default 0.0.0-dev), IMAGE (default
 # ghcr.io/soliddowant/toolgate), PUSH_ALL (default false), OUT_DIR (default
-# build/images).
+# build/images), GO_TAGS (Go build tags, default none; scripts/e2e/run.sh sets
+# e2e for the test-only gateway image, releases never set it).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -22,6 +23,7 @@ version="${VERSION:-0.0.0-dev}"
 image="${IMAGE:-ghcr.io/soliddowant/toolgate}"
 push_all="${PUSH_ALL:-false}"
 out_dir="${OUT_DIR:-build/images}"
+go_tags="${GO_TAGS:-}"
 architectures=(amd64 arm64)
 
 case "$push_all" in
@@ -48,7 +50,7 @@ for arch in "${architectures[@]}"; do
 	binary="$out_dir/linux_$arch/toolgate"
 	mkdir -p "$(dirname "$binary")"
 	echo "build-images: building $binary"
-	CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath \
+	CGO_ENABLED=0 GOOS=linux GOARCH="$arch" go build -trimpath -tags "$go_tags" \
 		-ldflags="-s -w -X github.com/solidDoWant/toolgate/internal/version.version=$version" \
 		-o "$binary" ./cmd/toolgate
 done
