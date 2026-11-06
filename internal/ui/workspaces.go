@@ -45,6 +45,12 @@ type WorkspaceSource interface {
 	// ApproveServerRequest approves a pending server request for this
 	// session or this workspace and writes its effect in tx.
 	ApproveServerRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id, choice string) error
+	// ApproveScopeRequest approves a pending scope request and applies its
+	// allow in tx.
+	ApproveScopeRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error
+	// PreviewScopeRequest returns a scope request's target and its state
+	// before and after the approval.
+	PreviewScopeRequest(ctx context.Context, principal string, request db.AccessRequest) (gateway.ScopePreview, error)
 	// DenyAccessRequest denies a pending access request in tx.
 	DenyAccessRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error
 }
@@ -218,6 +224,8 @@ type accessRequestPage struct {
 	Error     string
 	StepUpURL string
 	Change    *changePreview
+	// Scope is the preview of a scope request.
+	Scope *gateway.ScopePreview
 }
 
 // servedAccessRequest serves the request at /ui/approvals/{id} with serve
@@ -307,6 +315,21 @@ func (u *UI) renderAccessRequest(writer http.ResponseWriter, request *http.Reque
 
 		preview := previewChange(scopes, change)
 		data.Change = &preview
+	}
+
+	if accessRequest.Kind == "scope" {
+		preview, err := u.options.Workspaces.PreviewScopeRequest(ctx, session.Principal, accessRequest)
+		if err != nil {
+			u.logger.ErrorContext(ctx, "cannot preview a scope request", "request", accessRequest.ID, "error", err)
+			http.Error(writer, "The gateway can't read this request. Try again later.", http.StatusInternalServerError)
+
+			return
+		}
+
+		// The session row of a scope request is its target; the session
+		// that asked is shown on its own.
+		data.Session = ""
+		data.Scope = &preview
 	}
 
 	if data.Message == "" && StepUpNeeded(session) {
@@ -407,6 +430,12 @@ func (u *UI) approveAccessRequest(writer http.ResponseWriter, request *http.Requ
 		u.decideAccessRequest(writer, request, accessRequest, func(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error {
 			return u.options.Workspaces.ApproveServerRequest(ctx, tx, identity, id, choice)
 		})
+
+		return
+	}
+
+	if accessRequest.Kind == "scope" {
+		u.decideAccessRequest(writer, request, accessRequest, u.options.Workspaces.ApproveScopeRequest)
 
 		return
 	}

@@ -171,10 +171,10 @@ WHERE id = @id AND status = 'pending' AND expires_at <= now()
 RETURNING *;
 
 -- name: ExpireSessionServerRequests :many
--- Marks the pending server requests of an ending session expired and
+-- Marks the pending server and scope requests of an ending session expired and
 -- returns them.
 UPDATE access_requests SET status = 'expired'
-WHERE session_pk = @session_pk AND kind = 'server' AND status = 'pending'
+WHERE session_pk = @session_pk AND kind IN ('server', 'scope') AND status = 'pending'
 RETURNING *;
 
 -- name: DeleteAllSessionAdditions :exec
@@ -194,3 +194,34 @@ SELECT EXISTS (
 INSERT INTO session_additions (session_pk, server, request_id)
 VALUES (@session_pk, @server, @request_id)
 ON CONFLICT DO NOTHING;
+
+-- name: FindPendingScopeRequest :one
+-- Returns the oldest pending scope request of the principal with the
+-- target and items that hasn't expired.
+SELECT * FROM access_requests
+WHERE principal = @principal AND kind = 'scope' AND workspace = @workspace
+  AND session_pk IS NOT DISTINCT FROM sqlc.narg(session_pk)
+  AND change->'items' = @items::jsonb
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1;
+
+-- name: InsertScopeRequestWithinLimit :one
+-- Inserts a pending scope request unless the principal already has
+-- pending_limit pending access requests; then it returns no row. Run it
+-- after LockPrincipalAccessRequests in the same transaction.
+INSERT INTO access_requests (id, principal, kind, session_pk, workspace, verified, change, expires_at)
+SELECT @id, @principal, 'scope', sqlc.narg(session_pk), @workspace, true, @change, now() + @approval_timeout::interval
+WHERE (
+    SELECT count(*) FROM access_requests WHERE principal = @principal AND status = 'pending'
+) < @pending_limit::bigint
+RETURNING *;
+
+-- name: ExpireEndedSessionScopeRequests :many
+-- Marks the pending scope requests whose target session ended after the
+-- request was created expired, and returns them with the session ID.
+UPDATE access_requests r SET status = 'expired'
+FROM sessions s
+WHERE r.kind = 'scope' AND r.status = 'pending' AND r.session_pk = s.id
+  AND s.ended_at IS NOT NULL AND s.ended_at > r.created_at
+RETURNING r.*, s.session_id;

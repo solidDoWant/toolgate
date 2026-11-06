@@ -165,6 +165,10 @@ func TestWorkspaceChanges(t *testing.T) {
 			map[string]any{"action": "allow", "workspace": "coder/alice/mail", "servers": []any{"k8s", "github"}}},
 		{"allow with --workspace", "", []string{"allow", "--workspace", "w1", "k8s"},
 			map[string]any{"action": "allow", "workspace": "w1", "servers": []any{"k8s"}}},
+		{"allow of a tool in a session", "cur", []string{"allow", "--session", "s1", "github__open_issue", "k8s"},
+			map[string]any{"action": "allow", "session": "s1", "servers": []any{"github__open_issue", "k8s"}}},
+		{"allow of a tool in a workspace", "", []string{"allow", "--workspace", "w1", "github__open_issue"},
+			map[string]any{"action": "allow", "workspace": "w1", "servers": []any{"github__open_issue"}}},
 		{"flag after servers", "", []string{"deny", "k8s", "--workspace", "w1"},
 			map[string]any{"action": "deny", "workspace": "w1", "servers": []any{"k8s"}}},
 		{"deny of a tool in a session", "", []string{"deny", "--session", "s1", "github__delete_repository", "k8s"},
@@ -200,6 +204,7 @@ func TestWorkspaceUsageErrors(t *testing.T) {
 		stderr string
 	}{
 		{"session with workspace", []string{"deny", "--session", "s", "--workspace", "w", "k8s"}, "can't be combined"},
+		{"allow session with workspace", []string{"allow", "--session", "s", "--workspace", "w", "k8s"}, "can't be combined"},
 		{"no servers", []string{"allow", "--workspace", "w"}, "name at least one server"},
 		{"bad default", []string{"defaults", "--verified", "maybe"}, "must be none or all"},
 		{"unknown command", []string{"frobnicate"}, "unknown command"},
