@@ -19,3 +19,10 @@ FROM session_additions sa
 JOIN sessions s ON s.id = sa.session_pk
 WHERE s.principal = @principal AND s.session_id = @session_id
 ORDER BY sa.server;
+
+-- name: EnsureUserScope :exec
+-- Creates the principal's row with the given defaults, or leaves an existing
+-- row as it is.
+INSERT INTO user_scopes (principal, verified_default, unverified_default)
+VALUES (@principal, @verified_default, @unverified_default)
+ON CONFLICT (principal) DO NOTHING;

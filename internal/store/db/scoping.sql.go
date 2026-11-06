@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const ensureUserScope = `-- name: EnsureUserScope :exec
+INSERT INTO user_scopes (principal, verified_default, unverified_default)
+VALUES ($1, $2, $3)
+ON CONFLICT (principal) DO NOTHING
+`
+
+type EnsureUserScopeParams struct {
+	Principal         string
+	VerifiedDefault   string
+	UnverifiedDefault string
+}
+
+// Creates the principal's row with the given defaults, or leaves an existing
+// row as it is.
+func (q *Queries) EnsureUserScope(ctx context.Context, arg EnsureUserScopeParams) error {
+	_, err := q.db.Exec(ctx, ensureUserScope, arg.Principal, arg.VerifiedDefault, arg.UnverifiedDefault)
+	return err
+}
+
 const getUserScope = `-- name: GetUserScope :one
 SELECT id, principal, verified_default, unverified_default, updated_at FROM user_scopes WHERE principal = $1
 `

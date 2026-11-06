@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/testutil"
 )
 
@@ -40,8 +42,17 @@ func run(m *testing.M) int {
 			return 1
 		}
 
+		onSubject, closeDatabase, err := userScopeDefaults(os.Getenv("TOOLGATE_E2E_DATABASE_URL"))
+		if err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "e2e: database: %v\n", err)
+
+			return 1
+		}
+
+		defer closeDatabase()
+
 		identityProvider, err = testutil.NewOIDCProvider(testutil.OIDCOptions{
-			Listener: listener, Issuer: issuer,
+			Listener: listener, Issuer: issuer, OnSubject: onSubject,
 			// The gateway's web UI, behind the test's TLS proxy, and the
 			// browser harness's direct port-forward.
 			UIRedirectURIs: []string{"https://127.0.0.1:*/ui/auth/callback", testutil.DefaultOIDCUIRedirectURI},
@@ -72,6 +83,26 @@ func run(m *testing.M) int {
 	}
 
 	return m.Run()
+}
+
+// userScopeDefaults returns the identity provider hook that gives every
+// principal it issues a token for a user_scopes row with both defaults all,
+// so the workspace scoping step lets earlier tests see every server. A row
+// that already exists is left as it is, so a test can set its own before
+// its principal first signs in. With no databaseURL the hook does nothing.
+func userScopeDefaults(databaseURL string) (func(context.Context, string) error, func(), error) {
+	if databaseURL == "" {
+		return nil, func() {}, nil
+	}
+
+	pool, err := store.Open(context.Background(), databaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return func(ctx context.Context, subject string) error {
+		return store.EnsureUserScope(ctx, pool, subject)
+	}, pool.Close, nil
 }
 
 // otlpReceiver returns the test OTLP receiver, or skips the test when the

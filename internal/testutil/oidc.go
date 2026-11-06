@@ -52,6 +52,10 @@ type OIDCOptions struct {
 	// DeviceCodeLifetime is how long a device code stays valid. Default
 	// 5 minutes.
 	DeviceCodeLifetime time.Duration
+	// OnSubject, when set, runs before the provider issues or mints a token
+	// for a subject, and a returned error fails the issue. The e2e harness
+	// uses it to prepare a user's rows in the gateway's database.
+	OnSubject func(ctx context.Context, subject string) error
 }
 
 // OIDCUser is a user of the fake OIDC provider.
@@ -154,6 +158,7 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 			loginURL:     options.Issuer + OIDCSignInPath,
 		},
 		omitAuthTime: options.OmitAuthTime,
+		onSubject:    options.OnSubject,
 		authRequests: &uiAuthRequests{authTimes: map[string]time.Time{}},
 	}
 
@@ -277,6 +282,8 @@ func (p *OIDCProvider) DenyDevice(ctx context.Context, userCode string) error {
 func (p *OIDCProvider) MintAccessToken(tb testing.TB, claims TokenClaims) string {
 	tb.Helper()
 
+	p.storage.notifySubject(tb, claims.Subject)
+
 	values := p.tokenClaims(claims)
 	values["client_id"] = p.ClientID
 
@@ -287,6 +294,8 @@ func (p *OIDCProvider) MintAccessToken(tb testing.TB, claims TokenClaims) string
 // provider's key.
 func (p *OIDCProvider) MintIDToken(tb testing.TB, claims TokenClaims) string {
 	tb.Helper()
+
+	p.storage.notifySubject(tb, claims.Subject)
 
 	values := p.tokenClaims(claims)
 	values["azp"] = p.ClientID
@@ -438,9 +447,25 @@ type oidcStorage struct {
 	uiClient     *uiClient
 	omitAuthTime bool
 	authRequests *uiAuthRequests
+	onSubject    func(ctx context.Context, subject string) error
 
 	revokedMu sync.Mutex
 	revoked   map[string]bool
+}
+
+// subjectReady runs the provider's OnSubject hook for subject.
+func (s *oidcStorage) subjectReady(ctx context.Context, subject string) error {
+	if s.onSubject == nil || subject == "" {
+		return nil
+	}
+
+	return s.onSubject(ctx, subject)
+}
+
+func (s *oidcStorage) notifySubject(tb testing.TB, subject string) {
+	tb.Helper()
+
+	require.NoError(tb, s.subjectReady(tb.Context(), subject))
 }
 
 func (s *oidcStorage) GetClientByClientID(_ context.Context, clientID string) (op.Client, error) {

@@ -20,6 +20,9 @@
 #       KUBECONFIG                    the cluster's kubeconfig
 #       TOOLGATE_E2E_NAMESPACE        the release namespace
 #       TOOLGATE_E2E_MCPSERVER_IMAGE  the test MCP server image
+#       TOOLGATE_E2E_DATABASE_URL     PostgreSQL through a port-forward; the test
+#                                     process gives each principal default
+#                                     user_scopes rows through it
 #       TOOLGATE_E2E_OIDC_LISTEN      address the test process serves the fake
 #                                     identity provider on (test/e2e TestMain)
 #       TOOLGATE_E2E_OIDC_ISSUER      its issuer URL, reachable from pods
@@ -154,6 +157,13 @@ for lgtm_port in 4318 9090 3100 3200; do
 		3200) export TOOLGATE_E2E_TEMPO_URL="http://127.0.0.1:$local_port" ;;
 	esac
 done
+
+# A port-forward to PostgreSQL for the test process, which gives each test
+# principal a user_scopes row with both defaults all through the store package.
+postgres_port="$(free_port)"
+kubectl -n "$deps_namespace" port-forward --address 127.0.0.1 service/postgres "$postgres_port:5432" >"$work/postgres-forward.log" 2>&1 &
+lgtm_forwards+=("$!")
+export TOOLGATE_E2E_DATABASE_URL="postgres://toolgate:$postgres_password@127.0.0.1:$postgres_port/toolgate?sslmode=disable"
 
 log "pushing the test chart"
 helm package test/e2e/charts/mcpserver --destination "$work/charts" >&2
