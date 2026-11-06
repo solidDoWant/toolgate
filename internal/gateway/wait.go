@@ -162,8 +162,13 @@ func startTimeout(template *v1alpha1.MCPServerTemplate) time.Duration {
 	return defaultStartTimeout
 }
 
+// startTimeoutError is the error of a wait that ran out of time.
+type startTimeoutError string
+
+func (e startTimeoutError) Error() string { return string(e) }
+
 func timedOut(template *v1alpha1.MCPServerTemplate) error {
-	return fmt.Errorf("`%s` didn't become ready within %s. Check it with `%s`.", template.Name, startTimeout(template), ToolServerStatus) //nolint:staticcheck // A sentence for the model.
+	return startTimeoutError(fmt.Sprintf("`%s` didn't become ready within %s. Check it with `%s`.", template.Name, startTimeout(template), ToolServerStatus)) //nolint:staticcheck // A sentence for the model.
 }
 
 // progressSender sends progress notifications for one tool call on its own

@@ -43,6 +43,8 @@ type Replacer struct {
 	// Now is the clock. Nil means time.Now.
 	Now func() time.Time
 	Log *slog.Logger
+	// Metrics counts repairs. Nil means none.
+	Metrics *Metrics
 }
 
 // Step replaces a live instance whose restart was requested. A new leader's
@@ -189,6 +191,10 @@ func (r *Replacer) replace(ctx context.Context, instance db.Instance, reason, us
 	})
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("replace instance %s: %w", instance.ID, err)
+	}
+
+	if repair && replacement.ID != "" {
+		r.Metrics.observeRepair(instance.TemplateName, RepairReplace)
 	}
 
 	return replacement, nil

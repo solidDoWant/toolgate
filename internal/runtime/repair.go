@@ -47,6 +47,8 @@ type Repairer struct {
 	// Now is the clock. Nil means time.Now.
 	Now func() time.Time
 	Log *slog.Logger
+	// Metrics counts repairs. Nil means none.
+	Metrics *Metrics
 }
 
 func (r *Repairer) now() time.Time {
@@ -165,6 +167,8 @@ func GiveUpReason(repairs int, lastReason string) string {
 func (r *Repairer) giveUp(ctx context.Context, instance db.Instance, repairs int) error {
 	reason := truncate(GiveUpReason(repairs, instance.UnhealthyReason), maxReasonBytes)
 
+	failed := false
+
 	err := pgx.BeginFunc(ctx, r.Pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
@@ -174,6 +178,8 @@ func (r *Repairer) giveUp(ctx context.Context, instance db.Instance, repairs int
 		if err != nil || changed == 0 {
 			return err
 		}
+
+		failed = true
 
 		err = audit.NewRecorder(r.output(), queries).Record(ctx, audit.Event{
 			Type:   audit.TypeInstanceFail,
@@ -195,6 +201,10 @@ func (r *Repairer) giveUp(ctx context.Context, instance db.Instance, repairs int
 	})
 	if err != nil {
 		return fmt.Errorf("fail instance %s: %w", instance.ID, err)
+	}
+
+	if failed {
+		r.Metrics.observeRepair(instance.TemplateName, RepairGaveUp)
 	}
 
 	return nil
@@ -252,6 +262,7 @@ func (r *Repairer) reapply(ctx context.Context, instance db.Instance, now time.T
 		return nil
 	}
 
+	r.Metrics.observeRepair(instance.TemplateName, RepairReapply)
 	r.Log.InfoContext(ctx, "reapplying unhealthy instance", slog.String("instance", instance.ID))
 
 	identity, err := r.Starter.identity(ctx, instance)

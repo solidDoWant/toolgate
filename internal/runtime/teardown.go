@@ -66,15 +66,55 @@ type Metrics struct {
 	NamespacesStuck prometheus.Gauge
 	// Sessions counts open sessions, by whether the workspace is verified.
 	Sessions *prometheus.GaugeVec
+
+	// ToolCalls counts tool calls by server and outcome.
+	ToolCalls *prometheus.CounterVec
+	// ToolCallDuration is the time from receiving a forwarded call to the
+	// upstream answer.
+	ToolCallDuration prometheus.Histogram
+	// PolicyRefusals counts policy refusals by step and reason.
+	PolicyRefusals *prometheus.CounterVec
+	// InstanceStarts counts finished starts by server and outcome.
+	InstanceStarts *prometheus.CounterVec
+	// InstanceStartDuration is the time from the insert of an instance to
+	// ready.
+	InstanceStartDuration prometheus.Histogram
+	// CallsWaiting counts the calls waiting for a starting instance on this
+	// replica.
+	CallsWaiting prometheus.Gauge
+	// HealthFailures counts instances that turned unhealthy.
+	HealthFailures *prometheus.CounterVec
+	// Repairs counts repairs by server and action.
+	Repairs *prometheus.CounterVec
 }
+
+// Outcomes of a tool call (the `outcome` label of toolgate_tool_calls_total).
+const (
+	CallForwarded     = "forwarded"
+	CallRefused       = "refused"
+	CallApproval      = "approval"
+	CallUpstreamError = "upstream_error"
+	CallTimeout       = "timeout"
+	CallStartFailed   = "start_failed"
+)
+
+// Outcomes of an instance start, and the actions of a repair.
+const (
+	StartReady  = "ready"
+	StartFailed = "failed"
+
+	RepairReplace = "replace"
+	RepairReapply = "reapply"
+	RepairGaveUp  = "gave_up"
+)
 
 // NewMetrics returns unregistered instance metrics.
 func NewMetrics() *Metrics {
 	return &Metrics{
 		Instances: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "toolgate_instances",
-			Help: "Instances that aren't stopped, by scope and status. Set by the replica holding the leader Lease.",
-		}, []string{"scope", "status"}),
+			Help: "Instances that aren't stopped, by scope, status and MCP revision. Set by the replica holding the leader Lease.",
+		}, []string{"scope", "status", "revision"}),
 		NamespacesStuck: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "toolgate_instance_namespaces_stuck",
 			Help: "Instance namespaces Terminating for more than 10 minutes. Set by the replica holding the leader Lease.",
@@ -83,12 +123,47 @@ func NewMetrics() *Metrics {
 			Name: "toolgate_sessions",
 			Help: "Open sessions (not ended), by whether the session is attested (verified). Set by the replica holding the leader Lease.",
 		}, []string{"verified"}),
+		ToolCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_calls_total",
+			Help: "Tool calls, by server and outcome.",
+		}, []string{"server", "outcome"}),
+		ToolCallDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "toolgate_tool_call_duration_seconds",
+			Help:    "Time from receiving a forwarded tool call to the upstream answer, including any wait for a starting instance.",
+			Buckets: []float64{0.05, 0.25, 1, 5, 15, 30, 60, 120},
+		}),
+		PolicyRefusals: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_policy_refusals_total",
+			Help: "Policy refusals, by step and reason.",
+		}, []string{"step", "reason"}),
+		InstanceStarts: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_instance_starts_total",
+			Help: "Instance starts that finished, by server and outcome.",
+		}, []string{"server", "outcome"}),
+		InstanceStartDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    "toolgate_instance_start_duration_seconds",
+			Help:    "Time from the insert of an instance to ready.",
+			Buckets: []float64{1, 5, 15, 30, 60, 120, 300},
+		}),
+		CallsWaiting: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "toolgate_calls_waiting_for_start",
+			Help: "Tool calls on this replica waiting for a starting instance.",
+		}),
+		HealthFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_instance_health_failures_total",
+			Help: "Instances that turned unhealthy, by server.",
+		}, []string{"server"}),
+		Repairs: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_instance_repairs_total",
+			Help: "Repairs of unhealthy instances, by server and action.",
+		}, []string{"server", "action"}),
 	}
 }
 
 // Collectors returns the metrics for registration.
 func (m *Metrics) Collectors() []prometheus.Collector {
-	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions}
+	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions, m.ToolCalls, m.ToolCallDuration,
+		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs}
 }
 
 // Step takes one instance one step towards stopped. It is a Step of the
@@ -362,7 +437,7 @@ func (m *Metrics) update(ctx context.Context, queries *db.Queries, stuck int) er
 	m.Instances.Reset()
 
 	for _, instance := range instances {
-		m.Instances.WithLabelValues(instance.Scope, instance.Status).Inc()
+		m.Instances.WithLabelValues(instance.Scope, instance.Status, revisionLabel(instance.McpRevision)).Inc()
 	}
 
 	m.NamespacesStuck.Set(float64(stuck))

@@ -48,7 +48,9 @@ type runtimeOptions struct {
 	// secrets reads the users' secrets for instance renders.
 	secrets         runtime.SecretGetter
 	registerMetrics func(...prometheus.Collector) error
-	logger          *slog.Logger
+	// metrics are the gateway's operational metrics, already registered.
+	metrics *runtime.Metrics
+	logger  *slog.Logger
 	// auditOutput receives the audit lines of the reconciler's writes.
 	auditOutput io.Writer
 	// listener delivers the PostgreSQL notifications. serve runs it.
@@ -151,10 +153,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, err
 	}
 
-	metrics := runtime.NewMetrics()
-	if err := options.registerMetrics(metrics.Collectors()...); err != nil {
-		return nil, err
-	}
+	metrics := options.metrics
 
 	// The Lease holder creates the audit partitions when it gets the Lease
 	// and every 24 h, so a long-running gateway never reaches a month
@@ -200,10 +199,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	approvalExpirer := &runtime.ApprovalExpirer{Pool: pool, AuditOutput: options.auditOutput}
 
 	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger}
-	replacer := &runtime.Replacer{Pool: pool, Stops: stops, AuditOutput: options.auditOutput, Log: logger}
+	replacer := &runtime.Replacer{Pool: pool, Stops: stops, AuditOutput: options.auditOutput, Log: logger, Metrics: metrics}
 
 	startStore := runtime.PostgresStartStore{
-		Pool: pool, AuditOutput: options.auditOutput,
+		Pool: pool, AuditOutput: options.auditOutput, Metrics: metrics,
 		DeclaresTools: func(instance db.Instance) bool {
 			template, found := options.catalog.Running(types.NamespacedName{Namespace: instance.TemplateNs, Name: instance.TemplateName})
 
@@ -235,6 +234,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Starter:     starter,
 		AuditOutput: options.auditOutput,
 		Log:         logger,
+		Metrics:     metrics,
 	}
 
 	// The monitor runs only on the Lease holder, like every runnable that

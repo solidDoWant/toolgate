@@ -612,8 +612,8 @@ func TestTeardown(t *testing.T) {
 
 		fixture.setNow(time.Now())
 		fixture.pass(t)
-		assert.InDelta(t, 1, promtestutil.ToFloat64(fixture.metrics.Instances.WithLabelValues("per-user", "ready")), 0)
-		assert.InDelta(t, 1, promtestutil.ToFloat64(fixture.metrics.Instances.WithLabelValues("per-user", "pending")), 0)
+		assert.InDelta(t, 1, promtestutil.ToFloat64(fixture.metrics.Instances.WithLabelValues("per-user", "ready", runtime.RevisionStateful)), 0)
+		assert.InDelta(t, 1, promtestutil.ToFloat64(fixture.metrics.Instances.WithLabelValues("per-user", "pending", runtime.RevisionStateful)), 0)
 	})
 }
 
