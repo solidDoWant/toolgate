@@ -2,7 +2,7 @@
 
 This document decides the behaviour `SPEC.md` leaves open for phase 3. It adds to `docs/design/phase-1.md` and `docs/design/phase-2.md`, which still hold unless a section here says otherwise. Where they disagree, stop and ask (`HANDOFF: question`). Workers implement it and never change its rules. The operator and owner change it.
 
-The target is `docs/acceptance/phase-3.md`: AC-3-05 to AC-3-07 (telemetry), AC-3-09 (SPIFFE), AC-3-10 and AC-3-11 (CLI), AC-3-13 and AC-3-14 (instance health), AC-3-15 (migrations) and AC-3-12 (release).
+The target is `docs/acceptance/phase-3.md`: AC-3-05 to AC-3-07 (telemetry), AC-3-09 (SPIFFE), AC-3-10 and AC-3-11 (CLI), AC-3-13 and AC-3-14 (instance health), AC-3-15 (migrations), AC-3-16 to AC-3-21 (workspace and session scoping) and AC-3-12 (release).
 
 ## 1. Who does what
 
@@ -12,6 +12,8 @@ Phase 1's split stays (phase 1 §1): request handling runs on every replica and 
 - OTLP ingest at `/v1/traces`, `/v1/metrics` and `/v1/logs` (§3). It writes nothing to PostgreSQL.
 - SPIFFE JWT-SVID verification, and fetching each trust domain's bundle (§4). Each replica keeps its own bundles.
 - `GET /api/v1/sessions` and `GET /api/v1/audit/tail` (§5).
+- verifying `X-Toolgate-Attestation` and binding it to the user (§10), which reads pods like phase 1's pod sign-in;
+- the scope step of every decision, the Workspaces page, `/api/v1/workspaces`, and session additions (§10).
 
 **New reconciler work**, on the leader only:
 - running each instance's custom health check, next to phase 1's `ping`, and repairing unhealthy instances (§6);
@@ -19,7 +21,7 @@ Phase 1's split stays (phase 1 §1): request handling runs on every replica and 
 
 **New out-of-process work:** the chart's migration hook Job runs `toolgate migrate` before the gateway pods of a release start, when the admin turns it on (§7).
 
-**Notifications.** None are new. A health-check failure is phase 1's `ready` → `failed` write with its `instance:<id>` notification, so the fan-out of `list_changed` is unchanged.
+**Notifications.** §3 to §7 add none. A health-check failure is phase 1's `ready` → `failed` write with its `instance:<id>` notification, so the fan-out of `list_changed` is unchanged. §10 adds `scope:<user_scopes.id>`, and its access requests use `approval:<id>`.
 
 ## 2. State
 
@@ -27,7 +29,7 @@ One additive migration (phase 1 §7, "Database migrations"):
 - `instances.health_check jsonb`, null when the template has no custom check. The reconciler writes it in the `pending` → `starting` write, from the template generation it renders, with `http.service` rendered (§6). An instance keeps the check it started with, like its generation (`SPEC.md` §9, "Template changes").
 - The function `toolgate_ensure_audit_partitions()` (§7), owned by the role that runs the migrations.
 
-No new tables. The audit tail and the sessions list read `audit_events`, `sessions` and `session_servers` with their existing indexes: `(principal, occurred_at)` and the primary key `(occurred_at, id)` for the tail, and the `(principal, session_id)` unique index for sessions.
+§10 adds its own tables in a second additive migration (§10, "State"). Otherwise there are no new tables. The audit tail and the sessions list read `audit_events`, `sessions` and `session_servers` with their existing indexes: `(principal, occurred_at)` and the primary key `(occurred_at, id)` for the tail, and the `(principal, session_id)` unique index for sessions.
 
 ## 3. OTLP ingest
 
@@ -420,6 +422,48 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 109 | Leader dies | instance unhealthy, repair not yet made | The new leader sees `unhealthy_since` on its first pass and makes the repair, counting it in `repairs`. | e2e |
 | 110 | The `maxRepairs`-th repair window is full | check still failing | The row fails as phase 1 does, with the give-up reason. The next enable starts with an empty repair history. | unit |
 | 111 | Template's `onFailure` changes | instance unhealthy | The instance keeps the `health_check` it started with (row 93). New instances use the new one. | unit |
+| 112 | Attestation token's pod is labelled for another user | — | `user` attestation, the claimed workspace, and `auth.refuse` with "attestation owner mismatch" and the user's principal. Never a 401 for the attestation alone (§10). | AC-3-16 |
+| 113 | Attestation token invalid or expired, from a namespace not listed, not bound to a pod, repeated, or over 16 KiB | — | As row 112, with that reason. | unit |
+| 114 | User token invalid | valid attestation | 401, as phase 1. An attestation never authenticates. | unit |
+| 115 | Service-account or SPIFFE bearer token | attestation header sent | The header is ignored. A workload is attested as itself. | unit |
+| 116 | Pod relabelled or deleted | attested sessions | The cached pod facts last until the token expires, at most 1 h (10 min for TokenRequest tokens). Then TokenReview refuses a deleted pod's token, or the new labels decide. | unit |
+| 117 | Attestation stops working on the client (file gone, Workload API or TokenRequest fails) | open session | The client exits non-zero with no headers, so Claude Code reports the connection as failed. A client that sends the request without it gets 404 on the MCP session, then 400 for the changed workspace (phase 1 row 22). | unit |
+| 118 | A session started without an attestation later sends a valid one | — | The workspace differs, so 404, then 400. The user starts a new session. | unit |
+| 119 | `match.by: claim`, and the user token lacks the claim or it isn't a string | — | As row 112, with "attestation owner claim missing". | unit |
+| 120 | Two VMs share a service account, and VM A's guest binds a token to VM B's pod | — | TokenRequest allows it, but B's labels name B's owner. With A's user token that's a mismatch (row 112). The docs ask for one service account per workspace. | unit |
+| 121 | TokenRequest refused (no Role, API server unreachable, mounted token expired) | `toolgate headers` | Exits non-zero with the API server's status and message, never a token. | unit |
+| 122 | Workspace list or defaults changed (replica B) | open sessions on replica A | `scope:<id>` makes A send `list_changed` to the principal's streams. The next decision loads fresh state. Within 5 s. | AC-3-17 |
+| 123 | Server removed from the list | call in flight | The call finishes. Later calls are refused at step `workspace-scope`, and the tools are withdrawn. The server stays enabled, and its tools come back when it's re-added. | AC-3-17 |
+| 124 | Server removed from the list | enable waiting for its instance | The enable decides again at `ready` (phase 1 §3, enable step 6), is refused, and deletes its `session_servers` row. | integration |
+| 125 | The list names a server the user can't reach | — | Step 1 or 2 refuses first. A list never widens. | AC-3-17 |
+| 126 | Default changed, or the list cleared | sessions with no list, or that workspace's sessions | As row 122. | AC-3-18 |
+| 127 | UI and CLI write the same principal's lists at once | each other | Both lock the `user_scopes` row, so they run in turn. Each is a set operation on the current rows. | unit |
+| 128 | `deny` of a server | session additions of it in that workspace | Deleted in the same transaction, so the deny withdraws it from those sessions too. | unit |
+| 129 | An agent runs `toolgate workspace allow` | — | 202 and a pending `change` request. Nothing widens until the user approves with a step-up. | AC-3-17 |
+| 130 | A 0.2 replica serves a session | rolling upgrade to 0.3 | It doesn't apply step 4, so its sessions see more until the rollout ends. The tables are new, so 0.2 never reads them. | unit |
+| 131 | Enable of a server outside the effective list | — | A pending `server` request and a URL elicitation, or the error with the link (§10, "Session additions"). | AC-3-19 |
+| 132 | "This session only" approved (replica B) | enable waiting (replica A) | B locks the `sessions` row, inserts `session_additions`, and commits with `approval:<id>` and `session:<id>`. A re-decides with fresh state and goes on. | AC-3-19 |
+| 133 | "Always" approved | enables waiting in two sessions of that workspace | `scope:<id>` wakes both. Both pass step 4 and go on. The other session's own request stays pending and expires unused. | integration |
+| 134 | Session ends | pending "session only" request | The page says "This session has ended." and writes nothing. "Always" still works. | integration |
+| 135 | Session ends | its session additions | Deleted in the end transaction. A restarted session has none. | AC-3-19 |
+| 136 | Another session in the same workspace | a session-only addition in the first | Not applied: additions are keyed by `session_pk`. | AC-3-19 |
+| 137 | Same enable again, or a retry | its request pending | The lookup finds the pending row (as phase 2 row 46). | unit |
+| 138 | Approve and deny at once (two tabs) | each other | The first compare-and-set wins, as phase 2 row 42. | unit |
+| 139 | Request expires | enable waiting | As phase 2 row 41: the waiter or the leader's pass expires it, and the enable returns the timeout message. | unit |
+| 140 | Replica holding the wait dies | request approved later | The approver already wrote the effect, so the next enable passes step 4 at once. | e2e |
+| 141 | `change` request approved | list changed since the request | The change is applied as a set operation to the current list. | unit |
+| 142 | Two helpers refresh the stored sign-in at once | unattended sessions | §9's file lock: one refresh at a time, and no refresh token is reused. | unit |
+| 143 | Keychain usable in the login shell but not in the agent's process | unattended run | The store recorded in `config.json` is the only one used. With `file`, every process finds the token. With `keychain`, the error says to sign in again with `--token-store file`. | unit |
+| 144 | Device code expires before the user approves | `toolgate login` | Exits 1 with "The sign-in code expired. Run `toolgate login` again." Nothing is stored. | unit |
+| 145 | Refresh token expires or is revoked | unattended sessions | `headers` prints "Sign in again: run `toolgate login`." and exits non-zero with no headers. | unit |
+| 146 | `TOOLGATE_TOKEN_COMMAND` exits non-zero | any command | The error gives the exit status and passes the command's standard error through (at most 4 KiB). No token is printed and no headers are sent. | AC-3-21 |
+| 147 | `TOOLGATE_TOKEN_COMMAND` runs past 5 s | any command | Its process group is killed, and the command fails with the timeout message. | unit |
+| 148 | `TOOLGATE_TOKEN_COMMAND` prints more than 16 KiB, nothing, or not a token | any command | Fails with that cause, never showing the output. | unit |
+| 149 | Token whose audiences are all unlisted | — | 401, and `auth.refuse` with "audience not allowed" and the token's audiences. | AC-3-21 |
+| 150 | Cached command token revoked before its expiry | CLI command | The 401 deletes the cache, runs the command once more, and retries once. `headers` sends the cached token until 60 s before its expiry, then gets a new one. | unit |
+| 151 | Two helpers with an empty command cache | each other | The `token-command.lock` lock lets one run the command. The other reads its cached token. | unit |
+| 152 | `TOOLGATE_TOKEN_COMMAND` and `TOOLGATE_SPIFFE_SOCKET` both set, or two attestation variables | — | Every command exits non-zero naming the variables. | unit |
+| 153 | Audience removed from `oidcAudience` | open sessions using it | Settings are read at start. After the restart, its tokens get 401 (row 149). | unit |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
@@ -429,10 +473,14 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - `otlpIngest` (default `false`; needs `otlpEndpoint`);
   - `telemetry.allowContent` (default `false`; passes prompt and tool content through the ingest, §3);
   - `spiffeTrustDomains` (YAML only);
-  - `migrateOnStart` (default `true`).
+  - `migrateOnStart` (default `true`);
+  - `workspaceAttestation` (YAML only; off when absent, §10);
+  - `oidcAudience` is now a list of 1 to 8 audiences; a single string still works (§10).
 
-  The chart sets them from `config.otlpIngest`, `config.spiffe.trustDomains` and `config.database.migrateOnStart`, and mounts each `caFile` through `resources.persistence`, with `advancedMounts.gateway.gateway` (§7).
-- **Client environment:** `TOOLGATE_SPIFFE_SOCKET` and `TOOLGATE_GATEWAY` (§4).
+  The chart sets them from `config.otlpIngest`, `config.spiffe.trustDomains`, `config.database.migrateOnStart`, `config.workspaceAttestation` and `config.oidc.audience`, and mounts each `caFile` through `resources.persistence`, with `advancedMounts.gateway.gateway` (§7).
+- **Client environment:** `TOOLGATE_SPIFFE_SOCKET` and `TOOLGATE_GATEWAY` (§4); `TOOLGATE_ATTESTATION_TOKEN_FILE`, `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`, `TOOLGATE_ATTESTATION_TOKEN_REQUEST`, `TOOLGATE_KUBE_API`, `TOOLGATE_TOKEN_COMMAND` and `TOOLGATE_TOKEN_STORE` (§10). `config.json` gains `tokenStore`.
+- **Request header:** `X-Toolgate-Attestation`, at most 16 KiB (§10).
+- **Identity:** `auth.Identity.Kind` (`user`, `service-account`, `spiffe`) decides catalog access lists, admin checks and who scoping applies to (§10).
 - **CRD fields:** `access.spiffeIDs` (§4) and `healthCheck` (§6) on `MCPServerTemplate`.
 - **Time bounds:**
   - OTLP forward 10 s;
@@ -440,21 +488,25 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - tail poll 2 s, commit window 5 s, keepalive 15 s, stream at most 1 h or the token's expiry; CLI reconnect backoff 1 to 30 s;
   - health check interval 10 s to 10 min (default 30 s), timeout 1 s to 60 s (default 5 s), threshold 1 to 10 (default 3);
   - partitions created at start, at Lease acquisition and every 24 h;
-  - migration Job deadline 240 s.
+  - migration Job deadline 240 s;
+  - token command 5 s, cached until 60 s before its expiry; TokenRequest 5 s, tokens of 600 s; attestation pod facts cached until the token's expiry, at most 1 h; CLI access-request poll 2 s; access requests expire by `approvalTimeout` (§10).
 - **Limits:**
   - OTLP body 4 MiB, sent and decompressed; 4 ingest requests at once per replica;
   - bundle and JWKS responses 1 MiB;
   - SPIFFE ID 2048 bytes; `spiffeIDs` 64 items;
   - sessions list 200;
   - tail backlog 20 events from the past 24 h, `after` at most 31 days back, 500 rows a query; 4 tails per principal on each replica, and 64 on each replica;
-  - health check: HTTP body 64 KiB read, path 1024 characters, at most 10 repairs in 30 minutes.
-- **Audit events:** `instance.health` on every change of health, and `instance.reapply` for each reapply, both with no payload (§6). Health failures are `instance.fail` with the check's reason.
+  - health check: HTTP body 64 KiB read, path 1024 characters, at most 10 repairs in 30 minutes;
+  - attestation header 16 KiB; token command output 16 KiB, its standard error passed through up to 4 KiB; workspace ID 256 characters; key values 63 characters;
+  - 200 workspace lists per principal, 64 servers per list, 32 session additions per session, 100 pending access requests per principal; 1 to 8 audiences.
+- **Audit events:** `instance.health` on every change of health, and `instance.reapply` for each reapply, both with no payload (§6). Health failures are `instance.fail` with the check's reason. §10 adds `workspace.change`, `workspace.defaults`, `session.addition`, `access.request`, `access.approve`, `access.deny` and `access.expire`. `auth.refuse` for an attestation carries the verified user's principal.
 - **Libraries:**
   - `go.opentelemetry.io/collector/pdata` (the `ptraceotlp`, `pmetricotlp` and `plogotlp` packages);
   - `github.com/spiffe/go-spiffe/v2` (`jwtsvid`, `jwtbundle`, `federation`, `spiffeid`, `workloadapi`, and `proto/spiffe/workload` in tests);
   - `github.com/swaggest/openapi-go` (phase 2 §9);
   - `encoding/json` for NDJSON; `net/http` for forwarding and HTTP checks;
-  - the go-sdk's `CallTool` on the monitoring session.
+  - the go-sdk's `CallTool` on the monitoring session;
+  - `k8s.io/client-go` for the guest's TokenRequest, `os/exec` for the token command, `regexp` for `spiffeIDPattern`, `github.com/gofrs/flock` for the command cache's lock, and go-oidc's `IDTokenVerifier` once per audience (§10).
 
   No new cryptography: signatures are checked by go-spiffe, and test SVIDs are signed by go-jose.
 - **Test backend:** `mirror.gcr.io/grafana/otel-lgtm`, pinned by digest (§3).
@@ -467,8 +519,277 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - §12: ingest stamping, that `session.id` is kept, content removal and `telemetry.allowContent`, and the `instance.health` event;
   - §13: `toolgate migrate`, `toolgate otel-headers`' output and `TOOLGATE_SPIFFE_SOCKET`;
   - §15: the `instances` column and the partition function;
-  - §21 question 2: answered by SPIFFE.
+  - §21 question 2: answered by SPIFFE;
+  - §2: no change. Principle 2 holds: a claimed workspace never selects a list, and the scope step only refuses;
+  - §5: the `X-Toolgate-Attestation` header;
+  - §6: attested user sessions (a user token plus a bound workload token), the identity kinds, `oidcAudience` as a list, and `TOOLGATE_TOKEN_COMMAND` under client sign-in;
+  - §10: the workspace-scope step as step 4, approval moving to step 5;
+  - §13: `toolgate workspace list`, `allow`, `deny`, `clear` and `defaults`, `toolgate login --token-store`, and the new client variables;
+  - §14: the Workspaces page, and the approval page's server-access and change requests;
+  - §15: `user_scopes`, `workspace_lists`, `workspace_list_servers`, `session_additions` and `access_requests`.
 - **Errors to the model** follow phase 1: short sentences naming what to do next.
+
+## 10. Workspace and session scoping
+
+AC-3-16 to AC-3-21. The owner's need: even for one person, different environments need different servers. A Coder workspace for cluster work needs `github` and `k8s`, not the email archive. Another needs the email archive, not `k8s`. A one-off session might need the email archive and `immich`. The same person is the real user each time, and they set this out of band, in the UI or the CLI. An agent in a workspace the owner never looked at must still act as the owner.
+
+So a session gets two credentials: the user's own token says *who*, and a workload token says *where*. The gateway checks that the workload belongs to that user. Then a per-workspace list, set by the user, narrows which of the user's servers the session sees.
+
+### Identity kinds
+
+`auth.Identity` gains `Kind`: `user`, `service-account` or `spiffe`, set by the verifier that accepted the bearer token. Today the code infers the kind from attestation plus a principal prefix: `policy.HasAccess` (`isSPIFFE`, `isServiceAccount`), `audittail.IsAdmin`, and the approval wait's "a service account can't sign in" check. An attested user (below) breaks that inference: a user whose IdP `sub` starts with `spiffe://` would match `access.spiffeIDs`. So:
+- `HasAccess` picks the access list by `Kind`, never by attestation or prefix.
+- Admins in the API are `Kind == user` with `adminGroup` in their token's groups, at any attestation. The user token is the same with or without an attestation, so this gives nobody more than the token alone already gives.
+- The approval wait's step 3 test becomes `Kind != user`.
+- Scoping (below) applies only to `Kind == user`. Service accounts and SPIFFE workloads keep phase 1 and §4: templates and rules decide what they reach.
+- Identities the UI builds for its own decisions (phase 2's Servers page, grants, approvals) are `Kind == user`, and their decisions skip the scope step: the UI shows the user's whole catalog, not one session's view.
+
+### Attested user sessions
+
+AC-3-16.
+
+**Configuration** (YAML only, like `spiffeTrustDomains`; the chart sets it from `config.workspaceAttestation`):
+
+```yaml
+workspaceAttestation:
+  namespaces: [coder]                  # service-account tokens from these namespaces only
+  keys:                                # pod label keys (annotations are read too, below)
+    userID: com.coder.user.id
+    email: com.coder.user.email
+    username: com.coder.user.username
+    workspace: com.coder.workspace.name
+  match:
+    by: email                          # email | claim
+    # by: claim
+    # claim: preferred_username        # a claim of the user token
+    # key: username                    # userID | username, compared with that claim
+  workspaceID: coder/{username}/{workspace}
+  spiffeIDPattern: ""                  # e.g. spiffe://coder.example.com/coder/{username}/{workspace}
+```
+
+- The feature is off when `workspaceAttestation` is absent. The header is then ignored and writes no event.
+- The key names are the only integration. Coder's template keys are the defaults, and nothing in code knows about Coder.
+- `namespaces` is required, and each must be a namespace name. It's separate from `serviceAccountNamespaces`: that list lets a pod sign in *as itself*. The docs say not to list workspace namespaces there unless pods should also sign in as their own service accounts.
+- `workspaceID` may use `{userID}`, `{username}` and `{workspace}`. It must start with a literal segment that isn't `claimed`, `k8s` or empty, so a verified workspace never looks like a claimed one, a pod's or a SPIFFE path. It's rendered at most 256 characters.
+- `spiffeIDPattern` names a trust domain in `spiffeTrustDomains`. Each placeholder is one whole path segment. It's compiled at start into a `regexp` with `regexp.QuoteMeta` around the literal parts and a named group `([A-Za-z0-9._-]+)` per placeholder. SPIFFE paths can't hold `@`, so with `spiffeIDPattern` set, `match.by` must be `claim`. Otherwise the configuration is refused at start.
+
+**The request.** The client sends the user token in `Authorization`, as today, and the workload token in `X-Toolgate-Attestation`, raw, without `Bearer`. The header is at most 16 KiB, like `Authorization`, and is exempt from the 128-character `X-Toolgate-*` limit.
+
+**Order in `auth.Middleware`:**
+1. Authenticate `Authorization` exactly as today. A bad user token gets 401. The attestation never authenticates anyone.
+2. If the identity's `Kind` isn't `user`, ignore the header. A workload is already attested as itself.
+3. If the header is absent, go on as today: `user` attestation, `claimed/…` workspace.
+4. Otherwise verify and bind it (below). On success, set `Attestation = attested` and `Workspace` to the rendered `workspaceID`. Then the `X-Toolgate-Workspace` header doesn't change it, as for pods.
+5. On any failure, keep `user` attestation and the claimed workspace, write `auth.refuse` with the reason, and serve the request. **Never a 401 just for the attestation.** The event uses phase 1's rate limit. Unlike other refusals, it carries the verified user's principal, because the user token passed.
+
+**Verifying the attestation token.** The verifier is chosen by the token's unverified `sub`, as phase 1 routes bearer tokens:
+- `spiffe://…`: `jwtsvid.ParseAndValidate` with the §4 bundles and audience `toolgate`. It's refused when `spiffeIDPattern` is empty or doesn't match the ID.
+- Anything else: TokenReview with audience `toolgate`, through the existing `serviceAccountVerifier`, but with `workspaceAttestation.namespaces` as its namespace list. The token must be bound to a pod (the pod-name and pod-UID extras), and the pod's UID must match, as in phase 1 §6.
+
+**Binding a service-account token.** The gateway gets the pod (it already gets pods for pod sign-in, so there's no new RBAC) and reads each configured key from the pod's labels, or from its annotations when the labels lack it. Coder's template puts `com.coder.user.email` in annotations, because label values can't hold `@`.
+- For KubeVirt, the token is bound to the VM's `virt-launcher` pod, whose controller is the `VirtualMachineInstance`. KubeVirt copies the VM template's labels to that pod, so the same reading works and the gateway never reads VMIs. The docs say a VM template must set the keys in `spec.template.metadata`.
+- **Match.** With `by: email`, the `email` key's value must equal the user token's verified email, compared with `strings.EqualFold`. An unverified email counts as absent (phase 1 §7), so it never matches. With `by: claim`, the configured claim of the user token must be a string equal to the named key's value. The docs say to choose a claim the user can't change, such as one the IdP sets from the same directory as Coder.
+- Every key that `workspaceID` uses must be present and match `^[A-Za-z0-9._-]{1,63}$` (the label-value syntax), so a value can't add path segments.
+- **Refusal reasons:** "attestation token invalid", "attestation namespace not allowed", "attestation not bound to a pod", "attestation pod lookup failed", "attestation owner key missing", "attestation owner mismatch", "attestation owner claim missing", "attestation workspace key invalid", "attestation SPIFFE ID doesn't match the pattern", "attestation header repeated or too large".
+
+**Binding a JWT-SVID.** The SVID's ID must match `spiffeIDPattern`. The captured `{username}` or `{userID}` is compared with the user token's claim, as for pods, and `{workspace}` fills `workspaceID`. SPIRE's registration entries are admin-written, so the ID is as trustworthy as the labels.
+
+**Why the labels can be trusted.** A pod's labels and annotations are written by whoever creates or patches the pod.
+- The admin lists the namespaces that may bind.
+- In those namespaces, cluster RBAC lets only the Coder provisioner create or change pods and VMs. Users, workspace service accounts and agents have no `create`, `patch` or `update` on `pods`, `virtualmachines` or `virtualmachineinstances` there.
+- The provisioner runs only templates that admins write. Coder fills in the owner and the workspace name itself, so a workspace owner can't set another user's email.
+- toolgate doesn't check RBAC. The cluster decides, and the admin docs give a `kubectl auth can-i --as=system:serviceaccount:coder:<workspace sa> patch pods -n coder` check to run.
+- So a matching label means "an admin's template made this pod for this user". The user token proves the person, the attestation proves the place, and neither alone is enough.
+
+**Caching.** The pod facts (the key values) are cached with the TokenReview result, keyed by the token's SHA-256, until the token's expiry, capped at 1 h (phase 1). The comparison with the user token runs on every request, because the user token differs per request.
+
+**MCP session binding.** Phase 1 binds an MCP session to (principal, `X-Toolgate-Session`, `X-Toolgate-Workspace` as sent). It now binds to the identity's final workspace and attestation instead of the header as sent. A change gets 404 and the client re-initializes. Then phase 1 row 22 refuses a different workspace on the same toolgate session with 400.
+
+**What attested users get.** They are `attested`, so `attested` and `opt-in` environments pass without a grant (`SPEC.md` §6), and rules with `attestation: attested` match them. Their principal, groups, secrets, per-user instances and grants are the user's own, because the principal is the user's `sub`. The reconciler renders with the session snapshot as today, so `${workspace.id}` is `coder/alice/dev`.
+
+### Client side: attestation
+
+Three new variables. At most one may be set, otherwise every command exits non-zero with "Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET and TOOLGATE_ATTESTATION_TOKEN_REQUEST." They can't be combined with `TOOLGATE_SPIFFE_SOCKET` (§4), which makes the workload the bearer and leaves no user to attest.
+
+- **`TOOLGATE_ATTESTATION_TOKEN_FILE`**: the path of a projected service-account token with audience `toolgate`, read on each run, because the kubelet rotates it. The admin docs give the pod volume:
+  ```yaml
+  volumes:
+    - name: toolgate-attestation
+      projected:
+        sources:
+          - serviceAccountToken: {audience: toolgate, expirationSeconds: 3600, path: token}
+  ```
+- **`TOOLGATE_ATTESTATION_SPIFFE_SOCKET`**: a Workload API address. The SVID comes from `workloadapi.FetchJWTSVID` with audience `toolgate` and a 5 s timeout, as in §4.
+- **`TOOLGATE_ATTESTATION_TOKEN_REQUEST`**: for KubeVirt guests. A VM can't get a custom-audience projected token, so toolgate mints one itself. The value is a directory holding `token`, `namespace` and `ca.crt`: KubeVirt's `serviceAccount` disk, mounted in the guest. Then:
+  1. Read the mounted token. Read its `kubernetes.io` claims (service-account name, pod name and pod UID) without verifying them, with go-jose's `UnsafeClaimsWithoutVerification`. They only fill in the request. The API server checks everything.
+  2. Call TokenRequest with `k8s.io/client-go` (already in `go.mod`): `CoreV1().ServiceAccounts(ns).CreateToken(ctx, name, …)` with audience `toolgate`, `expirationSeconds: 600` (the API server's minimum) and `boundObjectRef` to the `virt-launcher` pod by name and UID. It authenticates with the mounted token, trusts `ca.crt`, and uses `TOOLGATE_KUBE_API` (default `https://kubernetes.default.svc`) with a 5 s timeout.
+  3. Send the result. It isn't cached: one request a run is cheap, and a fresh token can't go stale.
+  - **Why toolgate does it.** It's one client-go call. Without it every VM template needs its own script, and a script that writes the token to disk is worse than a call that keeps it in memory.
+  - **RBAC**, in the admin docs: a namespaced Role allowing `create` on `serviceaccounts/token` with `resourceNames` set to the workspace's own service account, bound to that service account. The API server only binds a token to a pod that runs as that service account. If several VMs share one service account, a guest could bind a token to another VM's pod. That pod's labels name the other VM's owner, so without that owner's user token it gets nothing. The docs still ask for one service account per workspace, which the admin's template can create.
+  - The guest needs egress to the API server, and the docs say so.
+- **Failure.** If a set variable can't produce a token, the command prints why (never a token) and exits non-zero, with no headers. It never sends the request without the attestation, because that would silently change the session's attestation. This matches §4.
+- **Which commands send it:** every command that calls the gateway: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions`, `audit tail` and `workspace`. `toolgate headers` adds `X-Toolgate-Attestation` to its output.
+
+### Sign-in through another service
+
+AC-3-21. A workspace can get the user's access token from a service that already holds the user's consent, such as Coder's external auth. Then no `toolgate login` runs in the workspace.
+
+**Client: `TOOLGATE_TOKEN_COMMAND`.**
+- When it's set, every command that needs a user token runs it instead of reading the stored sign-in. A stored sign-in is ignored, and `toolgate login` isn't needed. With `TOOLGATE_SPIFFE_SOCKET` also set, every command exits non-zero with "Set only one of TOOLGATE_SPIFFE_SOCKET and TOOLGATE_TOKEN_COMMAND." The gateway URL comes from `TOOLGATE_GATEWAY` when no sign-in is saved (§4).
+- **Running it:** `os/exec` with `/bin/sh -c` (`cmd.exe /d /c` on Windows), so it is written the way Claude Code's helpers are. Standard input is empty. A 5 s timeout through `exec.CommandContext`, with `WaitDelay` of 1 s. On Unix the command runs in its own process group, and the timeout kills the group.
+- **Output:** standard output is read through `io.LimitReader` up to 16 KiB plus one byte. More is an error. Surrounding whitespace is trimmed. The rest must be one non-empty line of RFC 6750 `token68` characters. The command's standard error is passed through to toolgate's, cut at 4 KiB, so its own messages ("link your account at …") reach the user.
+- **Errors** name the cause, never the output: "TOOLGATE_TOKEN_COMMAND exited with status 1.", "TOOLGATE_TOKEN_COMMAND didn't finish within 5 s.", "TOOLGATE_TOKEN_COMMAND printed more than 16 KiB.", "TOOLGATE_TOKEN_COMMAND printed no token." and "TOOLGATE_TOKEN_COMMAND printed something that isn't a token." The command exits non-zero, with no headers.
+- **Caching:** the token is kept in the runtime directory (phase 1 §8) as `token-command-<first 16 hex of the command's SHA-256>`, mode 0600. It's reused while its `exp` claim, read without verification, is more than 60 s away. A token without a readable `exp` isn't cached. An exclusive `github.com/gofrs/flock` lock on `token-command.lock` in the same directory, held while checking, running and writing, means concurrent helpers run the command once.
+- **On 401:** commands that read the gateway's answer (`servers`, `secret`, `sessions`, `audit tail`, `workspace`, `hook session-start`) delete the cached token, run the command once more and retry once. `headers` and `otel-headers` never see the answer. They get a fresh token on their next run, because the cache never hands out a token within 60 s of its expiry.
+
+**Gateway: `oidcAudience` becomes a list.**
+- YAML takes a string or a list, through a custom `UnmarshalJSON`. `TOOLGATE_OIDC_AUDIENCE` is split on commas, like the other list settings. The chart's `config.oidc.audience` takes a string or a list. So every existing single-value configuration means a one-item list and keeps working.
+- 1 to 8 items, each non-empty, unique and at most 256 characters.
+- All items share `oidcIssuerURL`, its discovery document and its JWKS: one `oidc.Provider`, and one go-oidc `IDTokenVerifier` per audience built from it, so the key set is shared. A token is routed to the verifier of the first configured audience in its unverified `aud` claim, and that verifier checks it fully: signature, issuer, audience and expiry. Claims are read as for the first audience. A token with no listed audience gets 401 and `auth.refuse` with "audience not allowed" and the token's audiences.
+- `/.well-known/toolgate-client` still describes only the CLI client.
+- **Security note for the docs:** every audience in the list is a client whose access tokens the gateway accepts. So the Coder provider must be one made for toolgate, never the provider Coder uses for its own sign-in. The IdP must also give every client the same `sub` for a person (phase 2 §5, "Both clients must issue the same public `sub`").
+
+**With an attestation.** The command's token is the user token, and it goes in `Authorization`. The attestation variables above work the same with either source. So a Coder workspace pod can run with no `toolgate login`, `TOOLGATE_TOKEN_COMMAND` and `TOOLGATE_ATTESTATION_TOKEN_FILE`, and its sessions are the user's, attested, in `coder/alice/dev`.
+
+**Admin docs example** (`docs/admin/coder.md`). The worker checks the names against the pinned Coder and Authentik docs.
+- **Authentik:** an OAuth2/OpenID provider for Coder: client type confidential; redirect URI `https://coder.example.com/external-auth/toolgate/callback`; scope mappings `openid`, `email`, `profile` and `offline_access`; a signing key, so access tokens are JWTs the JWKS verifies; the same subject mode as the CLI's provider; and an access-token lifetime of at least 5 minutes (§3). Bind it to an application with the same access policy as toolgate's.
+- **Gateway:** `oidcAudience: [toolgate, coder-toolgate]`, where the second item is that provider's client ID.
+- **Coder** (generic OAuth2 external auth):
+  ```sh
+  CODER_EXTERNAL_AUTH_0_ID=toolgate
+  CODER_EXTERNAL_AUTH_0_TYPE=toolgate
+  CODER_EXTERNAL_AUTH_0_DISPLAY_NAME=toolgate
+  CODER_EXTERNAL_AUTH_0_CLIENT_ID=coder-toolgate
+  CODER_EXTERNAL_AUTH_0_CLIENT_SECRET=…        # from a Secret
+  CODER_EXTERNAL_AUTH_0_AUTH_URL=https://auth.example.com/application/o/authorize/
+  CODER_EXTERNAL_AUTH_0_TOKEN_URL=https://auth.example.com/application/o/token/
+  CODER_EXTERNAL_AUTH_0_VALIDATE_URL=https://auth.example.com/application/o/userinfo/
+  CODER_EXTERNAL_AUTH_0_SCOPES="openid email profile offline_access"
+  ```
+- **Template:** declaring `data "coder_external_auth" "toolgate" { id = "toolgate" }` makes Coder ask the user to link the account when the workspace is created. The agent's `env` sets `TOOLGATE_TOKEN_COMMAND = "coder external-auth access-token toolgate"` and `TOOLGATE_GATEWAY`. Coder refreshes the token with the refresh token it holds.
+
+### Device sign-in without a browser
+
+AC-3-20. **What phase 1 already gives:** `toolgate login` runs the device grant with PKCE and never opens a browser. It prints the verification URL (the complete one when the IdP sends it) and the code, waits, verifies the ID token, and stores the refresh token. `toolgate headers` refreshes an access token on every run, and §9's file lock keeps concurrent helpers from reusing a rotated refresh token. That works over SSH in a workspace.
+
+**What's missing, and added:**
+- **The store must be the same for every process.** go-keyring uses the Secret Service over D-Bus on Linux. A workspace's interactive shell may have a session bus while the agent's processes (Coder apps, systemd units, cron) don't. Then login saves to the keychain and deletes the file, and the unattended process finds no token. So:
+  - `toolgate login --token-store auto|keychain|file` (default `auto`), also `TOOLGATE_TOKEN_STORE`. `auto` tries the keychain and falls back to the file, as today.
+  - The store actually used is written to `config.json` as `tokenStore`. Every later load and save uses only that store, with no fallback, so the store never changes without anyone noticing.
+  - A `config.json` without `tokenStore` (from 0.2) keeps today's keychain-then-file behaviour.
+  - The docs for workspaces say: use `--token-store file`, and keep the home directory on a persistent volume, or the sign-in is lost when the workspace restarts.
+- **What the CLI prints**, on standard output:
+  ```
+  To sign in, open https://auth.example.com/device?code=WDJB-MJHT
+  and check that it shows the code WDJB-MJHT
+  The code expires in 10 minutes. You can open the link on any device.
+  Signed in as alice@example.com (sub 7f3a…).
+  The refresh token is stored in /home/coder/.config/toolgate/refresh-token.
+  Sessions on this machine act as you until the IdP ends this sign-in or you run `toolgate logout`.
+  ```
+  The expiry comes from the device response's `expires_in`. An expired code exits 1 with "The sign-in code expired. Run `toolgate login` again." The store line says "the OS keychain" for that store.
+- **When the refresh token stops working** (expired or revoked), `headers` prints "Sign in again: run `toolgate login`." and exits non-zero with no headers, as in phase 1. How long an unattended sign-in lasts is the IdP's refresh-token lifetime, and the docs name Authentik's setting.
+
+Nothing changes on the gateway for AC-3-20.
+
+### State
+
+One more additive migration. New IDs follow phase 2 §2.
+
+- `user_scopes(id bigserial, principal text unique, verified_default, unverified_default, updated_at)`. Each default is `none` or `all`, default `none`. The row is created on a principal's first scoping write and never deleted. A missing row means both `none`.
+- `workspace_lists(id bigserial, scope_id, workspace, created_at, updated_at)`, unique `(scope_id, workspace)`, where `scope_id` refers to `user_scopes.id`. At most 200 lists per principal. `workspace` is at most 256 characters and never starts with `claimed/`.
+- `workspace_list_servers(list_id, server, added_at)`, primary key `(list_id, server)`. At most 64 servers per list. `server` is a server name (phase 1 §7 makes names unique).
+- `session_additions(session_pk, server, request_id, created_at)`, primary key `(session_pk, server)`. At most 32 per session, the enabled-server limit.
+- `access_requests(id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope)`.
+  - `kind` is `server` (an enable outside the list, AC-3-19) or `change` (a CLI change that widens, below).
+  - `session_pk` and `server` are set for `server`. `change` is JSON for `change`. `decided_scope` is `session` or `workspace`.
+  - Statuses, compare-and-set writes, `approvalTimeout` and the leader's expiry pass are exactly phase 2's for approvals (phase 2 §2). At most 100 pending per principal, with the same advisory-lock count.
+  - **Why not the `approvals` table:** its `session_pk`, `arguments_sha256` and `tool` are `NOT NULL` with checks, and relaxing them would hand 0.2 replicas rows they can't scan during a rolling upgrade. The code that waits, notifies and expires is shared. Only the row type differs.
+- **Notifications:** `scope:<user_scopes.id>` for any change to a principal's defaults or lists. A replica reads the row's principal, which is never deleted, and sends `list_changed` to that principal's streams. Access requests send `approval:<id>`, because IDs are unique UUIDv7 values across both tables, so a waiter reads its own table. A new `session_additions` row sends the existing `session:<id>`.
+- **Ending a session** (phase 1 §2) also deletes its `session_additions` rows, in the same transaction.
+- **Cleanup:** the leader deletes access requests 7 days after they stopped being live, as for approvals.
+- **Audit events:** `workspace.change` (workspace, servers added and removed, `cleared`, and `via`: `ui`, `cli` or the request ID); `workspace.defaults` (old and new values); `session.addition` (session, server, request ID); and `access.request`, `access.approve`, `access.deny`, `access.expire`, written as phase 2 writes the approval events.
+
+### Workspace access lists and defaults
+
+AC-3-17 and AC-3-18.
+
+**The effective list** of a request with `Kind == user`:
+- **Verified workspace** (attestation `attested`, from the binding above): the workspace's list if one exists, else everything when `verified_default` is `all`, else nothing.
+- **Unverified** (attestation `user`): everything when `unverified_default` is `all`, else nothing.
+- In both cases, plus the session's `session_additions`.
+
+Lists exist only for verified workspaces. A claimed workspace never selects a list, so a client can't pick a list by claiming a name, and principle 2 holds without exceptions. Everything the effective list allows still has to pass the other steps.
+
+**Policy order** (`SPEC.md` §10, phase 2 §3) gains a step, after the blocks and before approval:
+1. catalog access;
+2. environment, with grants;
+3. blocks;
+4. **workspace scope** (new): for `Kind == user`, the server must be in the effective list, else refuse with step `workspace-scope`;
+5. approval.
+
+The step only refuses, so it never widens anything: a server on a list that the user can't reach is refused at step 1 or 2 first (AC-3-17). `Decide` stays pure. The policy state batch (phase 2 §3) gains three queries in the same round trip, for `Kind == user` only: the `user_scopes` row, the list for (principal, verified workspace) with its servers, and the additions joined through `sessions` on (principal, session ID). `policy.State` gains `Scope{Applies, All bool; Servers set}`.
+
+**Effects**, on the paths phase 1 §3 already decides:
+- `toolgate_list_servers` leaves out servers the step refuses.
+- `tools/list` leaves out their tools.
+- A call is refused with "Server `k8s` isn't in the list for workspace `coder/alice/mail`. Allow it in the Workspaces page or with `toolgate workspace allow k8s`."
+- An enable starts a session addition (below).
+- A server that leaves the list stays enabled with no tools, like a grant that expired (phase 2 §3), and its tools come back without a new enable when it returns.
+
+**The 5 s bound.** Every write notifies `scope:<id>` in its transaction. Every replica sends `list_changed` to the principal's streams, and the next decision loads fresh state, so a call after the commit is refused at once. A `LISTEN` reconnect sends `list_changed` to all streams, as before. A test measures the bound.
+
+**Without the web UI** (`oidcUIClientID` empty), the scope step is off and nothing above applies. Widening needs a step-up, and only the UI can do one. So a gateway without the UI behaves as in 0.2, and the docs say scoping needs the UI.
+
+**Writes** lock the principal's `user_scopes` row (`INSERT … ON CONFLICT DO NOTHING`, then `SELECT … FOR UPDATE`), check the limits, change the rows, write the event, notify, and commit. A write *widens* when it adds a server to a list, clears a list while `verified_default` is `all`, or changes a default from `none` to `all`. Everything else narrows. `allow` refuses a server the user has no catalog access to, with "You don't have access to server `x`.", to catch typos. Access lost later leaves the entry in place, but it does nothing. `deny` also deletes that server's `session_additions` for the user's open sessions in that workspace, so a deny really removes it. `clear` deletes the list, so the default applies again.
+
+**Web UI: `GET /ui/workspaces`.** Access `user`.
+- It shows the defaults, each list with its servers, and the verified workspaces of the user's open sessions, each with an "Add a list" button.
+- Its forms are `POST /ui/workspaces/defaults`, `POST /ui/workspaces/allow`, `POST /ui/workspaces/deny` and `POST /ui/workspaces/clear`, with phase 2's CSRF rules.
+- Widening POSTs need the phase 2 step-up (5 minutes, the form asking at 4), checked as the grant form does. Narrowing POSTs don't.
+
+**API and CLI.** Bearer tokens can't prove a step-up (phase 2 §9). An agent in a workspace holds the user's token, so a widening call from the CLI never applies directly. It creates a `change` access request that the user approves in the browser.
+- `GET /api/v1/workspaces` returns `{"current", "defaults": {"verified", "unverified"}, "workspaces": [{"workspace", "servers", "updatedAt"}]}`, where `current` is the request's verified workspace or `null`.
+- `POST /api/v1/workspaces/changes` takes `{"action": "allow"|"deny"|"clear"|"defaults", "workspace", "servers", "verified", "unverified"}`. A narrowing change applies and answers 200 `{"applied": true}`. A widening one inserts a pending `change` request and answers 202 `{"request", "url"}`. Only `Kind == user` may call it; others get 403.
+- `GET /api/v1/access-requests/{id}` returns `{"id", "status", "expiresAt"}`, to the requester only. Others get 404.
+- `toolgate workspace list` prints the defaults and a table: `WORKSPACE`, `SERVERS`, `UPDATED`.
+- `toolgate workspace allow SERVER…`, `deny SERVER…` and `clear` take `--workspace ID`. It defaults to `current`, and without one they exit with "This machine has no verified workspace. Pass --workspace."
+- `toolgate workspace defaults [--verified none|all] [--unverified none|all]`.
+- For a 202, the CLI prints "Approve this change at `<url>`. Waiting… (Ctrl-C stops waiting; the request stays open until it expires.)". It then polls the request every 2 s until it's decided or expired, and exits 0 only when approved.
+- The approval page for a `change` shows the change as a before-and-after list, with Approve (step-up) and Deny. Approving applies the change in the same transaction as the compare-and-set, as a set operation on the current list, so a list that changed in between needs no merge.
+
+### Session additions
+
+AC-3-19. An enable whose only refusal is step 4 asks the user, reusing phase 2 §4's elicitation, wait and fan-out.
+
+1. **Find or insert a request.** Use the same order as phase 2 §4 step 1: the request named by `RequestState` (a lookup key only, so every field must match), then a pending `server` request for this session and server. If none is found, insert one with the session's workspace and whether it's verified, write `access.request`, notify, and commit.
+2. **No elicitation**, or `decline`/`cancel`: return "Server `immich` isn't allowed in workspace `coder/alice/mail`. Allow it at `<publicURL>/ui/approvals/<id>`, then enable it again." For an unverified session, the message says "in sessions without a verified workspace". The request stays pending. The enable writes `server.enable` (refuse, `workspace-scope`, with the request ID).
+3. **Elicitation:** return the URL elicitation with `RequestState` set to the request ID, as phase 2 §4 step 4.
+4. **Wait** as phase 2 §4 step 5: on `approval:<id>`, `scope:<id>`, `session:<id>`, a missed event or the 10 s tick, re-read the request and decide steps 1 to 4 again with fresh state.
+   - If step 4 now passes (approved here, or the server was added another way), go on with phase 1 enable step 2.
+   - If steps 1 to 3 refuse, stop with that refusal.
+   - Denied: "Adding `immich` was denied (request `<id>`)."
+   - Expired: as phase 2's timeout, with "Nobody allowed `immich` within 10 minutes (request `<id>`)."
+   - Cancel or disconnect: stop and write nothing.
+   - Waits count toward phase 2's 32 per principal per replica.
+5. **The page** (`/ui/approvals/<id>`, which looks the ID up in both tables; owner only, else 404) shows the server, session and workspace. It offers "Allow for this session", "Always allow in this workspace" (only when the workspace is verified), and Deny. Both approvals need the phase 2 step-up. Deny doesn't.
+6. **Approving writes the effect.** One transaction locks the `sessions` row first (phase 1's lock order), then the `user_scopes` row for "always". It compare-and-sets `pending` to `approved` with `decided_scope`, then:
+   - **session:** checks the session hasn't ended, inserts `session_additions`, writes `session.addition`, and notifies `session:<id>`. If the session has ended, the page says "This session has ended." and nothing changes.
+   - **workspace:** adds the server to the workspace's list, creating the list if there was none (so a workspace with `none` and no list gets a list of just this server). Writes `workspace.change` with `via` set to the request ID, and notifies `scope:<id>`.
+   - In both cases it writes `access.approve` and notifies `approval:<id>`.
+   Because the approver writes the effect, a waiter that died loses nothing. The next enable passes step 4 at once. A request is never "used" by a later call, so it needs no `used_at`.
+
+**Where session-only rows end.** Ending a session deletes them (State). A restarted session starts with none, and other sessions in the workspace never see them, because they are keyed by `session_pk`.
+
+**Calls** of a server outside the effective list never elicit. They're refused with the message in "Effects". Only enable asks, because that's when the person is deciding what the session needs.
+
+### Tests
+
+- **AC-3-16 (e2e):** a pod in an allowed namespace, labelled for the fake IdP's user, sends a user token plus a projected token. The test checks `attested`, the `coder/…` workspace, the user's per-user instance and secrets, and an `opt-in` server with no grant. A second pod, labelled for another user, falls back to `user` with an `auth.refuse` naming "attestation owner mismatch". The KubeVirt path is a unit test against a fake API server: a `virt-launcher`-shaped pod whose controller is a VMI, and the client's TokenRequest call with its `boundObjectRef`. The SPIFFE binding reuses §4's test bundle endpoint.
+- **AC-3-17 and AC-3-18 (integration):** list, enable and call filtering, withdrawal within 5 s across two replicas, `allow` of a server outside catalog access, both defaults both ways, and a CLI widen that applies only after the approval.
+- **AC-3-19 (browser, chromedp as in phase 2):** "this session" and "always", the step-up, a second session not getting a session-only addition, and the end of the session removing it. The no-elicitation path is an integration test.
+- **AC-3-20 (e2e):** `toolgate login --token-store file` against the fake IdP with no D-Bus session. The device code is approved by the test, and a later `toolgate headers` from a process without the login's environment gets a token.
+- **AC-3-21 (integration):** `TOOLGATE_TOKEN_COMMAND` printing a fake-IdP token for a second audience, accepted with the user's principal; an unlisted audience refused; plus unit tests for the timeout, the size limit, the cache, the lock and the 401 retry.
 
 ## Decisions on the draft's open questions
 
