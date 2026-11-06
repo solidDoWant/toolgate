@@ -111,3 +111,22 @@ To try a model before you switch, use the offline comparison tool `make search-e
 ### Hit rate of each server
 
 The metrics have no `server` label. Use the audit log instead. Count `tool.search_hit` events by `server`, and compare them with the count of `tool.search` results that list the server. A server with a low hit rate needs better tool descriptions. The audit log is in the `audit_events` table and in the gateway log lines.
+
+## Compare two embedding models offline
+
+Before you switch models, you can score each one on a fixed set of tasks. The repository holds 66 task descriptions and the tools they should find, in `test/fixtures/toolsearch/`. Run this from a checkout of the repository, on a machine with Go and Docker:
+
+```
+make search-eval EMBED_URL=http://localhost:8080 EMBED_MODEL=BAAI/bge-small-en-v1.5
+```
+
+`EMBED_URL` and `EMBED_MODEL` are the same as `config.toolSearchEmbeddings.url` and `model`. The command starts a temporary PostgreSQL in Docker, loads the tools with the real gateway code, and runs every task through the real search.
+
+It prints:
+
+- The number of tasks (out of 66) with the expected tool in the top 5, for words only and for words plus meaning.
+- One line for each task the search missed, with the tool it wanted and the tools it returned.
+
+Run the command once for each model and compare the numbers. The command never changes the task set, and it does not fail on a low score. The bar for the default model is 59 of 66.
+
+This test uses a fixed task set, not your own tools. To see how a model does in real sessions, use the hit rates from the metrics. See [Metrics](metrics.md).

@@ -410,6 +410,47 @@ const (
 // TestAC4_03SearchQuality runs the frozen fixture through the real rebuild
 // and the real search.
 func TestAC4_03SearchQuality(t *testing.T) {
+	endpoint := testutil.StartEmbeddings(t)
+
+	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: endpoint.Model, Timeout: 30 * time.Second})
+	require.NoError(t, err)
+
+	// The words-only score is for information; only hybrid search gates.
+	scores := scoreSearchFixture(t, embedder)
+
+	assert.GreaterOrEqual(t, scores.hybrid, minToolSearchHits)
+}
+
+// TestSearchEval is the body of `make search-eval`: it scores the frozen
+// fixture against the embeddings endpoint named in SEARCH_EVAL_EMBED_URL and
+// SEARCH_EVAL_EMBED_MODEL, and prints the scores and the misses. It never
+// fails on a score.
+func TestSearchEval(t *testing.T) {
+	url := os.Getenv("SEARCH_EVAL_EMBED_URL")
+	model := os.Getenv("SEARCH_EVAL_EMBED_MODEL")
+
+	if url == "" || model == "" {
+		t.Skip("set SEARCH_EVAL_EMBED_URL and SEARCH_EVAL_EMBED_MODEL (make search-eval EMBED_URL=... EMBED_MODEL=...)")
+	}
+
+	embedder, err := embeddings.New(embeddings.Options{URL: url, Model: model, Timeout: 30 * time.Second})
+	require.NoError(t, err)
+
+	scores := scoreSearchFixture(t, embedder)
+
+	t.Logf("model %s: words only %d of %d, hybrid %d of %d (the AC-4-03 bar is %d)", model, scores.words, scores.total, scores.hybrid, scores.total, minToolSearchHits)
+}
+
+type searchScores struct {
+	hybrid, words, total int
+}
+
+// scoreSearchFixture loads the frozen fixture through the real rebuild into
+// PostgreSQL and counts the tasks whose expected tool is in the top 5, with
+// the embedder and then with words only. It logs each miss.
+func scoreSearchFixture(t *testing.T, embedder *embeddings.Client) searchScores {
+	t.Helper()
+
 	type tool struct {
 		Name        string         `json:"name"`
 		Description string         `json:"description"`
@@ -441,11 +482,6 @@ func TestAC4_03SearchQuality(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(data, target))
 	}
-
-	endpoint := testutil.StartEmbeddings(t)
-
-	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: endpoint.Model, Timeout: 30 * time.Second})
-	require.NoError(t, err)
 
 	// Each replica is made with the endpoint set in active.
 	active := embedder
@@ -490,15 +526,14 @@ func TestAC4_03SearchQuality(t *testing.T) {
 		return hits
 	}
 
-	// The words-only score is for information; only hybrid search gates.
 	hybrid := score("hybrid")
 
 	active = nil
 	fixture.server = fixture.replica(t)
 
-	score("words only")
+	words := score("words only")
 
-	assert.GreaterOrEqual(t, hybrid, minToolSearchHits)
+	return searchScores{hybrid: hybrid, words: words, total: len(tasks.Tasks)}
 }
 
 // minToolSearchHits is the number of fixture tasks whose expected tool must be
