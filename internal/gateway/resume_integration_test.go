@@ -3,12 +3,14 @@
 package gateway_test
 
 import (
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/policy"
 )
 
@@ -213,5 +215,66 @@ func TestSessionResume(t *testing.T) {
 		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"))
 		assert.Empty(t, fixture.instancesOf(t, template))
 		assert.Empty(t, fixture.auditRows(t, "session.resume"))
+	})
+}
+
+func TestSessionResumeInterrupted(t *testing.T) {
+	t.Run("row 166: a restore that fails part-way leaves the session ended, and the next request restores every server once", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		github := fixture.addEnableTemplate("github", "per-session", anyone)
+		jira := fixture.addEnableTemplate("jira", "per-session", anyone)
+		fixture.startUpstream(t, "github")
+		fixture.startUpstream(t, "jira")
+
+		first := fixture.connectObserved(t, alice())
+		githubBefore := fixture.enableWithTools(t, first, "github", "session:alice:session-1", "echo")
+		jiraBefore := fixture.enableWithTools(t, first, "jira", "session:alice:session-1", "echo")
+
+		fixture.endSession(t)
+		fixture.stopInstance(t, githubBefore.ID)
+		fixture.stopInstance(t, jiraBefore.ID)
+
+		// The first restore inserts github's instance, then jira's insert
+		// fails once, as a transient database error would.
+		for _, statement := range []string{
+			`CREATE TABLE restore_fail_once (x int)`,
+			`INSERT INTO restore_fail_once VALUES (1)`,
+			`CREATE FUNCTION restore_fail() RETURNS trigger LANGUAGE plpgsql AS $$
+			 BEGIN
+			   IF NEW.template_name = 'jira' AND EXISTS (SELECT 1 FROM restore_fail_once) THEN
+			     RAISE EXCEPTION 'injected transient failure';
+			   END IF;
+			   RETURN NEW;
+			 END $$`,
+			`CREATE TRIGGER restore_fail BEFORE INSERT ON instances FOR EACH ROW EXECUTE FUNCTION restore_fail()`,
+		} {
+			_, err := fixture.pool.Exec(t.Context(), statement)
+			require.NoError(t, err)
+		}
+
+		response := fixture.post(t, alice(), "", initializeMessage())
+		require.NoError(t, response.Body.Close())
+		assert.NotEqual(t, http.StatusOK, response.StatusCode)
+
+		_, err := fixture.pool.Exec(t.Context(), `DELETE FROM restore_fail_once`)
+		require.NoError(t, err)
+
+		fixture.connectObserved(t, alice())
+
+		assert.Equal(t, []string{"github", "jira"}, fixture.enabledServers(t, "alice", "session-1"))
+
+		for _, template := range []*v1alpha1.MCPServerTemplate{github, jira} {
+			live := fixture.instancesOf(t, template)
+			require.Len(t, live, 1, "%s has one live instance", template.Name)
+
+			enables := fixture.auditEvents(t, "server.enable", template.Name)
+			require.Len(t, enables, 2, "%s: the enable and one restore decision", template.Name)
+			assert.Equal(t, true, enables[1]["resume"])
+			assert.Equal(t, live[0].ID, enables[1]["instance"])
+		}
+
+		resumes := fixture.auditRows(t, "session.resume")
+		require.Len(t, resumes, 1)
+		assert.Equal(t, []any{"github", "jira"}, resumes[0].Details["servers"])
 	})
 }
