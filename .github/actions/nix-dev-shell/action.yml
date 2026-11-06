@@ -12,6 +12,13 @@ inputs:
 runs:
   using: composite
   steps:
+    # The hosted runner ships toolchains we never use. Removing them frees
+    # about 25 GB before the Nix store and the Go build cache are restored.
+    - shell: bash
+      run: |
+        df -h /
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+        df -h /
     - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
     - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
       with:
