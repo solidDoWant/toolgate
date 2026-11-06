@@ -120,6 +120,25 @@ To see your open sessions, run `toolgate sessions`. A session is one Claude Code
 
 The command shows only your own sessions. It leaves out sessions that ended and sessions that had no request for longer than the idle time that your admin set. If you have more than 200 open sessions, the command shows the newest 200 and says so.
 
+## Watch audit events
+
+To print audit events as they happen, run `toolgate audit tail`. An audit event is one record of what the gateway did, for example a tool call that it allowed or refused. The command prints one line for each event: the time, the type, the user, the workspace, the session, the server, the tool, and the decision or result. A dash means that the event has no value for that field.
+
+The command first prints your last 20 events from the past 24 hours. Then it prints new events until you press Ctrl-C. An event appears about 5 to 7 seconds after it happens.
+
+You see only your own events. If you are an admin, you see the events of all users. Your admin decides which group of users are admins.
+
+The command has these options:
+
+- `--json` prints each event as one line of JSON. Each line has a `key` field that identifies the event.
+- `--after KEY` starts after the event with that key. The command goes back 31 days at most.
+
+The gateway closes the connection when your sign-in token expires, after one hour, or when the gateway restarts. The command then connects again and continues after the last event that it printed. It prints no event twice.
+
+The command shows a view of the audit log. It is not the record. In rare cases, an event that takes more than 5 seconds to save does not appear in the command output. The event is still in the audit log.
+
+If you have 4 tails open, the gateway refuses a fifth one with "Too many audit tails are open. Close one first."
+
 ## Use servers in Claude Code
 
 You do not call the gateway yourself. Ask Claude for what you need, and Claude uses four tools of the `toolgate` server:

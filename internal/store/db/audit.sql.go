@@ -162,10 +162,10 @@ func (q *Queries) GetAuditEventPayload(ctx context.Context, arg GetAuditEventPay
 
 const insertAuditEvent = `-- name: InsertAuditEvent :exec
 INSERT INTO audit_events (
-    type, principal, workspace, session, attestation, server, tool,
+    occurred_at, type, principal, workspace, session, attestation, server, tool,
     trace_id, request_id, details, payload, payload_ref
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7,
+    clock_timestamp(), $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, $12
 )
 `
@@ -185,6 +185,8 @@ type InsertAuditEventParams struct {
 	PayloadRef  string
 }
 
+// occurred_at is the time of the insert, not of the transaction's start,
+// so the audit tail's commit window only has to cover insert to commit.
 func (q *Queries) InsertAuditEvent(ctx context.Context, arg InsertAuditEventParams) error {
 	_, err := q.db.Exec(ctx, insertAuditEvent,
 		arg.Type,
@@ -270,6 +272,149 @@ func (q *Queries) ListAuditEventsPage(ctx context.Context, arg ListAuditEventsPa
 	items := []ListAuditEventsPageRow{}
 	for rows.Next() {
 		var i ListAuditEventsPageRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.Type,
+			&i.Principal,
+			&i.Workspace,
+			&i.Session,
+			&i.Attestation,
+			&i.Server,
+			&i.Tool,
+			&i.TraceID,
+			&i.RequestID,
+			&i.Details,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditTail = `-- name: ListAuditTail :many
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE (occurred_at, id) > ($1::timestamptz, $2::bigint)
+  AND occurred_at <= now() - interval '5 seconds'
+  AND ($3::text = '' OR principal = $3)
+ORDER BY occurred_at, id
+LIMIT $4
+`
+
+type ListAuditTailParams struct {
+	AfterAt   pgtype.Timestamptz
+	AfterID   int64
+	Principal string
+	MaxRows   int32
+}
+
+type ListAuditTailRow struct {
+	ID          int64
+	OccurredAt  pgtype.Timestamptz
+	Type        string
+	Principal   string
+	Workspace   string
+	Session     string
+	Attestation string
+	Server      string
+	Tool        string
+	TraceID     string
+	RequestID   string
+	Details     []byte
+}
+
+// Lists at most max_rows audit events after the (after_at, after_id) cursor,
+// oldest first, for the audit tail. An empty principal matches every
+// principal. Rows from the last 5 seconds are left for a later query, so a
+// row that commits after a newer one is still read in key order.
+func (q *Queries) ListAuditTail(ctx context.Context, arg ListAuditTailParams) ([]ListAuditTailRow, error) {
+	rows, err := q.db.Query(ctx, listAuditTail,
+		arg.AfterAt,
+		arg.AfterID,
+		arg.Principal,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAuditTailRow{}
+	for rows.Next() {
+		var i ListAuditTailRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.Type,
+			&i.Principal,
+			&i.Workspace,
+			&i.Session,
+			&i.Attestation,
+			&i.Server,
+			&i.Tool,
+			&i.TraceID,
+			&i.RequestID,
+			&i.Details,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditTailBacklog = `-- name: ListAuditTailBacklog :many
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at > $1::timestamptz
+  AND occurred_at <= now() - interval '5 seconds'
+  AND ($2::text = '' OR principal = $2)
+ORDER BY occurred_at DESC, id DESC
+LIMIT $3
+`
+
+type ListAuditTailBacklogParams struct {
+	Since     pgtype.Timestamptz
+	Principal string
+	MaxRows   int32
+}
+
+type ListAuditTailBacklogRow struct {
+	ID          int64
+	OccurredAt  pgtype.Timestamptz
+	Type        string
+	Principal   string
+	Workspace   string
+	Session     string
+	Attestation string
+	Server      string
+	Tool        string
+	TraceID     string
+	RequestID   string
+	Details     []byte
+}
+
+// Lists the newest max_rows audit events since since, newest first, for the
+// start of an audit tail. It leaves out the same last 5 seconds as
+// ListAuditTail. An empty principal matches every principal.
+func (q *Queries) ListAuditTailBacklog(ctx context.Context, arg ListAuditTailBacklogParams) ([]ListAuditTailBacklogRow, error) {
+	rows, err := q.db.Query(ctx, listAuditTailBacklog, arg.Since, arg.Principal, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAuditTailBacklogRow{}
+	for rows.Next() {
+		var i ListAuditTailBacklogRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.OccurredAt,

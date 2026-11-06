@@ -383,6 +383,7 @@ func (v *spiffeVerifier) verify(ctx context.Context, token, subject string) (Ide
 		Principal:   svid.ID.String(),
 		Workspace:   svid.ID.Path(),
 		Attestation: AttestationAttested,
+		Expiry:      svid.Expiry,
 	}, nil
 }
 

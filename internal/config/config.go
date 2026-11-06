@@ -224,7 +224,10 @@ type Config struct {
 
 	// The group whose members are web UI admins, checked against the groups
 	// from the user's sign-in. Group changes take effect at the latest when
-	// the 8-hour UI session ends. If it is empty, nobody is an admin.
+	// the 8-hour UI session ends. Members who sign in as users, not service
+	// accounts, also see the audit events of all users in `toolgate audit
+	// tail`; there the group is checked on each request. If it is empty,
+	// nobody is an admin.
 	AdminGroup string `json:"adminGroup" env:"TOOLGATE_ADMIN_GROUP"`
 
 	// How long a call that needs approval waits for a person to approve it,

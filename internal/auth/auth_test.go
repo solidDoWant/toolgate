@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -71,6 +72,7 @@ func newFixture(t *testing.T, options auth.Options, requireSession bool) fixture
 			return
 		}
 
+		writer.Header().Set("X-Test-Expiry", strconv.FormatInt(identity.Expiry.Unix(), 10))
 		_ = json.NewEncoder(writer).Encode(identity)
 	})
 
@@ -331,6 +333,18 @@ func TestValidTokenBuildsIdentity(t *testing.T) {
 			assert.Empty(t, f.recorder.all())
 		})
 	}
+}
+
+func TestIdentityCarriesTheTokenExpiry(t *testing.T) {
+	t.Parallel()
+
+	f := newFixture(t, auth.Options{}, true)
+	expiry := time.Now().Add(17 * time.Minute).Truncate(time.Second)
+	token := f.provider.MintAccessToken(t, tgtestutil.TokenClaims{Subject: "erin", ExpiresAt: expiry})
+
+	response := f.do(t, token, map[string]string{"X-Toolgate-Session": "s-5"})
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(t, strconv.FormatInt(expiry.Unix(), 10), response.Header().Get("X-Test-Expiry"))
 }
 
 func TestMalformedGroupsClaimIsRefused(t *testing.T) {

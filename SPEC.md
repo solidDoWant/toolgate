@@ -254,7 +254,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 | `toolgate otel-headers` | 3 | `otelHeadersHelper` output |
 | `toolgate admin rewrap` | 1 | §11 |
 | `toolgate sessions` | 3 | List the caller's open sessions and their enabled servers (`GET /api/v1/sessions`) |
-| `toolgate audit tail` | 3 | |
+| `toolgate audit tail` | 3 | Print the audit events the caller may see as they happen (`GET /api/v1/audit/tail`); `--after KEY`, `--json` |
 
 **Workspace ID (user attestation):** `toolgate headers` sends `TOOLGATE_WORKSPACE` if set. Otherwise it sends `<hostname>/<git remote repo name or directory name>`, normalised to the header pattern: each character outside `[A-Za-z0-9._-]` becomes `-`, and the value is cut to 128 characters. The repo name is the last path element of the remote `origin`, without `.git`.
 

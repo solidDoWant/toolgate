@@ -3,6 +3,48 @@ info:
   title: toolgate gateway API
   version: v1
 paths:
+  /api/v1/audit/tail:
+    get:
+      parameters:
+      - description: Continue after this event key (the key of the last event received).
+        in: query
+        name: after
+        schema:
+          description: Continue after this event key (the key of the last event received).
+          type: string
+      responses:
+        "200":
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: '#/components/schemas/AudittailEvent'
+          description: OK
+        "400":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Bad Request
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "429":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Too Many Requests
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: Stream the audit events the caller may see, as NDJSON, following new
+        ones
   /api/v1/secrets:
     get:
       responses:
@@ -125,6 +167,33 @@ paths:
       summary: Get the merged Claude Code settings that match the caller
 components:
   schemas:
+    AudittailEvent:
+      properties:
+        attestation:
+          type: string
+        details: {}
+        key:
+          type: string
+        occurredAt:
+          format: date-time
+          type: string
+        principal:
+          type: string
+        requestId:
+          type: string
+        server:
+          type: string
+        session:
+          type: string
+        tool:
+          type: string
+        traceId:
+          type: string
+        type:
+          type: string
+        workspace:
+          type: string
+      type: object
     SecretsSecretInfo:
       properties:
         createdAt:

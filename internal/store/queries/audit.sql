@@ -1,11 +1,40 @@
 -- name: InsertAuditEvent :exec
+-- occurred_at is the time of the insert, not of the transaction's start,
+-- so the audit tail's commit window only has to cover insert to commit.
 INSERT INTO audit_events (
-    type, principal, workspace, session, attestation, server, tool,
+    occurred_at, type, principal, workspace, session, attestation, server, tool,
     trace_id, request_id, details, payload, payload_ref
 ) VALUES (
-    @type, @principal, @workspace, @session, @attestation, @server, @tool,
+    clock_timestamp(), @type, @principal, @workspace, @session, @attestation, @server, @tool,
     @trace_id, @request_id, @details, @payload, @payload_ref
 );
+
+-- name: ListAuditTail :many
+-- Lists at most max_rows audit events after the (after_at, after_id) cursor,
+-- oldest first, for the audit tail. An empty principal matches every
+-- principal. Rows from the last 5 seconds are left for a later query, so a
+-- row that commits after a newer one is still read in key order.
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE (occurred_at, id) > (@after_at::timestamptz, @after_id::bigint)
+  AND occurred_at <= now() - interval '5 seconds'
+  AND (@principal::text = '' OR principal = @principal)
+ORDER BY occurred_at, id
+LIMIT @max_rows;
+
+-- name: ListAuditTailBacklog :many
+-- Lists the newest max_rows audit events since since, newest first, for the
+-- start of an audit tail. It leaves out the same last 5 seconds as
+-- ListAuditTail. An empty principal matches every principal.
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at > @since::timestamptz
+  AND occurred_at <= now() - interval '5 seconds'
+  AND (@principal::text = '' OR principal = @principal)
+ORDER BY occurred_at DESC, id DESC
+LIMIT @max_rows;
 
 -- name: DeleteAuditEventsBefore :execrows
 -- Deletes at most batch_size audit events that occurred before cutoff,

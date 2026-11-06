@@ -25,6 +25,7 @@ Commands:
   serve     Run the gateway (serve --config FILE)
   migrate   Apply the database migrations (migrate [--config FILE])
   admin     Admin commands (admin rewrap --config FILE)
+  audit     Print audit events as they happen (audit tail [--after KEY] [--json])
   status    Show the gateway and who is signed in
   version   Print the version
 `
@@ -74,6 +75,8 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return serve(args[1:], stdout, stderr)
 	case "migrate":
 		return migrate(args[1:], stdout, stderr)
+	case "audit":
+		return auditCommand(args[1:], stdout, stderr)
 	case "admin":
 		return admin(args[1:], stdout, stderr)
 	case "help", "-h", "--help":

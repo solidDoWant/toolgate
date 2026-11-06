@@ -22,6 +22,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/audittail"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/config"
@@ -106,6 +107,16 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}).Register(server, func(next http.Handler) http.Handler {
 		return authenticator.Middleware(next, false)
 	})
+
+	tail := audittail.New(audittail.Options{
+		Queries:    db.New(server.Database()),
+		AdminGroup: cfg.AdminGroup,
+		Log:        logger,
+	})
+	tail.Register(server, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
+	server.RegisterOnShutdown(tail.Shutdown)
 
 	payloads, err := newAuditPayloads(ctx, cfg, server)
 	if err != nil {
