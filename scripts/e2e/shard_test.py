@@ -3,10 +3,12 @@
 line: the shards are disjoint, together they hold every test, and a new test
 lands in one shard with no list to update."""
 
+import json
 import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "shard.py"
@@ -31,8 +33,9 @@ LISTING = (
 
 
 def shard(spec, listing=LISTING, *extra, check=True):
+    # An absent durations file keeps these tests on the hash fallback.
     return subprocess.run(
-        [sys.executable, str(SCRIPT), "--shard", spec, *extra],
+        [sys.executable, str(SCRIPT), "--shard", spec, "--durations", "/nonexistent/durations.json", *extra],
         input=listing,
         capture_output=True,
         text=True,
@@ -101,6 +104,45 @@ class Shard(unittest.TestCase):
                 result = shard(spec, check=False)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(result.stdout, "")
+
+
+class Packing(unittest.TestCase):
+    DURATIONS = {"TestA": 100, "TestB": 90, "TestC": 50, "TestD": 40, "TestE": 30, "TestF": 20, "TestG": 10}
+    LISTING = "\n".join(DURATIONS) + "\nTestUntimed\n"
+
+    def packed(self, spec, durations=None, listing=None):
+        with tempfile.TemporaryDirectory() as directory:
+            path = pathlib.Path(directory) / "durations.json"
+            path.write_text(json.dumps(self.DURATIONS if durations is None else durations))
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "--shard", spec, "--durations", str(path)],
+                input=listing or self.LISTING,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        return selected(result.stdout)
+
+    def test_packing_balances_a_known_input(self):
+        # Longest first into the lightest shard: A->1, B->2, C->3, D->3(50+40=90),
+        # E->2? totals 100,90,90 -> E goes to shard 2 (first minimum): 120;
+        # F->3: 110; G->1: 110.
+        expected = {1: {"TestA", "TestG"}, 2: {"TestB", "TestE"}, 3: {"TestC", "TestD", "TestF"}}
+        for index, names in expected.items():
+            with self.subTest(index=index):
+                got = {name for name in self.packed(f"{index}/3") if name != "TestUntimed"}
+                self.assertEqual(got, names)
+
+    def test_every_test_runs_once_with_durations(self):
+        seen = []
+        for index in (1, 2, 3):
+            seen.extend(self.packed(f"{index}/3"))
+        self.assertEqual(sorted(seen), sorted([*self.DURATIONS, "TestUntimed"]))
+
+    def test_untimed_test_falls_back_to_the_hash(self):
+        holders = [index for index in (1, 2, 3) if "TestUntimed" in self.packed(f"{index}/3")]
+        hashed = [index for index in (1, 2, 3) if "TestUntimed" in selected(shard(f"{index}/3", "TestUntimed\n").stdout)]
+        self.assertEqual(holders, hashed)
 
 
 if __name__ == "__main__":
