@@ -119,6 +119,42 @@ SELECT count(*) FROM instances
 WHERE template_ns = @template_ns AND template_name = @template_name AND scope_key = @scope_key
   AND id <> @id AND status NOT IN ('stopped', 'failed');
 
+-- name: DeleteTargetScopeEntries :many
+-- Deletes the entries of one effect for a server of one target: a workspace
+-- of the scope, or a session. With any_tool every entry of the server goes,
+-- otherwise only the one for tool. Returns the deleted rows.
+DELETE FROM scope_entries
+WHERE scope_id = @scope_id
+  AND workspace IS NOT DISTINCT FROM sqlc.narg(workspace)
+  AND session_pk IS NOT DISTINCT FROM sqlc.narg(session_pk)
+  AND server = @server AND effect = @effect
+  AND (@any_tool::bool OR tool = @tool)
+RETURNING *;
+
+-- name: DeleteWorkspaceScopeEntriesOfEffect :exec
+DELETE FROM scope_entries WHERE scope_id = @scope_id AND workspace = @workspace AND effect = @effect;
+
+-- name: ListScopeEntriesOfSessions :many
+SELECT * FROM scope_entries WHERE session_pk = ANY(@session_pks::bigint[]) ORDER BY id;
+
+-- name: DeleteForgottenSessionDenyEntries :execrows
+-- Deletes the deny entries of the session while it is still ended longer
+-- ago than the resume window.
+DELETE FROM scope_entries e
+USING sessions s
+WHERE s.id = @id AND e.session_pk = s.id AND e.effect = 'deny'
+  AND s.ended_at IS NOT NULL AND s.ended_at < now() - @resume_window::interval;
+
+-- name: DeleteEndedSessionAllowEntries :execrows
+DELETE FROM scope_entries e
+USING sessions s
+WHERE s.id = e.session_pk AND e.effect = 'allow' AND s.ended_at IS NOT NULL;
+
+-- name: DeleteEndedSessionFoundTools :execrows
+DELETE FROM session_found_tools f
+USING sessions s
+WHERE s.id = f.session_pk AND s.ended_at IS NOT NULL;
+
 -- name: ListSessionAdditionsOfSessions :many
 -- The session additions of the given sessions.
 SELECT session_pk, server FROM session_additions

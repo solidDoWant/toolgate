@@ -362,11 +362,23 @@ components:
       type: object
     SessionsapiSession:
       properties:
+        allowed:
+          items:
+            type: string
+          type:
+          - array
+          - "null"
         attestation:
           type: string
         createdAt:
           format: date-time
           type: string
+        denied:
+          items:
+            type: string
+          type:
+          - array
+          - "null"
         lastSeenAt:
           format: date-time
           type: string
@@ -460,7 +472,19 @@ components:
       type: object
     WorkspacesapiWorkspace:
       properties:
+        denied:
+          items:
+            type: string
+          type:
+          - array
+          - "null"
         servers:
+          items:
+            type: string
+          type:
+          - array
+          - "null"
+        tools:
           items:
             type: string
           type:

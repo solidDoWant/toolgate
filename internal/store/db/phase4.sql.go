@@ -116,6 +116,56 @@ func (q *Queries) CountSessionFoundTools(ctx context.Context, sessionPk int64) (
 	return count, err
 }
 
+const deleteEndedSessionAllowEntries = `-- name: DeleteEndedSessionAllowEntries :execrows
+DELETE FROM scope_entries e
+USING sessions s
+WHERE s.id = e.session_pk AND e.effect = 'allow' AND s.ended_at IS NOT NULL
+`
+
+func (q *Queries) DeleteEndedSessionAllowEntries(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEndedSessionAllowEntries)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteEndedSessionFoundTools = `-- name: DeleteEndedSessionFoundTools :execrows
+DELETE FROM session_found_tools f
+USING sessions s
+WHERE s.id = f.session_pk AND s.ended_at IS NOT NULL
+`
+
+func (q *Queries) DeleteEndedSessionFoundTools(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteEndedSessionFoundTools)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteForgottenSessionDenyEntries = `-- name: DeleteForgottenSessionDenyEntries :execrows
+DELETE FROM scope_entries e
+USING sessions s
+WHERE s.id = $1 AND e.session_pk = s.id AND e.effect = 'deny'
+  AND s.ended_at IS NOT NULL AND s.ended_at < now() - $2::interval
+`
+
+type DeleteForgottenSessionDenyEntriesParams struct {
+	ID           int64
+	ResumeWindow pgtype.Interval
+}
+
+// Deletes the deny entries of the session while it is still ended longer
+// ago than the resume window.
+func (q *Queries) DeleteForgottenSessionDenyEntries(ctx context.Context, arg DeleteForgottenSessionDenyEntriesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteForgottenSessionDenyEntries, arg.ID, arg.ResumeWindow)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteScopeEntry = `-- name: DeleteScopeEntry :exec
 DELETE FROM scope_entries WHERE id = $1
 `
@@ -147,6 +197,67 @@ type DeleteSessionScopeEntriesParams struct {
 func (q *Queries) DeleteSessionScopeEntries(ctx context.Context, arg DeleteSessionScopeEntriesParams) error {
 	_, err := q.db.Exec(ctx, deleteSessionScopeEntries, arg.SessionPk, arg.Effect)
 	return err
+}
+
+const deleteTargetScopeEntries = `-- name: DeleteTargetScopeEntries :many
+DELETE FROM scope_entries
+WHERE scope_id = $1
+  AND workspace IS NOT DISTINCT FROM $2
+  AND session_pk IS NOT DISTINCT FROM $3
+  AND server = $4 AND effect = $5
+  AND ($6::bool OR tool = $7)
+RETURNING id, scope_id, workspace, session_pk, server, tool, effect, created_at, request_id
+`
+
+type DeleteTargetScopeEntriesParams struct {
+	ScopeID   int64
+	Workspace pgtype.Text
+	SessionPk pgtype.Int8
+	Server    string
+	Effect    string
+	AnyTool   bool
+	Tool      string
+}
+
+// Deletes the entries of one effect for a server of one target: a workspace
+// of the scope, or a session. With any_tool every entry of the server goes,
+// otherwise only the one for tool. Returns the deleted rows.
+func (q *Queries) DeleteTargetScopeEntries(ctx context.Context, arg DeleteTargetScopeEntriesParams) ([]ScopeEntry, error) {
+	rows, err := q.db.Query(ctx, deleteTargetScopeEntries,
+		arg.ScopeID,
+		arg.Workspace,
+		arg.SessionPk,
+		arg.Server,
+		arg.Effect,
+		arg.AnyTool,
+		arg.Tool,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScopeEntry{}
+	for rows.Next() {
+		var i ScopeEntry
+		if err := rows.Scan(
+			&i.ID,
+			&i.ScopeID,
+			&i.Workspace,
+			&i.SessionPk,
+			&i.Server,
+			&i.Tool,
+			&i.Effect,
+			&i.CreatedAt,
+			&i.RequestID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteToolCatalogBefore = `-- name: DeleteToolCatalogBefore :exec
@@ -238,6 +349,21 @@ type DeleteUnverifiedServersParams struct {
 
 func (q *Queries) DeleteUnverifiedServers(ctx context.Context, arg DeleteUnverifiedServersParams) error {
 	_, err := q.db.Exec(ctx, deleteUnverifiedServers, arg.ScopeID, arg.Servers)
+	return err
+}
+
+const deleteWorkspaceScopeEntriesOfEffect = `-- name: DeleteWorkspaceScopeEntriesOfEffect :exec
+DELETE FROM scope_entries WHERE scope_id = $1 AND workspace = $2 AND effect = $3
+`
+
+type DeleteWorkspaceScopeEntriesOfEffectParams struct {
+	ScopeID   int64
+	Workspace pgtype.Text
+	Effect    string
+}
+
+func (q *Queries) DeleteWorkspaceScopeEntriesOfEffect(ctx context.Context, arg DeleteWorkspaceScopeEntriesOfEffectParams) error {
+	_, err := q.db.Exec(ctx, deleteWorkspaceScopeEntriesOfEffect, arg.ScopeID, arg.Workspace, arg.Effect)
 	return err
 }
 
@@ -387,6 +513,40 @@ SELECT id, scope_id, workspace, session_pk, server, tool, effect, created_at, re
 
 func (q *Queries) ListScopeEntriesForSession(ctx context.Context, sessionPk pgtype.Int8) ([]ScopeEntry, error) {
 	rows, err := q.db.Query(ctx, listScopeEntriesForSession, sessionPk)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScopeEntry{}
+	for rows.Next() {
+		var i ScopeEntry
+		if err := rows.Scan(
+			&i.ID,
+			&i.ScopeID,
+			&i.Workspace,
+			&i.SessionPk,
+			&i.Server,
+			&i.Tool,
+			&i.Effect,
+			&i.CreatedAt,
+			&i.RequestID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScopeEntriesOfSessions = `-- name: ListScopeEntriesOfSessions :many
+SELECT id, scope_id, workspace, session_pk, server, tool, effect, created_at, request_id FROM scope_entries WHERE session_pk = ANY($1::bigint[]) ORDER BY id
+`
+
+func (q *Queries) ListScopeEntriesOfSessions(ctx context.Context, sessionPks []int64) ([]ScopeEntry, error) {
+	rows, err := q.db.Query(ctx, listScopeEntriesOfSessions, sessionPks)
 	if err != nil {
 		return nil, err
 	}

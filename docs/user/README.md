@@ -115,7 +115,7 @@ The list depends on the workspace. `toolgate servers` sends the same workspace t
 
 ## See your open sessions
 
-To see your open sessions, run `toolgate sessions`. A session is one Claude Code conversation with the gateway. The command prints a table with these columns: `SESSION`, `WORKSPACE`, `LAST SEEN` and `SERVERS`. The `SERVERS` column lists the servers that are enabled in the session. A dash means that no server is enabled.
+To see your open sessions, run `toolgate sessions`. A session is one Claude Code conversation with the gateway. The command prints a table with these columns: `SESSION`, `WORKSPACE`, `LAST SEEN` and `SERVERS`. The `SERVERS` column lists the servers that are enabled in the session. A dash means that no server is enabled. If a session has servers or tools that you allowed or denied for that session only, the table also has the columns `ALLOWED` and `DENIED`.
 
 The command shows only your own sessions. It leaves out sessions that ended and sessions that had no request for longer than the idle time that your admin set. If you have more than 200 open sessions, the command shows the newest 200 and says so.
 
@@ -230,9 +230,9 @@ In a verified workspace, `toolgate_list_servers` shows a server that is not on t
 
 Use `toolgate workspace` to see and change them:
 
-- `toolgate workspace list` shows your two defaults and a table with the columns `WORKSPACE`, `SERVERS` and `UPDATED`.
-- `toolgate workspace allow SERVER...` adds servers to a workspace's list. `toolgate workspace deny SERVER...` removes them. `toolgate workspace clear` deletes the list, so your default applies again. These commands act on the verified workspace of the machine. To use another workspace, add `--workspace ID`. If the machine has no verified workspace, the commands stop with "This machine has no verified workspace. Pass --workspace."
-- `toolgate workspace deny --session ID SERVER...` removes servers that you added to one session only. Do not use it with `--workspace`.
+- `toolgate workspace list` shows your two defaults and a table with the columns `WORKSPACE`, `SERVERS` and `UPDATED`. If a workspace has tools that you allowed one by one, or servers or tools that you denied, the table also has the columns `TOOLS` and `DENIED`. `(no list)` means that the workspace has no list, so your default applies to it.
+- `toolgate workspace allow SERVER...` adds servers to a workspace's list. `toolgate workspace deny SERVER...` removes them and denies them in the workspace. A denied server stays refused, also when your default is all or the workspace has no list. To deny one tool, write `SERVER__TOOL`, with the tool name that Claude sees, for example `github__delete_repository`. `toolgate workspace clear` deletes the list and the tools that you allowed one by one, so your default applies again. It keeps the servers and tools that you denied. These commands act on the verified workspace of the machine. To use another workspace, add `--workspace ID`. If the machine has no verified workspace, the commands stop with "This machine has no verified workspace. Pass --workspace."
+- `toolgate workspace deny --session ID SERVER...` denies servers or `SERVER__TOOL` tools in one of your open sessions only, and removes servers that you added to that session. It also works for a session without a verified workspace. Do not use it with `--workspace`. The deny stays when the session ends and resumes. It goes away when toolgate forgets the session, after the resume time.
 - `toolgate workspace defaults --verified none|all --unverified none|all` sets the defaults. Without options, it shows them.
 
 A change that gives more access needs your approval in the browser, because a process that has your token must not widen your access alone. The command prints "Approve this change at `URL`. Waiting…" and checks every 2 seconds. It exits with code 0 only when you approve. Ctrl-C stops the command, but the request stays open until it expires. A change that gives less access applies at once. If the gateway refuses a change, the command shows the gateway's message.

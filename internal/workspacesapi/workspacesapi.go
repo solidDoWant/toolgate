@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -47,10 +49,18 @@ type Defaults struct {
 	Unverified string `json:"unverified"`
 }
 
-// Workspace is one workspace list.
+// Workspace is one workspace's list and scope entries.
 type Workspace struct {
-	Workspace string    `json:"workspace"`
-	Servers   []string  `json:"servers"`
+	Workspace string `json:"workspace"`
+	// Servers is the workspace's list, or null when it has none: then its
+	// default applies, narrowed by denied.
+	Servers []string `json:"servers"`
+	// Tools are the tools allowed one by one, as `<server>__<tool>` with the
+	// tool's exposed name.
+	Tools []string `json:"tools"`
+	// Denied are the servers and `<server>__<tool>` tools denied in the
+	// workspace, whatever the list and the default say.
+	Denied    []string  `json:"denied"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
@@ -67,9 +77,11 @@ type Change struct {
 	Action string `json:"action" enum:"allow,deny,clear,defaults"`
 	// Workspace defaults to the request's verified workspace.
 	Workspace string `json:"workspace,omitempty"`
-	// Session is the session whose additions a deny removes, in place of
-	// workspace.
-	Session    string   `json:"session,omitempty"`
+	// Session is one of the caller's open sessions that a deny applies to,
+	// in place of workspace.
+	Session string `json:"session,omitempty"`
+	// Servers are server names. A deny also takes `<server>__<tool>` with
+	// the tool's exposed name.
 	Servers    []string `json:"servers,omitempty"`
 	Verified   string   `json:"verified,omitempty" enum:"none,all"`
 	Unverified string   `json:"unverified,omitempty" enum:"none,all"`
@@ -192,9 +204,41 @@ func (h *Handler) list(writer http.ResponseWriter, request *http.Request) {
 		body.Current = &current
 	}
 
+	listed := map[string]bool{}
+
 	for _, list := range scopes.Lists {
-		body.Workspaces = append(body.Workspaces, Workspace{Workspace: list.Workspace, Servers: list.Servers, UpdatedAt: list.UpdatedAt})
+		listed[list.Workspace] = true
+		entries := scopes.Entries[list.Workspace]
+
+		updated := list.UpdatedAt
+		if entries.UpdatedAt.After(updated) {
+			updated = entries.UpdatedAt
+		}
+
+		body.Workspaces = append(body.Workspaces, Workspace{
+			Workspace: list.Workspace, Servers: list.Servers,
+			Tools: nonNil(entries.Allowed), Denied: nonNil(entries.Denied), UpdatedAt: updated,
+		})
 	}
+
+	unlisted := make([]string, 0, len(scopes.Entries))
+
+	for workspace := range scopes.Entries {
+		if !listed[workspace] {
+			unlisted = append(unlisted, workspace)
+		}
+	}
+
+	slices.Sort(unlisted)
+
+	for _, workspace := range unlisted {
+		entries := scopes.Entries[workspace]
+		body.Workspaces = append(body.Workspaces, Workspace{
+			Workspace: workspace, Tools: nonNil(entries.Allowed), Denied: nonNil(entries.Denied), UpdatedAt: entries.UpdatedAt,
+		})
+	}
+
+	slices.SortFunc(body.Workspaces, func(a, b Workspace) int { return strings.Compare(a.Workspace, b.Workspace) })
 
 	writeJSON(writer, http.StatusOK, body)
 }
@@ -302,6 +346,14 @@ func (h *Handler) internal(writer http.ResponseWriter, request *http.Request, me
 	}
 
 	http.Error(writer, messageInternal, http.StatusInternalServerError)
+}
+
+func nonNil(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+
+	return values
 }
 
 func writeJSON(writer http.ResponseWriter, status int, body any) {

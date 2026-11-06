@@ -1,5 +1,6 @@
 // Package sessionsapi serves `GET /api/v1/sessions`: the caller's open
-// sessions and the servers each has enabled (docs/design/phase-3.md §5).
+// sessions, the servers each has enabled (docs/design/phase-3.md §5), and
+// each one's allow and deny entries (docs/design/phase-4.md §12).
 package sessionsapi
 
 import (
@@ -13,6 +14,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/apidoc"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -36,6 +38,12 @@ type Session struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	LastSeenAt  time.Time `json:"lastSeenAt"`
 	Servers     []Server  `json:"servers"`
+	// Allowed are the servers and `<server>__<tool>` tools, by exposed
+	// name, allowed for this session only.
+	Allowed []string `json:"allowed"`
+	// Denied are the servers and tools denied in this session. They last
+	// until the session is forgotten, so a resumed session keeps them.
+	Denied []string `json:"denied"`
 }
 
 // List is the body of `GET /api/v1/sessions`.
@@ -63,6 +71,12 @@ type Querier interface {
 	ListOpenSessionsWithServers(ctx context.Context, arg db.ListOpenSessionsWithServersParams) ([]db.ListOpenSessionsWithServersRow, error)
 }
 
+// EntryReader reads the scope entries of sessions by sessions row ID.
+// *gateway.Workspaces implements it.
+type EntryReader interface {
+	SessionEntries(ctx context.Context, sessionPKs []int64) (map[int64]gateway.ScopeEntries, error)
+}
+
 // Handler serves the route for the identity auth.Middleware put in the
 // request context. It lists only that principal's sessions, for admins too.
 type Handler struct {
@@ -70,7 +84,10 @@ type Handler struct {
 	// IdleTimeout is the gateway's sessionIdleTimeout: a session idle for
 	// longer is left out even before the cleanup pass ends it.
 	IdleTimeout time.Duration
-	Log         *slog.Logger
+	// Entries reads each session's allow and deny entries. Without it the
+	// lists are empty.
+	Entries EntryReader
+	Log     *slog.Logger
 }
 
 // Mux is where Register adds the route: an *http.ServeMux or the gateway.
@@ -99,23 +116,46 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 		MaxRows: MaxSessions + 1,
 	})
 	if err != nil {
-		if h.Log != nil {
-			h.Log.ErrorContext(request.Context(), "listing sessions failed", "error", err)
-		}
-
-		http.Error(writer, "The gateway could not complete the request. Try again later.", http.StatusInternalServerError)
+		h.internal(request, writer, err)
 
 		return
 	}
 
+	body, ids := build(rows)
+
+	if h.Entries != nil && len(ids) > 0 {
+		entries, err := h.Entries.SessionEntries(request.Context(), ids)
+		if err != nil {
+			h.internal(request, writer, err)
+
+			return
+		}
+
+		for index, id := range ids {
+			if each, found := entries[id]; found {
+				body.Sessions[index].Allowed, body.Sessions[index].Denied = each.Allowed, each.Denied
+			}
+		}
+	}
+
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(writer).Encode(build(rows))
+	_ = json.NewEncoder(writer).Encode(body)
 }
 
-// build groups the rows, which arrive ordered by session, into the body.
-func build(rows []db.ListOpenSessionsWithServersRow) List {
+func (h *Handler) internal(request *http.Request, writer http.ResponseWriter, err error) {
+	if h.Log != nil {
+		h.Log.ErrorContext(request.Context(), "listing sessions failed", "error", err)
+	}
+
+	http.Error(writer, "The gateway could not complete the request. Try again later.", http.StatusInternalServerError)
+}
+
+// build groups the rows, which arrive ordered by session, into the body,
+// and returns the sessions row ID of each session in it.
+func build(rows []db.ListOpenSessionsWithServersRow) (List, []int64) {
 	body := List{Sessions: []Session{}}
+	ids := []int64{}
 
 	var lastID int64
 
@@ -128,6 +168,7 @@ func build(rows []db.ListOpenSessionsWithServersRow) List {
 			}
 
 			lastID = row.ID
+			ids = append(ids, row.ID)
 			body.Sessions = append(body.Sessions, Session{
 				Session:     row.SessionID,
 				Workspace:   row.Workspace,
@@ -135,6 +176,8 @@ func build(rows []db.ListOpenSessionsWithServersRow) List {
 				CreatedAt:   row.CreatedAt.Time.UTC(),
 				LastSeenAt:  row.LastSeenAt.Time.UTC(),
 				Servers:     []Server{},
+				Allowed:     []string{},
+				Denied:      []string{},
 			})
 		}
 
@@ -144,5 +187,5 @@ func build(rows []db.ListOpenSessionsWithServersRow) List {
 		}
 	}
 
-	return body
+	return body, ids
 }
