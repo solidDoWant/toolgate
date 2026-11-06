@@ -118,9 +118,14 @@ type approvalPage struct {
 	ArgumentsNote string
 }
 
-// approvalDetail shows one of the user's approvals and, while it is
+// approvalDetail shows one of the user's approvals, or of their access
+// requests, and, while it is
 // pending, the forms that decide it.
 func (u *UI) approvalDetail(writer http.ResponseWriter, request *http.Request) {
+	if u.servedAccessRequest(writer, request, u.accessRequestDetail) {
+		return
+	}
+
 	row, ok := u.ownApproval(writer, request)
 	if !ok {
 		return
@@ -198,6 +203,10 @@ func approvalStatusMessage(row db.GetApprovalOfPrincipalRow) string {
 // approve approves a pending approval and starts its usable window. The
 // route's RequireStepUp has checked the fresh sign-in.
 func (u *UI) approve(writer http.ResponseWriter, request *http.Request) {
+	if u.servedAccessRequest(writer, request, u.approveAccessRequest) {
+		return
+	}
+
 	u.decide(writer, request, typeApprovalApprove, func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error) {
 		return queries.ApproveApproval(request.Context(), db.ApproveApprovalParams{
 			ID: id, DecidedBy: decidedBy,
@@ -209,6 +218,10 @@ func (u *UI) approve(writer http.ResponseWriter, request *http.Request) {
 // deny denies a pending approval. It needs no step-up: denying only
 // narrows.
 func (u *UI) deny(writer http.ResponseWriter, request *http.Request) {
+	if u.servedAccessRequest(writer, request, u.denyAccessRequest) {
+		return
+	}
+
 	u.decide(writer, request, typeApprovalDeny, func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error) {
 		return queries.DenyApproval(request.Context(), db.DenyApprovalParams{ID: id, DecidedBy: decidedBy})
 	})

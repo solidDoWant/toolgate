@@ -208,10 +208,56 @@ func (w *Workspaces) Apply(ctx context.Context, identity auth.Identity, change W
 	}
 
 	return pgx.BeginFunc(ctx, w.database, func(tx pgx.Tx) error {
-		_, err := w.change(ctx, tx, identity, change, via, true)
+		_, err := w.change(ctx, tx, identity, change, via, widenApply)
 
 		return err
 	})
+}
+
+// ErrWorkspaceChangeWidens is returned by ApplyNarrowing for a change that
+// widens access.
+var ErrWorkspaceChangeWidens = errors.New("the workspace change widens access")
+
+// ApplyNarrowing applies a narrowing change of identity's. A widening one
+// changes nothing and returns ErrWorkspaceChangeWidens: the web UI calls it
+// when the sign-in is too old for a step-up.
+func (w *Workspaces) ApplyNarrowing(ctx context.Context, identity auth.Identity, change WorkspaceChange, via string) error {
+	change, err := w.validate(identity, change)
+	if err != nil {
+		return err
+	}
+
+	return pgx.BeginFunc(ctx, w.database, func(tx pgx.Tx) error {
+		_, err := w.change(ctx, tx, identity, change, via, widenRefuse)
+
+		return err
+	})
+}
+
+// openWorkspaceRows bounds the open sessions OpenWorkspaces reads.
+const openWorkspaceRows = 100
+
+// OpenWorkspaces returns the verified workspaces of principal's open
+// sessions, sorted and without duplicates.
+func (w *Workspaces) OpenWorkspaces(ctx context.Context, principal string) ([]string, error) {
+	rows, err := db.New(w.database).ListOpenSessionsOfPrincipal(ctx, db.ListOpenSessionsOfPrincipalParams{
+		Principal: principal, MaxRows: openWorkspaceRows,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read open sessions: %w", err)
+	}
+
+	workspaces := []string{}
+
+	for _, row := range rows {
+		if row.Kind == auth.KindUser && row.Attestation == auth.AttestationAttested && row.Workspace != "" {
+			workspaces = append(workspaces, row.Workspace)
+		}
+	}
+
+	slices.Sort(workspaces)
+
+	return slices.Compact(workspaces), nil
 }
 
 // Request applies a narrowing change of identity's at once. A widening one
@@ -232,7 +278,7 @@ func (w *Workspaces) Request(ctx context.Context, identity auth.Identity, change
 	err = pgx.BeginFunc(ctx, w.database, func(tx pgx.Tx) error {
 		var err error
 
-		result, err = w.change(ctx, tx, identity, change, ViaCLI, false)
+		result, err = w.change(ctx, tx, identity, change, ViaCLI, widenRequest)
 
 		return err
 	})
@@ -278,7 +324,7 @@ func (w *Workspaces) ApproveChangeRequest(ctx context.Context, tx pgx.Tx, identi
 		return fmt.Errorf("decode change of access request %s: %w", id, err)
 	}
 
-	if _, err := w.change(ctx, tx, identity, change, id, true); err != nil {
+	if _, err := w.change(ctx, tx, identity, change, id, widenApply); err != nil {
 		return err
 	}
 
@@ -420,9 +466,8 @@ func truncate(value string, length int) string {
 }
 
 // change runs a validated change in tx (docs/design/phase-3.md §10,
-// "Writes"). When allowWiden is false, a widening change inserts a pending
-// change request instead of changing anything.
-func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identity, change WorkspaceChange, via string, allowWiden bool) (WorkspaceResult, error) {
+// "Writes"). mode says what a widening change does.
+func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identity, change WorkspaceChange, via string, mode widenMode) (WorkspaceResult, error) {
 	queries := db.New(tx)
 	applied := WorkspaceResult{Applied: true}
 
@@ -462,8 +507,8 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 		}
 
 		widens := (scope.VerifiedDefault == ScopeNone && verified == ScopeAll) || (scope.UnverifiedDefault == ScopeNone && unverified == ScopeAll)
-		if widens && !allowWiden {
-			return w.requestChange(ctx, tx, identity, change)
+		if widens && mode != widenApply {
+			return w.notWidened(ctx, tx, identity, change, mode)
 		}
 
 		if err := queries.SetUserScopeDefaults(ctx, db.SetUserScopeDefaultsParams{ID: scope.ID, VerifiedDefault: verified, UnverifiedDefault: unverified}); err != nil {
@@ -528,8 +573,8 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 			}
 		}
 
-		if len(added) > 0 && !allowWiden {
-			return w.requestChange(ctx, tx, identity, change)
+		if len(added) > 0 && mode != widenApply {
+			return w.notWidened(ctx, tx, identity, change, mode)
 		}
 
 		if !hasList {
@@ -574,8 +619,8 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 			return WorkspaceResult{}, fmt.Errorf("remove session additions: %w", err)
 		}
 	case WorkspaceClear:
-		if hasList && scope.VerifiedDefault == ScopeAll && !allowWiden {
-			return w.requestChange(ctx, tx, identity, change)
+		if hasList && scope.VerifiedDefault == ScopeAll && mode != widenApply {
+			return w.notWidened(ctx, tx, identity, change, mode)
 		}
 
 		if hasList {
@@ -609,6 +654,27 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 	}
 
 	return applied, notifyScope()
+}
+
+// widenMode is what a widening change does.
+type widenMode int
+
+const (
+	// widenApply applies it: the caller checked a step-up.
+	widenApply widenMode = iota
+	// widenRequest inserts a pending change request instead.
+	widenRequest
+	// widenRefuse changes nothing and returns ErrWorkspaceChangeWidens.
+	widenRefuse
+)
+
+// notWidened handles a widening change that mode doesn't apply.
+func (w *Workspaces) notWidened(ctx context.Context, tx pgx.Tx, identity auth.Identity, change WorkspaceChange, mode widenMode) (WorkspaceResult, error) {
+	if mode == widenRefuse {
+		return WorkspaceResult{}, ErrWorkspaceChangeWidens
+	}
+
+	return w.requestChange(ctx, tx, identity, change)
 }
 
 func nonNil(values []string) []string {

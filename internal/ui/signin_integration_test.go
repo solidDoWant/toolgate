@@ -85,6 +85,8 @@ type uiEnv struct {
 	// formSubmits counts the step-up form's POSTs that ran.
 	formSubmits atomic.Int32
 	broker      *secrets.Broker
+	// workspaces backs the Workspaces page.
+	workspaces *gateway.Workspaces
 }
 
 func startUIEnv(t *testing.T, adminGroup string) *uiEnv {
@@ -132,6 +134,7 @@ func startUIEnvConfigured(t *testing.T, adminGroup string, idpOptions toolgatete
 
 	broker := secrets.NewBroker(db.New(pool), cipher)
 	env.broker = broker
+	env.workspaces = gateway.NewWorkspaces(pool, env.catalog, io.Discard, 0)
 
 	// The public URL is only known once the server listens.
 	for range 2 {
@@ -151,6 +154,7 @@ func startUIEnvConfigured(t *testing.T, adminGroup string, idpOptions toolgatete
 			Secrets:    broker,
 			Auditor:    audit.NewRecorder(io.Discard, db.New(pool)),
 			Grants:     gateway.NewGrants(pool, env.catalog, io.Discard),
+			Workspaces: env.workspaces,
 		}
 		if adjust != nil {
 			adjust(&options)

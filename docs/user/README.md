@@ -236,6 +236,18 @@ A change that gives more access needs your approval in the browser, because a pr
 
 A workspace list does not protect you from a process that has your token. The process can leave out the workload token, and toolgate then treats its session as unverified. A workspace's list limits a process holding your token only while the default for unverified sessions is nothing.
 
+### The Workspaces page
+
+Open `/ui/workspaces` on the gateway to see and change your lists and defaults. The page shows:
+
+- Your two defaults: one for verified workspaces without a list, and one for unverified sessions.
+- Each of your workspace lists, with its servers.
+- The verified workspaces of your open sessions that have no list yet. Each one has an "Add a list" button.
+
+Some changes give more access: adding a server to a list, setting a default to all, and clearing a list while your default for verified workspaces is all. These changes need a fresh sign-in, no more than 5 minutes old. If your sign-in is older, the page shows "Sign in again to continue". Other changes, for example removing a server from a list, apply at once.
+
+If you change a list with `toolgate workspace allow` or `toolgate workspace defaults` and the change gives more access, the command prints a link to an approval page. The page shows your list or defaults before and after the change. Click Approve to apply the change, after a fresh sign-in, or click Deny. Only you can open the page. When the request is no longer waiting, the page shows its status.
+
 ## The headers that Claude Code sends
 
 The toolgate plugin tells Claude Code to run `toolgate headers` before it connects to the gateway. This command prints three request headers as JSON:

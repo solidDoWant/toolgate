@@ -1,0 +1,67 @@
+{{define "content"}}
+{{with .Data}}
+{{with .Error}}<p class="error">{{.}}</p>
+{{end}}{{if .StepUpURL}}<p>Adding servers, clearing a list while the default for verified workspaces is all, and changing a default to all need a fresh sign-in.</p>
+<a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
+{{end}}
+<h2>Defaults</h2>
+<form method="post" action="/ui/workspaces/defaults" id="defaults">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<label>Sessions in a verified workspace without a list
+<select name="verified">
+<option value="none"{{if eq .VerifiedDefault "none"}} selected{{end}}>nothing</option>
+<option value="all"{{if eq .VerifiedDefault "all"}} selected{{end}}>all my servers</option>
+</select></label>
+<label>Sessions without a verified workspace
+<select name="unverified">
+<option value="none"{{if eq .UnverifiedDefault "none"}} selected{{end}}>nothing</option>
+<option value="all"{{if eq .UnverifiedDefault "all"}} selected{{end}}>all my servers</option>
+</select></label>
+<p class="note">{{.Note}}</p>
+<button type="submit">Save defaults</button>
+</form>
+<h2>Workspace lists</h2>
+{{if .Lists}}
+<table id="workspace-lists">
+<thead><tr><th>Workspace</th><th>Servers</th><th>Updated</th><th></th></tr></thead>
+<tbody>
+{{range .Lists}}<tr>
+<td>{{.Workspace}}</td>
+<td>{{if .Servers}}<ul>{{range $server := .Servers}}<li>{{$server}}
+<form method="post" action="/ui/workspaces/deny">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="workspace" value="{{.}}">
+<input type="hidden" name="server" value="{{$server}}">
+<button type="submit">Remove</button>
+</form></li>{{end}}</ul>{{else}}no servers{{end}}</td>
+<td>{{.UpdatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
+<td><form method="post" action="/ui/workspaces/allow">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="workspace" value="{{.Workspace}}">
+<input name="server" aria-label="Server" required>
+<button type="submit">Add</button>
+</form>
+<form method="post" action="/ui/workspaces/clear">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="workspace" value="{{.Workspace}}">
+<button type="submit">Clear the list</button>
+</form></td>
+</tr>
+{{end}}</tbody>
+</table>
+{{else}}
+<p>You have no workspace lists.</p>
+{{end}}
+{{if .OpenWorkspaces}}<h2>Workspaces of your open sessions</h2>
+<ul id="open-workspaces">
+{{range .OpenWorkspaces}}<li>{{.}}
+<form method="post" action="/ui/workspaces/allow">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="workspace" value="{{.}}">
+<input name="server" aria-label="Server" required>
+<button type="submit">Add a list</button>
+</form></li>
+{{end}}</ul>
+{{end}}
+{{end}}
+{{end}}

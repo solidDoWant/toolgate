@@ -153,6 +153,9 @@ type Options struct {
 	Auditor secrets.Recorder
 	// Grants backs the Grants pages. Nil leaves them out.
 	Grants GrantSource
+	// Workspaces backs the Workspaces page and the approval page of access
+	// requests. Nil leaves them out.
+	Workspaces WorkspaceSource
 	// ApprovalTimeout is how long an approved call stays usable
 	// (`approvalTimeout`). Zero means DefaultApprovalTimeout.
 	ApprovalTimeout time.Duration
@@ -247,6 +250,10 @@ func New(options Options, registrar Registrar) *UI {
 
 	if options.Grants != nil {
 		u.registerGrants()
+	}
+
+	if options.Workspaces != nil {
+		u.registerWorkspaces()
 	}
 
 	u.registerApprovals()

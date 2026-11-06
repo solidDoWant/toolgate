@@ -1,0 +1,44 @@
+{{define "content"}}
+{{with .Data}}
+<dl id="access-request">
+<dt>Request</dt><dd>{{.ID}}</dd>
+<dt>Kind</dt><dd>{{.Kind}}</dd>
+{{with .Server}}<dt>Server</dt><dd>{{.}}</dd>
+{{end}}<dt>Workspace</dt><dd>{{.Workspace}}</dd>
+<dt>Requested</dt><dd>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
+<dt>Expires</dt><dd>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
+</dl>
+{{with .Change}}<h2>Change</h2>
+{{if .Defaults}}<table id="change">
+<thead><tr><th>Default</th><th>Before</th><th>After</th></tr></thead>
+<tbody>
+<tr><td>Sessions in a verified workspace without a list</td><td>{{.BeforeVerified}}</td><td>{{.AfterVerified}}</td></tr>
+<tr><td>Sessions without a verified workspace</td><td>{{.BeforeUnverified}}</td><td>{{.AfterUnverified}}</td></tr>
+</tbody>
+</table>
+{{else}}<p>Workspace {{.Workspace}}</p>
+<table id="change">
+<thead><tr><th>Before</th><th>After</th></tr></thead>
+<tbody><tr>
+<td id="change-before">{{template "list_state" .Before}}</td>
+<td id="change-after">{{template "list_state" .After}}</td>
+</tr></tbody>
+</table>
+{{end}}{{end}}
+{{with .Error}}<p class="error">{{.}}</p>
+{{end}}{{if .Message}}<p class="status">{{.Message}}</p>
+{{else}}
+{{if .Change}}{{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>
+<a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
+{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<button type="submit">Approve</button>
+</form>
+{{end}}{{end}}<form method="post" action="/ui/approvals/{{.ID}}/deny">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<button type="submit">Deny</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+{{define "list_state"}}{{if .HasList}}{{if .Servers}}<ul>{{range .Servers}}<li>{{.}}</li>{{end}}</ul>{{else}}an empty list: no servers{{end}}{{else}}no list: the default applies ({{if eq .Default "all"}}all your servers{{else}}nothing{{end}}){{end}}{{end}}

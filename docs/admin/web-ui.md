@@ -12,6 +12,8 @@ Scoping needs the web UI, because only the UI can ask the user to sign in again 
 
 Upgrade note: After upgrading with the web UI on, every user sees no servers until they choose their defaults on the Workspaces page.
 
+Users choose their lists and defaults on `/ui/workspaces`. A change that gives more access needs a fresh sign-in, as a grant does. A change that removes access does not. The approval page `/ui/approvals/<id>` also shows the change requests that the CLI makes, with the list before and after the change. Without the web UI, `/ui/workspaces` does not exist.
+
 A user who has no defaults gets none for both defaults. Tell your users before you upgrade.
 
 A user can also change their lists and defaults through the gateway API, which the CLI uses. The API applies a change that removes access at once. A change that gives more access does not apply at once. The gateway makes an access request instead (a pending change that the user must approve in the browser, with a fresh sign-in). The request expires after `approvalTimeout`, as an approval does. Without the web UI, `GET /api/v1/workspaces` and `POST /api/v1/workspaces/changes` answer 409. `docs/dev/openapi.yaml` describes these routes.
