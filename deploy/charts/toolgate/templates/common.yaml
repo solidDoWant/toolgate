@@ -78,6 +78,9 @@ settings from `config`.
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}
 {{- end }}
+{{- with $config.mcpPublicURL }}
+{{- $env = append $env (dict "name" "TOOLGATE_MCP_PUBLIC_URL" "value" .) }}
+{{- end }}
 {{- with $config.audit }}
 {{- $env = append $env (dict "name" "TOOLGATE_AUDIT_PAYLOADS" "value" (toString .payloads)) }}
 {{- range $setting, $name := dict "endpoint" "TOOLGATE_AUDIT_S3_ENDPOINT" "region" "TOOLGATE_AUDIT_S3_REGION" "bucket" "TOOLGATE_AUDIT_S3_BUCKET" "prefix" "TOOLGATE_AUDIT_S3_PREFIX" }}

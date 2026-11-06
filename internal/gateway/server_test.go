@@ -302,6 +302,103 @@ func TestClientMetadataIsRateLimitedPerAddress(t *testing.T) {
 	assert.Equal(t, http.StatusTooManyRequests, status)
 }
 
+func TestProtectedResourceMetadataIsServedWithoutAuthentication(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.OIDCIssuerURL = "https://idp.example/application/o/toolgate/"
+	cfg.OIDCCLIScopes = []string{"openid", "email"}
+	cfg.MCPPublicURL = "https://mcp.example.com/mcp"
+	running := start(t, cfg, nil)
+
+	for _, path := range []string{"/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-protected-resource"} {
+		t.Run(path, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, running.url(path), nil)
+			require.NoError(t, err)
+
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+
+			defer func() { _ = response.Body.Close() }()
+
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, err)
+
+			require.Equal(t, http.StatusOK, response.StatusCode)
+			assert.Equal(t, "*", response.Header.Get("Access-Control-Allow-Origin"))
+			assert.JSONEq(t, `{
+				"resource": "https://mcp.example.com/mcp",
+				"authorization_servers": ["https://idp.example/application/o/toolgate/"],
+				"scopes_supported": ["openid", "email"],
+				"bearer_methods_supported": ["header"]
+			}`, string(body))
+		})
+	}
+}
+
+func TestProtectedResourceMetadataNamesPublicURLByDefault(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.OIDCIssuerURL = "https://idp.example"
+	cfg.PublicURL = "https://toolgate.example.com"
+	running := start(t, cfg, nil)
+
+	status, body := get(t, running.url("/.well-known/oauth-protected-resource/mcp"), nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, body, `"resource":"https://toolgate.example.com/mcp"`)
+}
+
+func TestProtectedResourceMetadataIsAbsentWithoutURL(t *testing.T) {
+	t.Parallel()
+
+	running := start(t, testConfig(), nil)
+
+	for _, path := range []string{"/.well-known/oauth-protected-resource/mcp", "/.well-known/oauth-protected-resource"} {
+		status, _ := get(t, running.url(path), nil)
+		assert.Equal(t, http.StatusNotFound, status, path)
+	}
+}
+
+func TestProtectedResourceMetadataIsRateLimitedPerAddress(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.MCPPublicURL = "https://mcp.example.com/mcp"
+	running := start(t, cfg, nil)
+
+	for range 5 {
+		status, _ := get(t, running.url("/.well-known/oauth-protected-resource/mcp"), nil)
+		require.Equal(t, http.StatusOK, status)
+
+		status, _ = get(t, running.url("/.well-known/oauth-protected-resource"), nil)
+		require.Equal(t, http.StatusOK, status)
+	}
+
+	status, _ := get(t, running.url("/.well-known/oauth-protected-resource/mcp"), nil)
+	assert.Equal(t, http.StatusTooManyRequests, status)
+}
+
+// With an MCP resource URL, the two protected resource metadata paths are
+// public too.
+func TestProtectedResourceMetadataRoutesArePublic(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	cfg.MCPPublicURL = "https://mcp.example.com/mcp"
+
+	server, err := gateway.New(t.Context(), cfg, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+
+	assert.ElementsMatch(t, []string{
+		"GET /healthz",
+		"GET /readyz",
+		"GET /.well-known/toolgate-client",
+		"GET /.well-known/oauth-protected-resource/mcp",
+		"GET /.well-known/oauth-protected-resource",
+	}, server.PublicRoutes())
+}
+
 // The probes and the client metadata document are the only routes on the
 // main port that answer without authentication; metrics are on their own port.
 func TestOnlyProbesAndClientMetadataArePublic(t *testing.T) {

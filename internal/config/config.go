@@ -222,6 +222,16 @@ type Config struct {
 	// plus `/ui/auth/callback`.
 	PublicURL string `json:"publicURL" env:"TOOLGATE_PUBLIC_URL"`
 
+	// The URL of the MCP endpoint as MCP clients on the internet reach it,
+	// such as `https://mcp.example.com/mcp`. The gateway names it as the
+	// resource in its OAuth protected resource metadata, so that standard
+	// MCP clients, such as claude.ai connectors, can sign in. It must be
+	// `https://`; `http://localhost` and `http://127.0.0.1` are accepted for
+	// tests only. If it is empty, it is `publicURL` plus `/mcp`. If both are
+	// empty, the gateway serves no metadata. The chart sets it from
+	// `config.mcpPublicURL`.
+	MCPPublicURL string `json:"mcpPublicURL" env:"TOOLGATE_MCP_PUBLIC_URL"`
+
 	// The client ID that the web UI signs users in with, using the
 	// authorization code grant with PKCE. It is a separate client from
 	// `oidcCLIClientID`, and the IdP must allow the redirect URI `publicURL`
@@ -972,6 +982,12 @@ func (c Config) UIEnabled() bool {
 func (c Config) validateUI() []error {
 	var problems []error
 
+	if c.MCPPublicURL != "" {
+		if err := validateMCPPublicURL(c.MCPPublicURL); err != nil {
+			problems = append(problems, err)
+		}
+	}
+
 	if c.PublicURL != "" {
 		if err := validatePublicURL(c.PublicURL); err != nil {
 			problems = append(problems, err)
@@ -993,21 +1009,62 @@ func (c Config) validateUI() []error {
 // for tests: the UI's `__Host-` cookies need a secure origin.
 func validatePublicURL(raw string) error {
 	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+	if err != nil || strings.ContainsAny(raw, `"\\`) || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
 		(parsed.Path != "" && parsed.Path != "/") {
 		return fmt.Errorf("publicURL: %q is not a URL with only a scheme, host and port", raw)
 	}
 
-	switch parsed.Scheme {
-	case "https":
+	if secureOrLocal(parsed) {
 		return nil
-	case "http":
-		if host := parsed.Hostname(); host == "localhost" || host == "127.0.0.1" {
-			return nil
-		}
 	}
 
 	return fmt.Errorf("publicURL: %q must be https://, or http://localhost or http://127.0.0.1 for tests", raw)
+}
+
+// MCPResourceURL is the MCP endpoint's URL that the protected resource
+// metadata names: mcpPublicURL, or publicURL plus /mcp. It is empty when both
+// are empty.
+func (c Config) MCPResourceURL() string {
+	if c.MCPPublicURL != "" {
+		return c.MCPPublicURL
+	}
+
+	if c.PublicURL == "" {
+		return ""
+	}
+
+	return strings.TrimSuffix(c.PublicURL, "/") + "/mcp"
+}
+
+// validateMCPPublicURL accepts an https URL, or http on localhost or
+// 127.0.0.1 for tests, with a path but no user info, query or fragment. A
+// quote or backslash is refused: the URL goes into a quoted header value.
+func validateMCPPublicURL(raw string) error {
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.ContainsAny(raw, `"\\`) || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" {
+		return fmt.Errorf("mcpPublicURL: %q is not a URL with only a scheme, host, port and path", raw)
+	}
+
+	if !secureOrLocal(parsed) {
+		return fmt.Errorf("mcpPublicURL: %q must be https://, or http://localhost or http://127.0.0.1 for tests", raw)
+	}
+
+	return nil
+}
+
+// secureOrLocal reports whether parsed is https, or http on localhost or
+// 127.0.0.1.
+func secureOrLocal(parsed *url.URL) bool {
+	switch parsed.Scheme {
+	case "https":
+		return true
+	case "http":
+		host := parsed.Hostname()
+
+		return host == "localhost" || host == "127.0.0.1"
+	}
+
+	return false
 }
 
 func validateAddress(key, address string) []error {

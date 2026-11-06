@@ -89,6 +89,8 @@ The provider keeps a session in a browser cookie after a sign-in. On the next si
 
 The fake identity provider has a second authorization code client for connectors. Its client ID is `provider.ConnectorClientID`, `toolgate-connector` by default. Set `OIDCOptions.ConnectorClientID` and `ConnectorRedirectURIs` to change it. It is a public client that must use PKCE. The provider puts the client ID in the audience of its tokens, so the connector client ID is the audience of its access tokens. The go-sdk's `auth.AuthorizationCodeHandler` works with it: use `PreregisteredClient` with this client ID, and a scope filter that asks for `openid`, `email` and `profile`. It signs in through the same sign-in page as the UI client. `TestOIDCProviderConnectorClient` in `internal/testutil` shows the flow.
 
+The e2e install lists `toolgate-connector` in `config.oidc.audience`, so the gateway accepts the connector client's tokens. The web UI's public URL (`TOOLGATE_E2E_UI_LISTEN`) is also the default `mcpPublicURL`. So a connector test reaches `/mcp` through the TLS proxy of `webUI`, and the resource in the metadata matches the URL that the client uses.
+
 The ID token has `auth_time`, the time of the sign-in that made the session. If you set `OIDCOptions.OmitAuthTime`, the provider leaves `auth_time` out of the ID tokens of the UI client.
 
 `TestBrowserSignsInThroughGatewayIdP` in `test/e2e` shows a full sign-in. It reads the issuer from the gateway at `/.well-known/toolgate-client`, opens the sign-in page, and signs in as a user with groups.
