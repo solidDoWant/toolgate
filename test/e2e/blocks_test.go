@@ -35,7 +35,7 @@ func pageText(browser context.Context, publicURL, path string) (string, error) {
 		return "", err
 	}
 
-	return chromedp.Run(browser, chromedp.Text(chromedp.CSS("body")))
+	return chromedp.Run(browser, testutil.BodyText())
 }
 
 func TestAC2_01NonAdminHasNoBlocksPage(t *testing.T) {

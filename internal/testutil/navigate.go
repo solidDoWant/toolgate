@@ -62,3 +62,10 @@ func retryNetworkChanged(ctx context.Context, attempts int, backoff time.Duratio
 
 	return err
 }
+
+// BodyText returns the text content of the page body. It reads the text in
+// one script run in the page, so it cannot hit a node that a navigation or a
+// re-render replaced between resolving and reading it.
+func BodyText() chromedp.Action[string] {
+	return chromedp.Evaluate[string](`document.body ? document.body.textContent : ""`)
+}

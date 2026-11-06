@@ -124,7 +124,7 @@ func TestAC2_06RestartFromTheUI(t *testing.T) {
 
 		require.NoError(t, chromedp.Do(browser, chromedp.Click(restart)))
 		require.Eventually(t, func() bool {
-			body, err := chromedp.Run(browser, chromedp.Text(chromedp.CSS("body")))
+			body, err := chromedp.Run(browser, testutil.BodyText())
 
 			return err == nil && strings.Contains(body, "The restart was requested.")
 		}, time.Minute, 200*time.Millisecond, "the browser shows the request was taken")
