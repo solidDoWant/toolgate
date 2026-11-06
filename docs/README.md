@@ -40,6 +40,7 @@ docs/admin/
   configuration.md         The gateway configuration reference (generated).
   pod-sign-in.md           How pods sign in with service-account tokens, and the permissions it needs.
   spiffe-sign-in.md        How workloads sign in with SPIFFE JWT-SVIDs, and access.spiffeIDs.
+  workspace-attestation.md How a user session proves its workspace with a workload token.
   web-ui.md                How to turn on the web UI: its OIDC client, sessions and admins.
   quick-start.md           Install the chart with the smallest set of values.
   chart.md                 What the chart installs, and why its permissions are safe.
