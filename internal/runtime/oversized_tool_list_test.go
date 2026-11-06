@@ -127,6 +127,7 @@ func TestMonitorFailsInstanceWhenChangedToolListIsOversized(t *testing.T) {
 	instance := db.Instance{
 		ID: instanceID, TemplateNs: template.Namespace, TemplateName: template.Name, TemplateUid: templateUID,
 		Desired: "running", Status: "ready", Namespace: instanceNamespace, Tools: reformatted(t, encodeTools(t, searchTool)),
+		McpRevision: runtime.RevisionStateful,
 	}
 	store := &healthStore{row: instance}
 

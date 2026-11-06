@@ -15,7 +15,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 - [SPIFFE sign-in](spiffe-sign-in.md): how workloads sign in with a SPIFFE JWT-SVID, and the `spiffeIDs` access list.
 - [Workspace attestation](workspace-attestation.md): how a user session in a workspace gets a verified workspace, and why the pod labels can be trusted.
 - [The web UI](web-ui.md): how to turn on the web UI, its OIDC client, its sessions and its admins.
-- [MCP revisions](mcp-revisions.md): which MCP revisions the gateway speaks with clients, and the 400 for a 2026-07-28 client without a session header.
+- [MCP revisions](mcp-revisions.md): which MCP revisions the gateway speaks with clients and upstream servers, and the 400 for a 2026-07-28 client without a session header.
 - [claude.ai connectors](connectors.md): how users connect from a claude.ai custom connector, with the Authentik provider, the gateway settings and the route from the internet.
 
 ## Write the catalog and rules
@@ -31,6 +31,5 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 - [Operations](operations.md): backups, upgrades, key rotation, instance limits, the audit log, and how to remove toolgate.
 - [User secrets](user-secrets.md): how to make and rotate the keyset that encrypts user secrets.
 - [Instance stops and cleanup](instances.md): when toolgate stops a server, the instance limits, and the metrics for stuck namespaces.
-- [MCP revisions](mcp-revisions.md): the MCP revisions toolgate speaks, and which one it picks with each upstream server.
 
 [`SPEC.md`](../../SPEC.md) describes the full rules of the system.

@@ -259,6 +259,10 @@ func TestStatelessMonitorRelistsOnceAfterTheListenRequestEnds(t *testing.T) {
 	row, _ := healthRows.snapshot()
 	assert.Equal(t, "ready", row.Status)
 
-	_, listens := upstream.seen()
-	assert.GreaterOrEqual(t, listens, 2, "the monitor connects again with a new listen request")
+	// The new listen request can reach the upstream after the re-list.
+	assert.Eventually(t, func() bool {
+		_, listens := upstream.seen()
+
+		return listens >= 2
+	}, 10*time.Second, time.Millisecond, "the monitor connects again with a new listen request")
 }
