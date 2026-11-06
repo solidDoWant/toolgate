@@ -1,16 +1,64 @@
 # Changelog
 
-## Unreleased (0.4.0)
+## 0.4.0
 
 > [!WARNING]
-> Read this before you upgrade. The fields `toolFilter`, `name`, `description` and `inputDescriptions` of a template take effect only after every gateway pod runs 0.4. During a rolling upgrade, an older pod ignores them: it lists hidden tools, forwards calls to them and does not rename tools. Each call still gets a recorded decision. To hide a tool as a security control, use `tools.<name>.blocked`. It works on both versions. See `docs/admin/templates-and-rules.md`.
+> Read this before you upgrade. The fields `toolFilter`, `name`, `description` and `inputDescriptions` of a template take effect only after every gateway pod runs 0.4. During a rolling upgrade, an older pod ignores them. It lists hidden tools, forwards calls to them and does not rename tools. Each call still gets a recorded decision. If you hide a tool as a security control, use `tools.<name>.blocked`. It works on both versions. See `docs/admin/templates-and-rules.md`.
 
-### Changes
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This release adds tool search, and it starts a server only when a call needs it. Users can allow and deny servers and tools from inside a session. Admins can hide, rename and describe the tools of a server. The gateway also speaks the new MCP revision 2026-07-28, and users can connect from a claude.ai custom connector.
 
-- Claude can call a tool of an allowed server without `toolgate_enable_server` first. The call turns on the server. A server with `start: onCall` can start on its first call, so that call can take longer. See `docs/user/README.md`.
-- Templates get `start`, `declaredTools`, `toolFilter` and override fields for tool names and descriptions. The server name `toolgate` is now reserved. See `docs/admin/templates-and-rules.md`.
-- The gateway speaks MCP 2026-07-28 and 2025-11-25. See `docs/admin/mcp-revisions.md`.
-- Users can connect from a claude.ai custom connector. See `docs/admin/connectors.md`.
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.0`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.0`. Follow `docs/admin/quick-start.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+- Make sure that your PostgreSQL has the pgvector extension before you upgrade. The new migration runs `CREATE EXTENSION vector`, also when tool search is off, and the gateway does not start without it. The standard CloudNativePG images include pgvector. If the migration role is not a superuser, a superuser must run `CREATE EXTENSION IF NOT EXISTS vector;` and `CREATE EXTENSION IF NOT EXISTS pg_trgm;` in the toolgate database first. See `docs/admin/tool-search.md` and `docs/admin/chart.md`. ([#364](https://github.com/solidDoWant/toolgate/pull/364), [#385](https://github.com/solidDoWant/toolgate/pull/385))
+- Back up your PostgreSQL database before you upgrade. The gateway applies new database migrations when it starts, and you cannot undo them. ([#364](https://github.com/solidDoWant/toolgate/pull/364))
+- Rename any template with the name `toolgate` before you upgrade. The name is now reserved for the built-in server. A template with that name is not valid, and its running instances stop. ([#365](https://github.com/solidDoWant/toolgate/pull/365), [#390](https://github.com/solidDoWant/toolgate/pull/390))
+- Wait until every gateway pod runs 0.4 before you rely on the new template fields for tool curation, as the warning above says. ([#367](https://github.com/solidDoWant/toolgate/pull/367), [#391](https://github.com/solidDoWant/toolgate/pull/391))
+
+### Tool calls and lazy start
+
+- Claude can call a tool of an allowed server without `toolgate_enable_server` first. The call turns on the server in the session, and the audit log records `server.enable` with the reason `first-call`. ([#380](https://github.com/solidDoWant/toolgate/pull/380), [#391](https://github.com/solidDoWant/toolgate/pull/391), [#438](https://github.com/solidDoWant/toolgate/pull/438))
+- toolgate remembers the tool list of each template version. It learns the list from the last instance that became ready, or takes it from the new template field `declaredTools`. Sessions and tool search use this list while no instance runs. If a running instance has other tools, sessions get the real list. ([#365](https://github.com/solidDoWant/toolgate/pull/365), [#368](https://github.com/solidDoWant/toolgate/pull/368), [#442](https://github.com/solidDoWant/toolgate/pull/442))
+- A server starts only when the first call needs it. That call waits while the server starts, and Claude shows the progress. If the server cannot start, the call fails with the reason. A template can set `start: onEnable` to start the server as soon as a session turns it on. The gateway decides about the call before it starts anything. ([#365](https://github.com/solidDoWant/toolgate/pull/365), [#377](https://github.com/solidDoWant/toolgate/pull/377), [#420](https://github.com/solidDoWant/toolgate/pull/420), [#439](https://github.com/solidDoWant/toolgate/pull/439), [#443](https://github.com/solidDoWant/toolgate/pull/443))
+- For a `per-user` server whose tools depend on the user, declare the tools in `spec.declaredTools`. Otherwise, a user can see the tool names and descriptions that toolgate learned from the instance of another user until their own instance is ready. See `docs/admin/security-model.md`. ([#368](https://github.com/solidDoWant/toolgate/pull/368))
+
+### Tool search
+
+- In tool search mode, a session lists the toolgate tools and `toolgate_find_tools` in place of the tools of every server. Claude describes a task, and `toolgate_find_tools` returns the best tools of all the servers that the session can use, with their inputs. Claude then calls a tool, and the call turns on its server. Search never returns a tool that the rules refuse. In a verified workspace, it can return a tool of a server that is not on the workspace list, marked as needing approval. The first call then asks the user. Admins turn on the mode with `config.toolSearch`. A client can turn it on or off with the `X-Toolgate-Tool-Search` header. See `docs/user/tool-search.md` and `docs/admin/tool-search.md`. ([#376](https://github.com/solidDoWant/toolgate/pull/376), [#385](https://github.com/solidDoWant/toolgate/pull/385))
+- Search ranks tools by their words. If you set `config.toolSearchEmbeddings`, it also ranks them by meaning, with an embeddings endpoint that speaks the OpenAI embeddings API. The gateway then sends the search text and the tool descriptions to that endpoint. The chart can run the endpoint for you with `embeddings.server.enabled`. If the endpoint fails or is slow, search uses words only. ([#385](https://github.com/solidDoWant/toolgate/pull/385), [#441](https://github.com/solidDoWant/toolgate/pull/441), [#444](https://github.com/solidDoWant/toolgate/pull/444))
+- toolgate records how well search works in real use: which tools a search returned and at which rank, which of them Claude called, and searches that Claude repeated. The audit log gets `tool.search` and `tool.search_hit` events. The search text is not recorded. ([#412](https://github.com/solidDoWant/toolgate/pull/412))
+
+### Workspaces and access
+
+- The catalog has a built-in server named `toolgate` when the web UI is on. Its tools are `toolgate_list_scopes`, `toolgate_allow` and `toolgate_deny`. They do the same things as `toolgate workspace` and the web UI, from inside a session. The rules, the workspace lists and the audit log apply to them as to the tools of any other server. A rule matches them by their exact names. ([#390](https://github.com/solidDoWant/toolgate/pull/390), [#406](https://github.com/solidDoWant/toolgate/pull/406), [#394](https://github.com/solidDoWant/toolgate/pull/394), [#437](https://github.com/solidDoWant/toolgate/pull/437))
+- A user can deny a server, or one tool of a server, in a workspace or in one open session. The deny applies at once, with `toolgate_deny`, `toolgate workspace deny` or `toolgate workspace deny --session`. A denied server stays refused, also when the default is all. ([#372](https://github.com/solidDoWant/toolgate/pull/372), [#387](https://github.com/solidDoWant/toolgate/pull/387), [#394](https://github.com/solidDoWant/toolgate/pull/394))
+- A user can allow one tool in a workspace, or servers and tools in one open session with a verified workspace. The change waits until the user approves it in the browser after a fresh sign-in. `toolgate_allow` gives a link to the approval page. An allow for a session ends with that session. When a session starts again, its allows and its open requests go away. ([#393](https://github.com/solidDoWant/toolgate/pull/393), [#406](https://github.com/solidDoWant/toolgate/pull/406), [#436](https://github.com/solidDoWant/toolgate/pull/436), [#440](https://github.com/solidDoWant/toolgate/pull/440))
+- The default for unverified sessions can be a list of servers that the user picks, as well as all or none. Use `toolgate workspace defaults --unverified list` and `toolgate workspace allow --unverified SERVER...`, or "Only these servers" on the Workspaces page of the web UI. ([#364](https://github.com/solidDoWant/toolgate/pull/364), [#400](https://github.com/solidDoWant/toolgate/pull/400))
+
+### Templates and tool curation
+
+- A template can hide tools of its server with `toolFilter`, as an allow list or a deny list. A hidden tool is not listed and not found by search, and a call to it is refused. ([#365](https://github.com/solidDoWant/toolgate/pull/365), [#367](https://github.com/solidDoWant/toolgate/pull/367))
+- A template can give a tool another name, description or description of its inputs, with `tools.<name>.name`, `description` and `inputDescriptions`. Claude sees the new values, and calls reach the tool by its own name. Two tools cannot get the same new name. See `docs/admin/templates-and-rules.md`. ([#365](https://github.com/solidDoWant/toolgate/pull/365), [#367](https://github.com/solidDoWant/toolgate/pull/367), [#434](https://github.com/solidDoWant/toolgate/pull/434))
+
+### MCP revisions and claude.ai connectors
+
+- The gateway speaks MCP 2026-07-28 as well as 2025-11-25, with clients and with MCP servers. It prefers 2025-11-25. A server that speaks only 2026-07-28 works as any other server. See `docs/admin/mcp-revisions.md`. ([#371](https://github.com/solidDoWant/toolgate/pull/371), [#373](https://github.com/solidDoWant/toolgate/pull/373))
+- Users can connect from a claude.ai custom connector, or from another MCP client without the toolgate plugin. The gateway publishes OAuth protected resource metadata, so the client signs the user in through your IdP. A client without the session header gets a session for its MCP session. Set `config.mcpPublicURL`, and route only `/mcp` and the metadata paths from the internet. See `docs/admin/connectors.md`. ([#369](https://github.com/solidDoWant/toolgate/pull/369), [#375](https://github.com/solidDoWant/toolgate/pull/375), [#435](https://github.com/solidDoWant/toolgate/pull/435))
+
+### Metrics and dashboards
+
+- The gateway exports new Prometheus metrics: open sessions, tool calls and their duration, policy refusals, server starts and their duration, calls that wait for a start, instance health, approvals, sign-ins, MCP requests, database connections, embeddings requests and tool search. `docs/admin/metrics.md` lists each metric with example queries. ([#407](https://github.com/solidDoWant/toolgate/pull/407), [#408](https://github.com/solidDoWant/toolgate/pull/408), [#409](https://github.com/solidDoWant/toolgate/pull/409), [#411](https://github.com/solidDoWant/toolgate/pull/411), [#412](https://github.com/solidDoWant/toolgate/pull/412))
+- The chart includes four Grafana dashboards. Turn them on with `dashboards.enabled` for the Grafana sidecar, or with `dashboards.grafanaOperator.enabled` for grafana-operator. ([#417](https://github.com/solidDoWant/toolgate/pull/417))
+
+Internal work: a new migration and queries, a fixed test set and `make search-eval` to compare search models, faster integration tests, CI that runs the full suite on every push to master, and updates to the design, the acceptance checklist and the agent instructions.
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade can't call the built-in tools until the session restarts.
 
 ## 0.3.0
 
