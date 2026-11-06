@@ -44,7 +44,12 @@ func sessionEvents(t *testing.T, admin *kubernetes.Clientset, session string) []
 	output := gatewayQuery(t, admin, "SELECT type || ' ' || coalesce(details->>'servers', '') FROM audit_events "+
 		"WHERE principal = 'alice' AND session = '"+session+"' AND type LIKE 'session.%' ORDER BY id")
 
-	return strings.Split(output, "\n")
+	lines := strings.Split(output, "\n")
+	for index, line := range lines {
+		lines[index] = strings.TrimSpace(line)
+	}
+
+	return lines
 }
 
 func TestAC3_22ResumeAfterLongPause(t *testing.T) {
@@ -88,7 +93,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 
 		events := sessionEvents(t, admin, session)
 		assert.Equal(t, []string{
-			"session.start ",
+			"session.start",
 			`session.end ["` + name + `"]`,
 			`session.resume ["` + name + `"]`,
 		}, events, "the audit log records the set at the end and the resume")
@@ -106,7 +111,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 
 		assert.NotContains(t, listedTools(t, t.Context(), resumed.session), prefixedTools(name)[0])
 		assert.Empty(t, instanceNamespaces(t, t.Context(), admin, name), "nothing starts for the other workspace")
-		assert.Equal(t, "session.start ", sessionEvents(t, admin, session)[2])
+		assert.Equal(t, "session.start", sessionEvents(t, admin, session)[2])
 
 		require.NoError(t, resumed.session.Close())
 		idleOut(t, admin, session)
@@ -129,7 +134,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 		assert.Empty(t, instanceNamespaces(t, t.Context(), admin, name), "nothing starts after the window")
 
 		events := sessionEvents(t, admin, session)
-		assert.Equal(t, "session.start ", events[len(events)-1])
+		assert.Equal(t, "session.start", events[len(events)-1])
 
 		require.NoError(t, resumed.session.Close())
 		idleOut(t, admin, session)
