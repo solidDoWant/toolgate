@@ -119,7 +119,7 @@ These settings control the server:
 
 **Mode `2025-only`.** The server is stateful, so it speaks 2025-11-25 and older revisions, and not 2026-07-28. Its tools are the names in `-tools`, unless you set `-tools-file`.
 
-**Mode `both`.** The server is stateless and speaks 2025-11-25 and 2026-07-28. Its tools are the names in `-tools`, unless you set `-tools-file`.
+**Mode `both`.** The server speaks 2025-11-25 and 2026-07-28. A request with `Mcp-Protocol-Version` 2026-07-28 or later goes to a stateless handler. Every other request goes to a stateful handler, so 2025-11-25 sessions get `list_changed` on their stream. Its tools are the names in `-tools`, unless you set `-tools-file`.
 
 **Tools from a file.** With `-tools-file`, the server serves the tools that the file declares. The file is a JSON array of `{"name", "description", "inputSchema"}` objects, or an object with that array in `tools`. `inputSchema` must have type `object`. If you leave it out, the tool takes any arguments. Each tool echoes its arguments. Use this to serve any declared tool list, such as the servers of the tool search fixture.
 

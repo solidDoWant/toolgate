@@ -1,8 +1,12 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"testing"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,8 +47,30 @@ func TestRevisionModes(t *testing.T) {
 				require.Error(t, err, "the server doesn't speak 2026-07-28")
 			}
 
+			changed := make(chan struct{}, 1)
+			client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, &mcp.ClientOptions{
+				ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
+					select {
+					case changed <- struct{}{}:
+					default:
+					}
+				},
+			})
+
+			listening, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: server.URL + "/mcp"},
+				&mcp.ClientSessionOptions{ProtocolVersion: test.probed})
+			require.NoError(t, err)
+
+			t.Cleanup(func() { _ = listening.Close() })
+
 			response := httpDo(t, http.MethodPut, server.URL+"/tools?names=alpha,beta", "")
 			assert.Equal(t, http.StatusNoContent, response.StatusCode, "PUT /tools changes the list")
+
+			select {
+			case <-changed:
+			case <-time.After(10 * time.Second):
+				t.Fatal("a session on the probed revision got no list_changed")
+			}
 		})
 	}
 }

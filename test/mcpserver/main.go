@@ -15,7 +15,8 @@
 // -mode 2026-only the server is stateless and speaks only protocol revision
 // 2026-07-28. With -mode 2025-only the server is stateful, so it speaks
 // 2025-11-25 and older revisions only. With -mode both the server is
-// stateless and speaks 2025-11-25 and 2026-07-28. With -tools-file the server serves the tools declared in that
+// stateful on 2025-11-25 and stateless on 2026-07-28, so it speaks both.
+// With -tools-file the server serves the tools declared in that
 // file, which is a JSON array of {name, description, inputSchema} (or an
 // object with that array in "tools"); every such tool echoes its arguments.
 // In each of those cases, PUT /tools replaces the tool list and
@@ -208,8 +209,6 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 	case mode2026Only:
 		versions = []string{onlyProtocolVersion}
 		handlerOptions.Stateless = true
-	case modeBoth:
-		handlerOptions.Stateless = true
 	}
 
 	if config.ToolsFile != "" || config.Mode != modeDefault {
@@ -228,7 +227,13 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, handlerOptions))
+
+	handler := http.Handler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, handlerOptions))
+	if config.Mode == modeBoth {
+		handler = bothRevisions(server, handler)
+	}
+
+	mux.Handle("/mcp", handler)
 	mux.HandleFunc("GET /calls", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(calls.snapshot())
@@ -277,4 +282,24 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 	})
 
 	return mux, nil
+}
+
+// bothRevisions serves a request on 2026-07-28 or later statelessly, and
+// every other request with stateful, so one server speaks 2025-11-25 with
+// sessions and 2026-07-28 without them. The go-sdk's stateful handler
+// doesn't serve 2026-07-28, and its stateless one has no stream for
+// `list_changed` on 2025-11-25.
+func bothRevisions(server *mcp.Server, stateful http.Handler) http.Handler {
+	stateless := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{Stateless: true})
+
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.Header.Get("Mcp-Protocol-Version") >= onlyProtocolVersion {
+			stateless.ServeHTTP(writer, request)
+
+			return
+		}
+
+		stateful.ServeHTTP(writer, request)
+	})
 }
