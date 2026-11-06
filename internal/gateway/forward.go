@@ -443,12 +443,7 @@ func (m *metaTools) readyInstance(ctx context.Context, current requestContext, t
 func (m *metaTools) waitForCall(ctx context.Context, request *mcp.CallToolRequest, current requestContext,
 	template *v1alpha1.MCPServerTemplate, instance db.Instance,
 ) (db.Instance, string, string, error) {
-	waitCtx, span := tracer(ctx).Start(ctx, "toolgate.call.wait",
-		trace.WithAttributes(attribute.String("toolgate.server", template.Name)))
-	instance, err := m.waitForInstance(waitCtx, request, current, template, instance)
-
-	span.End()
-
+	instance, err := m.waitForInstance(ctx, request, current, template, instance)
 	if err != nil {
 		return db.Instance{}, "", "", err
 	}
