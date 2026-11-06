@@ -212,6 +212,13 @@ func (m *metaTools) serverStatus(ctx context.Context, request *mcp.CallToolReque
 // "Effects").
 const notInWorkspaceReason = "not allowed in this workspace; enable it to ask"
 
+// deniedReasons are the list_servers reasons of a server with a deny entry,
+// which an enable never asks about (docs/design/phase-4.md §7).
+var deniedReasons = map[policy.DeniedIn]string{
+	policy.DeniedInWorkspace: "denied in this workspace",
+	policy.DeniedInSession:   "denied in this session",
+}
+
 var errNoIdentity = errors.New("Sign in again: run `toolgate login`.") //nolint:staticcheck // A sentence for the model.
 
 // entry describes template for the request's identity. visible is false when
@@ -234,6 +241,12 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 	if !decision.Allowed {
 		entry.Status = StatusBlocked
 		entry.Reason = decision.Reason
+
+		if decision.Denied != "" {
+			entry.Reason = deniedReasons[decision.Denied]
+
+			return entry, true, nil
+		}
 
 		if decision.Step == policy.StepWorkspaceScope {
 			if current.identity.Attestation != auth.AttestationAttested {

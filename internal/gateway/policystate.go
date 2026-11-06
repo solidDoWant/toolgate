@@ -22,9 +22,9 @@ import (
 func (m *metaTools) policyState(ctx context.Context, identity auth.Identity) (policy.State, error) {
 	var scope store.ScopeQuery
 	if m.workspaceScoping && identity.Kind == auth.KindUser {
-		scope.Load = true
+		scope.Load, scope.Session = true, identity.Session
 		if identity.Attestation == auth.AttestationAttested {
-			scope.Workspace, scope.Session = identity.Workspace, identity.Session
+			scope.Workspace = identity.Workspace
 		}
 	}
 

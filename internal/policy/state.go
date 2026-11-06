@@ -23,8 +23,10 @@ type State struct {
 }
 
 // Scope is the effective list of servers of a signed-in user's request
-// (docs/design/phase-3.md §10, "The effective list"). It only refuses: a
-// server it allows still has to pass every other step.
+// (docs/design/phase-3.md §10, "The effective list"), with the scope
+// entries that apply to it (docs/design/phase-4.md §7, "Step 4 with scope
+// entries"). It only refuses: a server it allows still has to pass every
+// other step.
 type Scope struct {
 	// Applies is set for identities of kind user on a gateway with the web
 	// UI. When it is false, step 4 passes every server.
@@ -33,16 +35,69 @@ type Scope struct {
 	All bool
 	// Servers are the allowed server names when All is false.
 	Servers map[string]bool
+	// Denied maps a server to the deny entries that name it, by upstream
+	// tool name. The empty tool denies the whole server.
+	Denied map[string]map[string]DeniedIn
+	// AllowedTools maps a server to the upstream names of the tools that
+	// an allow entry names.
+	AllowedTools map[string]map[string]bool
 }
 
-// allows reports whether the scope lets identity use server. Only
-// identities of kind user are ever scoped.
-func (s Scope) allows(identity auth.Identity, server string) bool {
+// DeniedIn says where a deny entry was made.
+type DeniedIn string
+
+// Places of a deny entry.
+const (
+	DeniedInWorkspace DeniedIn = "workspace"
+	DeniedInSession   DeniedIn = "session"
+)
+
+// scopeOutcome is step 4's answer for one server, or one tool of it.
+type scopeOutcome struct {
+	allowed bool
+	// denied is set when a deny entry refused.
+	denied DeniedIn
+}
+
+// decide applies step 4 to identity's request for server and tool (empty
+// for a decision about the whole server). Only identities of kind user are
+// ever scoped.
+func (s Scope) decide(identity auth.Identity, server, tool string) scopeOutcome {
 	if !s.Applies || identity.Kind != auth.KindUser {
-		return true
+		return scopeOutcome{allowed: true}
 	}
 
-	return s.All || s.Servers[server]
+	// Rule 1: a deny of the whole server, or of this tool.
+	denies := s.Denied[server]
+	if where, found := denies[""]; found {
+		return scopeOutcome{denied: where}
+	}
+
+	if tool != "" {
+		if where, found := denies[tool]; found {
+			return scopeOutcome{denied: where}
+		}
+	}
+
+	// Rule 2: the effective list.
+	if s.All || s.Servers[server] {
+		return scopeOutcome{allowed: true}
+	}
+
+	// Rule 3: an allow entry of this tool, or, for the whole server, of any
+	// tool of it that isn't denied.
+	allowed := s.AllowedTools[server]
+	if tool != "" {
+		return scopeOutcome{allowed: allowed[tool]}
+	}
+
+	for name := range allowed {
+		if _, found := denies[name]; !found {
+			return scopeOutcome{allowed: true}
+		}
+	}
+
+	return scopeOutcome{}
 }
 
 // Grant is one live grant: it lets Principal pass an opt-in environment on
@@ -117,6 +172,23 @@ const (
 	ScopeDefaultAll  = "all"
 )
 
+// Effects of a scope entry.
+const (
+	EffectAllow = "allow"
+	EffectDeny  = "deny"
+)
+
+// ScopeEntry is one stored scope entry that may apply to a request.
+type ScopeEntry struct {
+	// Session is set for an entry of the request's session, and false for
+	// one of its workspace.
+	Session bool
+	Server  string
+	// Tool is an upstream tool name, or empty for the whole server.
+	Tool   string
+	Effect string
+}
+
 // ScopeRows are the scoping rows of one signed-in user's request, as
 // stored.
 type ScopeRows struct {
@@ -124,28 +196,52 @@ type ScopeRows struct {
 	// defaults. Empty, as for a missing row, means none.
 	VerifiedDefault   string
 	UnverifiedDefault string
+	// UnverifiedList is the user_scopes row's unverified_list: with
+	// UnverifiedDefault none, the default for unverified sessions is list,
+	// and UnverifiedServers are its servers (docs/design/phase-4.md §2).
+	UnverifiedList    bool
+	UnverifiedServers []string
 	// HasList says the user has a list for the request's verified
 	// workspace; ListServers are its servers.
 	HasList     bool
 	ListServers []string
 	// Additions are the servers added to the request's session only.
 	Additions []string
+	// Entries are the scope entries of the request's verified workspace
+	// and of its session.
+	Entries []ScopeEntry
 }
 
 // EffectiveScope builds the scope of a request from its rows
-// (docs/design/phase-3.md §10, "The effective list"). In a verified
-// workspace it is the workspace's list if there is one, else the verified
-// default, plus the session's additions. An unverified session gets the
-// unverified default and nothing more: a claimed workspace never selects a
-// list and a claimed session ID never adds servers. Identities that aren't
-// of kind user get a scope that doesn't apply.
+// (docs/design/phase-3.md §10, "The effective list", and
+// docs/design/phase-4.md §7). In a verified workspace it is the workspace's
+// list if there is one, else the verified default, plus the session's
+// additions, and the workspace's and the session's entries apply. An
+// unverified session gets the unverified default, or its allow list, and
+// only the session's deny entries: a claimed workspace never selects a list
+// or entries, and a claimed session ID never adds servers. Identities that
+// aren't of kind user get a scope that doesn't apply.
 func EffectiveScope(identity auth.Identity, rows ScopeRows) Scope {
 	if identity.Kind != auth.KindUser {
 		return Scope{}
 	}
 
 	if identity.Attestation != attestationAttested {
-		return Scope{Applies: true, All: rows.UnverifiedDefault == ScopeDefaultAll}
+		scope := Scope{Applies: true, All: rows.UnverifiedDefault == ScopeDefaultAll}
+		if !scope.All && rows.UnverifiedList {
+			scope.Servers = make(map[string]bool, len(rows.UnverifiedServers))
+			for _, server := range rows.UnverifiedServers {
+				scope.Servers[server] = true
+			}
+		}
+
+		for _, entry := range rows.Entries {
+			if entry.Session && entry.Effect == EffectDeny {
+				scope.addEntry(entry)
+			}
+		}
+
+		return scope
 	}
 
 	scope := Scope{Applies: true, Servers: make(map[string]bool, len(rows.ListServers)+len(rows.Additions))}
@@ -162,5 +258,49 @@ func EffectiveScope(identity auth.Identity, rows ScopeRows) Scope {
 		scope.Servers[server] = true
 	}
 
+	for _, entry := range rows.Entries {
+		scope.addEntry(entry)
+	}
+
 	return scope
+}
+
+// addEntry adds one entry to the scope's tool sets. A workspace deny wins
+// over a session deny of the same name, so the refusal names the
+// workspace.
+func (s *Scope) addEntry(entry ScopeEntry) {
+	switch entry.Effect {
+	case EffectDeny:
+		if s.Denied == nil {
+			s.Denied = map[string]map[string]DeniedIn{}
+		}
+
+		if s.Denied[entry.Server] == nil {
+			s.Denied[entry.Server] = map[string]DeniedIn{}
+		}
+
+		where := DeniedInWorkspace
+		if entry.Session {
+			where = DeniedInSession
+		}
+
+		if current, found := s.Denied[entry.Server][entry.Tool]; !found || current == DeniedInSession {
+			s.Denied[entry.Server][entry.Tool] = where
+		}
+	case EffectAllow:
+		if entry.Tool == "" {
+			// Server-level allows are lists and additions, not entries.
+			return
+		}
+
+		if s.AllowedTools == nil {
+			s.AllowedTools = map[string]map[string]bool{}
+		}
+
+		if s.AllowedTools[entry.Server] == nil {
+			s.AllowedTools[entry.Server] = map[string]bool{}
+		}
+
+		s.AllowedTools[entry.Server][entry.Tool] = true
+	}
 }
