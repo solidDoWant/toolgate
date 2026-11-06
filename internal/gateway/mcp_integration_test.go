@@ -46,6 +46,8 @@ type mcpFixture struct {
 	upstreams *sync.Map
 	// replica starts another gateway replica on the same database.
 	replica func(t *testing.T) *httptest.Server
+	// handlers holds the MCP handler of each replica, in start order.
+	handlers []http.Handler
 }
 
 func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFixture {
@@ -118,6 +120,7 @@ func newMCPFixtureWithAuth(t *testing.T, authOptions *auth.Options, configure ..
 		}
 
 		handler := gateway.NewMCPHandler(options)
+		fixture.handlers = append(fixture.handlers, handler)
 
 		// Every request gets a span, as in the gateway, so audit events
 		// carry a trace ID.

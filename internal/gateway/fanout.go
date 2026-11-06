@@ -191,9 +191,13 @@ func (e *mcpEndpoint) resyncScopePrincipal(tools *metaTools, id string) {
 func (e *mcpEndpoint) resync(tools *metaTools, matches func(requestContext) bool) {
 	e.mu.Lock()
 
-	targets := make([]*sessionTools, 0, len(e.bindings))
+	targets := make([]*sessionTools, 0, len(e.bindings)+len(e.stateless))
 	for _, session := range e.bindings {
 		targets = append(targets, session.tools)
+	}
+
+	for _, binding := range e.stateless {
+		targets = append(targets, binding.tools)
 	}
 
 	e.mu.Unlock()

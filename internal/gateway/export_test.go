@@ -2,8 +2,20 @@ package gateway
 
 import (
 	"encoding/json"
+	"net/http"
 	"time"
 )
+
+// StatelessBindings returns how many stateless bindings the MCP handler
+// holds.
+func StatelessBindings(handler http.Handler) int {
+	endpoint := handler.(*mcpEndpoint)
+
+	endpoint.mu.Lock()
+	defer endpoint.mu.Unlock()
+
+	return len(endpoint.stateless)
+}
 
 // CanonicalArguments exposes canonicalArguments to tests.
 func CanonicalArguments(arguments json.RawMessage) (json.RawMessage, []byte, error) {

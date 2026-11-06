@@ -190,11 +190,7 @@ func (m *metaTools) syncSession(ctx context.Context, session *mcp.ServerSession,
 		return nil, err
 	}
 
-	if session == nil {
-		return byServer, nil
-	}
-
-	offered, found := m.sessionTools(session.ID())
+	offered, found := m.offeredTools(session, current)
 	if !found {
 		return byServer, nil
 	}
@@ -243,7 +239,7 @@ func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler 
 			return next(ctx, method, request)
 		}
 
-		if m.offers(call.Session, call.Params.Name) {
+		if m.offers(call, call.Params.Name) {
 			result, err := next(ctx, method, request)
 
 			var wireErr *jsonrpc.Error
@@ -260,12 +256,10 @@ func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler 
 
 // offers reports whether the MCP session currently offers the proxied tool
 // name.
-func (m *metaTools) offers(session *mcp.ServerSession, name string) bool {
-	if session == nil || m.sessionTools == nil {
-		return false
-	}
+func (m *metaTools) offers(call *mcp.CallToolRequest, name string) bool {
+	current, _ := requestContextOf(call)
 
-	offered, found := m.sessionTools(session.ID())
+	offered, found := m.offeredTools(call.Session, current)
 	if !found {
 		return false
 	}
@@ -276,6 +270,20 @@ func (m *metaTools) offers(session *mcp.ServerSession, name string) bool {
 	_, ok := offered.offered[name]
 
 	return ok
+}
+
+// offeredTools returns the proxied tools of the request's binding: a
+// stateless binding's from the request, an MCP session's by its ID.
+func (m *metaTools) offeredTools(session *mcp.ServerSession, current requestContext) (*sessionTools, bool) {
+	if current.stateless != nil {
+		return current.stateless, true
+	}
+
+	if session == nil || m.sessionTools == nil {
+		return nil, false
+	}
+
+	return m.sessionTools(session.ID())
 }
 
 type noElicitationKey struct{}
