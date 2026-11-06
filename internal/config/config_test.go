@@ -183,6 +183,55 @@ publicURL: "http://127.0.0.1:8080"
 			wantAbsent: []string{"publicURL"},
 		},
 		{
+			name: "MCP public URL over plain http",
+			file: `
+mcpPublicURL: "http://mcp.example.com/mcp"
+`,
+			wantProblems: []string{`mcpPublicURL: "http://mcp.example.com/mcp" must be https://`},
+		},
+		{
+			name: "MCP public URL with a query",
+			file: `
+mcpPublicURL: "https://mcp.example.com/mcp?x=1"
+`,
+			wantProblems: []string{`mcpPublicURL: "https://mcp.example.com/mcp?x=1" is not a URL with only a scheme, host, port and path`},
+		},
+		{
+			name: "MCP public URL with user info",
+			file: `
+mcpPublicURL: "https://user@mcp.example.com/mcp"
+`,
+			wantProblems: []string{`mcpPublicURL: "https://user@mcp.example.com/mcp" is not a URL with only a scheme, host, port and path`},
+		},
+		{
+			name: "MCP public URL with a quote",
+			file: `
+mcpPublicURL: 'https://mcp".example.com/mcp'
+`,
+			wantProblems: []string{`mcpPublicURL: "https://mcp\".example.com/mcp" is not a URL with only a scheme, host, port and path`},
+		},
+		{
+			name: "MCP public URL over https",
+			file: `
+mcpPublicURL: "https://mcp.example.com/mcp"
+`,
+			wantAbsent: []string{"mcpPublicURL"},
+		},
+		{
+			name: "MCP public URL on localhost",
+			file: `
+mcpPublicURL: "http://localhost:8080/mcp"
+`,
+			wantAbsent: []string{"mcpPublicURL"},
+		},
+		{
+			name: "MCP public URL on 127.0.0.1",
+			file: `
+mcpPublicURL: "http://127.0.0.1:8080/mcp"
+`,
+			wantAbsent: []string{"mcpPublicURL"},
+		},
+		{
 			name: "invalid service-account namespace",
 			file: `
 serviceAccountNamespaces: [ci, "Not_A_Namespace"]
@@ -490,4 +539,30 @@ func TestLoadDatabaseURLReadsOnlyTheDatabaseURL(t *testing.T) {
 
 func TestMigrateOnStartDefaultsToTrue(t *testing.T) {
 	assert.True(t, config.Default().MigrateOnStart)
+}
+
+func TestMCPResourceURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		publicURL    string
+		mcpPublicURL string
+		want         string
+	}{
+		{name: "both empty", want: ""},
+		{name: "from the public URL", publicURL: "https://toolgate.example.com", want: "https://toolgate.example.com/mcp"},
+		{name: "from a public URL with a slash", publicURL: "https://toolgate.example.com/", want: "https://toolgate.example.com/mcp"},
+		{name: "set", publicURL: "https://toolgate.example.com", mcpPublicURL: "https://mcp.example.com/mcp", want: "https://mcp.example.com/mcp"},
+		{name: "set without a public URL", mcpPublicURL: "https://mcp.example.com/mcp", want: "https://mcp.example.com/mcp"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := config.Config{PublicURL: test.publicURL, MCPPublicURL: test.mcpPublicURL}
+			assert.Equal(t, test.want, cfg.MCPResourceURL())
+		})
+	}
 }

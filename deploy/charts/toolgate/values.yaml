@@ -84,6 +84,14 @@ config:
     # an approved request stays usable, as a Go duration from `1m` to `1h`.
     approvalTimeout: 10m
 
+  # -- URL of the MCP endpoint as MCP clients on the internet reach it, such
+  # as `https://mcp.example.com/mcp`. The gateway names it in its OAuth
+  # protected resource metadata, so that claude.ai connectors can sign in.
+  # It must be `https://`. Empty means `config.ui.publicURL` + `/mcp`; with
+  # both empty, the gateway serves no metadata. See the connectors page of
+  # the admin docs.
+  mcpPublicURL: ""
+
   # -- Namespaces whose `MCPServerTemplate` and `ToolgateRule` objects the
   # gateway reads, such as `[toolgate-catalog]`. Empty means the release
   # namespace.

@@ -86,12 +86,24 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 		EmailClaim: cfg.OIDCEmailClaim,
 	}))
 
+	if resource := cfg.MCPResourceURL(); resource != "" {
+		// One handler, so both paths share one rate limit per address.
+		metadata := wellknown.ProtectedResourceHandler(wellknown.ProtectedResource{
+			Resource: resource,
+			Issuer:   cfg.OIDCIssuerURL,
+			Scopes:   cfg.OIDCCLIScopes,
+		})
+		server.HandlePublic("GET "+wellknown.ProtectedResourcePath, metadata)
+		server.HandlePublic("GET "+wellknown.ProtectedResourceRootPath, metadata)
+	}
+
 	return server, nil
 }
 
 // HandlePublic registers handler for pattern on the main port without
 // authentication. Only the probes, the client metadata document
-// (docs/design/phase-1.md §8) and the web UI's sign-in routes and static
+// (docs/design/phase-1.md §8), the protected resource metadata
+// (docs/design/phase-4.md §9) and the web UI's sign-in routes and static
 // files (docs/design/phase-2.md §5) are public.
 func (s *Server) HandlePublic(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, handler)

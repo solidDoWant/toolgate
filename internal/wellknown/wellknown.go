@@ -1,14 +1,28 @@
-// Package wellknown is the client metadata document the gateway publishes
-// without authentication at /.well-known/toolgate-client, so `toolgate login`
-// can find the IdP from the gateway URL alone (docs/design/phase-1.md §8).
-// It holds only public client metadata, never secrets.
+// Package wellknown is the metadata the gateway publishes without
+// authentication: the client metadata document at
+// /.well-known/toolgate-client, so `toolgate login` can find the IdP from the
+// gateway URL alone (docs/design/phase-1.md §8), and the OAuth protected
+// resource metadata of the MCP endpoint, so standard MCP clients can sign in
+// (docs/design/phase-4.md §9). Both hold only public metadata, never secrets.
 package wellknown
 
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
+
+	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
+)
+
+// Paths of the protected resource metadata document. ProtectedResourcePath
+// is the RFC 9728 path for a resource at /mcp; the document is served at
+// ProtectedResourceRootPath too.
+const (
+	ProtectedResourcePath     = "/.well-known/oauth-protected-resource/mcp"
+	ProtectedResourceRootPath = "/.well-known/oauth-protected-resource"
 )
 
 // Path is the path of the client metadata document.
@@ -38,6 +52,50 @@ func Handler(metadata ClientMetadata) http.Handler {
 		panic(err)
 	}
 
+	return rateLimited(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writer.Header().Set("Cache-Control", "no-store")
+		_, _ = writer.Write(body)
+	}))
+}
+
+// ProtectedResource is what the protected resource metadata names.
+type ProtectedResource struct {
+	// Resource is the MCP endpoint's URL as clients reach it.
+	Resource string
+	// Issuer is the IdP's issuer URL, the only authorization server.
+	Issuer string
+	// Scopes are the scopes a client asks for.
+	Scopes []string
+}
+
+// ProtectedResourceHandler serves the protected resource metadata with the
+// go-sdk's handler. Each remote address gets the same budget as the client
+// metadata document; requests over it get 429.
+func ProtectedResourceHandler(resource ProtectedResource) http.Handler {
+	return rateLimited(mcpauth.ProtectedResourceMetadataHandler(&oauthex.ProtectedResourceMetadata{
+		Resource:               resource.Resource,
+		AuthorizationServers:   []string{resource.Issuer},
+		ScopesSupported:        resource.Scopes,
+		BearerMethodsSupported: []string{"header"},
+	}))
+}
+
+// ProtectedResourceMetadataURL is the URL of the metadata document for the
+// MCP endpoint at resource: the resource's origin plus
+// ProtectedResourcePath. It is empty when resource is not an absolute URL.
+func ProtectedResourceMetadataURL(resource string) string {
+	parsed, err := url.Parse(resource)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+
+	return (&url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: ProtectedResourcePath}).String()
+}
+
+// rateLimited refuses requests from a remote address over the per-address
+// budget of recorded sign-in refusals with 429, and passes the rest to next.
+func rateLimited(next http.Handler) http.Handler {
 	limiter := auth.NewRateLimiter()
 
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -47,8 +105,6 @@ func Handler(metadata ClientMetadata) http.Handler {
 			return
 		}
 
-		writer.Header().Set("Content-Type", "application/json")
-		writer.Header().Set("Cache-Control", "no-store")
-		_, _ = writer.Write(body)
+		next.ServeHTTP(writer, request)
 	})
 }

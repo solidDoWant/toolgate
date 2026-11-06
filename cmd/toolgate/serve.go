@@ -37,6 +37,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
 	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/ui"
+	"github.com/solidDoWant/toolgate/internal/wellknown"
 	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
 
@@ -354,6 +355,9 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 			ServiceAccounts: serviceAccounts,
 			SPIFFE:          spiffeOptions(cfg, logger),
 			Attestation:     attestation,
+			// The MCP endpoint's 401 names the protected resource
+			// metadata that gateway.New serves.
+			ResourceMetadataURL: wellknown.ProtectedResourceMetadataURL(cfg.MCPResourceURL()),
 		},
 		logger:          logger,
 		registerMetrics: server.RegisterMetrics,
