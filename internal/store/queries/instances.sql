@@ -54,7 +54,7 @@ WHERE id = @id AND status = 'pending';
 
 -- name: SetInstanceReady :execrows
 UPDATE instances
-SET status = 'ready', tools = @tools, ready_at = now(), reason = '', updated_at = now()
+SET status = 'ready', tools = @tools, mcp_revision = @mcp_revision, ready_at = now(), reason = '', updated_at = now()
 WHERE id = @id AND status = 'starting';
 
 -- name: SetInstanceTools :execrows

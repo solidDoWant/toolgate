@@ -21,6 +21,7 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
@@ -101,14 +102,14 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 	}
 
 	// Replicas ignore list_changed on forwarding sessions: the reconciler
-	// keeps the tool list.
-	client := mcp.NewClient(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
-	transport := &mcp.StreamableClientTransport{Endpoint: u.endpoint(instance, template), HTTPClient: u.httpClient}
-
+	// keeps the tool list. The session speaks the row's MCP revision.
 	connectCtx, cancel := upstreamConnectContext(ctx)
 	defer cancel()
 
-	session, err := client.Connect(connectCtx, transport, nil)
+	session, _, err := runtime.ConnectUpstream(connectCtx, u.endpoint(instance, template), instance.McpRevision, runtime.UpstreamOptions{
+		Implementation: &mcp.Implementation{Name: "toolgate", Version: version.Get()},
+		HTTPClient:     u.httpClient,
+	})
 	if err != nil {
 		return nil, err
 	}

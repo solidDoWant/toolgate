@@ -31,5 +31,6 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 - [Operations](operations.md): backups, upgrades, key rotation, instance limits, the audit log, and how to remove toolgate.
 - [User secrets](user-secrets.md): how to make and rotate the keyset that encrypts user secrets.
 - [Instance stops and cleanup](instances.md): when toolgate stops a server, the instance limits, and the metrics for stuck namespaces.
+- [MCP revisions](mcp-revisions.md): the MCP revisions toolgate speaks, and which one it picks with each upstream server.
 
 [`SPEC.md`](../../SPEC.md) describes the full rules of the system.

@@ -257,8 +257,8 @@ func TestMonitorCustomCheckRunsWhilePingHangs(t *testing.T) {
 	// reaches its threshold.
 	fixture := newCheckFixture(t, fastCheck, always(http.StatusServiceUnavailable), nil, func(monitor *runtime.Monitor, fixture *checkFixture) {
 		monitor.Interval = time.Hour
-		monitor.Connect = func(ctx context.Context, endpoint string, changed func()) (runtime.MonitorSession, error) {
-			session, err := fixture.upstream.connect(ctx, endpoint, changed)
+		monitor.Connect = func(ctx context.Context, endpoint, revision string, changed func()) (runtime.MonitorSession, error) {
+			session, err := fixture.upstream.connect(ctx, endpoint, revision, changed)
 
 			return hangingSession{MonitorSession: session}, err
 		}

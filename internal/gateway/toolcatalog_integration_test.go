@@ -53,7 +53,7 @@ func (f *mcpFixture) becomeReady(t *testing.T, store toolruntime.PostgresStartSt
 	encoded, err := json.Marshal(listed)
 	require.NoError(t, err)
 
-	changed, err = store.MarkReady(t.Context(), id, encoded)
+	changed, err = store.MarkReady(t.Context(), instance, encoded, toolruntime.RevisionStateful)
 	require.NoError(t, err)
 	require.True(t, changed)
 }
