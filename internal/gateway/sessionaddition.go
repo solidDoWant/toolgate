@@ -39,6 +39,25 @@ type additionEnable struct {
 	current  requestContext
 	request  *mcp.CallToolRequest
 	template *v1alpha1.MCPServerTemplate
+	// tool is the upstream tool name when a call, not an enable, asks. The
+	// refusals are then written as tool.decision.
+	tool string
+}
+
+// additionRefusal is a refusal of an enable or call that asked for a session
+// addition. It has been recorded.
+type additionRefusal struct{ message string }
+
+func (e *additionRefusal) Error() string { return e.message }
+
+// record writes the event of a refusal: server.enable for an enable,
+// tool.decision for a call.
+func (e additionEnable) record(ctx context.Context, recorder *audit.Recorder, details map[string]any) error {
+	if e.tool != "" {
+		return recorder.Record(ctx, callEvent(e.current, "tool.decision", e.server(), e.tool, withExposedDetail(ctx, details)))
+	}
+
+	return recorder.Record(ctx, auditEvent(e.current, "server.enable", e.server(), details))
 }
 
 func (e additionEnable) server() string { return e.template.Name }
@@ -250,11 +269,11 @@ func (m *metaTools) refuseAddition(ctx context.Context, enable additionEnable, r
 	}
 
 	recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
-	if err := recorder.Record(ctx, auditEvent(enable.current, "server.enable", enable.server(), details)); err != nil {
+	if err := enable.record(ctx, recorder, details); err != nil {
 		return err
 	}
 
-	return errors.New(message)
+	return &additionRefusal{message: message}
 }
 
 func deniedAdditionMessage(enable additionEnable, id string) string {
@@ -337,7 +356,7 @@ func (m *metaTools) decideAddition(ctx context.Context, enable additionEnable, i
 		return false, err
 	}
 
-	decision := m.decide(ctx, policy.Request{Identity: enable.current.identity, Template: template, State: state})
+	decision := m.decide(ctx, m.additionPolicyRequest(enable, template, state))
 
 	switch {
 	case decision.Allowed:
@@ -347,11 +366,11 @@ func (m *metaTools) decideAddition(ctx context.Context, enable additionEnable, i
 		details[sessionAdditionRequest] = id
 
 		recorder := audit.NewRecorder(m.auditOutput, queries)
-		if err := recorder.Record(ctx, auditEvent(enable.current, "server.enable", enable.server(), details)); err != nil {
+		if err := enable.record(ctx, recorder, details); err != nil {
 			return true, err
 		}
 
-		return true, errors.New(decision.Reason)
+		return true, &additionRefusal{message: decision.Reason}
 	}
 
 	switch {
@@ -436,4 +455,14 @@ func awaitAdditionWake(ctx context.Context, events <-chan store.Event, tick <-ch
 			}
 		}
 	}
+}
+
+// additionPolicyRequest is the policy request the wait decides again: the
+// server's for an enable, the call's tool's for a call.
+func (m *metaTools) additionPolicyRequest(enable additionEnable, template *v1alpha1.MCPServerTemplate, state policy.State) policy.Request {
+	if enable.tool != "" {
+		return m.policyRequest(enable.current, template, enable.tool, state)
+	}
+
+	return policy.Request{Identity: enable.current.identity, Template: template, State: state}
 }

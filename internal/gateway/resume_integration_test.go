@@ -140,7 +140,9 @@ func TestSessionResume(t *testing.T) {
 
 		decisions := fixture.auditRows(t, "tool.decision")
 		require.Len(t, decisions, 1)
-		assert.Equal(t, "not-enabled", decisions[0].Details["reason"], "the dropped server is no longer enabled")
+		assert.Equal(t, "rule", decisions[0].Details["step"], "the call is refused by the rule, so the server stays dropped")
+		assert.Equal(t, "Refused by rule toolgate-servers/block-github: GitHub is frozen.", decisions[0].Details["reason"])
+		assert.Equal(t, []string{"jira"}, fixture.enabledServers(t, "alice", "session-1"))
 		assert.Empty(t, fixture.auditRows(t, "tool.result"))
 		assert.Empty(t, upstream.started, "the call reached the upstream server")
 	})
