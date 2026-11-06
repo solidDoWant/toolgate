@@ -1,6 +1,6 @@
 {
   "name": "toolgate",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Connects Claude Code to a toolgate MCP gateway, which starts MCP servers on demand and checks every tool call against policy.",
   "author": {
     "name": "solidDoWant"
