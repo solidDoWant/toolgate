@@ -336,3 +336,55 @@ func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
 		"GET /ui/static/",
 	}, server.PublicRoutes())
 }
+
+func TestOTLPIngestRoutesAreNotTraced(t *testing.T) {
+	receiver := &testutil.OTLPReceiver{}
+	collector := httptest.NewServer(receiver)
+	t.Cleanup(collector.Close)
+
+	cfg := testConfig()
+	cfg.OTLPEndpoint = collector.URL
+
+	running := start(t, cfg, func(server *gateway.Server) {
+		server.Handle("GET /v1/traces", http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.WriteHeader(http.StatusOK)
+		}))
+	})
+
+	status, _ := get(t, running.url("/v1/traces"), nil)
+	require.Equal(t, http.StatusOK, status)
+
+	status, _ = get(t, running.url("/healthz"), nil)
+	require.Equal(t, http.StatusOK, status)
+
+	require.NoError(t, running.stop(t))
+
+	var healthz bool
+
+	for _, span := range receiver.Spans() {
+		assert.NotContains(t, span.GetName(), "/v1/", "an ingest request was traced")
+
+		if strings.Contains(span.GetName(), "/healthz") {
+			healthz = true
+		}
+	}
+
+	assert.True(t, healthz, "the /healthz request was not traced, so the check proves nothing")
+}
+
+func TestOTLPIngestRoutesAreAbsentByDefault(t *testing.T) {
+	running := start(t, testConfig(), nil)
+
+	for _, path := range []string{"/v1/traces", "/v1/metrics", "/v1/logs"} {
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, running.url(path), strings.NewReader("{}"))
+		require.NoError(t, err)
+		request.Header.Set("Content-Type", "application/json")
+
+		response, err := http.DefaultClient.Do(request)
+		require.NoError(t, err)
+
+		_ = response.Body.Close()
+
+		assert.Equal(t, http.StatusNotFound, response.StatusCode, path)
+	}
+}

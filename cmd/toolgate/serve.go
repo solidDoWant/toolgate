@@ -33,6 +33,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
+	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
 	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
@@ -156,6 +157,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		ApprovalURL:          approvalURL,
 		ApprovalTimeout:      time.Duration(cfg.ApprovalTimeout),
 	}), true))
+
+	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
 
 	if err := server.Listen(); err != nil {
 		logger.Error("gateway failed to start", "error", err)
@@ -341,6 +348,28 @@ func registerSecretsAPI(server *gateway.Server, cfg config.Config, authenticator
 	})
 
 	return broker, nil
+}
+
+// registerOTLPIngest serves the OTLP ingest routes behind authentication when
+// otlpIngest is on. Without it the routes are not registered, so they answer
+// 404.
+func registerOTLPIngest(server *gateway.Server, cfg config.Config, authenticator *lazyAuthenticator,
+	logger *slog.Logger,
+) error {
+	if !cfg.OTLPIngest {
+		return nil
+	}
+
+	otlp := ingest.New(ingest.Options{
+		Endpoint:     cfg.OTLPEndpoint,
+		AllowContent: cfg.TelemetryAllowContent,
+		Logger:       logger,
+	})
+	otlp.Register(server.Handle, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
+
+	return server.RegisterMetrics(otlp.Collectors()...)
 }
 
 // errNoSecretsKeyset is the render error for `${secret:…}` on a gateway
