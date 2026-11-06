@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -163,6 +164,7 @@ func (s *Server) Serve(ctx context.Context) error {
 		Handler: otelhttp.NewHandler(s.mux, "gateway",
 			otelhttp.WithTracerProvider(s.tracerProvider),
 			otelhttp.WithPropagators(telemetry.Propagator()),
+			otelhttp.WithFilter(traced),
 			otelhttp.WithSpanNameFormatter(func(_ string, request *http.Request) string {
 				return request.Method + " " + request.URL.Path
 			}),
@@ -222,6 +224,16 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 
 	return errors.Join(shutdownErrors...)
+}
+
+// OTLPIngestPathPrefix prefixes the OTLP ingest routes.
+const OTLPIngestPathPrefix = "/v1/"
+
+// traced reports whether the gateway traces request. The OTLP ingest routes
+// are not traced: each export would make gateway spans, which would be
+// exported in turn.
+func traced(request *http.Request) bool {
+	return !strings.HasPrefix(request.URL.Path, OTLPIngestPathPrefix)
 }
 
 // newMetricsRegistry returns the registry served at /metrics, holding the Go

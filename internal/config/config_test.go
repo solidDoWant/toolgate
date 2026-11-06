@@ -320,6 +320,17 @@ instanceLimit: -1
 			wantProblems: []string{`TOOLGATE_AUDIT_PAYLOADS: "maybe" is not true or false`},
 		},
 		{
+			name:         "OTLP ingest without an endpoint",
+			file:         "otlpIngest: true\n",
+			wantProblems: []string{"otlpEndpoint: required when otlpIngest is true"},
+		},
+		{
+			name:         "OTLP ingest with an endpoint",
+			file:         "otlpIngest: true\notlpEndpoint: http://collector:4318\n",
+			wantAbsent:   []string{"otlpEndpoint"},
+			wantProblems: []string{"databaseURL: required"},
+		},
+		{
 			name:         "missing file",
 			file:         "-",
 			wantProblems: []string{"configuration file"},
@@ -374,6 +385,22 @@ func TestLoadAuditPayloadSettings(t *testing.T) {
 	assert.Equal(t, "audit", cfg.AuditS3Bucket)
 	assert.Equal(t, "toolgate/", cfg.AuditS3Prefix)
 	assert.True(t, cfg.AuditS3PathStyle)
+}
+
+func TestLoadTelemetrySettings(t *testing.T) {
+	assert.False(t, config.Default().OTLPIngest, "ingest is off by default")
+	assert.False(t, config.Default().TelemetryAllowContent, "content is removed by default")
+
+	path := writeFile(t, "otlpIngest: true\notlpEndpoint: http://collector:4318\ntelemetry.allowContent: true\n")
+	cfg, err := config.Load(path, envFrom(map[string]string{
+		"TOOLGATE_DATABASE_URL":    validDatabaseURL,
+		"TOOLGATE_OIDC_ISSUER_URL": "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":   "toolgate",
+	}))
+	require.NoError(t, err)
+
+	assert.True(t, cfg.OTLPIngest)
+	assert.True(t, cfg.TelemetryAllowContent)
 }
 
 func TestWatchedNamespacesAndPodLabels(t *testing.T) {

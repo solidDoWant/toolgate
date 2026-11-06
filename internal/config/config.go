@@ -63,6 +63,27 @@ type Config struct {
 	// under this URL. If it is empty, the gateway does not export traces.
 	OTLPEndpoint string `json:"otlpEndpoint" env:"TOOLGATE_OTLP_ENDPOINT"`
 
+	// When it is `true`, the gateway accepts OpenTelemetry data from signed-in
+	// clients at `POST /v1/traces`, `/v1/metrics` and `/v1/logs`. It forwards
+	// the data to `otlpEndpoint`, so `otlpEndpoint` is required. The gateway
+	// removes the identity attributes that the client sent. These are the
+	// attributes whose name starts with `user_`, `enduser_` or `workspace_`
+	// after each character outside `[A-Za-z0-9]` changes to `_` and the name
+	// changes to lower case. Then the gateway sets `user.id`, `enduser.id`,
+	// `user.email` and `workspace.id` from the verified identity. A request
+	// body can be 4 MiB at most, and each replica handles 4 requests at the
+	// same time at most. When it is `false`, these paths answer 404.
+	OTLPIngest bool `json:"otlpIngest" env:"TOOLGATE_OTLP_INGEST"`
+
+	// When it is `true`, the gateway keeps prompt and tool content in the
+	// OpenTelemetry data that clients send to it. Prompts, tool inputs and
+	// tool output are examples of this content. Clients add it when users set
+	// `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` or
+	// `OTEL_LOG_TOOL_CONTENT`. When it is `false`, the gateway removes it.
+	// Set it to `true` only when the telemetry backend is allowed to hold user
+	// content. The gateway then sends that content to the backend.
+	TelemetryAllowContent bool `json:"telemetry.allowContent" env:"TOOLGATE_TELEMETRY_ALLOW_CONTENT"`
+
 	// The issuer URL of the OIDC identity provider (IdP) that users sign in
 	// with, such as `https://idp.example.com/realms/main`. Required. The
 	// gateway reads the IdP's discovery document and signing keys from it,
@@ -542,6 +563,10 @@ func (c Config) Validate() []error {
 		if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
 			problems = append(problems, fmt.Errorf("otlpEndpoint: %q is not an http or https URL", c.OTLPEndpoint))
 		}
+	}
+
+	if c.OTLPIngest && c.OTLPEndpoint == "" {
+		problems = append(problems, errors.New("otlpEndpoint: required when otlpIngest is true"))
 	}
 
 	if c.OIDCIssuerURL == "" {
