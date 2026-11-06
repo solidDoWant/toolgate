@@ -102,6 +102,10 @@ config:
   # and stops its per-session MCP servers, as a Go duration such as `2h`.
   sessionIdleTimeout: 2h
 
+  # -- How long the gateway keeps the list of enabled servers of an ended
+  # session, as a Go duration from `1h` to `168h` (7 days).
+  sessionResumeWindow: 24h
+
   limits:
     # -- Maximum number of MCP server instances that run for one user at the
     # same time. Per-session and per-user instances count for the user who

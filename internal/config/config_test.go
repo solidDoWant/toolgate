@@ -68,6 +68,7 @@ logLevel: debug
 		InstanceLimitPerUser:     20,
 		InstanceLimit:            200,
 		SessionIdleTimeout:       config.Duration(2 * time.Hour),
+		SessionResumeWindow:      config.Duration(24 * time.Hour),
 		ApprovalTimeout:          config.Duration(10 * time.Minute),
 		PublicURL:                "https://toolgate.example",
 		OIDCUIClientID:           "toolgate-ui",
@@ -209,6 +210,20 @@ leaseNamespace: toolgate
 sessionIdleTimeout: 0s
 `,
 			wantProblems: []string{"sessionIdleTimeout: must be greater than zero"},
+		},
+		{
+			name: "session resume window under 1 hour",
+			file: `
+sessionResumeWindow: 59m59s
+`,
+			wantProblems: []string{"sessionResumeWindow: must be from 1h to 168h"},
+		},
+		{
+			name: "session resume window over 7 days",
+			file: `
+sessionResumeWindow: 168h0m1s
+`,
+			wantProblems: []string{"sessionResumeWindow: must be from 1h to 168h"},
 		},
 		{
 			name: "approval timeout under 1 minute",
@@ -430,6 +445,24 @@ func TestApprovalTimeoutBounds(t *testing.T) {
 			parsed, err := time.ParseDuration(value)
 			require.NoError(t, err)
 			assert.Equal(t, config.Duration(parsed), cfg.ApprovalTimeout)
+		})
+	}
+}
+
+func TestSessionResumeWindowBounds(t *testing.T) {
+	for _, value := range []string{"1h", "168h"} {
+		t.Run(value, func(t *testing.T) {
+			cfg, err := config.Load("", envFrom(map[string]string{
+				"TOOLGATE_DATABASE_URL":          validDatabaseURL,
+				"TOOLGATE_SESSION_RESUME_WINDOW": value,
+				"TOOLGATE_OIDC_ISSUER_URL":       "https://idp.example",
+				"TOOLGATE_OIDC_AUDIENCE":         "toolgate",
+			}))
+			require.NoError(t, err)
+
+			parsed, err := time.ParseDuration(value)
+			require.NoError(t, err)
+			assert.Equal(t, config.Duration(parsed), cfg.SessionResumeWindow)
 		})
 	}
 }

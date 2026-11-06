@@ -370,7 +370,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.requireTornDown(t, stopped)
 	})
 
-	t.Run("[row 13] a per-session instance stops once its session's enabled rows are gone", func(t *testing.T) {
+	t.Run("[row 13] a per-session instance stops once its session has ended, and the enabled rows stay", func(t *testing.T) {
 		template := fixture.template("per-session", "per-session", 0, everyone)
 		session := fixture.session(t, "session-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -383,10 +383,15 @@ func TestStopDecisions(t *testing.T) {
 		fixture.pass(t)
 		fixture.requireRunning(t, instance)
 
-		// Ending the session deletes its enabled rows.
-		require.NoError(t, fixture.queries.DeleteSessionServers(t.Context(), session.ID))
+		// Ending the session keeps its enabled rows; the session isn't live.
+		_, err := fixture.pool.Exec(t.Context(), "UPDATE sessions SET ended_at = now() WHERE id = $1", session.ID)
+		require.NoError(t, err)
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+
+		enabled, err := fixture.queries.ListSessionServers(t.Context(), session.ID)
+		require.NoError(t, err)
+		require.Len(t, enabled, 1, "ending a session keeps its enabled rows")
 	})
 
 	t.Run("a per-user instance stops once no session of its owner enables it and it is idle", func(t *testing.T) {

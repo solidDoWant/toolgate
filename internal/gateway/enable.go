@@ -431,7 +431,8 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 }
 
 // lockSession takes the sessions row lock and restarts the session when it
-// ended since the request resolved it (docs/design/phase-1.md §2).
+// ended since the request resolved it (docs/design/phase-1.md §2), deleting
+// the enabled set the ended session kept.
 func (m *metaTools) lockSession(ctx context.Context, tx pgx.Tx, current requestContext) error {
 	queries := db.New(tx)
 
@@ -451,6 +452,10 @@ func (m *metaTools) lockSession(ctx context.Context, tx pgx.Tx, current requestC
 		Kind:        current.identity.Kind,
 	}); err != nil {
 		return fmt.Errorf("restart session: %w", err)
+	}
+
+	if err := queries.DeleteSessionServers(ctx, current.session.ID); err != nil {
+		return fmt.Errorf("delete enabled servers: %w", err)
 	}
 
 	return audit.NewRecorder(m.auditOutput, queries).Record(ctx, auditEvent(current, "session.start", "", nil))

@@ -115,3 +115,20 @@ SELECT s.id, s.session_id, s.workspace, s.attestation, s.created_at, s.last_seen
 FROM open_sessions s
 LEFT JOIN session_servers ss ON ss.session_pk = s.id
 ORDER BY s.last_seen_at DESC, s.id DESC, ss.template_ns, ss.template_name;
+
+-- name: ListForgettableSessions :many
+-- The sessions that ended longer ago than the resume window and still have
+-- enabled servers.
+SELECT s.* FROM sessions s
+WHERE s.ended_at IS NOT NULL AND s.ended_at < now() - @resume_window::interval
+  AND EXISTS (SELECT 1 FROM session_servers ss WHERE ss.session_pk = s.id)
+ORDER BY s.id;
+
+-- name: ForgetEndedSessionServers :many
+-- Deletes the enabled servers of the session while it is still ended longer
+-- ago than the resume window, and returns their names.
+DELETE FROM session_servers ss
+USING sessions s
+WHERE ss.session_pk = @id AND s.id = ss.session_pk
+  AND s.ended_at IS NOT NULL AND s.ended_at < now() - @resume_window::interval
+RETURNING ss.template_name;

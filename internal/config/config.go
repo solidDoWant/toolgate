@@ -199,12 +199,20 @@ type Config struct {
 	InstanceLimit int `json:"instanceLimit" env:"TOOLGATE_INSTANCE_LIMIT"`
 
 	// How long a session can go without requests before the gateway ends
-	// it. Ending a session disables all of its servers, so its per-session
-	// MCP servers stop. A later request with the same session ID starts the
-	// session again with no servers enabled. The gateway checks every 30
-	// seconds. Write it as a Go duration, such as `2h`. It must be more than
-	// zero. The chart sets it from `config.sessionIdleTimeout`.
+	// it. An ended session keeps its list of enabled servers for
+	// `sessionResumeWindow`, but its per-session MCP servers stop. A later
+	// request with the same session ID starts the session again with no
+	// servers enabled. The gateway checks every 30 seconds. Write it as a Go
+	// duration, such as `2h`. It must be more than zero. The chart sets it
+	// from `config.sessionIdleTimeout`.
 	SessionIdleTimeout Duration `json:"sessionIdleTimeout" env:"TOOLGATE_SESSION_IDLE_TIMEOUT"`
+
+	// How long the gateway keeps the list of enabled servers of a session
+	// that ended. After this time, the gateway deletes the list and records
+	// a `session.forget` audit event. The gateway checks every 30 seconds.
+	// Write it as a Go duration, such as `24h`. It must be from `1h` to
+	// `168h` (7 days). The chart sets it from `config.sessionResumeWindow`.
+	SessionResumeWindow Duration `json:"sessionResumeWindow" env:"TOOLGATE_SESSION_RESUME_WINDOW"`
 
 	// The URL where users reach the gateway in a browser, such as
 	// `https://toolgate.example.com`. Required when `oidcUIClientID` is set.
@@ -550,6 +558,7 @@ func Default() Config {
 		InstanceLimitPerUser:   20,
 		InstanceLimit:          200,
 		SessionIdleTimeout:     Duration(2 * time.Hour),
+		SessionResumeWindow:    Duration(24 * time.Hour),
 		ApprovalTimeout:        Duration(10 * time.Minute),
 	}
 }
@@ -925,6 +934,10 @@ func (c Config) Validate() []error {
 
 	if c.SessionIdleTimeout <= 0 {
 		problems = append(problems, errors.New("sessionIdleTimeout: must be greater than zero"))
+	}
+
+	if c.SessionResumeWindow < Duration(time.Hour) || c.SessionResumeWindow > Duration(7*24*time.Hour) {
+		problems = append(problems, errors.New("sessionResumeWindow: must be from 1h to 168h"))
 	}
 
 	if c.ApprovalTimeout < Duration(time.Minute) || c.ApprovalTimeout > Duration(time.Hour) {

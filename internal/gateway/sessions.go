@@ -106,8 +106,8 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity) (sess
 }
 
 // restart clears ended_at and takes this request's workspace and
-// attestation, in one transaction holding the row lock, and writes
-// session.start. The enabled set was emptied when the session ended.
+// attestation, in one transaction holding the row lock, deletes the enabled
+// set the ended session kept, and writes session.start.
 func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Identity) (db.Session, error) {
 	var session db.Session
 
@@ -134,6 +134,10 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 		})
 		if err != nil {
 			return fmt.Errorf("restart session: %w", err)
+		}
+
+		if err := queries.DeleteSessionServers(ctx, id); err != nil {
+			return fmt.Errorf("delete enabled servers: %w", err)
 		}
 
 		return s.recordStart(ctx, tx, identity)
