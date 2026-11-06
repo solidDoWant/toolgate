@@ -115,6 +115,12 @@ func TestRebuildToolSearchRows(t *testing.T) {
 	events, unsubscribe := listener.Subscribe()
 	defer unsubscribe()
 
+	select {
+	case <-listener.Listening():
+	case <-time.After(30 * time.Second):
+		t.Fatal("listener did not start listening")
+	}
+
 	require.NoError(t, queries.UpsertToolCatalog(ctx, db.UpsertToolCatalogParams{
 		TemplateUid: "uid-1", Generation: 1, TemplateNs: "catalog", TemplateName: "github", InstanceID: "i",
 		Tools: []byte(`[{"name":"createIssue","description":"Open an issue","inputSchema":{"type":"object","properties":{"title":{"description":"Heading"}}}},{"name":"secret_tool"}]`),
