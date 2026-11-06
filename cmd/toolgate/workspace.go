@@ -296,8 +296,8 @@ func printWorkspaces(ctx context.Context, env workspaceEnv, access gatewayAccess
 		return err
 	}
 
-	_, _ = fmt.Fprintf(env.stdout, "Default for verified workspaces: %s\n", list.Defaults.Verified)
-	_, _ = fmt.Fprintf(env.stdout, "Default for unverified sessions: %s\n", list.Defaults.Unverified)
+	_, _ = fmt.Fprintf(env.stdout, "Default for verified workspaces: %s\n", terminalSafe(list.Defaults.Verified))
+	_, _ = fmt.Fprintf(env.stdout, "Default for unverified sessions: %s\n", terminalSafe(list.Defaults.Unverified))
 
 	if len(list.Workspaces) == 0 {
 		_, _ = fmt.Fprintln(env.stdout, "\nYou have no workspace lists.")
@@ -313,10 +313,10 @@ func printWorkspaces(ctx context.Context, env workspaceEnv, access gatewayAccess
 	for _, entry := range list.Workspaces {
 		servers := "-"
 		if len(entry.Servers) > 0 {
-			servers = strings.Join(entry.Servers, ",")
+			servers = terminalSafe(strings.Join(entry.Servers, ","))
 		}
 
-		_, _ = fmt.Fprintf(table, "%s\t%s\t%s\n", entry.Workspace, servers, entry.UpdatedAt.UTC().Format(time.RFC3339))
+		_, _ = fmt.Fprintf(table, "%s\t%s\t%s\n", terminalSafe(entry.Workspace), servers, entry.UpdatedAt.UTC().Format(time.RFC3339))
 	}
 
 	if err := table.Flush(); err != nil {
