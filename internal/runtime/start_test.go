@@ -58,6 +58,9 @@ type memoryStore struct {
 	healthCheck []byte
 	// secretsRecorded says RecordSecretsUsed was called.
 	secretsRecorded bool
+	// unhealthy and unhealthyReason are what SetHealth recorded.
+	unhealthy       bool
+	unhealthyReason string
 }
 
 func (m *memoryStore) Session(_ context.Context, id int64) (db.Session, error) {
@@ -118,6 +121,27 @@ func (m *memoryStore) MarkFailed(_ context.Context, _, from, reason string) (boo
 	m.writes++
 
 	return true, nil
+}
+
+func (m *memoryStore) SetHealth(_ context.Context, _ db.Instance, healthy bool, reason string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.status != "ready" || m.unhealthy == !healthy {
+		return false, nil
+	}
+
+	m.unhealthy, m.unhealthyReason = !healthy, reason
+	m.writes++
+
+	return true, nil
+}
+
+func (m *memoryStore) health() (bool, string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.unhealthy, m.unhealthyReason
 }
 
 func (m *memoryStore) snapshot() (string, string, []byte, int) {
@@ -879,15 +903,98 @@ func TestStarterReadyConditionRule(t *testing.T) {
 	}
 }
 
-func TestStarterReadyFailsOnReadyConditionRule(t *testing.T) {
-	release := helmRelease(2, atGeneration(condition("Ready", "False", "UpgradeFailed", "Helm upgrade failed", time.Minute), 2))
-	fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "ready", readyPod(), release)
+func TestStarterReadyObjectHealth(t *testing.T) {
+	const message = "failed to get digest for tag 9.9.9: not found"
 
-	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+	customCheck := []byte(`{"http":{"service":"mcp","port":8080,"path":"/healthz"}}`)
 
-	status, reason, _, _ := fixture.store.snapshot()
-	assert.Equal(t, "failed", status)
-	assert.Equal(t, "HelmRelease server failed: Helm upgrade failed", reason)
+	// notReadyPod is a running pod whose Ready condition has been False for
+	// an hour; a pod's conditions carry no observedGeneration.
+	notReadyPod := readyPod()
+	notReadyPod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodReady, Status: corev1.ConditionFalse, Reason: "ContainersNotReady",
+		LastTransitionTime: metav1.NewTime(time.Date(2026, 11, 5, 11, 0, 0, 0, time.UTC)),
+	}}
+
+	tests := []struct {
+		name        string
+		pod         *corev1.Pod
+		release     *unstructured.Unstructured
+		unhealthy   bool
+		healthCheck []byte
+		// wantUnhealthy and wantReason are the health after the step.
+		wantUnhealthy bool
+		wantReason    string
+	}{
+		{
+			name:          "Ready False for exactly 60 s at the condition's generation marks it unhealthy with the object's message",
+			pod:           readyPod(),
+			release:       helmRelease(2, atGeneration(condition("Ready", "False", "UpgradeFailed", message, 60*time.Second), 2)),
+			wantUnhealthy: true,
+			wantReason:    "HelmRelease server failed: " + message,
+		},
+		{
+			name:    "Ready False for 59 s leaves it healthy",
+			pod:     readyPod(),
+			release: helmRelease(2, atGeneration(condition("Ready", "False", "UpgradeFailed", message, 59*time.Second), 2)),
+		},
+		{
+			name:    "Ready False at an older condition generation leaves it healthy",
+			pod:     readyPod(),
+			release: helmRelease(2, atGeneration(condition("Ready", "False", "UpgradeFailed", message, time.Hour), 1)),
+		},
+		{
+			name:    "a pod without observedGeneration is judged by kstatus alone: not ready for an hour is only in progress",
+			pod:     notReadyPod,
+			release: helmRelease(2, atGeneration(condition("Ready", "True", "UpgradeSucceeded", "upgraded", time.Hour), 2)),
+		},
+		{
+			name: "a Stalled object marks it unhealthy by kstatus",
+			pod:  readyPod(),
+			release: helmRelease(2, condition("Stalled", "True", "RetriesExceeded", "out of retries", 0),
+				condition("Ready", "Unknown", "Progressing", "retrying", 0)),
+			wantUnhealthy: true,
+			wantReason:    "HelmRelease server failed: out of retries",
+		},
+		{
+			name:      "ready again: an unhealthy instance without a custom check becomes healthy",
+			pod:       readyPod(),
+			release:   helmRelease(2, atGeneration(condition("Ready", "True", "UpgradeSucceeded", "upgraded", time.Second), 2)),
+			unhealthy: true,
+		},
+		{
+			name:          "ready again: an unhealthy instance with a custom check is left to its checker",
+			pod:           readyPod(),
+			release:       helmRelease(2, atGeneration(condition("Ready", "True", "UpgradeSucceeded", "upgraded", time.Second), 2)),
+			unhealthy:     true,
+			healthCheck:   customCheck,
+			wantUnhealthy: true,
+			wantReason:    "GET http://mcp:8080/healthz answered 503, expected 200",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "ready", test.pod, test.release)
+			fixture.instance.HealthCheck = test.healthCheck
+
+			if test.unhealthy {
+				fixture.store.unhealthy = true
+				fixture.store.unhealthyReason = "GET http://mcp:8080/healthz answered 503, expected 200"
+				fixture.instance.UnhealthySince = pgtype.Timestamptz{Time: fixture.now.Add(-time.Minute), Valid: true}
+				fixture.instance.UnhealthyReason = fixture.store.unhealthyReason
+			}
+
+			require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+			status, _, _, _ := fixture.store.snapshot()
+			assert.Equal(t, "ready", status, "the instance is not failed")
+
+			unhealthy, reason := fixture.store.health()
+			assert.Equal(t, test.wantUnhealthy, unhealthy)
+			assert.Equal(t, test.wantReason, reason)
+		})
+	}
 }
 
 func TestStarterTimeoutReasonIsTheNotReadyObjectsMessage(t *testing.T) {

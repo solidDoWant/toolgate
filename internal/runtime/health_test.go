@@ -429,13 +429,16 @@ func TestStarterReadyKstatusFailure(t *testing.T) {
 		},
 	}
 
-	t.Run("a failed object fails the instance", func(t *testing.T) {
+	t.Run("a failed object marks the instance unhealthy", func(t *testing.T) {
 		fixture := newStarterFixture(t, testTemplate(), "ready", readyPod(), failedDeployment)
 
 		require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
 
-		status, reason, _, _ := fixture.store.snapshot()
-		assert.Equal(t, "failed", status)
+		status, _, _, _ := fixture.store.snapshot()
+		assert.Equal(t, "ready", status)
+
+		unhealthy, reason := fixture.store.health()
+		assert.True(t, unhealthy)
 		assert.Contains(t, reason, "Deployment server failed")
 	})
 

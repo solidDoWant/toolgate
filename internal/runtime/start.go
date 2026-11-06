@@ -100,7 +100,8 @@ var statusKinds = []schema.GroupVersionKind{
 }
 
 // Starter drives instances from pending through starting to ready or
-// failed, and fails a ready instance whose objects kstatus reports failed.
+// failed, and marks a ready instance unhealthy while one of its objects has
+// failed.
 type Starter struct {
 	Store StartStore
 	// Client applies, reads and lists instance objects.
@@ -281,9 +282,12 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 	return nil
 }
 
-// checkReady fails a ready instance when kstatus reports one of its
-// objects failed. An object that is only in progress, such as a restarting
-// pod, is left to the health checks.
+// checkReady marks a ready instance unhealthy when one of its objects has
+// failed: kstatus reports it failed, or its Ready condition has been False
+// for readyFailureHold at its generation. The Repairer then repairs it. An
+// object that is only in progress, such as a restarting pod, is left to the
+// health checks. When no object has failed, an unhealthy instance without a
+// custom health check becomes healthy again; with one, its checker decides.
 func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
 	template, found := s.template(instance)
 	if !found {
@@ -295,8 +299,21 @@ func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
 		return err
 	}
 
-	if reason != "" {
-		return s.fail(ctx, instance, StatusReady, reason)
+	unhealthy := instance.UnhealthySince.Valid
+
+	switch {
+	case reason != "" && !unhealthy:
+		_, err = s.Store.SetHealth(ctx, instance, false, reason)
+	case reason == "" && unhealthy:
+		if _, custom, _ := decodeHealthCheck(instance.HealthCheck); custom {
+			return nil
+		}
+
+		_, err = s.Store.SetHealth(ctx, instance, true, "")
+	}
+
+	if err != nil {
+		return fmt.Errorf("instance %s: %w", instance.ID, err)
 	}
 
 	return nil
