@@ -14,6 +14,16 @@ Upgrade note: After upgrading with the web UI on, every user sees no servers unt
 
 A user who has no defaults gets none for both defaults. Tell your users before you upgrade.
 
+A user can also change their lists and defaults through the gateway API, which the CLI uses. The API applies a change that removes access at once. A change that gives more access does not apply at once. The gateway makes an access request instead (a pending change that the user must approve in the browser, with a fresh sign-in). The request expires after `approvalTimeout`, as an approval does. Without the web UI, `GET /api/v1/workspaces` and `POST /api/v1/workspaces/changes` answer 409. `docs/dev/openapi.yaml` describes these routes.
+
+These limits apply to each user:
+
+- At most 200 workspace lists.
+- At most 64 servers on one list.
+- At most 100 pending access requests. This count is separate from the count of pending approvals.
+
+The gateway deletes access requests 7 days after they are approved, denied or expired. The audit log keeps their history.
+
 ## Make the OIDC client
 
 The web UI uses its own OIDC client. It is not the client of `toolgate login`, because it uses the authorization code grant with a redirect URI.

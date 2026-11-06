@@ -37,6 +37,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
 	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/ui"
+	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
 
 // serve runs the gateway until SIGTERM or SIGINT and returns the exit code.
@@ -153,6 +154,15 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			return strings.TrimSuffix(cfg.PublicURL, "/") + "/ui/approvals/" + id
 		}
 	}
+
+	(&workspacesapi.Handler{
+		Workspaces:  gateway.NewWorkspaces(server.Database(), templates, stdout, time.Duration(cfg.ApprovalTimeout)),
+		Enabled:     cfg.UIEnabled(),
+		ApprovalURL: approvalURL,
+		Log:         logger,
+	}).Register(server, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
 
 	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
 		Database:      server.Database(),

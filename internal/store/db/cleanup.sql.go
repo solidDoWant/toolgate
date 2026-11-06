@@ -22,6 +22,20 @@ func (q *Queries) DeleteInvalidUISessions(ctx context.Context) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const deleteStaleAccessRequests = `-- name: DeleteStaleAccessRequests :execrows
+DELETE FROM access_requests WHERE LEAST(decided_at, expires_at) <= now() - interval '7 days'
+`
+
+// Deletes access requests that stopped being live (decided or expired) more
+// than 7 days ago. LEAST ignores a null decided_at.
+func (q *Queries) DeleteStaleAccessRequests(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteStaleAccessRequests)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deleteStaleApprovals = `-- name: DeleteStaleApprovals :execrows
 DELETE FROM approvals
 WHERE LEAST(CASE WHEN status = 'denied' THEN decided_at END, used_at, expires_at) <= now() - interval '7 days'

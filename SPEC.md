@@ -308,6 +308,7 @@ PostgreSQL, accessed with `pgx/v5`, forward-only migrations embedded with `press
 - `user_secrets`: principal, name, ciphertext, key ID, timestamps.
 - `audit_events`: partitioned by month. The function `toolgate_ensure_audit_partitions()` (`SECURITY DEFINER`, owned by the migrating role) creates the current and next month's partitions; the gateway calls it at start, and the leader when it gets the Lease and every 24 h (`docs/design/phase-3.md` §7).
 - Phase 2: `grants`, `approvals`, `temporary_blocks`, `ui_sessions`, `ui_logins`, and three new `instances` columns for restarts and resolver expiry. `docs/design/phase-2.md` §2 gives their rules and row limits.
+- Phase 3: `sessions.kind`, `user_scopes` (each user's defaults), `workspace_lists` and `workspace_list_servers` (a user's server list for each verified workspace), `session_additions` (servers added to one session), and `access_requests` (a user's pending requests to add a server or widen a list, with the approvals' statuses, expiry and cleanup). `docs/design/phase-3.md` §10 gives their rules and row limits.
 
 Concurrency: instance creation for a template and scope key is serialized with a transaction-level advisory lock, so two sessions enabling a per-user server at once share one instance. `docs/design/phase-1.md` gives the locks and the interaction rules.
 

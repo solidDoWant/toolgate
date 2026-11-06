@@ -11,6 +11,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/sessionsapi"
 	"github.com/solidDoWant/toolgate/internal/settings"
+	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
 
 // Operations is every `/api/v1/` operation, in document order.
@@ -21,6 +22,7 @@ func Operations() []apidoc.Operation {
 	operations = append(operations, settings.Operations...)
 	operations = append(operations, sessionsapi.Operations...)
 	operations = append(operations, audittail.Operations...)
+	operations = append(operations, workspacesapi.Operations...)
 
 	return operations
 }

@@ -9,6 +9,7 @@
 ### Workspace scoping
 
 - When the web UI is on, the policy has a new step, workspace scope, after the blocks and before approval. A signed-in user's session can use only the servers on its effective list. The list comes from the user's list for a verified workspace, or from the user's defaults. The step only refuses. Service accounts and SPIFFE workloads skip it, and it is off when the web UI is off. See `docs/user/README.md` and `docs/admin/web-ui.md`.
+- The gateway API has `GET /api/v1/workspaces`, `POST /api/v1/workspaces/changes` and `GET /api/v1/access-requests/{id}`. A change that removes access applies at once. A change that gives more access becomes an access request that the user approves in the browser. See `docs/admin/web-ui.md`.
 
 ## 0.2.0
 

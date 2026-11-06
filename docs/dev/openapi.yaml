@@ -3,6 +3,41 @@ info:
   title: toolgate gateway API
   version: v1
 paths:
+  /api/v1/access-requests/{id}:
+    get:
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          pattern: ^[0-9a-f]{32}$
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiAccessRequest'
+          description: OK
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "404":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Not Found
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: Read one of the caller's access requests
   /api/v1/audit/tail:
     get:
       parameters:
@@ -165,6 +200,98 @@ paths:
                 type: string
           description: Internal Server Error
       summary: Get the merged Claude Code settings that match the caller
+  /api/v1/workspaces:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiList'
+          description: OK
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "409":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Conflict
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: List the caller's workspace defaults and lists
+  /api/v1/workspaces/changes:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspacesapiChange'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiApplied'
+          description: OK
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiRequested'
+          description: Accepted
+        "400":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Bad Request
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Not Found
+        "409":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Conflict
+        "413":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Request Entity Too Large
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: Change the caller's workspace lists or defaults; a widening change
+        becomes an access request
 components:
   schemas:
     AudittailEvent:
@@ -250,6 +377,97 @@ components:
           - array
           - "null"
         session:
+          type: string
+        workspace:
+          type: string
+      type: object
+    WorkspacesapiAccessRequest:
+      properties:
+        expiresAt:
+          format: date-time
+          type: string
+        id:
+          type: string
+        status:
+          enum:
+          - pending
+          - approved
+          - denied
+          - expired
+          type: string
+      type: object
+    WorkspacesapiApplied:
+      properties:
+        applied:
+          type: boolean
+      type: object
+    WorkspacesapiChange:
+      properties:
+        action:
+          enum:
+          - allow
+          - deny
+          - clear
+          - defaults
+          type: string
+        servers:
+          items:
+            type: string
+          type: array
+        session:
+          type: string
+        unverified:
+          enum:
+          - none
+          - all
+          type: string
+        verified:
+          enum:
+          - none
+          - all
+          type: string
+        workspace:
+          type: string
+      type: object
+    WorkspacesapiDefaults:
+      properties:
+        unverified:
+          type: string
+        verified:
+          type: string
+      type: object
+    WorkspacesapiList:
+      properties:
+        current:
+          type:
+          - "null"
+          - string
+        defaults:
+          $ref: '#/components/schemas/WorkspacesapiDefaults'
+        workspaces:
+          items:
+            $ref: '#/components/schemas/WorkspacesapiWorkspace'
+          type:
+          - array
+          - "null"
+      type: object
+    WorkspacesapiRequested:
+      properties:
+        request:
+          type: string
+        url:
+          type: string
+      type: object
+    WorkspacesapiWorkspace:
+      properties:
+        servers:
+          items:
+            type: string
+          type:
+          - array
+          - "null"
+        updatedAt:
+          format: date-time
           type: string
         workspace:
           type: string
