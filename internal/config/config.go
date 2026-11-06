@@ -49,6 +49,16 @@ type Config struct {
 	// 503 while the gateway cannot connect to this database.
 	DatabaseURL string `json:"databaseURL" env:"TOOLGATE_DATABASE_URL"`
 
+	// Whether the gateway creates and updates its tables when it starts. If
+	// it is `false`, the gateway does not change the schema. Before it opens
+	// its listeners, it checks that the database schema is at the version it
+	// needs. If the schema is older, or has no tables yet, the gateway logs a
+	// message and exits with code 1. Run `toolgate migrate`, or let the
+	// chart's migration Job run, before you start the gateway. Use `false`
+	// when the gateway's database user has data rights only. A schema that is
+	// newer than the gateway (after a rollback) is only logged.
+	MigrateOnStart bool `json:"migrateOnStart" env:"TOOLGATE_MIGRATE_ON_START"`
+
 	// After SIGTERM, the gateway stops accepting requests and waits this long
 	// for open requests to finish. Then it stops. Write it as a Go duration,
 	// such as `30s`.
@@ -347,6 +357,7 @@ func Default() Config {
 		MetricsListenAddress:   ":9090",
 		ShutdownTimeout:        Duration(30 * time.Second),
 		LogLevel:               "info",
+		MigrateOnStart:         true,
 		OIDCEmailClaim:         "email",
 		OIDCEmailVerifiedClaim: "email_verified",
 		OIDCGroupsClaim:        "groups",
@@ -417,20 +428,67 @@ func Load(path string, getenv func(string) string) (Config, error) {
 	return cfg, nil
 }
 
-func loadFile(path string, cfg *Config) error {
+// LoadDatabaseURL reads only databaseURL, from the YAML file at path (when
+// path is not empty) and then from TOOLGATE_DATABASE_URL. It ignores every
+// other setting, so `toolgate migrate` needs no other configuration.
+func LoadDatabaseURL(path string, getenv func(string) string) (string, error) {
+	var file struct {
+		DatabaseURL string `json:"databaseURL"`
+	}
+
+	if path != "" {
+		data, err := readFile(path)
+		if err != nil {
+			return "", err
+		}
+
+		if err := yaml.Unmarshal(data, &file); err != nil {
+			return "", fmt.Errorf("configuration file %s: %w", path, err)
+		}
+	}
+
+	databaseURL := file.DatabaseURL
+	if value := getenv("TOOLGATE_DATABASE_URL"); value != "" {
+		databaseURL = value
+	}
+
+	if databaseURL == "" {
+		return "", errors.New("databaseURL: required")
+	}
+
+	if _, err := pgxpool.ParseConfig(databaseURL); err != nil {
+		// The parse error can echo the connection string, which may hold a
+		// password, so it is not included.
+		return "", errors.New("databaseURL: not a valid PostgreSQL connection string")
+	}
+
+	return databaseURL, nil
+}
+
+// readFile reads the configuration file, bounded by maxFileSize.
+func readFile(path string) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("configuration file: %w", err)
+		return nil, fmt.Errorf("configuration file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
 	if err != nil {
-		return fmt.Errorf("configuration file %s: %w", path, err)
+		return nil, fmt.Errorf("configuration file %s: %w", path, err)
 	}
 
 	if len(data) > maxFileSize {
-		return fmt.Errorf("configuration file %s: larger than %d bytes", path, maxFileSize)
+		return nil, fmt.Errorf("configuration file %s: larger than %d bytes", path, maxFileSize)
+	}
+
+	return data, nil
+}
+
+func loadFile(path string, cfg *Config) error {
+	data, err := readFile(path)
+	if err != nil {
+		return err
 	}
 
 	if err := yaml.UnmarshalStrict(data, cfg); err != nil {
