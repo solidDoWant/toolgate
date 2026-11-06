@@ -1,12 +1,24 @@
-# Phase 4 acceptance checklist: tool search, curation, MCP revisions and connectors
+# Phase 4 acceptance checklist: tool search, lazy start, delegated access, curation, MCP revisions and connectors
 
 Same rules as phase 1. The tag is `[AC-4-nn]`. This checklist is at feature level. The owner reviews it again, with the phase 4 design, before phase 4 starts.
 
 ## Tool search
 
-- **AC-4-01 Search instead of listing.** With tool search on for a session, its `tools/list` offers the meta tools and a `toolgate_find_tools` tool instead of every enabled server's tools. Given a task description, `toolgate_find_tools` returns the most relevant tools from the servers this session may use, with their names and input schemas. Calling a returned tool works as a normal proxied call, with the same policy and audit.
-- **AC-4-02 Search respects access.** `toolgate_find_tools` never returns a tool the session's policy refuses: blocked tools, tools outside the workspace's access list, or tools needing an environment the session lacks. It can return tools of servers the session hasn't enabled yet, marked as needing an enable or an approval.
+- **AC-4-01 Search and call, no enable needed.** With tool search on for a session, its `tools/list` offers the meta tools and a `toolgate_find_tools` tool instead of every server's tools. Given a task description, `toolgate_find_tools` returns the most relevant tools from every server the session may use (by policy, workspace list and defaults), with their names and input schemas. Calling a returned tool works as a normal proxied call, with the same policy and audit, without a separate enable: the first call records `server.enable` (reason `first-call`).
+- **AC-4-02 Search respects access.** `toolgate_find_tools` never returns a tool the session's policy refuses: blocked tools, tools outside the workspace's access list, or tools needing an environment the session lacks. In a verified workspace it may return tools of servers outside the list, marked as needing approval. The first call to one then asks the user, as phase 3's session additions do.
 - **AC-4-03 Search quality.** On a fixed test set of task descriptions and expected tools across at least 50 tools, the expected tool is in the top 5 results for at least 90 percent of the tasks.
+
+## Lazy start
+
+- **AC-4-12 Tool catalog.** toolgate remembers each template generation's tool list from the last instance that became ready, or from tools the template declares. Tool search and the session's tool list use it while no instance runs. When a running instance's tools differ, sessions get the real list with `list_changed`.
+- **AC-4-13 Start on first call.** A server whose tools are in the catalog doesn't start until a call needs it. That call waits while the instance starts, with progress notifications, up to `startTimeout`, then is forwarded. A start failure fails the call with its reason. A template can choose `start: onEnable` to start as soon as a session may use the server.
+
+## Delegated access
+
+- **AC-4-14 Management sessions.** A user marks some of their verified workspaces as management workspaces. Only sessions there get `toolgate_list_scopes`, `toolgate_allow` and `toolgate_deny`. Other sessions, unverified sessions and other users' sessions never get them.
+- **AC-4-15 Allow needs the user.** `toolgate_allow`, for a workspace or a session of the same user and a set of servers or tools, creates a request and returns a link (and a URL elicitation where supported). Nothing changes until the user approves it in the browser with a step-up. A session-scoped allow ends with that session.
+- **AC-4-16 Deny is immediate.** `toolgate_deny`, for a workspace or session of the same user and a set of servers or tools, takes effect at once. The target's affected tools are withdrawn within 5 seconds. Tool-level denies work inside an allowed server.
+- **AC-4-17 Own scope.** In any session, a user's agent can drop a server from its own session at once (`toolgate_disable_server`) and, in a verified workspace, ask for a server outside the list, as in AC-4-02.
 
 ## Tool curation
 
