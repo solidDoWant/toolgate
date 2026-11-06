@@ -487,6 +487,10 @@ func TestSessions(t *testing.T) {
 		// The kind written earlier is replaced by the restarting identity's.
 		_, err := fixture.pool.Exec(t.Context(), "UPDATE sessions SET ended_at = now(), kind = 'spiffe' WHERE id = $1", row.ID)
 		require.NoError(t, err)
+		// An ended session keeps its enabled set until it restarts.
+		_, err = fixture.pool.Exec(t.Context(),
+			"INSERT INTO session_servers (session_pk, template_ns, template_name) VALUES ($1, 'tools', 'kept')", row.ID)
+		require.NoError(t, err)
 
 		second := alice()
 		second.workspace = "repo-b"
@@ -497,6 +501,11 @@ func TestSessions(t *testing.T) {
 		assert.False(t, restarted.EndedAt.Valid)
 		assert.Equal(t, "claimed/repo-b", restarted.Workspace)
 		assert.Equal(t, auth.KindUser, restarted.Kind, "a restart records the restarting identity's kind")
+
+		var enabled int
+		require.NoError(t, fixture.pool.QueryRow(context.WithoutCancel(t.Context()),
+			"SELECT count(*) FROM session_servers WHERE session_pk = $1", row.ID).Scan(&enabled))
+		assert.Zero(t, enabled, "a restart starts with an empty enabled set")
 
 		var starts int
 		require.NoError(t, fixture.pool.QueryRow(context.WithoutCancel(t.Context()),

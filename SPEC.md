@@ -104,7 +104,7 @@ Every authenticated request has an **identity**:
 
 **A call** is: identity → policy (§10) → audit `decision` event → forward to the instance → audit `result` event. An upstream error is returned to the client as a tool error with the upstream message. A policy refusal is a tool error that names the rule that refused it, so the model and the user can see why.
 
-**Sessions.** A session is the pair (principal, session ID). It's created by the first request carrying them. Its enabled set survives reconnects and gateway restarts. It ends after `sessionIdleTimeout` (default 2 h) without requests, and then its per-session instances stop. Another principal using the same session ID gets a different session.
+**Sessions.** A session is the pair (principal, session ID). It's created by the first request carrying them. Its enabled set survives reconnects and gateway restarts. It ends after `sessionIdleTimeout` (default 2 h) without requests, and then its per-session instances stop. An ended session keeps its enabled set for `sessionResumeWindow` (default 24 h, 1 h to 7 days); after that the reconciler deletes the set and writes `session.forget`. Another principal using the same session ID gets a different session.
 
 ## 8. Custom resources
 
@@ -228,7 +228,7 @@ In globs, `*` matches any run of characters, including `/`. A template that does
 ## 12. Audit and telemetry
 
 **Audit events** are JSON lines on stdout (`log/slog`) and rows in PostgreSQL:
-- `session.start`, `session.end`, `auth.refuse` (rate-limited);
+- `session.start`, `session.end` and `session.forget` (both with the enabled set), `auth.refuse` (rate-limited);
 - `server.enable`, `server.disable`, `instance.start`, `instance.ready`, `instance.fail`, `instance.stop`;
 - `tool.decision` (allow or refuse, with the deciding rule), `tool.result` (success or error, duration, sizes);
 - `rule.change`, `secret.set`, `secret.delete`;

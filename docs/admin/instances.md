@@ -8,12 +8,14 @@ An instance is one running copy of an MCP server from an `MCPServerTemplate`. Th
 
 The gateway replica that holds the leader Lease checks every instance every 30 seconds, and after each change in the database. It stops an instance when one of these conditions is true:
 
-- A `per-session` instance: its session no longer has the server enabled. A session that ends loses all its enabled servers. A session ends when it has no requests for `sessionIdleTimeout` (2 hours by default, chart value `config.sessionIdleTimeout`).
+- A `per-session` instance: its session no longer has the server enabled, or its session ended. A session ends when it has no requests for `sessionIdleTimeout` (2 hours by default, chart value `config.sessionIdleTimeout`).
 - A `per-user` instance: no live session of its owner has the server enabled, and it had no calls for `idleStop`. If it had no calls at all, the time counts from when it became ready.
 - A `shared` instance: no live session has the server enabled, and it had no calls for `idleStop`. If `idleStop` is `0` or not set, a shared instance does not stop for this reason.
 - The template was deleted, or deleted and created again.
 - The `scope` of the template changed.
 - The `access` of the template no longer includes the owner. toolgate uses the email and groups from the most recent request of the owner.
+
+An ended session keeps its list of enabled servers for `sessionResumeWindow` (24 hours by default, from 1 hour to 7 days, chart value `config.sessionResumeWindow`). Its `per-session` instances stop and do not run during that time. After that time, the gateway deletes the list and records a `session.forget` audit event. A later request with the same session ID starts the session again with no servers enabled.
 
 An invalid template does not stop its instances. They continue on the last valid generation.
 

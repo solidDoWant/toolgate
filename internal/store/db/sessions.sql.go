@@ -184,6 +184,41 @@ func (q *Queries) EndIdleSession(ctx context.Context, arg EndIdleSessionParams) 
 	return i, err
 }
 
+const forgetEndedSessionServers = `-- name: ForgetEndedSessionServers :many
+DELETE FROM session_servers ss
+USING sessions s
+WHERE ss.session_pk = $1 AND s.id = ss.session_pk
+  AND s.ended_at IS NOT NULL AND s.ended_at < now() - $2::interval
+RETURNING ss.template_name
+`
+
+type ForgetEndedSessionServersParams struct {
+	ID           int64
+	ResumeWindow pgtype.Interval
+}
+
+// Deletes the enabled servers of the session while it is still ended longer
+// ago than the resume window, and returns their names.
+func (q *Queries) ForgetEndedSessionServers(ctx context.Context, arg ForgetEndedSessionServersParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, forgetEndedSessionServers, arg.ID, arg.ResumeWindow)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var template_name string
+		if err := rows.Scan(&template_name); err != nil {
+			return nil, err
+		}
+		items = append(items, template_name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSession = `-- name: GetSession :one
 SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind FROM sessions WHERE principal = $1 AND session_id = $2
 `
@@ -262,6 +297,48 @@ func (q *Queries) LatestSessionOfPrincipal(ctx context.Context, principal string
 		&i.Kind,
 	)
 	return i, err
+}
+
+const listForgettableSessions = `-- name: ListForgettableSessions :many
+SELECT s.id, s.principal, s.session_id, s.workspace, s.attestation, s.email, s.name, s.groups, s.created_at, s.last_seen_at, s.ended_at, s.kind FROM sessions s
+WHERE s.ended_at IS NOT NULL AND s.ended_at < now() - $1::interval
+  AND EXISTS (SELECT 1 FROM session_servers ss WHERE ss.session_pk = s.id)
+ORDER BY s.id
+`
+
+// The sessions that ended longer ago than the resume window and still have
+// enabled servers.
+func (q *Queries) ListForgettableSessions(ctx context.Context, resumeWindow pgtype.Interval) ([]Session, error) {
+	rows, err := q.db.Query(ctx, listForgettableSessions, resumeWindow)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.SessionID,
+			&i.Workspace,
+			&i.Attestation,
+			&i.Email,
+			&i.Name,
+			&i.Groups,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.EndedAt,
+			&i.Kind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listIdleSessions = `-- name: ListIdleSessions :many

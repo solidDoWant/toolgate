@@ -188,10 +188,11 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// Idle sessions end before the instances are judged, so their
 	// per-session instances stop in the same pass.
 	sessionEnder := &runtime.SessionEnder{
-		Pool:        pool,
-		IdleTimeout: time.Duration(cfg.SessionIdleTimeout),
-		AuditOutput: options.auditOutput,
-		Log:         logger,
+		Pool:         pool,
+		IdleTimeout:  time.Duration(cfg.SessionIdleTimeout),
+		ResumeWindow: time.Duration(cfg.SessionResumeWindow),
+		AuditOutput:  options.auditOutput,
+		Log:          logger,
 	}
 
 	approvalExpirer := &runtime.ApprovalExpirer{Pool: pool, AuditOutput: options.auditOutput}
