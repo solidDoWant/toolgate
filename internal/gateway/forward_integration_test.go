@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -29,6 +30,18 @@ type upstreamServer struct {
 	started chan struct{}
 	// release lets every slow call return.
 	release chan struct{}
+
+	mu sync.Mutex
+	// called counts the tool calls received, by tool name.
+	called map[string]int
+}
+
+// callCount returns how many calls of the tool the upstream received.
+func (u *upstreamServer) callCount(tool string) int {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	return u.called[tool]
 }
 
 // startUpstream serves the tools echo, sized, slow and fails over
@@ -37,10 +50,22 @@ type upstreamServer struct {
 func (f *mcpFixture) startUpstream(t *testing.T, server string) *upstreamServer {
 	t.Helper()
 
-	upstream := &upstreamServer{started: make(chan struct{}, 8), release: make(chan struct{})}
+	upstream := &upstreamServer{started: make(chan struct{}, 8), release: make(chan struct{}), called: map[string]int{}}
 
 	mcpServer := mcp.NewServer(&mcp.Implementation{Name: "upstream", Version: "0"}, nil)
 	schema := map[string]any{"type": "object"}
+
+	mcpServer.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
+			if call, ok := request.(*mcp.CallToolRequest); ok && method == "tools/call" {
+				upstream.mu.Lock()
+				upstream.called[call.Params.Name]++
+				upstream.mu.Unlock()
+			}
+
+			return next(ctx, method, request)
+		}
+	})
 
 	mcpServer.AddTool(&mcp.Tool{Name: "echo", InputSchema: schema}, func(_ context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var arguments struct {

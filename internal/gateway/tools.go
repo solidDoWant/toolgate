@@ -17,6 +17,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 )
 
 // toolSeparator joins a server name and an upstream tool name into the name
@@ -155,13 +156,17 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 			return nil, nil, fmt.Errorf("decode tools of instance %s: %w", instance.ID, err)
 		}
 
-		for _, tool := range upstream {
-			if tool == nil || !m.policy.Decide(policy.Request{Identity: current.identity, Template: template, Tool: tool.Name, State: state}).Allowed {
+		for _, curated := range toolcatalog.Curate(template, upstream) {
+			request := policy.Request{
+				Identity: current.identity, Template: template, Tool: curated.UpstreamName,
+				ExposedTool: curated.ExposedName, State: state,
+			}
+			if !m.policy.Decide(request).Allowed {
 				continue
 			}
 
-			proxied := *tool
-			proxied.Name = ProxiedToolName(template.Name, tool.Name)
+			proxied := *curated.Tool
+			proxied.Name = ProxiedToolName(template.Name, curated.ExposedName)
 
 			if proxied.InputSchema == nil {
 				proxied.InputSchema = map[string]any{"type": "object"}

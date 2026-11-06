@@ -19,7 +19,6 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
-	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/testtime"
@@ -367,7 +366,7 @@ func (m *metaTools) useApproval(ctx context.Context, call approvalCall, approval
 			return err
 		}
 
-		decision := m.decide(ctx, policy.Request{Identity: call.current.identity, Template: template, Tool: call.tool, State: state})
+		decision := m.decide(ctx, m.policyRequest(call.current, template, call.tool, state))
 		if !decision.Allowed {
 			refusal, message = refusalDetails(decision), decision.Reason
 

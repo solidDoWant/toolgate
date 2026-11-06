@@ -49,6 +49,9 @@ type Request struct {
 	// Tool is the tool's own name, without the server prefix. It is empty
 	// for list_servers and enable_server, which decide for the whole server.
 	Tool string
+	// ExposedTool is the name the tool is offered under, when it differs
+	// from Tool. Rules match both names; every other step uses Tool.
+	ExposedTool string
 	// State is the request's live grants and temporary blocks. The zero
 	// value has none.
 	State State
@@ -132,7 +135,7 @@ func (e *Engine) Decide(request Request) Decision {
 	}
 
 	if e.Rules != nil {
-		subject := ruleTarget(identity, server, request.Tool)
+		subject := ruleTarget(identity, server, request.Tool, request.ExposedTool)
 
 		if rule, found := e.Rules.match(subject, e.now()); found {
 			name := rule.key.String()
@@ -142,7 +145,7 @@ func (e *Engine) Decide(request Request) Decision {
 	}
 
 	if len(request.State.Blocks) > 0 {
-		subject := ruleTarget(identity, server, request.Tool)
+		subject := ruleTarget(identity, server, request.Tool, request.ExposedTool)
 		for _, block := range request.State.Blocks {
 			if block.match.applies(subject, time.Time{}) {
 				return Decision{Step: StepTemporaryBlock, Block: block.ID, Grant: grantID, Reason: block.refusal()}
@@ -198,7 +201,7 @@ func (e *Engine) refuseEnvironment(request Request, environment string) Decision
 }
 
 // ruleTarget is what rules and temporary blocks are matched against.
-func ruleTarget(identity auth.Identity, server, tool string) target {
+func ruleTarget(identity auth.Identity, server, tool, exposed string) target {
 	subject := target{
 		principal:   identity.Principal,
 		email:       identity.Email,
@@ -210,6 +213,9 @@ func ruleTarget(identity auth.Identity, server, tool string) target {
 	}
 	if tool != "" {
 		subject.tool = proxiedName(server, tool)
+		if exposed != "" && exposed != tool {
+			subject.exposedTool = proxiedName(server, exposed)
+		}
 	}
 
 	return subject

@@ -22,6 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 	"github.com/solidDoWant/toolgate/internal/version"
 )
@@ -42,6 +43,7 @@ const lastUsedInterval = time.Minute
 const (
 	reasonNotEnabled = "not-enabled"
 	reasonNotReady   = "not-ready"
+	reasonNotOffered = "not-offered"
 )
 
 // reasonPayloadError is the refusal reason of a call whose arguments
@@ -183,7 +185,8 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return nil, errNoIdentity
 	}
 
-	server, tool, _ := strings.Cut(request.Params.Name, toolSeparator)
+	server, exposed, _ := strings.Cut(request.Params.Name, toolSeparator)
+	tool := exposed
 
 	// Step 1: the server must be enabled in this session.
 	template, enabled, err := m.enabledTemplate(ctx, current, server)
@@ -194,6 +197,21 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	if !enabled {
 		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonNotEnabled},
 			fmt.Sprintf("Server `%s` isn't enabled in this session. Call `%s` first.", server, ToolEnableServer))
+	}
+
+	// The exposed name maps to the upstream name from the template alone. A
+	// hidden tool, or a renamed tool called by its upstream name, is not
+	// offered. The call carries the upstream name from here on.
+	upstream, offered := toolcatalog.Upstream(template, exposed)
+	tool = upstream
+
+	if exposedName := toolcatalog.ExposedName(template, upstream); exposedName != upstream {
+		ctx = withExposedTool(ctx, exposedName)
+	}
+
+	if !offered {
+		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonNotOffered},
+			fmt.Sprintf("Server `%s` has no tool `%s`.", server, exposed))
 	}
 
 	// Step 2: its live instance must be ready. A call to an instance that is
@@ -234,7 +252,7 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return nil, err
 	}
 
-	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, Tool: tool, State: state})
+	decision := m.decide(ctx, m.policyRequest(current, template, tool, state))
 
 	if !decision.Allowed {
 		return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
@@ -252,7 +270,7 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		allowDetails["grant"] = decision.Grant
 	}
 
-	allow := callEvent(current, "tool.decision", server, tool, allowDetails)
+	allow := callEvent(current, "tool.decision", server, tool, withExposedDetail(ctx, allowDetails))
 	if err := m.payloads.Attach(ctx, &allow, callArguments(request.Params.Arguments)); err != nil {
 		return m.refuseCall(ctx, current, server, tool,
 			map[string]any{"reason": reasonPayloadError, "payload_error": err.Error()}, messageNotRecorded)
@@ -278,9 +296,9 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 
 	// Step 6. A result that can't be stored is still returned; the row
 	// records why its payload is missing.
-	resultEvent := callEvent(current, "tool.result", server, tool, map[string]any{
+	resultEvent := callEvent(current, "tool.result", server, tool, withExposedDetail(ctx, map[string]any{
 		"outcome": outcome, "instance": instance.ID, "duration_ms": time.Since(started).Milliseconds(),
-	})
+	}))
 	if err := m.payloads.Attach(ctx, &resultEvent, result); err != nil {
 		resultEvent.Details["payload_error"] = err.Error()
 	}
@@ -465,6 +483,7 @@ func (m *metaTools) waitForCall(ctx context.Context, request *mcp.CallToolReques
 // model as a tool error.
 func (m *metaTools) refuseCall(ctx context.Context, current requestContext, server, tool string, details map[string]any, message string) (*mcp.CallToolResult, error) {
 	details["decision"] = "refuse"
+	withExposedDetail(ctx, details)
 
 	recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
 	if err := recorder.Record(ctx, callEvent(current, "tool.decision", server, tool, details)); err != nil {
@@ -472,6 +491,33 @@ func (m *metaTools) refuseCall(ctx context.Context, current requestContext, serv
 	}
 
 	return errorResult(message), nil
+}
+
+type exposedToolKey struct{}
+
+// withExposedTool records the exposed name of the tool a call is about, for
+// audit events of the call.
+func withExposedTool(ctx context.Context, exposed string) context.Context {
+	return context.WithValue(ctx, exposedToolKey{}, exposed)
+}
+
+// withExposedDetail adds `exposedTool` to details when the call's exposed
+// name differs from its upstream name.
+func withExposedDetail(ctx context.Context, details map[string]any) map[string]any {
+	if exposed, _ := ctx.Value(exposedToolKey{}).(string); exposed != "" {
+		details["exposedTool"] = exposed
+	}
+
+	return details
+}
+
+// policyRequest builds the policy request of a call of the upstream tool
+// name tool. Rules match the exposed name too.
+func (m *metaTools) policyRequest(current requestContext, template *v1alpha1.MCPServerTemplate, tool string, state policy.State) policy.Request {
+	return policy.Request{
+		Identity: current.identity, Template: template, Tool: tool,
+		ExposedTool: toolcatalog.ExposedName(template, tool), State: state,
+	}
 }
 
 func callEvent(current requestContext, eventType, server, tool string, details map[string]any) audit.Event {
