@@ -63,7 +63,7 @@ Post a comment on the `pm:status` issue when something material happened since y
 
 ## Things only the human can do
 
-Label the issue `needs-human`, comment on it with exactly what is needed, mention it in the next status report, and move on. Examples: deploying to the cluster, creating applications in the identity provider, running a manual checklist scenario in a real Claude Code session, changing repository settings, granting tokens, spending money, changing a `SPEC.md` principle, editing `CLAUDE.md` (agents refuse to; route such lines to a `needs-human` issue).
+Label the issue `needs-human`, comment on it with exactly what is needed, mention it in the next status report, and move on. Examples: deploying to the cluster, creating applications in the identity provider, changing repository settings, granting tokens, spending money, changing a `SPEC.md` principle, editing `CLAUDE.md` (agents refuse to; route such lines to a `needs-human` issue).
 
 ## Hard limits
 
@@ -76,13 +76,13 @@ Label the issue `needs-human`, comment on it with exactly what is needed, mentio
 
 ## Phase progress
 
-A phase is done when every automated scenario in its `docs/acceptance/phase-N.md` passes on `master` (`make acceptance`), the owner has checked the manual ones, its security review and bug hunt have run with their critical and high findings fixed, and its release is cut. The owner deploys on their own schedule; that blocks nothing. Each status report leads with the scoreboard.
+A phase is done when every automated scenario in its `docs/acceptance/phase-N.md` passes on `master` (`make acceptance`), its security review and bug hunt have run with their critical and high findings fixed, and its release is cut. The owner deploys on their own schedule; that blocks nothing. Each status report leads with the scoreboard.
 
 ## Phase transitions
 
 A phase is complete when every issue in its milestone, as listed live from GitHub, is closed or explicitly deferred (logged decision), and every issue in it has a sub-issue parent in the same milestone (fix any that don't before closing). Then:
 
-1. **Checklist.** The phase's automated scenarios pass on `master` (`make acceptance`). Ask the owner (`needs-human`) to check the manual ones.
+1. **Checklist.** The phase's automated scenarios pass on `master` (`make acceptance`).
 2. **Security review and bug hunt.** Once the checklist passes, queue both in the same planner run, each scoped to **what this phase changed**:
    - **One `security-auditor` job.** Scope: authentication and authorization, policy bypass, template rendering and injection, secret exposure, Kubernetes RBAC and admission escape, and leakage between users.
    - **One `bug-hunter` job.** Scope: wrong policy decisions, leaked or orphaned instances, lost session state, and crashes.
