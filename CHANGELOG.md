@@ -1,17 +1,84 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+> [!WARNING]
+> Read this before you upgrade. If the web UI is on, each user has two workspace defaults after the upgrade: one for verified workspaces and one for unverified sessions. Both defaults are `none`. Then the sessions of a user see no MCP servers until that user sets a default or adds a list for a workspace. Each user sets their own defaults. Tell your users to run this command after the upgrade:
+>
+> ```
+> toolgate workspace defaults --unverified all
+> ```
+>
+> If the sessions of a user also run in verified workspaces, the user can also run `toolgate workspace defaults --verified all`. The command prints a link to an approval page, because the change gives more access. The user approves it there, after a fresh sign-in. Users can make the same changes on the Workspaces page of the web UI, `/ui/workspaces`. If the web UI is off, workspace scoping is off, and nothing changes for your users.
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This release adds telemetry, attested sign-in for workloads and workspaces, and health checks for servers. It also limits each session to the servers that its user allows in its workspace, and gives a session its servers back after a long pause.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.3.0`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.3.0`. Follow `docs/admin/quick-start.md`. To turn on the web UI, follow `docs/admin/web-ui.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
 
 ### Upgrade notes for admins
 
-- **After upgrading with the web UI on, every user sees no servers until they choose their defaults on the Workspaces page.**
+- Tell your users about the workspace defaults before you upgrade, as the warning above says. ([#310](https://github.com/solidDoWant/toolgate/pull/310), [#322](https://github.com/solidDoWant/toolgate/pull/322), [#323](https://github.com/solidDoWant/toolgate/pull/323))
+- Back up your PostgreSQL database before you upgrade. The gateway applies new database migrations when it starts, and you cannot undo them. ([#246](https://github.com/solidDoWant/toolgate/pull/246), [#248](https://github.com/solidDoWant/toolgate/pull/248), [#297](https://github.com/solidDoWant/toolgate/pull/297))
+- To mount a file for the gateway, for example a `caFile`, use `advancedMounts.gateway.gateway` in the chart values. The files of the chart moved there from `globalMounts`, so that the migration Job does not get them. ([#259](https://github.com/solidDoWant/toolgate/pull/259))
 
-### Workspace scoping
+### Workspaces and sessions
 
-- When the web UI is on, the policy has a new step, workspace scope, after the blocks and before approval. A signed-in user's session can use only the servers on its effective list. The list comes from the user's list for a verified workspace, or from the user's defaults. The step only refuses. Service accounts and SPIFFE workloads skip it, and it is off when the web UI is off. See `docs/user/README.md` and `docs/admin/web-ui.md`.
-- The gateway API has `GET /api/v1/workspaces`, `POST /api/v1/workspaces/changes` and `GET /api/v1/access-requests/{id}`. A change that removes access applies at once. A change that gives more access becomes an access request that the user approves in the browser. See `docs/admin/web-ui.md`.
-- The web UI has a Workspaces page, `/ui/workspaces`, where users choose their defaults and lists. A change that gives more access needs a fresh sign-in. The approval page also shows the change requests of the CLI, with the list before and after the change. See `docs/user/README.md`.
-- In a verified workspace, turning on a server that is not on the effective list asks the user. The approval page offers "Allow for this session" and "Always allow in this workspace", and both need a fresh sign-in. When a session ends, toolgate removes the servers that the user added to it only. See `docs/user/README.md`.
+- If the web UI is on, each session of a signed-in user can use only the servers on its effective list. The effective list is the list of the user for a verified workspace. If there is no list, or the session is unverified, the defaults of the user apply. The list only refuses. It never gives a server that the templates do not give. Service accounts and SPIFFE workloads do not have a list. See `docs/user/README.md` and `docs/admin/web-ui.md`. ([#297](https://github.com/solidDoWant/toolgate/pull/297), [#310](https://github.com/solidDoWant/toolgate/pull/310))
+- The new command `toolgate workspace` shows and changes the lists and the defaults, with `list`, `allow`, `deny`, `clear` and `defaults`. A change that removes access applies at once. A change that gives more access prints a link to an approval page, and the user approves it there after a fresh sign-in. ([#320](https://github.com/solidDoWant/toolgate/pull/320), [#322](https://github.com/solidDoWant/toolgate/pull/322))
+- The Workspaces page of the web UI, `/ui/workspaces`, shows and changes the same lists and defaults. ([#323](https://github.com/solidDoWant/toolgate/pull/323))
+- In a verified workspace, Claude can ask to turn on a server that is not on the effective list. Then toolgate asks the user in the browser. The user selects "Allow for this session" or "Always allow in this workspace". When the session ends, toolgate removes the servers that the user allowed for that session only. ([#325](https://github.com/solidDoWant/toolgate/pull/325))
+- A session that ended after a long pause gets its servers back. If you resume it in Claude Code from the same workspace within 24 hours, its servers start again, and you do not turn them on again. toolgate checks each server again against the rules and the workspace list. Admins change the 24 hours with `config.sessionResumeWindow`. ([#302](https://github.com/solidDoWant/toolgate/pull/302), [#321](https://github.com/solidDoWant/toolgate/pull/321), [#338](https://github.com/solidDoWant/toolgate/pull/338))
+- If Claude calls a tool of a server that is still starting, the call waits until the server is ready, and then it runs. Before, the call failed at once. ([#337](https://github.com/solidDoWant/toolgate/pull/337))
+- The new command `toolgate sessions` lists your open sessions and the servers that are turned on in each. ([#249](https://github.com/solidDoWant/toolgate/pull/249))
+- The new command `toolgate audit tail` prints audit events as they happen. A user sees only their own events. A member of the admin group of the web UI sees the events of all users. ([#261](https://github.com/solidDoWant/toolgate/pull/261))
+
+### Telemetry
+
+- The gateway can receive the OpenTelemetry data of Claude Code: metrics for tokens and cost, log events and traces. Set `otlpIngest` to `true`, and set `otlpEndpoint` to your backend. The gateway removes the user and workspace attributes that the client sent, and sets them from the verified identity. Then it sends the data to your backend. See `docs/admin/telemetry.md`. ([#251](https://github.com/solidDoWant/toolgate/pull/251))
+- By default, the gateway removes prompts and tool content from this data. Set `telemetry.allowContent` to `true` only if your backend can hold them. ([#251](https://github.com/solidDoWant/toolgate/pull/251))
+- `docs/admin/telemetry.md` gives a query for the tokens and cost of each user, workspace and session. ([#265](https://github.com/solidDoWant/toolgate/pull/265))
+- The new command `toolgate otel-headers` prints the headers that Claude Code sends with its telemetry. Admins give it to Claude Code with a `SettingsProfile`. ([#247](https://github.com/solidDoWant/toolgate/pull/247))
+
+### Signing in and attestation
+
+- A workload can sign in with a SPIFFE JWT-SVID. A JWT-SVID is a signed token from SPIRE that names the workload. List the trust domains that you allow in `config.spiffe.trustDomains`. The gateway treats these workloads as attested, and their workspace is the path of the SPIFFE ID. A JWT-SVID from another trust domain gets 401. See `docs/admin/spiffe-sign-in.md`. ([#253](https://github.com/solidDoWant/toolgate/pull/253))
+- The `toolgate` command can use a JWT-SVID as its credential. Set `TOOLGATE_SPIFFE_SOCKET` to the address of the SPIFFE Workload API. ([#264](https://github.com/solidDoWant/toolgate/pull/264))
+- A user session can be attested. The client sends the user token and also a workload token from the workspace, for example from a Coder workspace pod. If the workload belongs to the user, the session stays the session of the user, and its workspace is verified, for example `coder/alice/dev`. Set `config.workspaceAttestation` to turn it on. See `docs/admin/workspace-attestation.md`. ([#299](https://github.com/solidDoWant/toolgate/pull/299), [#313](https://github.com/solidDoWant/toolgate/pull/313))
+- The `toolgate` command can get its access token from another program. Set `TOOLGATE_TOKEN_COMMAND` to a command that prints the token, for example `coder external-auth access-token toolgate`. See `docs/admin/coder.md`. ([#301](https://github.com/solidDoWant/toolgate/pull/301))
+- `config.oidc.audience` can be a list of 1 to 8 audiences of the same issuer. The gateway accepts access tokens for each of them. The audit log now gives the reason "audience not allowed" when it refuses a token for another audience. Before, the reason was "invalid token". ([#296](https://github.com/solidDoWant/toolgate/pull/296))
+- `toolgate login --token-store auto|keychain|file` selects where toolgate keeps the token. Use `file` in a workspace that has no keychain for the processes of the agent. `toolgate login` also prints how long the code is valid, and who signed in. ([#291](https://github.com/solidDoWant/toolgate/pull/291))
+
+### Server health
+
+- A template can have a `healthCheck`: an HTTP check of a Service, a port and a path. If the check fails `failureThreshold` times in a row, toolgate withdraws the tools of the instance, and refuses calls with the reason. Then it repairs the instance as `onFailure` says: `replace`, `reapply` or `none`. If the check still fails after `maxRepairs` repairs in 30 minutes, the instance fails. See `docs/admin/templates-and-rules.md`. ([#248](https://github.com/solidDoWant/toolgate/pull/248), [#260](https://github.com/solidDoWant/toolgate/pull/260), [#263](https://github.com/solidDoWant/toolgate/pull/263))
+- If an object of a ready instance fails later, toolgate withdraws the tools of the instance and repairs it in the same way. An example is a `HelmRelease` that stays `Ready=False` for 60 seconds. Before, the instance failed. ([#267](https://github.com/solidDoWant/toolgate/pull/267), [#335](https://github.com/solidDoWant/toolgate/pull/335))
+
+### Deployment and operations
+
+- The new command `toolgate migrate` applies the database migrations and exits. ([#250](https://github.com/solidDoWant/toolgate/pull/250))
+- The chart can apply the migrations with a separate database user. Set `config.database.migrateOnStart` to `false`, and set `config.database.migrationSecret`. Then a Helm hook Job applies the migrations before the new gateway pods start. The gateway runs with a database user that can only read and write data. With the default values, nothing changes. See `docs/admin/chart.md`. ([#259](https://github.com/solidDoWant/toolgate/pull/259))
+
+### Fixes
+
+- The gateway now makes the monthly partitions of the audit log every day, on the leader. Before, it made them only when it started. A gateway that ran past the end of the next month without a restart then refused every tool call. The new metric `toolgate_audit_partition_errors_total` counts failures. ([#246](https://github.com/solidDoWant/toolgate/pull/246))
+- `toolgate audit tail` and `toolgate workspace list` escape control characters in their text output. A name with control characters can no longer change your terminal. ([#334](https://github.com/solidDoWant/toolgate/pull/334))
+- A slow upload to the telemetry ingest no longer blocks the other uploads. The gateway reads each upload in at most 10 seconds, and answers 408 to a slower one. ([#336](https://github.com/solidDoWant/toolgate/pull/336))
+- If the resume of a session stops before it ends, toolgate undoes the resume, and the next request does the full resume again. Before, some servers stayed turned on with no running instance. ([#338](https://github.com/solidDoWant/toolgate/pull/338))
+- A custom health check no longer hides a failure that an object of the instance reports. ([#335](https://github.com/solidDoWant/toolgate/pull/335))
+
+### Claude Code plugin
+
+- The plugin did not change in this release, except for the version number. Update the `toolgate` command to get the new commands.
+
+### Known issues
+
+- Nobody tested the manual scenario AC-3-07 before this release. AC-3-07 checks that a tool span of Claude Code and the spans of the gateway for that call are in the same trace. The owner tests it separately.
+- `govulncheck ./...` reports [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0 and [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
+
+Internal work: the phase 3 and phase 4 design and acceptance documents, the identity kind in the policy code, e2e tests with a time scale and shards balanced by duration, acceptance scoring from all test results, container images from ghcr.io and mirror.gcr.io in place of Docker Hub, CI cache and disk fixes, and agent instructions. ([#224](https://github.com/solidDoWant/toolgate/pull/224), [#225](https://github.com/solidDoWant/toolgate/pull/225), [#226](https://github.com/solidDoWant/toolgate/pull/226), [#229](https://github.com/solidDoWant/toolgate/pull/229), [#231](https://github.com/solidDoWant/toolgate/pull/231), [#241](https://github.com/solidDoWant/toolgate/pull/241), [#252](https://github.com/solidDoWant/toolgate/pull/252), [#254](https://github.com/solidDoWant/toolgate/pull/254), [#256](https://github.com/solidDoWant/toolgate/pull/256), [#257](https://github.com/solidDoWant/toolgate/pull/257), [#262](https://github.com/solidDoWant/toolgate/pull/262), [#266](https://github.com/solidDoWant/toolgate/pull/266), [#268](https://github.com/solidDoWant/toolgate/pull/268), [#269](https://github.com/solidDoWant/toolgate/pull/269), [#270](https://github.com/solidDoWant/toolgate/pull/270), [#271](https://github.com/solidDoWant/toolgate/pull/271), [#274](https://github.com/solidDoWant/toolgate/pull/274), [#275](https://github.com/solidDoWant/toolgate/pull/275), [#276](https://github.com/solidDoWant/toolgate/pull/276), [#290](https://github.com/solidDoWant/toolgate/pull/290), [#292](https://github.com/solidDoWant/toolgate/pull/292), [#298](https://github.com/solidDoWant/toolgate/pull/298), [#300](https://github.com/solidDoWant/toolgate/pull/300), [#303](https://github.com/solidDoWant/toolgate/pull/303), [#311](https://github.com/solidDoWant/toolgate/pull/311), [#312](https://github.com/solidDoWant/toolgate/pull/312), [#314](https://github.com/solidDoWant/toolgate/pull/314), [#315](https://github.com/solidDoWant/toolgate/pull/315), [#317](https://github.com/solidDoWant/toolgate/pull/317), [#318](https://github.com/solidDoWant/toolgate/pull/318), [#319](https://github.com/solidDoWant/toolgate/pull/319), [#324](https://github.com/solidDoWant/toolgate/pull/324), [#328](https://github.com/solidDoWant/toolgate/pull/328))
 
 ## 0.2.0
 
