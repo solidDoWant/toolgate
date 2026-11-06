@@ -50,3 +50,9 @@ func (w *ApprovalWaiters) Acquire(principal string) bool { return w.waiters.acqu
 
 // Release frees a waiting slot of principal.
 func (w *ApprovalWaiters) Release(principal string) { w.waiters.release(principal) }
+
+// WaitingCalls returns how many calls of principal wait for an approval on
+// the MCP handler.
+func WaitingCalls(handler http.Handler, principal string) int {
+	return handler.(*mcpEndpoint).waiters.count(principal)
+}

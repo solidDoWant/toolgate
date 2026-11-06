@@ -61,6 +61,14 @@ func (w *approvalWaiters) acquire(principal string) bool {
 	return true
 }
 
+// count returns how many calls of principal are waiting.
+func (w *approvalWaiters) count(principal string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.waiting[principal]
+}
+
 func (w *approvalWaiters) release(principal string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
