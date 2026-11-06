@@ -12,11 +12,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
+	"github.com/solidDoWant/toolgate/internal/mcprequest"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -112,6 +114,10 @@ func valueOr[T int | time.Duration](value, fallback T) T {
 type requestContext struct {
 	identity auth.Identity
 	session  db.Session
+	// stateless is the proxied tools of the stateless binding a 2026-07-28
+	// request is served on. It is nil on an MCP session, whose tools are
+	// found by its ID.
+	stateless *sessionTools
 }
 
 const requestContextKey = "toolgate"
@@ -144,16 +150,26 @@ type mcpSession struct {
 // session header required. Each MCP session gets its own mcp.Server, so a
 // change to one session's proxied tools sends list_changed to it alone.
 type mcpEndpoint struct {
-	newServer func() *mcp.Server
+	newServer func(stateless bool) *mcp.Server
 	callTool  mcp.ToolHandler
-	handler   http.Handler
-	sessions  *sessionStore
-	logger    *slog.Logger
+	// handler is the stateful handler. It serves every revision before
+	// 2026-07-28, and server/discover on every revision.
+	handler http.Handler
+	// statelessHandler serves 2026-07-28 and later.
+	statelessHandler http.Handler
+	// discoverServer answers server/discover. It has no tools and makes no
+	// MCP session.
+	discoverServer *mcp.Server
+	sessions       *sessionStore
+	logger         *slog.Logger
 
 	idleTimeout time.Duration
 
 	mu       sync.Mutex
 	bindings map[string]*mcpSession
+	// stateless holds this replica's stateless bindings, each with its own
+	// mcp.Server, so list_changed reaches the binding's listen streams.
+	stateless map[mcpBinding]*mcpSession
 }
 
 // NewMCPHandler returns the MCP endpoint. Wrap it in auth.Middleware with
@@ -178,6 +194,8 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		sessions: &sessionStore{pool: options.Database, auditOutput: auditOutput, now: now},
 		logger:   logger,
 		bindings: make(map[string]*mcpSession),
+
+		stateless: make(map[mcpBinding]*mcpSession),
 
 		idleTimeout: options.MCPSessionIdleTimeout,
 	}
@@ -241,27 +259,58 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 
 	go endpoint.fanOut(tools, events, changed)
 
-	endpoint.newServer = func() *mcp.Server {
-		server := mcp.NewServer(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
+	implementation := &mcp.Implementation{Name: "toolgate", Version: version.Get()}
+
+	endpoint.newServer = func(stateless bool) *mcp.Server {
+		serverOptions := &mcp.ServerOptions{SetCacheable: privateToolLists}
+		if stateless {
+			serverOptions.SupportedProtocolVersions = []string{mcprequest.StatelessRevision}
+		}
+
+		server := mcp.NewServer(implementation, serverOptions)
 		tools.register(server)
 		server.AddReceivingMiddleware(tools.syncOnList, tools.routeProxiedCalls)
 
 		return server
 	}
 
-	streamable := mcp.NewStreamableHTTPHandler(endpoint.serverFor, &mcp.StreamableHTTPOptions{Logger: logger})
+	// An empty session ID makes the go-sdk serve a discover on an
+	// ephemeral session it never binds.
+	endpoint.discoverServer = mcp.NewServer(implementation, &mcp.ServerOptions{
+		SetCacheable: privateToolLists,
+		GetSessionID: func() string { return "" },
+	})
 
 	// The go-sdk takes the request's identity from its TokenInfo. The token
 	// was already verified by auth.Middleware.
-	endpoint.handler = mcpauth.RequireBearerToken(endpoint.tokenInfo,
-		&mcpauth.RequireBearerTokenOptions{AllowMissingExpiration: true})(streamable)
+	requireToken := mcpauth.RequireBearerToken(endpoint.tokenInfo,
+		&mcpauth.RequireBearerTokenOptions{AllowMissingExpiration: true})
+
+	endpoint.handler = requireToken(mcp.NewStreamableHTTPHandler(endpoint.serverFor,
+		&mcp.StreamableHTTPOptions{Logger: logger}))
+	endpoint.statelessHandler = requireToken(mcp.NewStreamableHTTPHandler(endpoint.statelessServerFor,
+		&mcp.StreamableHTTPOptions{Logger: logger, Stateless: true}))
 
 	return endpoint
 }
 
+// statelessNoSessionMessage answers a 2026-07-28 request without
+// X-Toolgate-Session (docs/design/phase-4.md §8).
+const statelessNoSessionMessage = "This client sends no session. Use the toolgate plugin's headers helper, or a client on MCP 2025-11-25."
+
+// privateToolLists marks every tools/list result private and uncached, so
+// no cache shares one session's tools with another or hides a change. On
+// revisions before 2026-07-28 the fields are not on the wire.
+func privateToolLists(_ context.Context, request mcp.Request, cacheable *mcp.Cacheable) {
+	if _, ok := request.(*mcp.ListToolsRequest); ok {
+		cacheable.CacheScope = "private"
+		cacheable.TTLMs = 0
+	}
+}
+
 func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	identity, ok := auth.IdentityFrom(request.Context())
-	if !ok || identity.Session == "" {
+	if !ok {
 		http.Error(writer, "Sign in again: run `toolgate login`.", http.StatusUnauthorized)
 
 		return
@@ -285,6 +334,32 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 	request.Body = io.NopCloser(bytes.NewReader(body))
 
+	// A server/discover needs no session on any revision, and makes none:
+	// the stateful handler answers it from the shared discover server.
+	if mcprequest.MethodOf(request, body) == mcprequest.DiscoverMethod {
+		ctx := context.WithValue(request.Context(), requestContextCtxKey{}, requestContext{identity: identity})
+		ctx = context.WithValue(ctx, newServerCtxKey{}, e.discoverServer)
+
+		request.Header.Del(mcpSessionHeader)
+		e.handler.ServeHTTP(writer, request.WithContext(ctx))
+
+		return
+	}
+
+	stateless := mcprequest.Stateless(request)
+
+	if identity.Session == "" {
+		if stateless {
+			writeInvalidRequest(writer, body, statelessNoSessionMessage)
+
+			return
+		}
+
+		http.Error(writer, "Sign in again: run `toolgate login`.", http.StatusUnauthorized)
+
+		return
+	}
+
 	binding := mcpBinding{
 		principal: identity.Principal, session: identity.Session,
 		workspace: identity.Workspace, attestation: identity.Attestation,
@@ -294,7 +369,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	// attestation gets 404 before the session lookup's 400, so the client
 	// initializes again and then learns the workspace changed.
 	mcpSessionID := request.Header.Get(mcpSessionHeader)
-	if mcpSessionID != "" && !e.boundTo(mcpSessionID, binding) {
+	if !stateless && mcpSessionID != "" && !e.boundTo(mcpSessionID, binding) {
 		http.Error(writer, "session not found", http.StatusNotFound)
 
 		return
@@ -315,6 +390,13 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 
 	current := requestContext{identity: identity, session: session}
+
+	if stateless {
+		e.serveStateless(writer, request, binding, current)
+
+		return
+	}
+
 	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
 
 	if mcpSessionID != "" {
@@ -346,7 +428,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			createdID string
 		)
 
-		server := e.newServer()
+		server := e.newServer(false)
 		ctx = context.WithValue(ctx, newServerCtxKey{}, server)
 		writer = &bindingWriter{ResponseWriter: writer, onSessionID: func(id string) {
 			created = &mcpSession{binding: binding, tools: newSessionTools(server, e.callTool, current), active: 1}
@@ -362,6 +444,108 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 
 	e.handler.ServeHTTP(writer, request.WithContext(ctx))
+}
+
+// serveStateless serves a 2026-07-28 request on its stateless binding's own
+// mcp.Server. The binding is in use until the request ends, which for a
+// subscriptions/listen is when its stream closes.
+func (e *mcpEndpoint) serveStateless(writer http.ResponseWriter, request *http.Request, binding mcpBinding, current requestContext) {
+	held, current := e.acquireStateless(binding, current)
+	defer e.releaseStateless(binding, held)
+
+	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
+	ctx = context.WithValue(ctx, newServerCtxKey{}, held.tools.server)
+
+	e.statelessHandler.ServeHTTP(writer, request.WithContext(ctx))
+}
+
+// statelessServerFor returns the server serveStateless chose.
+func (e *mcpEndpoint) statelessServerFor(request *http.Request) *mcp.Server {
+	server, _ := request.Context().Value(newServerCtxKey{}).(*mcp.Server)
+
+	return server
+}
+
+// acquireStateless returns the stateless binding, made with its own server
+// when this replica holds none, and marks a request on it as in progress.
+// It records current, pointed at the binding's tools, as the binding's
+// latest request and returns it.
+func (e *mcpEndpoint) acquireStateless(binding mcpBinding, current requestContext) (*mcpSession, requestContext) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	held, found := e.stateless[binding]
+	if !found {
+		tools := newSessionTools(e.newServer(true), e.callTool, current)
+		held = &mcpSession{binding: binding, tools: tools}
+		e.stateless[binding] = held
+	}
+
+	current.stateless = held.tools
+	held.tools.setCurrent(current)
+	held.active++
+
+	return held, current
+}
+
+// releaseStateless ends a request acquireStateless started. When it was the
+// binding's last one, the idle timer starts.
+func (e *mcpEndpoint) releaseStateless(binding mcpBinding, held *mcpSession) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	held.active--
+	if held.active > 0 || e.stateless[binding] != held {
+		return
+	}
+
+	held.lastActive = time.Now()
+
+	if held.idle == nil {
+		held.idle = time.AfterFunc(e.idleTimeout, func() { e.expireStateless(binding, held) })
+
+		return
+	}
+
+	held.idle.Reset(e.idleTimeout)
+}
+
+// expireStateless releases a stateless binding that has been idle for the
+// idle timeout. Its requests ran on ephemeral go-sdk sessions, which are
+// already closed. The next request makes a new binding.
+func (e *mcpEndpoint) expireStateless(binding mcpBinding, held *mcpSession) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.stateless[binding] != held || held.active > 0 || time.Since(held.lastActive) < e.idleTimeout {
+		return
+	}
+
+	delete(e.stateless, binding)
+}
+
+// writeInvalidRequest answers with HTTP 400 and a plain JSON-RPC invalid
+// request error, never the go-sdk's unsupported version error, so a
+// dual-era client falls back to initialize (docs/design/phase-4.md §8).
+func writeInvalidRequest(writer http.ResponseWriter, body []byte, message string) {
+	response := &jsonrpc.Response{Error: &jsonrpc.Error{Code: jsonrpc.CodeInvalidRequest, Message: message}}
+
+	if decoded, err := jsonrpc.DecodeMessage(body); err == nil {
+		if call, ok := decoded.(*jsonrpc.Request); ok {
+			response.ID = call.ID
+		}
+	}
+
+	encoded, err := jsonrpc.EncodeMessage(response)
+	if err != nil {
+		http.Error(writer, message, http.StatusBadRequest)
+
+		return
+	}
+
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(http.StatusBadRequest)
+	_, _ = writer.Write(encoded)
 }
 
 type requestContextCtxKey struct{}

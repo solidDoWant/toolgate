@@ -73,6 +73,7 @@ func (f *mcpFixture) connectElicitingAs(t *testing.T, user user, options eliciti
 	t.Helper()
 
 	client := &elicitingClient{}
+
 	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "eliciting", Version: "0"}, &mcp.ClientOptions{
 		Capabilities: &mcp.ClientCapabilities{Elicitation: &mcp.ElicitationCapabilities{URL: &mcp.URLElicitationCapabilities{}}},
 		ElicitationHandler: func(_ context.Context, request *mcp.ElicitRequest) (*mcp.ElicitResult, error) {
@@ -93,6 +94,10 @@ func (f *mcpFixture) connectElicitingAs(t *testing.T, user user, options eliciti
 			client.mu.Unlock()
 		},
 	})
+	if options.revision >= modernRevision {
+		mcpClient.AddSendingMiddleware(skipDiscover)
+	}
+
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   f.server.URL,
 		HTTPClient: &http.Client{Transport: headerTransport{header: f.headers(t, user)}},
@@ -188,7 +193,7 @@ func awaitOutcome(t *testing.T, outcomes <-chan callOutcome, bound time.Duration
 }
 
 func TestApprovalElicitation(t *testing.T) {
-	for _, revision := range []string{revisionElicitCreate} {
+	for _, revision := range []string{revisionElicitCreate, modernRevision} {
 		t.Run("row 40: on "+revision+" the client opens the approval page, an approval from another replica lets the call through", func(t *testing.T) {
 			fixture := newApprovalFixture(t, withApprovalURL)
 			client := fixture.connectEliciting(t, elicitingOptions{revision: revision, answer: "accept"})

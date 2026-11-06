@@ -503,3 +503,62 @@ func TestNewRequiresIssuerAndAudience(t *testing.T) {
 	_, err = auth.New(t.Context(), auth.Options{IssuerURL: "http://127.0.0.1:1"})
 	require.Error(t, err)
 }
+
+func TestMCPRequestsThatNeedNoSessionHeader(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		noToken    bool
+		wantStatus int
+	}{
+		{
+			name:       "server/discover on 2026-07-28",
+			headers:    map[string]string{"Mcp-Protocol-Version": "2026-07-28", "Mcp-Method": "server/discover"},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "server/discover with no revision header",
+			headers:    map[string]string{"Mcp-Method": "server/discover"},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "server/discover still needs a token",
+			headers:    map[string]string{"Mcp-Method": "server/discover"},
+			noToken:    true,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "server/discover with an invalid session header",
+			headers:    map[string]string{"Mcp-Method": "server/discover", "X-Toolgate-Session": "a b"},
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "a 2026-07-28 request goes on, for the MCP endpoint to refuse",
+			headers:    map[string]string{"Mcp-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/list"},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "a 2025-11-25 request other than server/discover",
+			headers:    map[string]string{"Mcp-Protocol-Version": "2025-11-25", "Mcp-Method": "tools/list"},
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t, auth.Options{}, true)
+
+			token := ""
+			if !test.noToken {
+				token = f.provider.MintAccessToken(t, tgtestutil.TokenClaims{Subject: "alice"})
+			}
+
+			response := f.do(t, token, test.headers)
+			assert.Equal(t, test.wantStatus, response.Code, response.Body.String())
+		})
+	}
+}

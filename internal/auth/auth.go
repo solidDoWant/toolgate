@@ -20,6 +20,8 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/solidDoWant/toolgate/internal/mcprequest"
 )
 
 // Header names and limits.
@@ -300,7 +302,7 @@ func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.
 		}
 
 		session, sessionSet, sessionValid := headerValue(request, SessionHeader)
-		if !sessionValid || (requireSession && !sessionSet) {
+		if !sessionValid || (requireSession && !sessionSet && !sessionOptional(request)) {
 			http.Error(writer, "The X-Toolgate-Session header is missing or invalid. It must match ^[A-Za-z0-9._-]{1,128}$.", http.StatusBadRequest)
 
 			return
@@ -347,6 +349,15 @@ func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.
 
 		next.ServeHTTP(writer, request.WithContext(WithIdentity(request.Context(), identity)))
 	})
+}
+
+// sessionOptional reports whether an MCP request may come without the
+// session header here. A server/discover makes no session on any revision. A
+// 2026-07-28 request without one is refused by the MCP endpoint itself, with
+// a JSON-RPC error a dual-era client falls back on (docs/design/phase-4.md
+// §8).
+func sessionOptional(request *http.Request) bool {
+	return mcprequest.Stateless(request) || mcprequest.IsDiscover(request)
 }
 
 // headerValue returns the header's value, whether it was sent with a value,

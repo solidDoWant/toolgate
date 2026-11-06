@@ -105,7 +105,10 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 	client := mcp.NewClient(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
 	transport := &mcp.StreamableClientTransport{Endpoint: u.endpoint(instance, template), HTTPClient: u.httpClient}
 
-	session, err := client.Connect(ctx, transport, nil)
+	connectCtx, cancel := upstreamConnectContext(ctx)
+	defer cancel()
+
+	session, err := client.Connect(connectCtx, transport, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +116,29 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 	entry.session = session
 
 	return session, nil
+}
+
+// upstreamConnectContext returns a context for connecting to an upstream
+// that keeps only ctx's cancellation, deadline and trace span. The go-sdk
+// keeps the protocol revision of the request being served in its context,
+// and its client would send that revision on the upstream connection, which
+// negotiates its own.
+func upstreamConnectContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	detached := trace.ContextWithSpan(context.Background(), trace.SpanFromContext(ctx))
+
+	var cancelDeadline context.CancelFunc = func() {}
+	if deadline, ok := ctx.Deadline(); ok {
+		detached, cancelDeadline = context.WithDeadline(detached, deadline)
+	}
+
+	detached, cancel := context.WithCancel(detached)
+	stop := context.AfterFunc(ctx, cancel)
+
+	return detached, func() {
+		stop()
+		cancel()
+		cancelDeadline()
+	}
 }
 
 // drop closes the forwarding session to an instance, so the next call
