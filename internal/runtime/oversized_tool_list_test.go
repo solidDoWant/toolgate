@@ -99,7 +99,7 @@ func assertBoundedRead(t *testing.T, written *atomic.Int64) {
 func TestMCPToolListerStopsReadingAnOversizedToolList(t *testing.T) {
 	server, written := hugeToolListUpstream(t)
 
-	_, err := runtime.MCPToolLister(t.Context(), server.URL)
+	_, _, err := runtime.MCPToolLister(t.Context(), server.URL)
 	require.ErrorIs(t, err, runtime.ErrToolListTooLarge)
 	assertBoundedRead(t, written)
 }
@@ -108,7 +108,7 @@ func TestStarterFailsInstanceWithOversizedToolList(t *testing.T) {
 	server, written := hugeToolListUpstream(t)
 
 	fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
-	fixture.starter.ListTools = func(ctx context.Context, _ string) ([]*mcp.Tool, error) {
+	fixture.starter.ListTools = func(ctx context.Context, _ string) ([]*mcp.Tool, string, error) {
 		return runtime.MCPToolLister(ctx, server.URL)
 	}
 
@@ -127,6 +127,7 @@ func TestMonitorFailsInstanceWhenChangedToolListIsOversized(t *testing.T) {
 	instance := db.Instance{
 		ID: instanceID, TemplateNs: template.Namespace, TemplateName: template.Name, TemplateUid: templateUID,
 		Desired: "running", Status: "ready", Namespace: instanceNamespace, Tools: reformatted(t, encodeTools(t, searchTool)),
+		McpRevision: runtime.RevisionStateful,
 	}
 	store := &healthStore{row: instance}
 
@@ -144,12 +145,12 @@ func TestMonitorFailsInstanceWhenChangedToolListIsOversized(t *testing.T) {
 
 			return template.DeepCopy(), true
 		},
-		Connect: func(ctx context.Context, _ string, changed func()) (runtime.MonitorSession, error) {
+		Connect: func(ctx context.Context, _, revision string, changed func()) (runtime.MonitorSession, error) {
 			mu.Lock()
 			toolsChanged = changed
 			mu.Unlock()
 
-			return runtime.MCPMonitorConnector(ctx, server.URL, changed)
+			return runtime.MCPMonitorConnector(ctx, server.URL, revision, changed)
 		},
 		Interval: time.Hour,
 	}

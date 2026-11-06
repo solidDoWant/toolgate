@@ -188,8 +188,8 @@ func TestRestartRecovery(t *testing.T) {
 		fixture.sweep(t, fixture.kube)
 		require.Equal(t, "pending", fixture.get(t, instance.ID).Status)
 
-		starter := fixture.restartStarter(nil, func(context.Context, string) ([]*mcp.Tool, error) {
-			return []*mcp.Tool{{Name: "search", InputSchema: map[string]any{"type": "object"}}}, nil
+		starter := fixture.restartStarter(nil, func(context.Context, string) ([]*mcp.Tool, string, error) {
+			return []*mcp.Tool{{Name: "search", InputSchema: map[string]any{"type": "object"}}}, runtime.RevisionStateful, nil
 		})
 		for range 2 {
 			require.NoError(t, starter.Step(t.Context(), fixture.get(t, instance.ID)))
@@ -219,7 +219,9 @@ func TestRestartRecovery(t *testing.T) {
 		setNow(restarted.AttemptStartedAt.Time)
 
 		starter := fixture.restartStarter(func() time.Time { return *now.Load() },
-			func(context.Context, string) ([]*mcp.Tool, error) { return nil, errors.New("connection refused") })
+			func(context.Context, string) ([]*mcp.Tool, string, error) {
+				return nil, "", errors.New("connection refused")
+			})
 		require.NoError(t, starter.Step(t.Context(), fixture.get(t, instance.ID)))
 		require.Equal(t, "starting", fixture.get(t, instance.ID).Status)
 
@@ -281,7 +283,7 @@ func (f *stopFixture) longReadyInstanceWithoutObjects(t *testing.T, template *v1
 
 // restartStarter returns a Starter that applies instance objects to a new
 // fake cluster and lists tools with listTools.
-func (f *stopFixture) restartStarter(now func() time.Time, listTools func(context.Context, string) ([]*mcp.Tool, error)) *runtime.Starter {
+func (f *stopFixture) restartStarter(now func() time.Time, listTools runtime.ToolLister) *runtime.Starter {
 	scheme := k8sruntime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		panic(err)

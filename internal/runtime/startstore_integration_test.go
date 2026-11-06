@@ -62,7 +62,7 @@ func TestPostgresStartStoreCompareAndSet(t *testing.T) {
 	assert.True(t, changed)
 	expectEvent(t, events)
 
-	changed, err = startStore.MarkReady(t.Context(), instanceID, []byte(`[]`))
+	changed, err = startStore.MarkReady(t.Context(), db.Instance{ID: instanceID}, []byte(`[]`), runtime.RevisionStateful)
 	require.NoError(t, err)
 	assert.False(t, changed, "a late ready after the timeout changes nothing")
 
@@ -118,4 +118,57 @@ func TestPostgresStartStoreRecordsSecretsUsed(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, used, "token")
 	assert.True(t, setAt.Equal(used["token"]))
+}
+
+// The ready write stores the instance's MCP revision and records it in
+// instance.ready. Later writes of the ready row keep it.
+func TestPostgresStartStoreMarkReadyStoresTheRevision(t *testing.T) {
+	pg := testutil.StartPostgres(t)
+
+	pool, err := store.Open(t.Context(), pg.ConnString())
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	require.NoError(t, store.Migrate(t.Context(), pool))
+
+	queries := db.New(pool)
+	instance, err := queries.InsertInstance(t.Context(), db.InsertInstanceParams{
+		ID: instanceID, TemplateNs: "catalog", TemplateName: "github", TemplateUid: templateUID,
+		Generation: 1, Scope: "shared", ScopeKey: "shared", Namespace: instanceNamespace,
+	})
+	require.NoError(t, err)
+
+	startStore := runtime.PostgresStartStore{Pool: pool}
+	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, nil, time.Time{})
+	require.NoError(t, err)
+
+	changed, err := startStore.MarkReady(t.Context(), instance, []byte(`[]`), runtime.RevisionStateless)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	changed, err = startStore.MarkReady(t.Context(), instance, []byte(`[]`), runtime.RevisionStateful)
+	require.NoError(t, err)
+	assert.False(t, changed, "a ready row is never made ready again")
+
+	_, err = startStore.SetTools(t.Context(), instanceID, []byte(`[{"name":"search"}]`))
+	require.NoError(t, err)
+
+	row, err := queries.GetInstance(t.Context(), instanceID)
+	require.NoError(t, err)
+	assert.Equal(t, "ready", row.Status)
+	assert.Equal(t, runtime.RevisionStateless, row.McpRevision)
+
+	var revisions []string
+
+	rows, err := pool.Query(t.Context(),
+		`SELECT details->>'mcpRevision' FROM audit_events WHERE type = 'instance.ready' AND details->>'instance' = $1`, instanceID)
+	require.NoError(t, err)
+
+	for rows.Next() {
+		var revision string
+		require.NoError(t, rows.Scan(&revision))
+		revisions = append(revisions, revision)
+	}
+
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{runtime.RevisionStateless}, revisions)
 }

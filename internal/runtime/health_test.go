@@ -116,7 +116,7 @@ type upstream struct {
 	endpoints    []string
 }
 
-func (u *upstream) connect(_ context.Context, endpoint string, toolsChanged func()) (runtime.MonitorSession, error) {
+func (u *upstream) connect(_ context.Context, endpoint, _ string, toolsChanged func()) (runtime.MonitorSession, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 

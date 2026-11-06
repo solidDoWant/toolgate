@@ -110,16 +110,20 @@ These settings control the server:
 | `MCPSERVER_TOOLS` | `-tools` | `env,secrets` | The tool names, separated by commas. |
 | `MCPSERVER_SECRETS_DIR` | `-secrets-dir` | `/secrets` | The directory that the `secrets` tool reads. |
 | `MCPSERVER_LISTEN` | `-listen` | `:8080` | The listen address. |
-| `MCPSERVER_MODE` | `-mode` | `default` | `default`, or `2026-only`. See below. |
+| `MCPSERVER_MODE` | `-mode` | `default` | `default`, `2026-only`, `2025-only` or `both`. See below. |
 | `MCPSERVER_TOOLS_FILE` | `-tools-file` | none | A file that declares the tools. See below. |
 
 `GET /calls` returns the number of calls to each tool, as a JSON object from tool name to count. A tool that was never called is not in it. Every mode counts calls.
 
 **Mode `2026-only`.** The server is stateless and speaks only protocol revision 2026-07-28. It refuses a request for any other revision with HTTP 400. Its tools are the names in `-tools`, and they echo their arguments, unless you set `-tools-file`.
 
+**Mode `2025-only`.** The server is stateful, so it speaks 2025-11-25 and older revisions, and not 2026-07-28. Its tools are the names in `-tools`, unless you set `-tools-file`.
+
+**Mode `both`.** The server speaks 2025-11-25 and 2026-07-28. A request with `Mcp-Protocol-Version` 2026-07-28 or later goes to a stateless handler. Every other request goes to a stateful handler, so 2025-11-25 sessions get `list_changed` on their stream. Its tools are the names in `-tools`, unless you set `-tools-file`.
+
 **Tools from a file.** With `-tools-file`, the server serves the tools that the file declares. The file is a JSON array of `{"name", "description", "inputSchema"}` objects, or an object with that array in `tools`. `inputSchema` must have type `object`. If you leave it out, the tool takes any arguments. Each tool echoes its arguments. Use this to serve any declared tool list, such as the servers of the tool search fixture.
 
-**Changing the tool list.** In `2026-only` mode, and with `-tools-file`, `PUT /tools` replaces the tool list. The body has the format of the file. Or use `PUT /tools?names=a,b` for echo tools with no schema. The server tells open sessions that the list changed. A request with a bad list gets HTTP 400 and changes nothing. In the default mode with no file, the list is fixed and `PUT /tools` gets 404.
+**Changing the tool list.** In the modes `2026-only`, `2025-only` and `both`, and with `-tools-file`, `PUT /tools` replaces the tool list. The body has the format of the file. Or use `PUT /tools?names=a,b` for echo tools with no schema. The server tells open sessions that the list changed. A request with a bad list gets HTTP 400 and changes nothing. In the default mode with no file, the list is fixed and `PUT /tools` gets 404.
 
 The tests get the image name from `TOOLGATE_E2E_MCPSERVER_IMAGE`. The image is only in the kind cluster, so use `imagePullPolicy: Never`.
 

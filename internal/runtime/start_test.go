@@ -50,6 +50,7 @@ type memoryStore struct {
 	generation int64
 	reason     string
 	tools      []byte
+	revision   string
 	sessions   map[int64]db.Session
 	writes     int
 	// resolvedExpiresAt is what MarkStarting recorded.
@@ -95,7 +96,7 @@ func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64
 	return true, nil
 }
 
-func (m *memoryStore) MarkReady(_ context.Context, _ string, tools []byte) (bool, error) {
+func (m *memoryStore) MarkReady(_ context.Context, _ db.Instance, tools []byte, revision string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -103,7 +104,7 @@ func (m *memoryStore) MarkReady(_ context.Context, _ string, tools []byte) (bool
 		return false, nil
 	}
 
-	m.status, m.tools = "ready", tools
+	m.status, m.tools, m.revision = "ready", tools, revision
 	m.writes++
 
 	return true, nil
@@ -215,10 +216,10 @@ func newStarterFixture(t *testing.T, template *v1alpha1.MCPServerTemplate, statu
 		Secrets: runtime.BrokerSecrets(func(context.Context, string, string) ([]byte, time.Time, error) {
 			return nil, time.Time{}, errors.New("no secrets")
 		}),
-		ListTools: func(_ context.Context, endpoint string) ([]*mcp.Tool, error) {
+		ListTools: func(_ context.Context, endpoint string) ([]*mcp.Tool, string, error) {
 			fixture.listed = append(fixture.listed, endpoint)
 
-			return []*mcp.Tool{{Name: "search", InputSchema: map[string]any{"type": "object"}}}, nil
+			return []*mcp.Tool{{Name: "search", InputSchema: map[string]any{"type": "object"}}}, runtime.RevisionStateful, nil
 		},
 		GatewayNamespace: "toolgate",
 		GatewayPodLabels: map[string]string{"app.kubernetes.io/name": "toolgate"},
@@ -413,6 +414,10 @@ func TestStarterStartingBecomesReady(t *testing.T) {
 	assert.Equal(t, "ready", status)
 	assert.Equal(t, []string{"http://server." + instanceNamespace + ".svc:8080/mcp"}, fixture.listed)
 
+	fixture.store.mu.Lock()
+	assert.Equal(t, runtime.RevisionStateful, fixture.store.revision, "the ready write stores the lister's revision")
+	fixture.store.mu.Unlock()
+
 	var stored []map[string]any
 	require.NoError(t, json.Unmarshal(tools, &stored))
 	require.Len(t, stored, 1)
@@ -455,8 +460,8 @@ func TestStarterStartingKstatusFailure(t *testing.T) {
 
 func TestStarterStartingToolListCheckFails(t *testing.T) {
 	fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
-	fixture.starter.ListTools = func(context.Context, string) ([]*mcp.Tool, error) {
-		return []*mcp.Tool{{Name: strings.Repeat("x", 57)}}, nil
+	fixture.starter.ListTools = func(context.Context, string) ([]*mcp.Tool, string, error) {
+		return []*mcp.Tool{{Name: strings.Repeat("x", 57)}}, runtime.RevisionStateful, nil
 	}
 
 	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
@@ -542,11 +547,11 @@ func TestStarterLateResultAfterTimeout(t *testing.T) {
 	timeoutPass.starter.Store = fixture.store
 	timeoutPass.now = fixture.instance.AttemptStartedAt.Time.Add(time.Hour)
 
-	fixture.starter.ListTools = func(ctx context.Context, _ string) ([]*mcp.Tool, error) {
+	fixture.starter.ListTools = func(ctx context.Context, _ string) ([]*mcp.Tool, string, error) {
 		// The timeout commits while this readiness check still runs.
 		require.NoError(t, timeoutPass.starter.Step(ctx, timeoutPass.instance))
 
-		return []*mcp.Tool{{Name: "search"}}, nil
+		return []*mcp.Tool{{Name: "search"}}, runtime.RevisionStateful, nil
 	}
 
 	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
@@ -578,8 +583,8 @@ func TestAC1_20LongToolNames(t *testing.T) {
 	for _, test := range tests {
 		t.Run("[AC-1-20] "+test.name, func(t *testing.T) {
 			fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
-			fixture.starter.ListTools = func(context.Context, string) ([]*mcp.Tool, error) {
-				return []*mcp.Tool{{Name: strings.Repeat("x", test.length)}}, nil
+			fixture.starter.ListTools = func(context.Context, string) ([]*mcp.Tool, string, error) {
+				return []*mcp.Tool{{Name: strings.Repeat("x", test.length)}}, runtime.RevisionStateful, nil
 			}
 
 			require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
@@ -655,12 +660,13 @@ func TestMCPToolListerInitializesAndListsTools(t *testing.T) {
 	httpServer := httptest.NewServer(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
 	t.Cleanup(httpServer.Close)
 
-	tools, err := runtime.MCPToolLister(t.Context(), httpServer.URL)
+	tools, revision, err := runtime.MCPToolLister(t.Context(), httpServer.URL)
 	require.NoError(t, err)
+	assert.Equal(t, runtime.RevisionStateful, revision)
 	require.Len(t, tools, 1)
 	assert.Equal(t, "search", tools[0].Name)
 
-	_, err = runtime.MCPToolLister(t.Context(), httpServer.URL+"/missing\x00")
+	_, _, err = runtime.MCPToolLister(t.Context(), httpServer.URL+"/missing\x00")
 	require.Error(t, err)
 }
 

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -55,9 +56,10 @@ type MonitorSession interface {
 	Close() error
 }
 
-// MonitorConnector opens a monitoring session to endpoint. It calls
+// MonitorConnector opens a monitoring session to endpoint on the MCP
+// revision of the instance's row (empty for a row that has none). It calls
 // toolsChanged each time the upstream announces a changed tool list.
-type MonitorConnector func(ctx context.Context, endpoint string, toolsChanged func()) (MonitorSession, error)
+type MonitorConnector func(ctx context.Context, endpoint, revision string, toolsChanged func()) (MonitorSession, error)
 
 // Monitor keeps one monitoring MCP session to each ready instance. It pings
 // the instance every Interval and marks it failed after
@@ -286,7 +288,7 @@ func (w *watcher) ping(ctx context.Context) error {
 	defer cancel()
 
 	if w.session == nil {
-		opened, err := w.monitor.Connect(checkCtx, w.endpoint, w.toolsChanged)
+		opened, err := w.monitor.Connect(checkCtx, w.endpoint, w.instance.McpRevision, w.toolsChanged)
 		if err != nil {
 			return err
 		}
@@ -401,50 +403,113 @@ func (m *Monitor) logger() *slog.Logger {
 }
 
 // MCPMonitorConnector is the MonitorConnector that speaks MCP over
-// Streamable HTTP. It keeps the standalone stream open, so the upstream
-// can announce `list_changed`.
-func MCPMonitorConnector(ctx context.Context, endpoint string, toolsChanged func()) (MonitorSession, error) {
-	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "toolgate", Version: "0"}, &mcp.ClientOptions{
-		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { toolsChanged() },
-	})
-
-	session, err := mcpClient.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: endpoint, HTTPClient: toolListHTTPClient}, nil)
-	if err != nil {
-		return nil, fmt.Errorf("initialize %s: %w", endpoint, err)
+// Streamable HTTP (docs/design/phase-4.md §8, "Monitoring").
+//
+// On 2025-11-25 the session pings, and gets `list_changed` on its stream.
+// On 2026-07-28, which has no `ping`, each health check connects a fresh
+// client with no handlers, which sends `server/discover`, and closes it.
+// The monitoring session holds the `subscriptions/listen` request, and a
+// re-list runs on a fresh short-lived session, so the go-sdk's list cache
+// never answers it. When the listen request has ended, the next health
+// check connects the monitoring session again and re-lists once.
+func MCPMonitorConnector(ctx context.Context, endpoint, revision string, toolsChanged func()) (MonitorSession, error) {
+	session := &mcpMonitorSession{endpoint: endpoint, toolsChanged: toolsChanged}
+	if err := session.connect(ctx, revision); err != nil {
+		return nil, err
 	}
 
-	return mcpMonitorSession{session: session}, nil
+	return session, nil
 }
 
 type mcpMonitorSession struct {
-	session *mcp.ClientSession
+	endpoint     string
+	toolsChanged func()
+	revision     string
+	session      *mcp.ClientSession
+	// listenEnded is set when the current session's listen request ends.
+	listenEnded *atomic.Bool
 }
 
-func (s mcpMonitorSession) Ping(ctx context.Context) error {
-	if err := s.session.Ping(ctx, nil); err != nil {
-		return fmt.Errorf("ping: %w", err)
+func (s *mcpMonitorSession) connect(ctx context.Context, revision string) error {
+	ended := &atomic.Bool{}
+
+	session, negotiated, err := ConnectUpstream(ctx, s.endpoint, revision, UpstreamOptions{
+		HTTPClient: toolListHTTPClient,
+		Client: &mcp.ClientOptions{
+			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { s.toolsChanged() },
+		},
+		listenEnded: func() { ended.Store(true) },
+	})
+	if err != nil {
+		return fmt.Errorf("initialize %s: %w", s.endpoint, err)
 	}
+
+	s.session, s.revision, s.listenEnded = session, negotiated, ended
 
 	return nil
 }
 
-func (s mcpMonitorSession) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
-	var tools []*mcp.Tool
+func (s *mcpMonitorSession) stateless() bool { return s.revision >= RevisionStateless }
 
+func (s *mcpMonitorSession) Ping(ctx context.Context) error {
+	if !s.stateless() {
+		if err := s.session.Ping(ctx, nil); err != nil {
+			return fmt.Errorf("ping: %w", err)
+		}
+
+		return nil
+	}
+
+	discovered, _, err := ConnectUpstream(ctx, s.endpoint, RevisionStateless, UpstreamOptions{
+		HTTPClient: toolListHTTPClient, DisableStandaloneSSE: true,
+	})
+	if err != nil {
+		return fmt.Errorf("server/discover: %w", err)
+	}
+
+	_ = discovered.Close()
+
+	if !s.listenEnded.Load() {
+		return nil
+	}
+
+	_ = s.session.Close()
+
+	if err := s.connect(ctx, RevisionStateless); err != nil {
+		return err
+	}
+
+	s.toolsChanged()
+
+	return nil
+}
+
+func (s *mcpMonitorSession) ListTools(ctx context.Context) ([]*mcp.Tool, error) {
 	ctx, budget := upstreamlimit.WithBudget(ctx, toolListResponseBudget)
 
-	for tool, err := range s.session.Tools(ctx, nil) {
+	if !s.stateless() {
+		tools, err := listAll(ctx, s.session, budget)
 		if err != nil {
-			return nil, fmt.Errorf("tools/list: %w", toolListError(err, budget))
+			return nil, fmt.Errorf("tools/list: %w", err)
 		}
 
-		tools = append(tools, tool)
-		if len(tools) > MaxTools {
-			break
-		}
+		return tools, nil
+	}
+
+	fresh, _, err := ConnectUpstream(ctx, s.endpoint, RevisionStateless, UpstreamOptions{
+		HTTPClient: toolListHTTPClient, DisableStandaloneSSE: true,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("tools/list: %w", toolListError(err, budget))
+	}
+	defer func() { _ = fresh.Close() }()
+
+	tools, err := listAll(ctx, fresh, budget)
+	if err != nil {
+		return nil, fmt.Errorf("tools/list: %w", err)
 	}
 
 	return tools, nil
 }
 
-func (s mcpMonitorSession) Close() error { return s.session.Close() }
+func (s *mcpMonitorSession) Close() error { return s.session.Close() }

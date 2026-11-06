@@ -31,8 +31,10 @@ type StartStore interface {
 	// expiry of its resolved values (zero for none). healthCheck is the
 	// rendered custom health check as JSON, nil for none.
 	MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time) (bool, error)
-	// MarkReady moves a starting instance to ready with its tool list.
-	MarkReady(ctx context.Context, id string, tools []byte) (bool, error)
+	// MarkReady moves a starting instance to ready with its tool list and
+	// the MCP revision it speaks, and records instance.ready. The revision
+	// never changes while the row lives.
+	MarkReady(ctx context.Context, instance db.Instance, tools []byte, revision string) (bool, error)
 	// MarkFailed moves an instance from status from to failed.
 	MarkFailed(ctx context.Context, id, from, reason string) (bool, error)
 	// SetHealth marks a ready instance healthy, or unhealthy with reason,
@@ -90,10 +92,25 @@ func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generat
 	})
 }
 
-// MarkReady implements StartStore.
-func (s PostgresStartStore) MarkReady(ctx context.Context, id string, tools []byte) (bool, error) {
-	return s.changeAndLearn(ctx, id, tools, func(queries *db.Queries) (int64, error) {
-		return queries.SetInstanceReady(ctx, db.SetInstanceReadyParams{ID: id, Tools: tools})
+// MarkReady implements StartStore. It writes instance.ready, with no
+// payload, in the same transaction as the compare-and-set.
+func (s PostgresStartStore) MarkReady(ctx context.Context, instance db.Instance, tools []byte, revision string) (bool, error) {
+	return s.changeAndLearn(ctx, instance.ID, tools, func(queries *db.Queries) (int64, error) {
+		rows, err := queries.SetInstanceReady(ctx, db.SetInstanceReadyParams{ID: instance.ID, Tools: tools, McpRevision: revision})
+		if err != nil || rows == 0 {
+			return rows, err
+		}
+
+		output := s.AuditOutput
+		if output == nil {
+			output = io.Discard
+		}
+
+		event := audit.Event{Type: audit.TypeInstanceReady, Server: instance.TemplateName, Details: map[string]any{
+			"instance": instance.ID, "owner": instance.OwnerPrincipal, "mcpRevision": revision,
+		}}
+
+		return rows, audit.NewRecorder(output, queries).Record(ctx, event)
 	})
 }
 

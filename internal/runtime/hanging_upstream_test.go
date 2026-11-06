@@ -45,7 +45,7 @@ func TestStarterStepIsBoundedWhenTheUpstreamNeverAnswers(t *testing.T) {
 
 	fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
 	fixture.starter.ToolListTimeout = 100 * time.Millisecond
-	fixture.starter.ListTools = func(ctx context.Context, _ string) ([]*mcp.Tool, error) {
+	fixture.starter.ListTools = func(ctx context.Context, _ string) ([]*mcp.Tool, string, error) {
 		return runtime.MCPToolLister(ctx, server.URL)
 	}
 

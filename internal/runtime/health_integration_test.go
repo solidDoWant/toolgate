@@ -72,12 +72,12 @@ func newHealthHarness(t *testing.T) *healthHarness {
 	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, nil, time.Time{})
 	require.NoError(t, err)
 
-	tools, err := runtime.MCPToolLister(t.Context(), harness.http.URL)
+	tools, revision, err := runtime.MCPToolLister(t.Context(), harness.http.URL)
 	require.NoError(t, err)
 
 	encoded, reason := runtime.CheckToolList("github", tools)
 	require.Empty(t, reason)
-	_, err = startStore.MarkReady(t.Context(), instanceID, encoded)
+	_, err = startStore.MarkReady(t.Context(), db.Instance{ID: instanceID, TemplateName: "github"}, encoded, revision)
 	require.NoError(t, err)
 
 	listener := store.NewListener(pool, slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -104,8 +104,8 @@ func newHealthHarness(t *testing.T) *healthHarness {
 		},
 		// The instance endpoint is a cluster DNS name; reach the local
 		// upstream instead.
-		Connect: func(ctx context.Context, _ string, toolsChanged func()) (runtime.MonitorSession, error) {
-			return runtime.MCPMonitorConnector(ctx, harness.http.URL, toolsChanged)
+		Connect: func(ctx context.Context, _, revision string, toolsChanged func()) (runtime.MonitorSession, error) {
+			return runtime.MCPMonitorConnector(ctx, harness.http.URL, revision, toolsChanged)
 		},
 		Interval: 100 * time.Millisecond,
 	}

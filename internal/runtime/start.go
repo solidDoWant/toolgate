@@ -86,9 +86,10 @@ const (
 	StatusStarting = "starting"
 )
 
-// ToolLister connects to an instance's MCP endpoint, runs `initialize` and
-// `tools/list`, and returns the tools.
-type ToolLister func(ctx context.Context, endpoint string) ([]*mcp.Tool, error)
+// ToolLister connects to a starting instance's MCP endpoint, chooses the
+// MCP revision (ConnectUpstream), runs `tools/list`, and returns the tools
+// and the revision.
+type ToolLister func(ctx context.Context, endpoint string) ([]*mcp.Tool, string, error)
 
 // statusKinds are the kinds whose readiness kstatus judges from their
 // status even when the template doesn't list them, such as the pods a
@@ -259,7 +260,7 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 		return nil
 	}
 
-	tools, err := s.listTools(ctx, EndpointURL(instance, template))
+	tools, revision, err := s.listTools(ctx, EndpointURL(instance, template))
 	if errors.Is(err, ErrToolListTooLarge) {
 		return s.fail(ctx, instance, StatusStarting, toolListTooLargeReason)
 	}
@@ -277,7 +278,7 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 		return s.fail(ctx, instance, StatusStarting, reason)
 	}
 
-	if _, err := s.Store.MarkReady(ctx, instance.ID, encoded); err != nil {
+	if _, err := s.Store.MarkReady(ctx, instance, encoded, revision); err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
 	}
 
@@ -893,7 +894,7 @@ func (s *Starter) now() time.Time {
 }
 
 // listTools calls ListTools with a deadline of ToolListTimeout.
-func (s *Starter) listTools(ctx context.Context, endpoint string) ([]*mcp.Tool, error) {
+func (s *Starter) listTools(ctx context.Context, endpoint string) ([]*mcp.Tool, string, error) {
 	timeout := s.ToolListTimeout
 	if timeout == 0 {
 		timeout = DefaultToolListTimeout
@@ -913,25 +914,34 @@ func (s *Starter) logger() *slog.Logger {
 	return slog.Default()
 }
 
-// MCPToolLister is the ToolLister that speaks MCP over Streamable HTTP.
-func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, error) {
-	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "toolgate", Version: "0"}, nil)
-
+// MCPToolLister is the ToolLister that speaks MCP over Streamable HTTP. It
+// runs the revision probe of ConnectUpstream on a fresh session.
+func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, string, error) {
 	ctx, budget := upstreamlimit.WithBudget(ctx, toolListResponseBudget)
 
-	session, err := mcpClient.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint: endpoint, DisableStandaloneSSE: true, HTTPClient: toolListHTTPClient,
-	}, nil)
+	session, revision, err := ConnectUpstream(ctx, endpoint, "", UpstreamOptions{
+		DisableStandaloneSSE: true, HTTPClient: toolListHTTPClient,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("initialize %s: %w", endpoint, toolListError(err, budget))
+		return nil, "", fmt.Errorf("initialize %s: %w", endpoint, toolListError(err, budget))
 	}
 	defer func() { _ = session.Close() }()
 
+	tools, err := listAll(ctx, session, budget)
+	if err != nil {
+		return nil, "", fmt.Errorf("tools/list %s: %w", endpoint, err)
+	}
+
+	return tools, revision, nil
+}
+
+// listAll lists every tool of session, at most MaxTools+1.
+func listAll(ctx context.Context, session *mcp.ClientSession, budget *upstreamlimit.Budget) ([]*mcp.Tool, error) {
 	var tools []*mcp.Tool
 
 	for tool, err := range session.Tools(ctx, nil) {
 		if err != nil {
-			return nil, fmt.Errorf("tools/list %s: %w", endpoint, toolListError(err, budget))
+			return nil, toolListError(err, budget)
 		}
 
 		tools = append(tools, tool)

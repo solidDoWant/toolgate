@@ -47,7 +47,7 @@ func TestStartStoreLearnsTools(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	changed, err = startStore.MarkReady(t.Context(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", []byte(`[{"name":"one"}]`))
+	changed, err = startStore.MarkReady(t.Context(), db.Instance{ID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, []byte(`[{"name":"one"}]`), runtime.RevisionStateful)
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -69,7 +69,7 @@ func TestStartStoreLearnsTools(t *testing.T) {
 
 	// A write that changes nothing learns nothing.
 	insertInstance(t, queries, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "uid-1", 4)
-	changed, err = startStore.MarkReady(t.Context(), "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", []byte(`[{"name":"x"}]`))
+	changed, err = startStore.MarkReady(t.Context(), db.Instance{ID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, []byte(`[{"name":"x"}]`), runtime.RevisionStateful)
 	require.NoError(t, err)
 	assert.False(t, changed, "inst-b is still pending")
 
@@ -89,7 +89,7 @@ func TestStartStoreLearnsNothingForDeclaredTools(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, changed)
 
-		changed, err = startStore.MarkReady(t.Context(), id, []byte(`[]`))
+		changed, err = startStore.MarkReady(t.Context(), db.Instance{ID: id}, []byte(`[]`), runtime.RevisionStateful)
 		require.NoError(t, err)
 		require.True(t, changed)
 	}
@@ -118,7 +118,7 @@ func TestStartStoreToolCatalogSizeLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, changed)
 
-	changed, err = startStore.MarkReady(t.Context(), "cccccccccccccccccccccccccccccccc", []byte(big))
+	changed, err = startStore.MarkReady(t.Context(), db.Instance{ID: "cccccccccccccccccccccccccccccccc"}, []byte(big), runtime.RevisionStateful)
 	require.NoError(t, err)
 	assert.True(t, changed)
 

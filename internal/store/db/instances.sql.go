@@ -653,17 +653,18 @@ func (q *Queries) SetInstancePending(ctx context.Context, arg SetInstancePending
 
 const setInstanceReady = `-- name: SetInstanceReady :execrows
 UPDATE instances
-SET status = 'ready', tools = $1, ready_at = now(), reason = '', updated_at = now()
-WHERE id = $2 AND status = 'starting'
+SET status = 'ready', tools = $1, mcp_revision = $2, ready_at = now(), reason = '', updated_at = now()
+WHERE id = $3 AND status = 'starting'
 `
 
 type SetInstanceReadyParams struct {
-	Tools []byte
-	ID    string
+	Tools       []byte
+	McpRevision string
+	ID          string
 }
 
 func (q *Queries) SetInstanceReady(ctx context.Context, arg SetInstanceReadyParams) (int64, error) {
-	result, err := q.db.Exec(ctx, setInstanceReady, arg.Tools, arg.ID)
+	result, err := q.db.Exec(ctx, setInstanceReady, arg.Tools, arg.McpRevision, arg.ID)
 	if err != nil {
 		return 0, err
 	}
