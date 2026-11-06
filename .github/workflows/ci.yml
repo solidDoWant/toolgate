@@ -16,7 +16,7 @@ permissions:
 # The acceptance phases the e2e-scoreboard job scores: every phase up to the
 # current one. Add a phase here when it starts.
 env:
-  ACCEPTANCE_PHASES: "1 2"
+  ACCEPTANCE_PHASES: "1 2 3"
 
 concurrency:
   group: ci-${{ github.ref }}
