@@ -196,10 +196,20 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 			fmt.Sprintf("Server `%s` isn't enabled in this session. Call `%s` first.", server, ToolEnableServer))
 	}
 
-	// Step 2: its live instance must be ready.
+	// Step 2: its live instance must be ready. A call to an instance that is
+	// still starting, such as a restored or replaced one, waits for it as an
+	// enable does (docs/design/phase-3.md §11).
 	instance, status, reason, err := m.readyInstance(ctx, current, template)
 	if err != nil {
 		return nil, err
+	}
+
+	if status == StatusStarting && instance.ID != "" {
+		instance, status, reason, err = m.waitForCall(ctx, request, current, template, instance)
+		if err != nil {
+			return m.refuseCall(ctx, current, server, tool,
+				map[string]any{"reason": reasonNotReady, "status": StatusStarting, "detail": err.Error()}, err.Error())
+		}
 	}
 
 	if status != statusReady {
@@ -402,6 +412,9 @@ func (m *metaTools) readyInstance(ctx context.Context, current requestContext, t
 	switch {
 	case err == nil && instance.Status == statusReady:
 		return instance, statusReady, "", nil
+	case err == nil && (instance.Status == "pending" || instance.Status == "starting"):
+		// The live instance is still starting; the caller may wait on it.
+		return instance, StatusStarting, "", nil
 	case err != nil && !errors.Is(err, pgx.ErrNoRows):
 		return db.Instance{}, "", "", fmt.Errorf("read live instance: %w", err)
 	}
@@ -418,6 +431,35 @@ func (m *metaTools) readyInstance(ctx context.Context, current requestContext, t
 	status, reason := shownStatus(newest)
 	if status == StatusReady {
 		// The newest row is ready but not live: it is being stopped.
+		status = StatusStopped
+	}
+
+	return db.Instance{}, status, reason, nil
+}
+
+// waitForCall waits for a call's live instance that is still starting and
+// returns it with its status once the wait is over. err is the reason the
+// wait ended early: a timeout, a disable or the session's end.
+func (m *metaTools) waitForCall(ctx context.Context, request *mcp.CallToolRequest, current requestContext,
+	template *v1alpha1.MCPServerTemplate, instance db.Instance,
+) (db.Instance, string, string, error) {
+	waitCtx, span := tracer(ctx).Start(ctx, "toolgate.call.wait",
+		trace.WithAttributes(attribute.String("toolgate.server", template.Name)))
+	instance, err := m.waitForInstance(waitCtx, request, current, template, instance)
+
+	span.End()
+
+	if err != nil {
+		return db.Instance{}, "", "", err
+	}
+
+	if instance.Status == statusReady && instance.Desired == "running" && !instance.FailedAt.Valid {
+		return instance, statusReady, "", nil
+	}
+
+	status, reason := shownStatus(instance)
+	if status == StatusReady {
+		// Ready but no longer live: it is being stopped.
 		status = StatusStopped
 	}
 

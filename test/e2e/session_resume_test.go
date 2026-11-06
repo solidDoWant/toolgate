@@ -3,10 +3,12 @@
 package e2e
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/util/rand"
@@ -83,6 +85,21 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 		startAndPause(t, session)
 
 		resumed := connectGatewayInWorkspace(t, endpoint, "alice", session, "repo-a")
+
+		// A call made while the restored server is still starting waits for
+		// it, with progress, instead of failing.
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
+		defer cancel()
+
+		call := &mcp.CallToolParams{Name: name + "__echo", Arguments: map[string]any{"text": "early"}}
+		call.SetProgressToken("resume-call")
+
+		result, err := resumed.session.CallTool(ctx, call)
+		require.NoError(t, err)
+		require.False(t, result.IsError, "the call waits for the start instead of failing: %v", result.Content)
+		require.Len(t, result.Content, 1)
+		assert.Equal(t, "early", result.Content[0].(*mcp.TextContent).Text)
+		assert.Contains(t, resumed.recorded(), eventProgress, "the waiting call sends progress")
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Contains(collect, resumed.recorded(), eventListChanged)

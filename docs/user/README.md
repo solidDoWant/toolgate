@@ -156,7 +156,7 @@ A server has one of three scopes. Your admin sets the scope:
 - `per-user`: your sessions share one copy of the server. It stops some time after none of your sessions use it.
 - `shared`: all users share one copy of the server.
 
-By default, a session ends after 2 hours without requests. Then its servers stop. If you resume the session in Claude Code from the same workspace within 24 hours, you get your servers back, and you do not turn them on again. The servers start again, and their tools come back when each server is ready. Your admin can change the 24 hours. If you resume the session from another workspace, or after that time, the session starts with no servers turned on.
+By default, a session ends after 2 hours without requests. Then its servers stop. If you resume the session in Claude Code from the same workspace within 24 hours, you get your servers back, and you do not turn them on again. The servers start again, and their tools come back when each server is ready. If Claude calls a tool of a server that is still starting, the call waits until the server is ready, and then it runs. Your admin can change the 24 hours. If you resume the session from another workspace, or after that time, the session starts with no servers turned on.
 
 When a session resumes, toolgate checks each server again. If the rules or your workspace list no longer allow a server, or you reached the limit of running servers, toolgate turns that server off.
 

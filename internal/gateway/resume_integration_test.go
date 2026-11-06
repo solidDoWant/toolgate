@@ -53,15 +53,15 @@ func TestSessionResume(t *testing.T) {
 		assert.NotEqual(t, before.ID, instance.ID, "the resume inserts a new instance")
 		assert.Equal(t, "pending", instance.Status)
 
-		// Before the instance is ready, a call is refused with not-ready.
-		result := callTool(t, resumed.session, "github__echo", map[string]any{"text": "early"})
-		assert.True(t, result.IsError)
-
-		decisions := fixture.auditRows(t, "tool.decision")
-		require.Len(t, decisions, 1)
-		assert.Equal(t, "not-ready", decisions[0].Details["reason"])
+		// Before the instance is ready, a call waits for it.
+		early := startWaitingCall(t, resumed, "github__echo", map[string]any{"text": "early"})
+		fixture.assertWaiting(t, resumed, early)
 
 		fixture.markReady(t, instance.ID, "echo")
+
+		result := awaitWaitingCall(t, early)
+		require.False(t, result.IsError, resultText(result))
+		assert.Equal(t, "early", resultText(result))
 
 		require.Eventually(t, func() bool { return resumed.listChangedCount() > 0 }, waitTimeout, 10*time.Millisecond)
 		assert.Contains(t, toolNames(t, resumed.session), "github__echo")
