@@ -108,7 +108,7 @@ spec:
 
 ### Test backend and the usage query
 
-The e2e cluster runs `grafana/otel-lgtm`, pinned by digest like the other e2e images: one pod with an OpenTelemetry Collector, Prometheus (OTLP receiver on), Tempo and Loki. The gateway's `otlpEndpoint` points at its collector. Tests read the backends through their own query APIs: PromQL, Tempo's trace API and LogQL. One image gives all three signals real query languages, and the documented query runs on real Prometheus.
+The e2e cluster runs `mirror.gcr.io/grafana/otel-lgtm` (Google's Docker Hub mirror, so CI isn't subject to Docker Hub's pull limits), pinned by digest like the other e2e images: one pod with an OpenTelemetry Collector, Prometheus (OTLP receiver on), Tempo and Loki. The gateway's `otlpEndpoint` points at its collector. Tests read the backends through their own query APIs: PromQL, Tempo's trace API and LogQL. One image gives all three signals real query languages, and the documented query runs on real Prometheus.
 
 **Test input.** CI can't make model calls, so a developer records Claude Code's OTLP exports once, with the profile above and a real session that calls a toolgate tool, and the recording is stored in `test/fixtures/otlp/`. `docs/dev/` records how, like the session-ID evidence. The AC-3-05 test replays it through the gateway with the headers `toolgate otel-headers` prints, including client-set `user.*`, `enduser.id` and `workspace.id` values. It checks that a metric, a log event and a span reach the backend with the verified principal and workspace, and none of the client's values.
 
@@ -431,7 +431,8 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - the go-sdk's `CallTool` on the monitoring session.
 
   No new cryptography: signatures are checked by go-spiffe, and test SVIDs are signed by go-jose.
-- **Test backend:** `grafana/otel-lgtm`, pinned by digest (§3).
+- **Test backend:** `mirror.gcr.io/grafana/otel-lgtm`, pinned by digest (§3).
+- **Token refresh is serialized.** `toolgate headers` and `toolgate otel-headers` both refresh the IdP token. The token store takes an exclusive file lock (`github.com/gofrs/flock`) on a lock file next to the token file before it reads, refreshes and writes. A process that waits for the lock re-reads the token afterwards and uses it if it's still valid. So two helpers never send the same refresh token, and an IdP that rotates refresh tokens and detects reuse doesn't sign the user out. A unit test runs two refreshes at once and expects one IdP call.
 - **`SPEC.md` updates** in the first implementing PRs:
   - §9: `access.spiffeIDs` and `healthCheck`;
   - §12: ingest stamping, and that `session.id` is kept;
@@ -440,7 +441,9 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - §21 question 2: answered by SPIFFE.
 - **Errors to the model** follow phase 1: short sentences naming what to do next.
 
-## Open questions for the operator
+## Decisions on the draft's open questions
 
-1. **Prompt and tool content in telemetry.** Claude Code sends prompts, tool arguments and tool output only when a user or profile turns on `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` or `OTEL_LOG_TOOL_CONTENT`. The design passes through whatever the client sends, and the example profile leaves them off. The other option is for the ingest to always strip those fields, so a user can't send them to the backend. That keeps the backend free of content, but even an admin can't turn them on.
-2. **SPIFFE identity is the workload, not the person.** In a Coder workspace signed in with an SVID, the principal and the usage per user are the SPIFFE ID, and only the ID's path says whose workspace it is. Templates and rules then name SPIFFE IDs, not users or groups. The alternative is for people in such workspaces to keep their own sign-in (attestation `user`, with grants for `opt-in` servers) and not use the SVID. The design lets the admin choose per workspace by setting `TOOLGATE_SPIFFE_SOCKET` or not.
+The operator decided these on the owner's behalf. The owner is away for phase 3, and the decisions are logged on the decision issue.
+
+1. **Prompt and tool content in telemetry:** the ingest passes through what the client sends. Whether Claude Code sends prompts and tool content is the admin's choice, through the `SettingsProfile` that sets `OTEL_LOG_*`. The example profile leaves them off, and `docs/admin/` warns that turning them on sends user content to the backend.
+2. **SPIFFE identity is the workload:** accepted. An SVID sign-in is attested as the workload. Whether a workspace uses it is the admin's choice, through `TOOLGATE_SPIFFE_SOCKET`. Rules and templates name SPIFFE IDs (`access.spiffeIDs`). Usage per person is read from the ID's path.
