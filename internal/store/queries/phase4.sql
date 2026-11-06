@@ -230,3 +230,44 @@ WHERE session_pk = @session_pk AND template_ns = @template_ns AND template_name 
 
 -- name: ListFoundToolSessions :many
 SELECT DISTINCT session_pk FROM session_found_tools WHERE template_ns = @template_ns AND template_name = @template_name;
+
+-- name: SetSessionFoundToolSearch :exec
+-- Marks a found tool as returned by the given search at the given rank.
+UPDATE session_found_tools SET search_id = @search_id, rank = @rank
+WHERE session_pk = @session_pk AND template_ns = @template_ns AND template_name = @template_name AND upstream_name = @upstream_name;
+
+-- name: SetSessionLastSearch :exec
+UPDATE sessions SET last_search_id = @search_id WHERE id = @id;
+
+-- name: TakeOpenSearch :one
+-- Deletes and returns the open search of a session, if any.
+DELETE FROM session_open_searches WHERE session_pk = @session_pk
+RETURNING search_id, degraded, embedding_model;
+
+-- name: InsertOpenSearch :exec
+INSERT INTO session_open_searches (session_pk, search_id, degraded, embedding_model)
+VALUES (@session_pk, @search_id, @degraded, @embedding_model)
+ON CONFLICT (session_pk) DO UPDATE
+SET search_id = EXCLUDED.search_id, searched_at = now(), degraded = EXCLUDED.degraded, embedding_model = EXCLUDED.embedding_model;
+
+-- name: TakeSearchHit :one
+-- Deletes the session's open search when the tool belongs to it, and returns
+-- the search and the rank of the tool in it. No row when the tool is not in
+-- the latest search or that search already has a hit.
+DELETE FROM session_open_searches AS o
+WHERE o.session_pk = @session_pk AND EXISTS (
+    SELECT 1 FROM session_found_tools f
+    WHERE f.session_pk = o.session_pk AND f.search_id = o.search_id
+      AND f.template_ns = @template_ns AND f.template_name = @template_name AND f.upstream_name = @upstream_name)
+RETURNING o.search_id, o.degraded, o.embedding_model, (
+    SELECT f.rank FROM session_found_tools f
+    WHERE f.session_pk = o.session_pk AND f.search_id = o.search_id
+      AND f.template_ns = @template_ns AND f.template_name = @template_name AND f.upstream_name = @upstream_name)::int AS rank;
+
+-- name: TakeStaleOpenSearches :many
+-- Deletes and returns the open searches of ended sessions and the ones older
+-- than the given age: the searches with no follow-up call.
+DELETE FROM session_open_searches AS o
+USING sessions AS s
+WHERE s.id = o.session_pk AND (s.ended_at IS NOT NULL OR o.searched_at < now() - @max_age::interval)
+RETURNING o.search_id, o.degraded, o.embedding_model;

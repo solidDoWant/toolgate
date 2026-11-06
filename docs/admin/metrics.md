@@ -122,3 +122,7 @@ sum(increase(toolgate_auth_refusals_dropped_total[1h]))
 ```promql
 increase(toolgate_audit_payload_errors_total[1h]) > 0
 ```
+
+## Tool search quality
+
+The counters `toolgate_tool_search_total`, `toolgate_tool_search_hits_total` (extra label `rank`), `toolgate_tool_search_researches_total` and `toolgate_tool_search_no_call_total` show how well tool search works in real use. They have the labels `degraded` and `embedding_model`. See [Tool search](tool-search.md#search-quality-in-use).

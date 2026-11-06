@@ -40,6 +40,10 @@ var AllowedLabels = map[string][]string{
 	"step":   {"access", "environment", "blocked", "rule", "temporary-block", "workspace-scope"},
 	"reason": {"denied", "refused"},
 	"action": {"replace", "reapply", "gave_up"},
+	// The model names are admin-defined, and one is configured at a time.
+	"embedding_model": nil,
+	"degraded":        {"true", "false"},
+	"rank":            {"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"},
 }
 
 // Check gathers the registry and fails the test when it has more series than

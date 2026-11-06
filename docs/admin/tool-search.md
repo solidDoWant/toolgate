@@ -64,3 +64,50 @@ The extension `vector` (pgvector) must be available in your PostgreSQL. The migr
 - A minimal PostgreSQL image, plus the pgvector extension image mounted as a CloudNativePG image volume extension.
 
 The database user that runs the migration must be allowed to create the extensions `vector` and `pg_trgm`. `pg_trgm` is a trusted extension, so the database owner can create it. `vector` is not trusted in the standard images, so a superuser must create it, or the migration user must be a superuser. If a superuser has run `CREATE EXTENSION vector` in the database, the migration skips the step. The split-role SQL in the chart page does this.
+
+## Search quality in use
+
+No MCP client tells the gateway whether a search result was right. The gateway infers it from what the session does next. It never stores or logs the query text.
+
+For each `toolgate_find_tools` call, the gateway writes the audit event `tool.search`. It holds a `search_id`, the returned tools with their ranks (1 is the best), the count, `degraded` (search used keywords only) and `embedding_model` (the configured model name, empty if none). The gateway counts a search as one of these outcomes:
+
+- Hit: the session calls a tool that the latest search returned. The gateway writes the audit event `tool.search_hit` with the `search_id`, the `server`, the tool and its `rank`. It writes one hit for each search, before it decides about the call, whatever the decision is.
+- Re-search: the session searches again before it calls any returned tool.
+- No call: the session ends, or 30 minutes pass, with no hit and no newer search. The replica that holds the leader Lease counts this every 30 seconds.
+
+These counters have the labels `degraded` and `embedding_model`. Only one model is configured at a time, so the number of series stays small.
+
+| Metric | Extra label | Meaning |
+| --- | --- | --- |
+| `toolgate_tool_search_total` | none | Searches. |
+| `toolgate_tool_search_hits_total` | `rank` | Searches followed by a call of a returned tool, by the rank of that tool. |
+| `toolgate_tool_search_researches_total` | none | Searches replaced by a newer search with no hit. |
+| `toolgate_tool_search_no_call_total` | none | Searches with no follow-up. |
+
+The top-1 hit rate and the top-5 hit rate:
+
+```promql
+sum(rate(toolgate_tool_search_hits_total{rank="1"}[1d])) / sum(rate(toolgate_tool_search_total[1d]))
+sum(rate(toolgate_tool_search_hits_total{rank=~"[1-5]"}[1d])) / sum(rate(toolgate_tool_search_total[1d]))
+```
+
+The re-search rate. A high rate means that the first result often did not help:
+
+```promql
+sum(rate(toolgate_tool_search_researches_total[1d])) / sum(rate(toolgate_tool_search_total[1d]))
+```
+
+### Compare two models in use
+
+Change `config.toolSearchEmbeddings.model`. The metrics then get a new `embedding_model` value, and you can compare the hit rates of both models side by side. Wait until both models have served enough searches.
+
+```promql
+sum by (embedding_model) (rate(toolgate_tool_search_hits_total{rank=~"[1-5]"}[7d]))
+  / sum by (embedding_model) (rate(toolgate_tool_search_total[7d]))
+```
+
+To try a model before you switch, use the offline comparison tool `make search-eval`.
+
+### Hit rate of each server
+
+The metrics have no `server` label. Use the audit log instead. Count `tool.search_hit` events by `server`, and compare them with the count of `tool.search` results that list the server. A server with a low hit rate needs better tool descriptions. The audit log is in the `audit_events` table and in the gateway log lines.

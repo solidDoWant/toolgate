@@ -86,6 +86,13 @@ type Metrics struct {
 	HealthFailures *prometheus.CounterVec
 	// Repairs counts repairs by server and action.
 	Repairs *prometheus.CounterVec
+
+	// Searches, SearchHits, SearchResearches and SearchNoCalls count the
+	// outcomes of tool searches (see searchquality.go).
+	Searches         *prometheus.CounterVec
+	SearchHits       *prometheus.CounterVec
+	SearchResearches *prometheus.CounterVec
+	SearchNoCalls    *prometheus.CounterVec
 }
 
 // Outcomes of a tool call (the `outcome` label of toolgate_tool_calls_total).
@@ -157,13 +164,30 @@ func NewMetrics() *Metrics {
 			Name: "toolgate_instance_repairs_total",
 			Help: "Repairs of unhealthy instances, by server and action.",
 		}, []string{"server", "action"}),
+		Searches: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_total",
+			Help: "Tool searches, by whether search was degraded (keywords only) and the embedding model configured.",
+		}, []string{"degraded", "embedding_model"}),
+		SearchHits: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_hits_total",
+			Help: "Searches followed by a call of a returned tool, by the rank of that tool, whether search was degraded and the embedding model.",
+		}, []string{"rank", "degraded", "embedding_model"}),
+		SearchResearches: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_researches_total",
+			Help: "Searches followed by a new search before any call of a returned tool, by whether search was degraded and the embedding model.",
+		}, []string{"degraded", "embedding_model"}),
+		SearchNoCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_no_call_total",
+			Help: "Searches with no call and no newer search when the session ended or after 30 minutes, by whether search was degraded and the embedding model. Counted by the replica holding the leader Lease.",
+		}, []string{"degraded", "embedding_model"}),
 	}
 }
 
 // Collectors returns the metrics for registration.
 func (m *Metrics) Collectors() []prometheus.Collector {
 	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions, m.ToolCalls, m.ToolCallDuration,
-		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs}
+		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs,
+		m.Searches, m.SearchHits, m.SearchResearches, m.SearchNoCalls}
 }
 
 // Step takes one instance one step towards stopped. It is a Step of the

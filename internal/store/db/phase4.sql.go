@@ -424,6 +424,30 @@ func (q *Queries) GetToolCatalog(ctx context.Context, arg GetToolCatalogParams) 
 	return i, err
 }
 
+const insertOpenSearch = `-- name: InsertOpenSearch :exec
+INSERT INTO session_open_searches (session_pk, search_id, degraded, embedding_model)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (session_pk) DO UPDATE
+SET search_id = EXCLUDED.search_id, searched_at = now(), degraded = EXCLUDED.degraded, embedding_model = EXCLUDED.embedding_model
+`
+
+type InsertOpenSearchParams struct {
+	SessionPk      int64
+	SearchID       pgtype.UUID
+	Degraded       bool
+	EmbeddingModel string
+}
+
+func (q *Queries) InsertOpenSearch(ctx context.Context, arg InsertOpenSearchParams) error {
+	_, err := q.db.Exec(ctx, insertOpenSearch,
+		arg.SessionPk,
+		arg.SearchID,
+		arg.Degraded,
+		arg.EmbeddingModel,
+	)
+	return err
+}
+
 const insertScopeEntry = `-- name: InsertScopeEntry :one
 INSERT INTO scope_entries (scope_id, workspace, session_pk, server, tool, effect, request_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -675,7 +699,7 @@ func (q *Queries) ListSessionAdditionsOfSessions(ctx context.Context, sessionPks
 }
 
 const listSessionFoundTools = `-- name: ListSessionFoundTools :many
-SELECT session_pk, template_ns, template_name, upstream_name, found_at FROM session_found_tools WHERE session_pk = $1
+SELECT session_pk, template_ns, template_name, upstream_name, found_at, search_id, rank FROM session_found_tools WHERE session_pk = $1
 ORDER BY template_ns, template_name, upstream_name
 `
 
@@ -694,6 +718,8 @@ func (q *Queries) ListSessionFoundTools(ctx context.Context, sessionPk int64) ([
 			&i.TemplateName,
 			&i.UpstreamName,
 			&i.FoundAt,
+			&i.SearchID,
+			&i.Rank,
 		); err != nil {
 			return nil, err
 		}
@@ -1032,6 +1058,47 @@ func (q *Queries) SearchToolsHybrid(ctx context.Context, arg SearchToolsHybridPa
 	return items, nil
 }
 
+const setSessionFoundToolSearch = `-- name: SetSessionFoundToolSearch :exec
+UPDATE session_found_tools SET search_id = $1, rank = $2
+WHERE session_pk = $3 AND template_ns = $4 AND template_name = $5 AND upstream_name = $6
+`
+
+type SetSessionFoundToolSearchParams struct {
+	SearchID     pgtype.UUID
+	Rank         pgtype.Int4
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+}
+
+// Marks a found tool as returned by the given search at the given rank.
+func (q *Queries) SetSessionFoundToolSearch(ctx context.Context, arg SetSessionFoundToolSearchParams) error {
+	_, err := q.db.Exec(ctx, setSessionFoundToolSearch,
+		arg.SearchID,
+		arg.Rank,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.UpstreamName,
+	)
+	return err
+}
+
+const setSessionLastSearch = `-- name: SetSessionLastSearch :exec
+UPDATE sessions SET last_search_id = $1 WHERE id = $2
+`
+
+type SetSessionLastSearchParams struct {
+	SearchID pgtype.UUID
+	ID       int64
+}
+
+func (q *Queries) SetSessionLastSearch(ctx context.Context, arg SetSessionLastSearchParams) error {
+	_, err := q.db.Exec(ctx, setSessionLastSearch, arg.SearchID, arg.ID)
+	return err
+}
+
 const setUserScopeUnverifiedList = `-- name: SetUserScopeUnverifiedList :exec
 UPDATE user_scopes SET unverified_list = $1, updated_at = now() WHERE id = $2
 `
@@ -1044,6 +1111,106 @@ type SetUserScopeUnverifiedListParams struct {
 func (q *Queries) SetUserScopeUnverifiedList(ctx context.Context, arg SetUserScopeUnverifiedListParams) error {
 	_, err := q.db.Exec(ctx, setUserScopeUnverifiedList, arg.UnverifiedList, arg.ID)
 	return err
+}
+
+const takeOpenSearch = `-- name: TakeOpenSearch :one
+DELETE FROM session_open_searches WHERE session_pk = $1
+RETURNING search_id, degraded, embedding_model
+`
+
+type TakeOpenSearchRow struct {
+	SearchID       pgtype.UUID
+	Degraded       bool
+	EmbeddingModel string
+}
+
+// Deletes and returns the open search of a session, if any.
+func (q *Queries) TakeOpenSearch(ctx context.Context, sessionPk int64) (TakeOpenSearchRow, error) {
+	row := q.db.QueryRow(ctx, takeOpenSearch, sessionPk)
+	var i TakeOpenSearchRow
+	err := row.Scan(&i.SearchID, &i.Degraded, &i.EmbeddingModel)
+	return i, err
+}
+
+const takeSearchHit = `-- name: TakeSearchHit :one
+DELETE FROM session_open_searches AS o
+WHERE o.session_pk = $1 AND EXISTS (
+    SELECT 1 FROM session_found_tools f
+    WHERE f.session_pk = o.session_pk AND f.search_id = o.search_id
+      AND f.template_ns = $2 AND f.template_name = $3 AND f.upstream_name = $4)
+RETURNING o.search_id, o.degraded, o.embedding_model, (
+    SELECT f.rank FROM session_found_tools f
+    WHERE f.session_pk = o.session_pk AND f.search_id = o.search_id
+      AND f.template_ns = $2 AND f.template_name = $3 AND f.upstream_name = $4)::int AS rank
+`
+
+type TakeSearchHitParams struct {
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+}
+
+type TakeSearchHitRow struct {
+	SearchID       pgtype.UUID
+	Degraded       bool
+	EmbeddingModel string
+	Rank           int32
+}
+
+// Deletes the session's open search when the tool belongs to it, and returns
+// the search and the rank of the tool in it. No row when the tool is not in
+// the latest search or that search already has a hit.
+func (q *Queries) TakeSearchHit(ctx context.Context, arg TakeSearchHitParams) (TakeSearchHitRow, error) {
+	row := q.db.QueryRow(ctx, takeSearchHit,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.UpstreamName,
+	)
+	var i TakeSearchHitRow
+	err := row.Scan(
+		&i.SearchID,
+		&i.Degraded,
+		&i.EmbeddingModel,
+		&i.Rank,
+	)
+	return i, err
+}
+
+const takeStaleOpenSearches = `-- name: TakeStaleOpenSearches :many
+DELETE FROM session_open_searches AS o
+USING sessions AS s
+WHERE s.id = o.session_pk AND (s.ended_at IS NOT NULL OR o.searched_at < now() - $1::interval)
+RETURNING o.search_id, o.degraded, o.embedding_model
+`
+
+type TakeStaleOpenSearchesRow struct {
+	SearchID       pgtype.UUID
+	Degraded       bool
+	EmbeddingModel string
+}
+
+// Deletes and returns the open searches of ended sessions and the ones older
+// than the given age: the searches with no follow-up call.
+func (q *Queries) TakeStaleOpenSearches(ctx context.Context, maxAge pgtype.Interval) ([]TakeStaleOpenSearchesRow, error) {
+	rows, err := q.db.Query(ctx, takeStaleOpenSearches, maxAge)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TakeStaleOpenSearchesRow{}
+	for rows.Next() {
+		var i TakeStaleOpenSearchesRow
+		if err := rows.Scan(&i.SearchID, &i.Degraded, &i.EmbeddingModel); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const touchSessionFoundTool = `-- name: TouchSessionFoundTool :exec

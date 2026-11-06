@@ -93,7 +93,7 @@ const createSession = `-- name: CreateSession :one
 INSERT INTO sessions (principal, session_id, workspace, attestation, kind, email, name, groups)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (principal, session_id) DO NOTHING
-RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind
+RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id
 `
 
 type CreateSessionParams struct {
@@ -133,6 +133,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
@@ -186,7 +187,7 @@ const endIdleSession = `-- name: EndIdleSession :one
 UPDATE sessions
 SET ended_at = now()
 WHERE id = $1 AND ended_at IS NULL AND last_seen_at < now() - $2::interval
-RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind
+RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id
 `
 
 type EndIdleSessionParams struct {
@@ -210,6 +211,7 @@ func (q *Queries) EndIdleSession(ctx context.Context, arg EndIdleSessionParams) 
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
@@ -218,7 +220,7 @@ const endLiveSession = `-- name: EndLiveSession :one
 UPDATE sessions
 SET ended_at = now()
 WHERE id = $1 AND ended_at IS NULL
-RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind
+RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id
 `
 
 func (q *Queries) EndLiveSession(ctx context.Context, id int64) (Session, error) {
@@ -237,6 +239,7 @@ func (q *Queries) EndLiveSession(ctx context.Context, id int64) (Session, error)
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
@@ -277,7 +280,7 @@ func (q *Queries) ForgetEndedSessionServers(ctx context.Context, arg ForgetEnded
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind FROM sessions WHERE principal = $1 AND session_id = $2
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id FROM sessions WHERE principal = $1 AND session_id = $2
 `
 
 type GetSessionParams struct {
@@ -301,12 +304,13 @@ func (q *Queries) GetSession(ctx context.Context, arg GetSessionParams) (Session
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
 
 const getSessionByID = `-- name: GetSessionByID :one
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind FROM sessions WHERE id = $1
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id FROM sessions WHERE id = $1
 `
 
 func (q *Queries) GetSessionByID(ctx context.Context, id int64) (Session, error) {
@@ -325,12 +329,13 @@ func (q *Queries) GetSessionByID(ctx context.Context, id int64) (Session, error)
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
 
 const latestSessionOfPrincipal = `-- name: LatestSessionOfPrincipal :one
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind FROM sessions
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id FROM sessions
 WHERE principal = $1
 ORDER BY last_seen_at DESC
 LIMIT 1
@@ -352,12 +357,13 @@ func (q *Queries) LatestSessionOfPrincipal(ctx context.Context, principal string
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
 
 const listForgettableSessions = `-- name: ListForgettableSessions :many
-SELECT s.id, s.principal, s.session_id, s.workspace, s.attestation, s.email, s.name, s.groups, s.created_at, s.last_seen_at, s.ended_at, s.kind FROM sessions s
+SELECT s.id, s.principal, s.session_id, s.workspace, s.attestation, s.email, s.name, s.groups, s.created_at, s.last_seen_at, s.ended_at, s.kind, s.last_search_id FROM sessions s
 WHERE s.ended_at IS NOT NULL AND s.ended_at < now() - $1::interval
   AND (EXISTS (SELECT 1 FROM session_servers ss WHERE ss.session_pk = s.id)
     OR EXISTS (SELECT 1 FROM scope_entries e WHERE e.session_pk = s.id AND e.effect = 'deny'))
@@ -388,6 +394,7 @@ func (q *Queries) ListForgettableSessions(ctx context.Context, resumeWindow pgty
 			&i.LastSeenAt,
 			&i.EndedAt,
 			&i.Kind,
+			&i.LastSearchID,
 		); err != nil {
 			return nil, err
 		}
@@ -400,7 +407,7 @@ func (q *Queries) ListForgettableSessions(ctx context.Context, resumeWindow pgty
 }
 
 const listIdleSessions = `-- name: ListIdleSessions :many
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind FROM sessions
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id FROM sessions
 WHERE ended_at IS NULL AND last_seen_at < now() - $1::interval
 ORDER BY id
 `
@@ -427,6 +434,7 @@ func (q *Queries) ListIdleSessions(ctx context.Context, idleTimeout pgtype.Inter
 			&i.LastSeenAt,
 			&i.EndedAt,
 			&i.Kind,
+			&i.LastSearchID,
 		); err != nil {
 			return nil, err
 		}
@@ -439,7 +447,7 @@ func (q *Queries) ListIdleSessions(ctx context.Context, idleTimeout pgtype.Inter
 }
 
 const listLiveSessionsEnabling = `-- name: ListLiveSessionsEnabling :many
-SELECT s.id, s.principal, s.session_id, s.workspace, s.attestation, s.email, s.name, s.groups, s.created_at, s.last_seen_at, s.ended_at, s.kind FROM sessions s
+SELECT s.id, s.principal, s.session_id, s.workspace, s.attestation, s.email, s.name, s.groups, s.created_at, s.last_seen_at, s.ended_at, s.kind, s.last_search_id FROM sessions s
 JOIN session_servers ss ON ss.session_pk = s.id
 WHERE ss.template_ns = $1 AND ss.template_name = $2 AND s.ended_at IS NULL
 ORDER BY s.id
@@ -472,6 +480,7 @@ func (q *Queries) ListLiveSessionsEnabling(ctx context.Context, arg ListLiveSess
 			&i.LastSeenAt,
 			&i.EndedAt,
 			&i.Kind,
+			&i.LastSearchID,
 		); err != nil {
 			return nil, err
 		}
@@ -484,7 +493,7 @@ func (q *Queries) ListLiveSessionsEnabling(ctx context.Context, arg ListLiveSess
 }
 
 const listOpenSessionsOfPrincipal = `-- name: ListOpenSessionsOfPrincipal :many
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind FROM sessions
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id FROM sessions
 WHERE principal = $1 AND ended_at IS NULL
 ORDER BY last_seen_at DESC
 LIMIT $2::bigint
@@ -517,6 +526,7 @@ func (q *Queries) ListOpenSessionsOfPrincipal(ctx context.Context, arg ListOpenS
 			&i.LastSeenAt,
 			&i.EndedAt,
 			&i.Kind,
+			&i.LastSearchID,
 		); err != nil {
 			return nil, err
 		}
@@ -623,7 +633,7 @@ func (q *Queries) ListSessionServers(ctx context.Context, sessionPk int64) ([]Se
 }
 
 const lockSession = `-- name: LockSession :one
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind FROM sessions WHERE id = $1 FOR UPDATE
+SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id FROM sessions WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) LockSession(ctx context.Context, id int64) (Session, error) {
@@ -642,6 +652,7 @@ func (q *Queries) LockSession(ctx context.Context, id int64) (Session, error) {
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
@@ -650,7 +661,7 @@ const restartSession = `-- name: RestartSession :one
 UPDATE sessions
 SET ended_at = NULL, workspace = $1, attestation = $2, kind = $3, last_seen_at = now()
 WHERE id = $4 AND ended_at IS NOT NULL
-RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind
+RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id
 `
 
 type RestartSessionParams struct {
@@ -681,6 +692,7 @@ func (q *Queries) RestartSession(ctx context.Context, arg RestartSessionParams) 
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }
@@ -702,7 +714,7 @@ ON CONFLICT (principal, session_id) DO UPDATE
         name = EXCLUDED.name,
         groups = EXCLUDED.groups,
         last_seen_at = now()
-RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind
+RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id
 `
 
 type UpsertSessionParams struct {
@@ -744,6 +756,7 @@ func (q *Queries) UpsertSession(ctx context.Context, arg UpsertSessionParams) (S
 		&i.LastSeenAt,
 		&i.EndedAt,
 		&i.Kind,
+		&i.LastSearchID,
 	)
 	return i, err
 }

@@ -197,6 +197,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		ResumeWindow: testtime.Scale(time.Duration(cfg.SessionResumeWindow)),
 		AuditOutput:  options.auditOutput,
 		Log:          logger,
+		Metrics:      metrics,
 	}
 
 	approvalExpirer := &runtime.ApprovalExpirer{Pool: pool, AuditOutput: options.auditOutput}
