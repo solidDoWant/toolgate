@@ -8,7 +8,7 @@ The web UI is a set of pages under `/ui/` on the gateway's main port. Users sign
 
 When the web UI is on, toolgate limits the servers of each session of a signed-in user to an effective list. Each user chooses this list for each verified workspace, and chooses two defaults: one for verified workspaces and one for sessions without a verified workspace. Each default is all servers or none. The effective list only refuses. It never gives a user a server that the template does not give them. Service accounts and SPIFFE workloads do not have an effective list.
 
-Scoping needs the web UI, because only the UI can ask the user to sign in again before access gets wider. If you turn off the UI, scoping is off. The lists of the users stay in the database, but they do nothing, so the users can use more servers after the restart.
+Scoping needs the web UI, because only the UI can ask the user to sign in again before access gets wider. If you turn off the UI, scoping is off. The lists of the users stay in the database, but they do nothing, so the users can use more servers after the restart. This is also true for the deny entries that users make with the `toolgate_deny` tool or with `toolgate workspace deny`. If you turn off the UI, a deny stops applying.
 
 Upgrade note: After upgrading with the web UI on, every user sees no servers until they choose their defaults on the Workspaces page.
 

@@ -94,6 +94,8 @@ const (
 const (
 	ViaUI  = "ui"
 	ViaCLI = "cli"
+	// ViaTool is a change made by a tool of the built-in server.
+	ViaTool = "tool"
 )
 
 // WorkspaceChange is a change to a user's workspace lists or defaults
