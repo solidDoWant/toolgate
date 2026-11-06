@@ -787,7 +787,7 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 				return fmt.Errorf("read newest instance: %w", err)
 			}
 
-			if err == nil && newest.FailedAt.Valid && newest.Generation == template.Generation {
+			if err == nil && newest.FailedAt.Valid && newest.Generation == template.Generation && newest.TemplateUid == string(template.UID) {
 				reason := newest.Reason
 				if reason == "" {
 					reason = "it failed to start"
