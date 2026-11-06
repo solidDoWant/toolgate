@@ -63,4 +63,4 @@ The extension `vector` (pgvector) must be available in your PostgreSQL. The migr
 - A standard CloudNativePG image, such as `ghcr.io/cloudnative-pg/postgresql:17-standard-trixie`. It includes pgvector.
 - A minimal PostgreSQL image, plus the pgvector extension image mounted as a CloudNativePG image volume extension.
 
-The database user that runs the migration must be allowed to create the extension. `pgvector` and `pg_trgm` are trusted extensions, so the database owner can do it.
+The database user that runs the migration must be allowed to create the extensions `vector` and `pg_trgm`. `pg_trgm` is a trusted extension, so the database owner can create it. `vector` is not trusted in the standard images, so a superuser must create it, or the migration user must be a superuser. If a superuser has run `CREATE EXTENSION vector` in the database, the migration skips the step. The split-role SQL in the chart page does this.

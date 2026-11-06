@@ -7,8 +7,8 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- search ranking. The leader rebuilds every row when it takes the Lease.
 ALTER TABLE tool_search ADD COLUMN name_text text NOT NULL DEFAULT '';
 
--- pgvector holds the embeddings. It is a trusted extension in the standard
--- PostgreSQL images, so the database owner can create it.
+-- pgvector holds the embeddings. It is not a trusted extension, so a
+-- superuser must create it, unless it already exists.
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- embedding is the vector of the document from the embeddings endpoint, and
