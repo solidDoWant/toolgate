@@ -173,6 +173,9 @@ type mcpEndpoint struct {
 	// endSession ends a session tied to an MCP session that closed.
 	endSession func(ctx context.Context, id int64, reason string) error
 
+	// waiters counts the calls waiting for an approval.
+	waiters *approvalWaiters
+
 	idleTimeout time.Duration
 
 	mu       sync.Mutex
@@ -251,6 +254,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 	}
 
 	endpoint.callTool = tools.callTool
+	endpoint.waiters = &tools.waiters
 	endpoint.sessions.restore = tools.restoreServers
 
 	var (

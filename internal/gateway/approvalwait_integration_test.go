@@ -407,6 +407,13 @@ func TestApprovalWait(t *testing.T) {
 		outcome := awaitOutcome(t, outcomes, waitTimeout)
 		require.Error(t, outcome.err)
 
+		// The client returns before the gateway sees the cancel. Approve only
+		// once the cancelled call stopped waiting, or it would use the
+		// approval itself.
+		require.Eventually(t, func() bool {
+			return gateway.WaitingCalls(fixture.handlers[0], approval.Principal) == 0
+		}, waitTimeout, 10*time.Millisecond)
+
 		assert.Empty(t, fixture.auditRows(t, "tool.decision"))
 		assert.Equal(t, "pending", fixture.approvals(t)[0].Status)
 
