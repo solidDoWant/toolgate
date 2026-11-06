@@ -524,3 +524,32 @@ embeddings:
     hubVersion: "1.0.0"
     # -- Seconds a finished Job stays before Kubernetes removes it.
     ttlSecondsAfterFinished: 3600
+
+# Grafana dashboards for the gateway's metrics. They are off by default. They
+# read the Prometheus metrics the gateway serves (see `docs/admin/metrics.md`)
+# and work with any Prometheus-compatible data source.
+dashboards:
+  # -- Create one ConfigMap for each dashboard, for the Grafana dashboard
+  # sidecar. Ignored when `dashboards.grafanaOperator.enabled` is true.
+  enabled: false
+  # -- Key of the label the sidecar selects ConfigMaps by.
+  labelKey: grafana_dashboard
+  # -- Value of that label.
+  labelValue: "1"
+  # -- Annotations of the dashboard ConfigMaps, such as
+  # `grafana_folder: toolgate` for the sidecar's folder annotation.
+  annotations: {}
+  grafanaOperator:
+    # -- Create a grafana-operator v5 `GrafanaDashboard` for each dashboard
+    # instead of a ConfigMap.
+    enabled: false
+    # -- Which Grafana instances load the dashboards: the `matchLabels` of the
+    # `GrafanaDashboard` `instanceSelector`. Required with
+    # `dashboards.grafanaOperator.enabled`.
+    instanceSelector:
+      matchLabels: {}
+    # -- Grafana folder for the dashboards. Empty means the General folder.
+    folder: ""
+    # -- Namespaces whose Grafana instances may load the dashboards:
+    # `allowCrossNamespaceImport`.
+    allowCrossNamespaceImport: false

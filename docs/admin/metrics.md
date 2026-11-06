@@ -220,3 +220,22 @@ count by (version) (toolgate_build_info)
 ```
 
 The gateway also exports the standard process metrics (`process_*`) and a basic set of Go memory and garbage collector metrics (`go_*`).
+
+## Dashboards
+
+The chart ships four Grafana dashboards. They read the metrics on this page, work with any Prometheus-compatible data source (such as VictoriaMetrics), and are off by default. Each has a `datasource` variable, a `namespace` variable and a `job` variable, the tag `toolgate`, and a fixed `uid`.
+
+- **toolgate / Overview** (`toolgate-overview`): open sessions, tool calls per second by outcome, the top servers by calls and by errors, call latency (p50, p95, p99), policy refusals by step, pending approvals and approval outcomes.
+- **toolgate / Servers and instances** (`toolgate-servers`): instances by status, scope and revision, starts and start failures, start latency, calls that wait for a start, health failures and repairs. Repairs with the action `gave_up` show in red.
+- **toolgate / Tool search** (`toolgate-tool-search`): searches per second, the share of degraded searches, the top-1 and top-5 hit rates, and the re-search and no-call rates for each `embedding_model` (a model change shows as a step), and embeddings latency and errors by reason.
+- **toolgate / Platform** (`toolgate-platform`): database pool use and wait time, `LISTEN` reconnects, the leader replica, the version of each replica, and memory and CPU of each replica.
+
+Panels for each server use counters and `topk`, so a deployment with many servers stays readable. The `namespace` and `job` variables need the `namespace` and `job` labels that Prometheus adds when it scrapes the gateway (for example through the chart's `ServiceMonitor`). Panels for each replica need a `pod` label.
+
+### Grafana sidecar
+
+Set `dashboards.enabled=true`. The chart creates one ConfigMap for each dashboard, with the label `grafana_dashboard: "1"`. The Grafana dashboard sidecar loads ConfigMaps with that label. Change the label with `dashboards.labelKey` and `dashboards.labelValue`. Use `dashboards.annotations` for a folder annotation such as `grafana_folder`.
+
+### grafana-operator
+
+Set `dashboards.grafanaOperator.enabled=true` and `dashboards.grafanaOperator.instanceSelector.matchLabels` to the labels of your `Grafana` resource. The chart then creates one `GrafanaDashboard` (grafana-operator v5) for each dashboard, and no ConfigMaps. Set `dashboards.grafanaOperator.folder` to choose the Grafana folder. The grafana-operator CRDs must exist in the cluster.

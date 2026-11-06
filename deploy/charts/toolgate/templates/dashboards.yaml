@@ -1,0 +1,49 @@
+{{- /*
+Grafana dashboards: one ConfigMap for the Grafana sidecar, or one
+GrafanaDashboard (grafana-operator v5) for each JSON file in dashboards/.
+*/ -}}
+{{- $operator := .Values.dashboards.grafanaOperator }}
+{{- if or .Values.dashboards.enabled $operator.enabled }}
+{{- if and $operator.enabled (not $operator.instanceSelector.matchLabels) }}
+{{- fail "dashboards.grafanaOperator.instanceSelector.matchLabels is required when dashboards.grafanaOperator.enabled is true: the labels of the Grafana instances that load the dashboards" }}
+{{- end }}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+{{- $name := trimSuffix ".json" (base $path) }}
+---
+{{- if $operator.enabled }}
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: {{ printf "%s-%s" $.Release.Name $name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: toolgate
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+spec:
+  instanceSelector:
+    {{- toYaml $operator.instanceSelector | nindent 4 }}
+  {{- with $operator.folder }}
+  folder: {{ . | quote }}
+  {{- end }}
+  allowCrossNamespaceImport: {{ $operator.allowCrossNamespaceImport }}
+  json: {{ $.Files.Get $path | toJson }}
+{{- else }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-dashboard-%s" $.Release.Name $name | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: toolgate
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    {{ $.Values.dashboards.labelKey }}: {{ $.Values.dashboards.labelValue | quote }}
+  {{- with $.Values.dashboards.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{ $name }}.json: |-
+    {{- $.Files.Get $path | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
