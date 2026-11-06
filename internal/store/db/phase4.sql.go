@@ -186,6 +186,28 @@ func (q *Queries) DeleteScopeEntry(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteSessionFoundTool = `-- name: DeleteSessionFoundTool :exec
+DELETE FROM session_found_tools
+WHERE session_pk = $1 AND template_ns = $2 AND template_name = $3 AND upstream_name = $4
+`
+
+type DeleteSessionFoundToolParams struct {
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+}
+
+func (q *Queries) DeleteSessionFoundTool(ctx context.Context, arg DeleteSessionFoundToolParams) error {
+	_, err := q.db.Exec(ctx, deleteSessionFoundTool,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.UpstreamName,
+	)
+	return err
+}
+
 const deleteSessionFoundTools = `-- name: DeleteSessionFoundTools :exec
 DELETE FROM session_found_tools WHERE session_pk = $1
 `
@@ -446,12 +468,12 @@ func (q *Queries) InsertScopeEntry(ctx context.Context, arg InsertScopeEntryPara
 }
 
 const insertToolSearch = `-- name: InsertToolSearch :exec
-INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document)
-VALUES ($1, $2, $3, $4, $5, $6,
+INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, embedding, embedding_model, document)
+VALUES ($1, $2, $3, $4, $5, $6, $7::text, CAST(NULLIF($8::text, '') AS vector), $9::text,
     setweight(to_tsvector('english', $7::text), 'A')
-    || setweight(to_tsvector('english', $8::text), 'B')
-    || setweight(to_tsvector('english', $9::text), 'C')
-    || setweight(to_tsvector('english', $10::text), 'D'))
+    || setweight(to_tsvector('english', $10::text), 'B')
+    || setweight(to_tsvector('english', $11::text), 'C')
+    || setweight(to_tsvector('english', $12::text), 'C'))
 `
 
 type InsertToolSearchParams struct {
@@ -462,12 +484,15 @@ type InsertToolSearchParams struct {
 	UpstreamName     string
 	ExposedName      string
 	NamePart         string
+	Embedding        string
+	EmbeddingModel   string
 	DescriptionPart  string
 	ServerPart       string
 	InputPart        string
 }
 
-// The document has four weighted parts (docs/design/phase-4.md §5).
+// The document has weighted parts (docs/design/phase-4.md §5); name_text
+// feeds the trigram term of the ranking.
 func (q *Queries) InsertToolSearch(ctx context.Context, arg InsertToolSearchParams) error {
 	_, err := q.db.Exec(ctx, insertToolSearch,
 		arg.TemplateUid,
@@ -477,11 +502,42 @@ func (q *Queries) InsertToolSearch(ctx context.Context, arg InsertToolSearchPara
 		arg.UpstreamName,
 		arg.ExposedName,
 		arg.NamePart,
+		arg.Embedding,
+		arg.EmbeddingModel,
 		arg.DescriptionPart,
 		arg.ServerPart,
 		arg.InputPart,
 	)
 	return err
+}
+
+const listFoundToolSessions = `-- name: ListFoundToolSessions :many
+SELECT DISTINCT session_pk FROM session_found_tools WHERE template_ns = $1 AND template_name = $2
+`
+
+type ListFoundToolSessionsParams struct {
+	TemplateNs   string
+	TemplateName string
+}
+
+func (q *Queries) ListFoundToolSessions(ctx context.Context, arg ListFoundToolSessionsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listFoundToolSessions, arg.TemplateNs, arg.TemplateName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var session_pk int64
+		if err := rows.Scan(&session_pk); err != nil {
+			return nil, err
+		}
+		items = append(items, session_pk)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listScopeEntries = `-- name: ListScopeEntries :many
@@ -772,6 +828,31 @@ func (q *Queries) ListToolSearchUIDs(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const listToolSearchUIDsNeedingEmbedding = `-- name: ListToolSearchUIDsNeedingEmbedding :many
+SELECT DISTINCT template_uid FROM tool_search WHERE embedding_model <> $1::text OR embedding IS NULL
+`
+
+// The templates that have a row not embedded with the given model.
+func (q *Queries) ListToolSearchUIDsNeedingEmbedding(ctx context.Context, model string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listToolSearchUIDsNeedingEmbedding, model)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var template_uid string
+		if err := rows.Scan(&template_uid); err != nil {
+			return nil, err
+		}
+		items = append(items, template_uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnverifiedServers = `-- name: ListUnverifiedServers :many
 SELECT server FROM unverified_servers WHERE scope_id = $1 ORDER BY server
 `
@@ -805,6 +886,152 @@ func (q *Queries) LockToolSearch(ctx context.Context, templateUid string) error 
 	return err
 }
 
+const queryIsEmpty = `-- name: QueryIsEmpty :one
+SELECT numnode(to_tsquery('english', $1::text)) = 0
+`
+
+func (q *Queries) QueryIsEmpty(ctx context.Context, query string) (bool, error) {
+	row := q.db.QueryRow(ctx, queryIsEmpty, query)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const searchTools = `-- name: SearchTools :many
+
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name
+FROM tool_search, to_tsquery('english', $1::text) AS q, to_tsquery('english', $2::text) AS q0
+WHERE tool_search.template_uid = ANY($3::text[]) AND tool_search.document @@ q
+ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, $4::text)) DESC, tool_search.exposed_name
+LIMIT 100
+`
+
+type SearchToolsParams struct {
+	Expanded     string
+	Query        string
+	TemplateUids []string
+	Plain        string
+}
+
+type SearchToolsRow struct {
+	TemplateUid  string
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+	ExposedName  string
+}
+
+// Ranks the search rows of the candidate templates against a tsquery text:
+// cover density over the weighted document, plus a small trigram similarity
+// between the plain query and the name words.
+func (q *Queries) SearchTools(ctx context.Context, arg SearchToolsParams) ([]SearchToolsRow, error) {
+	rows, err := q.db.Query(ctx, searchTools,
+		arg.Expanded,
+		arg.Query,
+		arg.TemplateUids,
+		arg.Plain,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchToolsRow{}
+	for rows.Next() {
+		var i SearchToolsRow
+		if err := rows.Scan(
+			&i.TemplateUid,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.UpstreamName,
+			&i.ExposedName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchToolsHybrid = `-- name: SearchToolsHybrid :many
+WITH words AS (
+    SELECT tool_search.template_uid, tool_search.upstream_name,
+           row_number() OVER (ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, $2::text)) DESC, tool_search.exposed_name) AS rank
+    FROM tool_search, to_tsquery('english', $3::text) AS q, to_tsquery('english', $4::text) AS q0
+    WHERE tool_search.template_uid = ANY($1::text[]) AND tool_search.document @@ q
+), vectors AS (
+    SELECT tool_search.template_uid, tool_search.upstream_name,
+           row_number() OVER (ORDER BY tool_search.embedding <=> CAST($5::text AS vector), tool_search.exposed_name) AS rank
+    FROM tool_search
+    WHERE tool_search.template_uid = ANY($1::text[])
+      AND tool_search.embedding_model = $6::text AND tool_search.embedding IS NOT NULL
+)
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name
+FROM tool_search
+LEFT JOIN words USING (template_uid, upstream_name)
+LEFT JOIN vectors USING (template_uid, upstream_name)
+WHERE tool_search.template_uid = ANY($1::text[]) AND (words.rank IS NOT NULL OR vectors.rank IS NOT NULL)
+ORDER BY (COALESCE(1.0 / (60 + words.rank), 0) + COALESCE(1.0 / (60 + vectors.rank), 0)) DESC, tool_search.exposed_name
+LIMIT 100
+`
+
+type SearchToolsHybridParams struct {
+	TemplateUids []string
+	Plain        string
+	Expanded     string
+	Query        string
+	QueryVector  string
+	Model        string
+}
+
+type SearchToolsHybridRow struct {
+	TemplateUid  string
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+	ExposedName  string
+}
+
+// Like SearchTools, and also ranks the rows embedded with the given model by
+// cosine distance to the query vector. The two ranks are fused by reciprocal
+// rank fusion with constant 60: a row missing from a list gets nothing from it.
+func (q *Queries) SearchToolsHybrid(ctx context.Context, arg SearchToolsHybridParams) ([]SearchToolsHybridRow, error) {
+	rows, err := q.db.Query(ctx, searchToolsHybrid,
+		arg.TemplateUids,
+		arg.Plain,
+		arg.Expanded,
+		arg.Query,
+		arg.QueryVector,
+		arg.Model,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchToolsHybridRow{}
+	for rows.Next() {
+		var i SearchToolsHybridRow
+		if err := rows.Scan(
+			&i.TemplateUid,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.UpstreamName,
+			&i.ExposedName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setUserScopeUnverifiedList = `-- name: SetUserScopeUnverifiedList :exec
 UPDATE user_scopes SET unverified_list = $1, updated_at = now() WHERE id = $2
 `
@@ -816,6 +1043,50 @@ type SetUserScopeUnverifiedListParams struct {
 
 func (q *Queries) SetUserScopeUnverifiedList(ctx context.Context, arg SetUserScopeUnverifiedListParams) error {
 	_, err := q.db.Exec(ctx, setUserScopeUnverifiedList, arg.UnverifiedList, arg.ID)
+	return err
+}
+
+const touchSessionFoundTool = `-- name: TouchSessionFoundTool :exec
+INSERT INTO session_found_tools (session_pk, template_ns, template_name, upstream_name, found_at)
+VALUES ($1, $2, $3, $4, clock_timestamp())
+ON CONFLICT (session_pk, template_ns, template_name, upstream_name) DO UPDATE SET found_at = clock_timestamp()
+`
+
+type TouchSessionFoundToolParams struct {
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+}
+
+func (q *Queries) TouchSessionFoundTool(ctx context.Context, arg TouchSessionFoundToolParams) error {
+	_, err := q.db.Exec(ctx, touchSessionFoundTool,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.UpstreamName,
+	)
+	return err
+}
+
+const trimSessionFoundTools = `-- name: TrimSessionFoundTools :exec
+DELETE FROM session_found_tools AS t
+WHERE t.session_pk = $1
+  AND (t.template_ns, t.template_name, t.upstream_name) NOT IN (
+    SELECT f.template_ns, f.template_name, f.upstream_name FROM session_found_tools f
+    WHERE f.session_pk = $1
+    ORDER BY f.found_at DESC, f.template_name, f.upstream_name
+    LIMIT $2::int)
+`
+
+type TrimSessionFoundToolsParams struct {
+	SessionPk int64
+	Keep      int32
+}
+
+// Keeps the newest @keep found tools of a session.
+func (q *Queries) TrimSessionFoundTools(ctx context.Context, arg TrimSessionFoundToolsParams) error {
+	_, err := q.db.Exec(ctx, trimSessionFoundTools, arg.SessionPk, arg.Keep)
 	return err
 }
 

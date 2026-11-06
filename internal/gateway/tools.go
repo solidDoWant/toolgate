@@ -126,7 +126,7 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 	byServer = make(map[string][]string)
 
 	if len(rows) == 0 {
-		return tools, byServer, nil
+		return tools, byServer, m.withFoundTools(ctx, current, tools, byServer)
 	}
 
 	state, err := m.policyState(ctx, current.identity)
@@ -176,7 +176,24 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 		sort.Strings(byServer[template.Name])
 	}
 
-	return tools, byServer, nil
+	return tools, byServer, m.withFoundTools(ctx, current, tools, byServer)
+}
+
+// withFoundTools adds the session's found tools in search mode.
+func (m *metaTools) withFoundTools(ctx context.Context, current requestContext, tools map[string]*mcp.Tool, byServer map[string][]string) error {
+	if !current.searchMode {
+		return nil
+	}
+
+	if err := m.addFoundTools(ctx, current, tools, byServer); err != nil {
+		return err
+	}
+
+	for server := range byServer {
+		sort.Strings(byServer[server])
+	}
+
+	return nil
 }
 
 // listedTools returns the upstream tools listed for an enabled server, and
@@ -303,8 +320,36 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 			}
 		}
 
-		return next(ctx, method, request)
+		result, err := next(ctx, method, request)
+		if method == "tools/list" && err == nil {
+			if extra := request.GetExtra(); extra != nil && extra.TokenInfo != nil {
+				if current, ok := extra.TokenInfo.Extra[requestContextKey].(requestContext); ok && !current.searchMode {
+					hideFindTools(result)
+				}
+			}
+		}
+
+		return result, err
 	}
+}
+
+// hideFindTools removes toolgate_find_tools from a tools/list result: outside
+// search mode it isn't listed.
+func hideFindTools(result mcp.Result) {
+	list, ok := result.(*mcp.ListToolsResult)
+	if !ok {
+		return
+	}
+
+	kept := make([]*mcp.Tool, 0, len(list.Tools))
+
+	for _, tool := range list.Tools {
+		if tool.Name != ToolFindTools {
+			kept = append(kept, tool)
+		}
+	}
+
+	list.Tools = kept
 }
 
 // routeProxiedCalls sends every `tools/call` of a `<server>__<tool>` name to

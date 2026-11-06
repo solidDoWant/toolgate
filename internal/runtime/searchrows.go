@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
@@ -26,6 +27,15 @@ import (
 // template is deleted or has no valid generation; its rows are then deleted.
 // A template with no catalog list has no rows either.
 func RebuildToolSearch(ctx context.Context, tx pgx.Tx, uid string, template *v1alpha1.MCPServerTemplate) error {
+	return RebuildToolSearchEmbedded(ctx, tx, uid, template, nil, nil)
+}
+
+// RebuildToolSearchEmbedded is RebuildToolSearch with vectors: when embedder
+// is not nil, it embeds each row's document text and stores the vector with
+// the model name. If the endpoint fails, the rows keep an empty vector, the
+// failure is counted and logged, and the rebuild still succeeds
+// (docs/design/phase-4.md §5, "Optional embeddings").
+func RebuildToolSearchEmbedded(ctx context.Context, tx pgx.Tx, uid string, template *v1alpha1.MCPServerTemplate, embedder *embeddings.Client, log *slog.Logger) error {
 	queries := db.New(tx)
 
 	if err := queries.LockToolSearch(ctx, uid); err != nil {
@@ -37,7 +47,7 @@ func RebuildToolSearch(ctx context.Context, tx pgx.Tx, uid string, template *v1a
 	}
 
 	if template != nil {
-		if err := insertToolSearch(ctx, queries, uid, template); err != nil {
+		if err := insertToolSearch(ctx, queries, uid, template, embedder, log); err != nil {
 			return err
 		}
 	}
@@ -45,7 +55,7 @@ func RebuildToolSearch(ctx context.Context, tx pgx.Tx, uid string, template *v1a
 	return store.Notify(ctx, tx, store.KindToolSearch, uid)
 }
 
-func insertToolSearch(ctx context.Context, queries *db.Queries, uid string, template *v1alpha1.MCPServerTemplate) error {
+func insertToolSearch(ctx context.Context, queries *db.Queries, uid string, template *v1alpha1.MCPServerTemplate, embedder *embeddings.Client, log *slog.Logger) error {
 	rows, err := queries.ListToolCatalogForTemplate(ctx, uid)
 	if err != nil {
 		return fmt.Errorf("list tool catalog of template %s: %w", uid, err)
@@ -65,13 +75,41 @@ func insertToolSearch(ctx context.Context, queries *db.Queries, uid string, temp
 		return nil
 	}
 
-	for _, tool := range toolcatalog.Curate(template, upstream) {
-		parts := toolcatalog.SearchPartsOf(template, tool)
+	curated := toolcatalog.Curate(template, upstream)
+	partsOf := make([]toolcatalog.SearchParts, len(curated))
+	vectors := make([][]float32, len(curated))
+
+	for index, tool := range curated {
+		partsOf[index] = toolcatalog.SearchPartsOf(template, tool)
+	}
+
+	model := ""
+
+	if embedder != nil && len(curated) > 0 {
+		texts := make([]string, len(curated))
+		for index := range partsOf {
+			texts[index] = partsOf[index].EmbeddingText()
+		}
+
+		embedded, err := embedder.Embed(ctx, texts)
+		if err != nil {
+			embedder.CountError("document", err)
+
+			if log != nil {
+				log.WarnContext(ctx, "embedding the tool search rows failed", slog.String("template", uid), slog.Any("error", err))
+			}
+		} else {
+			vectors, model = embedded, embedder.Model()
+		}
+	}
+
+	for index, tool := range curated {
+		parts := partsOf[index]
 
 		if err := queries.InsertToolSearch(ctx, db.InsertToolSearchParams{
 			TemplateUid: uid, TemplateNs: template.Namespace, TemplateName: template.Name,
 			SourceGeneration: generation, UpstreamName: tool.UpstreamName, ExposedName: tool.ExposedName,
-			NamePart: parts.Name, DescriptionPart: parts.Description, ServerPart: parts.Server, InputPart: parts.Input,
+			Embedding: embeddings.FormatVector(vectors[index]), EmbeddingModel: model, NamePart: parts.Name, DescriptionPart: parts.Description, ServerPart: parts.Server, InputPart: parts.Input,
 		}); err != nil {
 			return fmt.Errorf("insert tool search row %s of template %s: %w", tool.UpstreamName, uid, err)
 		}
@@ -101,6 +139,8 @@ type SearchRebuilder struct {
 	// read; Run waits for it before its first sync.
 	Loaded <-chan struct{}
 	Log    *slog.Logger
+	// Embedder embeds the rows' documents; nil means words only.
+	Embedder *embeddings.Client
 
 	built map[string]string
 }
@@ -176,8 +216,10 @@ func (r *SearchRebuilder) Sync(ctx context.Context) error {
 		}
 	}
 
+	rebuilt := map[string]bool{}
+
 	for uid, template := range current {
-		fingerprint := searchFingerprint(template)
+		fingerprint := r.fingerprint(template)
 		if r.built[uid] == fingerprint {
 			continue
 		}
@@ -187,6 +229,11 @@ func (r *SearchRebuilder) Sync(ctx context.Context) error {
 		}
 
 		r.built[uid] = fingerprint
+		rebuilt[uid] = true
+	}
+
+	if err := r.embedStale(ctx, current, rebuilt); err != nil {
+		return err
 	}
 
 	gone := map[string]bool{}
@@ -213,13 +260,46 @@ func (r *SearchRebuilder) Sync(ctx context.Context) error {
 	return nil
 }
 
+// embedStale rebuilds the templates that have a row not embedded with the
+// configured model: after a model change, after a failed embedding, or when
+// a row was written without a vector. A template rebuilt in this Sync is
+// left for the next one.
+func (r *SearchRebuilder) embedStale(ctx context.Context, current map[string]*v1alpha1.MCPServerTemplate, rebuilt map[string]bool) error {
+	if r.Embedder == nil {
+		return nil
+	}
+
+	uids, err := db.New(r.Pool).ListToolSearchUIDsNeedingEmbedding(ctx, r.Embedder.Model())
+	if err != nil {
+		return fmt.Errorf("list tool search rows to embed: %w", err)
+	}
+
+	for _, uid := range uids {
+		if template := current[uid]; template != nil && !rebuilt[uid] {
+			if err := r.rebuild(ctx, uid, template); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (r *SearchRebuilder) fingerprint(template *v1alpha1.MCPServerTemplate) string {
+	if r.Embedder == nil {
+		return searchFingerprint(template)
+	}
+
+	return searchFingerprint(template) + "|" + r.Embedder.Model()
+}
+
 func (r *SearchRebuilder) rebuild(ctx context.Context, uid string, template *v1alpha1.MCPServerTemplate) error {
 	if r.Fence != nil && !r.Fence.HoldsLease() {
 		return ErrNotLeader
 	}
 
 	if err := pgx.BeginFunc(ctx, r.Pool, func(tx pgx.Tx) error {
-		return RebuildToolSearch(ctx, tx, uid, template)
+		return RebuildToolSearchEmbedded(ctx, tx, uid, template, r.Embedder, r.Log)
 	}); err != nil {
 		return fmt.Errorf("rebuild tool search of template %s: %w", uid, err)
 	}

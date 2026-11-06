@@ -137,12 +137,14 @@ The gateway keeps its state in PostgreSQL and creates its tables itself. You can
 
 **Split roles.** The gateway connects with a role that can only read and write data. A second role owns the tables and runs the migrations. To use it:
 
-1. Create the two roles, a schema and the default privileges. This SQL does it, as a PostgreSQL superuser, in the database for toolgate. Give both roles a way to sign in that fits your setup, such as a password, and make the connection string of each:
+1. Create the two roles, a schema and the default privileges. This SQL does it, as a PostgreSQL superuser, in the database for toolgate. The two `CREATE EXTENSION` lines install the extensions that tool search needs, because the migration role is not a superuser and `vector` is not a trusted extension. Give both roles a way to sign in that fits your setup, such as a password, and make the connection string of each:
 
    ```sql
    CREATE ROLE toolgate_migrator LOGIN;
    CREATE ROLE toolgate_app LOGIN;
    CREATE SCHEMA toolgate AUTHORIZATION toolgate_migrator;
+   CREATE EXTENSION IF NOT EXISTS pg_trgm;
+   CREATE EXTENSION IF NOT EXISTS vector;
    ALTER ROLE toolgate_migrator SET search_path = toolgate;
    ALTER ROLE toolgate_app SET search_path = toolgate;
    GRANT USAGE ON SCHEMA toolgate TO toolgate_app;

@@ -26,6 +26,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/config"
+	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
@@ -120,6 +121,23 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	searchMetrics := embeddings.NewMetrics()
+
+	searchEmbedder, err := newToolSearchEmbedder(cfg, searchMetrics)
+	if err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
+
+	if searchEmbedder != nil {
+		if err := server.RegisterMetrics(searchMetrics.Collectors()...); err != nil {
+			logger.Error("gateway failed to start", "error", err)
+
+			return 1
+		}
+	}
+
 	templates := catalog.New()
 	rules := policy.NewRules()
 
@@ -197,6 +215,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		WorkspaceScoping:     cfg.UIEnabled(),
 		Workspaces:           workspaces,
 		SessionIdleTimeout:   testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
+		ToolSearch:           cfg.ToolSearch,
+		Embedder:             searchEmbedder,
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {
@@ -243,6 +263,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			auditOutput:     stdout,
 			listener:        listener,
 			tracerProvider:  server.TracerProvider(),
+			embedder:        searchEmbedder,
 		})
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)

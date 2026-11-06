@@ -51,6 +51,11 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.sharedNamespace.create | bool | `true` | Create the shared namespace with toolgate's labels. If false, the namespace must exist and carry the labels `toolgate.soliddowant.dev/writable: "true"` and `pod-security.kubernetes.io/enforce: restricted`. |
 | config.sharedNamespace.name | string | `""` | Name of the namespace for instances of `namespace: shared` templates. Empty means the chart creates none. It must not start with `tg-`. |
 | config.spiffe.trustDomains | list | `[]` | SPIFFE trust domains whose JWT-SVIDs may sign in, attested as the workload. Each item has a `name` (the trust domain), exactly one of `bundleEndpointURL` (a SPIFFE bundle endpoint with the `https_web` profile) and `jwksURL` (a JWKS document, such as that of SPIRE's OIDC discovery provider), both `https://`, and an optional `caFile`. The chart writes them to the gateway's configuration file. Mount a `caFile` with `resources.persistence`. |
+| config.toolSearch | bool | `false` | Turn on tool search mode for sessions whose client sends no `X-Toolgate-Tool-Search` header. A client can still turn it on or off with that header. It only changes which tools a session lists. |
+| config.toolSearchEmbeddings.apiKeyFile | string | `""` | Path of a file that holds an API key for the endpoint, mounted from a Secret with `persistence`. Empty means no key. |
+| config.toolSearchEmbeddings.model | string | `""` | Model name sent to the endpoint, such as `BAAI/bge-small-en-v1.5`. Required when `url` is set. Changing it embeds all tools again. |
+| config.toolSearchEmbeddings.timeout | string | `""` | How long one request to the endpoint may take, as a Go duration. Empty means 2s. |
+| config.toolSearchEmbeddings.url | string | `""` | Base URL of an endpoint that speaks the OpenAI embeddings API (`POST <url>/v1/embeddings`), such as `http://tei.tools.svc:80`. Empty means search uses words only. |
 | config.ui.adminGroup | string | `""` | Group whose members are web UI admins. Empty means nobody is an admin. |
 | config.ui.approvalTimeout | string | `"10m"` | How long a call that needs approval waits for a person, and how long an approved request stays usable, as a Go duration from `1m` to `1h`. |
 | config.ui.clientID | string | `""` | OIDC client ID of the web UI. The web UI is on only when this is set. The identity provider must allow the redirect URI `config.ui.publicURL` + `/ui/auth/callback`. |
@@ -58,5 +63,21 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.ui.publicURL | string | `""` | URL where users open the gateway in a browser, such as `https://toolgate.example.com`. Required when `config.ui.clientID` is set. It must be `https://`. |
 | config.ui.scopes | list | `[]` | Scopes the web UI asks for at sign-in. Empty means the gateway's default, `openid email profile`. |
 | config.workspaceAttestation | string | `nil` | Attested user sessions: a user's token plus a workload token from a workspace pod (or a SPIFFE workload) bound to that user, so the session's workspace is verified. Off when null. It has `namespaces` (required), `keys` (`userID`, `email`, `username` and `workspace`: pod label keys, Coder's by default), `match` (`by: email`, or `by: claim` with `claim` and `key`), `workspaceID` (such as `coder/{username}/{workspace}`) and an optional `spiffeIDPattern`. The chart writes it to the gateway's configuration file. See docs/admin/workspace-attestation.md. |
+| embeddings.downloader.hubVersion | string | `"1.0.0"` | Version of huggingface_hub that `uvx` installs. |
+| embeddings.downloader.image.digest | string | `"sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca"` |  |
+| embeddings.downloader.image.repository | string | `"ghcr.io/astral-sh/uv"` | Image that runs the model download Job: a pinned `uv`, which runs the `hf` command of huggingface_hub. |
+| embeddings.downloader.image.tag | string | `"0.9-python3.13-bookworm-slim"` |  |
+| embeddings.downloader.ttlSecondsAfterFinished | int | `3600` | Seconds a finished Job stays before Kubernetes removes it. |
+| embeddings.server.cache.accessModes | list | `["ReadWriteMany"]` | Access modes of the claim the chart creates. |
+| embeddings.server.cache.existingClaim | string | `""` | Name of an existing PersistentVolumeClaim for the model files. Recommended: an RWX claim you create, so it survives uninstall and the pre-upgrade Job can mount it while the server runs. If empty, the chart creates a claim `<release>-toolgate-models` that Helm keeps. |
+| embeddings.server.cache.size | string | `"5Gi"` | Size of the claim the chart creates. |
+| embeddings.server.cache.storageClassName | string | `""` | Storage class of the claim the chart creates. Empty means the cluster default. |
+| embeddings.server.enabled | bool | `false` | Run the embeddings server. |
+| embeddings.server.image.digest | string | `"sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"` | Digest of the image. Pins it. |
+| embeddings.server.image.repository | string | `"ghcr.io/huggingface/text-embeddings-inference"` | Image of text-embeddings-inference. The CPU image is x86-64 only; set another image for ARM64. |
+| embeddings.server.image.tag | string | `"cpu-1.9"` |  |
+| embeddings.server.model | string | `"BAAI/bge-small-en-v1.5"` | Hugging Face model the server loads. |
+| embeddings.server.modelRevision | string | `"5c38ec7c405ec4b44b94cc5a9bb96e735b38267a"` | Commit of the model repository, a full 40-character SHA. The hook Job downloads exactly this revision. |
+| embeddings.server.resources | object | `{"limits":{"memory":"768Mi"},"requests":{"cpu":"500m","memory":"768Mi"}}` | Memory request equals the limit; there is no CPU limit. About 320 MiB are in use after the model is loaded and has served requests. |
 | rbac.extraRules | list | `[]` | More RBAC rules for the gateway's ClusterRole, added after the default rules. Grant each extra kind a template contains `create`, `patch`, `delete`, `get`, `list` and `watch`. The admission policy still confines every write to toolgate's namespaces. |
 | resources | object | see `values.yaml` | The gateway's Deployment, Services, ServiceAccount, PodDisruptionBudget and ServiceMonitor, in the values format of the bjw-s `common` library chart (https://bjw-s-labs.github.io/helm-charts/docs/common-library/). Override any part, such as probes, affinity, resources or extra containers. String values can use Helm templates. The RBAC rules (see `rbac.extraRules`) and the admission policy are not here. |

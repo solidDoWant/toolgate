@@ -123,6 +123,30 @@ config:
     # same time, for all users and shared instances together. At least 1.
     instances: 200
 
+  # -- Turn on tool search mode for sessions whose client sends no
+  # `X-Toolgate-Tool-Search` header. A client can still turn it on or off
+  # with that header. It only changes which tools a session lists.
+  toolSearch: false
+
+  # Optional embeddings for tool search. With `url` set, search ranks by
+  # meaning as well as by words. The gateway sends the search query and the
+  # tool descriptions to this endpoint, so run it in the cluster. Allow egress
+  # from the gateway pods only to this host and port.
+  toolSearchEmbeddings:
+    # -- Base URL of an endpoint that speaks the OpenAI embeddings API
+    # (`POST <url>/v1/embeddings`), such as `http://tei.tools.svc:80`. Empty
+    # means search uses words only.
+    url: ""
+    # -- Model name sent to the endpoint, such as `BAAI/bge-small-en-v1.5`.
+    # Required when `url` is set. Changing it embeds all tools again.
+    model: ""
+    # -- Path of a file that holds an API key for the endpoint, mounted from a
+    # Secret with `persistence`. Empty means no key.
+    apiKeyFile: ""
+    # -- How long one request to the endpoint may take, as a Go duration.
+    # Empty means 2s.
+    timeout: ""
+
   audit:
     # -- Store audit payloads: the arguments of each tool call and approval
     # request, and each tool result. Payloads under 64 KiB go in PostgreSQL,
@@ -445,3 +469,58 @@ resources:
               app.kubernetes.io/name: "{{ .Chart.Name }}"
               app.kubernetes.io/instance: "{{ .Release.Name }}"
               app.kubernetes.io/controller: gateway
+
+# Optional model server for tool search. It is off by default. It runs
+# Hugging Face text-embeddings-inference from a local model directory, with no
+# network access needed. A hook Job downloads the model before install and
+# upgrade, so that is the only pod that needs internet egress. The chart adds
+# no NetworkPolicy; cluster admins do that. When a server is on, the chart
+# sets `config.toolSearchEmbeddings` itself, unless you set `url` there.
+embeddings:
+  server:
+    # -- Run the embeddings server.
+    enabled: false
+    image:
+      # -- Image of text-embeddings-inference. The CPU image is x86-64 only;
+      # set another image for ARM64.
+      repository: ghcr.io/huggingface/text-embeddings-inference
+      tag: cpu-1.9
+      # -- Digest of the image. Pins it.
+      digest: sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d
+    # -- Hugging Face model the server loads.
+    model: BAAI/bge-small-en-v1.5
+    # -- Commit of the model repository, a full 40-character SHA. The hook Job
+    # downloads exactly this revision.
+    modelRevision: 5c38ec7c405ec4b44b94cc5a9bb96e735b38267a
+    # -- Memory request equals the limit; there is no CPU limit. About 320 MiB
+    # are in use after the model is loaded and has served requests.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 768Mi
+      limits:
+        memory: 768Mi
+    cache:
+      # -- Name of an existing PersistentVolumeClaim for the model files.
+      # Recommended: an RWX claim you create, so it survives uninstall and the
+      # pre-upgrade Job can mount it while the server runs. If empty, the
+      # chart creates a claim `<release>-toolgate-models` that Helm keeps.
+      existingClaim: ""
+      # -- Size of the claim the chart creates.
+      size: 5Gi
+      # -- Storage class of the claim the chart creates. Empty means the
+      # cluster default.
+      storageClassName: ""
+      # -- Access modes of the claim the chart creates.
+      accessModes: [ReadWriteMany]
+  downloader:
+    image:
+      # -- Image that runs the model download Job: a pinned `uv`, which runs
+      # the `hf` command of huggingface_hub.
+      repository: ghcr.io/astral-sh/uv
+      tag: 0.9-python3.13-bookworm-slim
+      digest: sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca
+    # -- Version of huggingface_hub that `uvx` installs.
+    hubVersion: "1.0.0"
+    # -- Seconds a finished Job stays before Kubernetes removes it.
+    ttlSecondsAfterFinished: 3600

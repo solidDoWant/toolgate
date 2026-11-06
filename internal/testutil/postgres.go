@@ -17,13 +17,13 @@ import (
 )
 
 // PostgresImage is the PostgreSQL image the integration tests run, pinned by
-// digest.
-const PostgresImage = "mirror.gcr.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b"
+// digest. It ships the pgvector and pg_trgm extensions.
+const PostgresImage = "ghcr.io/cloudnative-pg/postgresql:17-standard-trixie@sha256:4d0aac315c4d8c3202252bd06fea83b16951cc57234a7b610eeaa382ff4482d0"
 
 const (
 	postgresUser     = "toolgate"
 	postgresDatabase = "toolgate"
-	postgresTLSDir   = "/etc/postgresql-tls"
+	postgresTLSDir   = "/tmp/postgresql-tls"
 )
 
 // postgresHBA accepts TCP connections only over TLS with a client
@@ -33,15 +33,23 @@ const postgresHBA = `local all all trust
 hostssl all all all cert
 `
 
-// postgresStart copies the TLS files to a directory the postgres user owns
-// (PostgreSQL refuses a key file readable by others) and starts the image's
-// usual entrypoint with TLS on.
+// postgresStart initialises a database cluster, creates the database, copies
+// the TLS files to a directory the postgres user owns (PostgreSQL refuses a
+// key file readable by others; the test files are readable by the
+// container user, which is not root) and starts the server with TLS on. The image
+// has no entrypoint script, so this does what the official image's does.
 const postgresStart = `set -eu
 mkdir -p ` + postgresTLSDir + `
 cp /tls/* ` + postgresTLSDir + `/
-chown -R postgres:postgres ` + postgresTLSDir + `
 chmod 0600 ` + postgresTLSDir + `/server.key
-exec docker-entrypoint.sh postgres \
+export PGDATA=/tmp/pgdata
+initdb -D "$PGDATA" -U ` + postgresUser + ` --auth=trust >/dev/null
+export PGHOST=/tmp
+pg_ctl -D "$PGDATA" -w -o "-c listen_addresses='' -c unix_socket_directories=/tmp" start >/dev/null
+createdb -U ` + postgresUser + ` ` + postgresDatabase + `
+pg_ctl -D "$PGDATA" -w stop >/dev/null
+exec postgres -D "$PGDATA" \
+  -c listen_addresses='*' \
   -c ssl=on \
   -c ssl_cert_file=` + postgresTLSDir + `/server.crt \
   -c ssl_key_file=` + postgresTLSDir + `/server.key \
@@ -98,24 +106,17 @@ func StartPostgres(tb testing.TB) *Postgres {
 		containerFiles = append(containerFiles, testcontainers.ContainerFile{
 			Reader:            bytes.NewReader(content),
 			ContainerFilePath: "/tls/" + name,
-			FileMode:          0o600,
+			FileMode:          0o644,
 		})
 	}
 
 	container, err := testcontainers.Run(ctx, PostgresImage,
-		testcontainers.WithEnv(map[string]string{
-			"POSTGRES_USER":             postgresUser,
-			"POSTGRES_DB":               postgresDatabase,
-			"POSTGRES_HOST_AUTH_METHOD": "trust",
-		}),
 		testcontainers.WithFiles(containerFiles...),
 		testcontainers.WithEntrypoint("sh", "-c", postgresStart),
 		testcontainers.WithCmd(),
 		testcontainers.WithExposedPorts("5432/tcp"),
 		testcontainers.WithWaitStrategy(
-			// The entrypoint starts a temporary server for initialisation,
-			// so the real server is the second one ready.
-			wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(2*time.Minute),
+			wait.ForLog("database system is ready to accept connections").WithStartupTimeout(2*time.Minute),
 			wait.ForListeningPort("5432/tcp").WithStartupTimeout(2*time.Minute),
 		),
 	)
