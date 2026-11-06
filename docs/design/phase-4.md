@@ -228,6 +228,26 @@ A rebuild first takes `pg_advisory_xact_lock(hashtextextended('toolsearch/' || t
 
 The catalog and rule reconcilers already run on every replica and write only while elected (phase 1 §1). The rebuild is a write, so it follows the same rule.
 
+### Optional embeddings
+
+The owner decided this on 2026-11-06 (#354). On the fixture, full-text search alone reached 61 percent, and about 75 to 82 percent with a richer document, trigram name matching and synonyms. Most of the remaining misses are paraphrases that share no word with the tool ("Catch me up on #general" for a channel history tool). So search can also rank by meaning, when the admin configures an embeddings endpoint.
+
+**Setting.** `toolSearch.embeddings` in the chart and the gateway config:
+- `url`: an endpoint that speaks the OpenAI embeddings API (`POST <url>/v1/embeddings`). Examples are Hugging Face text-embeddings-inference and Ollama, run in the cluster.
+- `model`: the model name sent in the request.
+- `apiKeySecret` (optional): a Secret key, sent as `Authorization: Bearer`.
+- `timeout`: 2 s by default.
+
+Without `url`, search is full-text only, as before. The gateway uses a maintained HTTP client and JSON. It needs no SDK and no new Go dependency beyond the standard library.
+
+**Vectors.** The leader embeds each search row's document text when it rebuilds the row (§ "Keeping the search rows current"). It stores the vector in `tool_search.embedding` (`real[]`), with `embedding_model` (text). A row whose model differs from the setting is embedded again on the next rebuild. No `pgvector` is needed: a deployment has at most a few thousand tools, so a replica loads the candidate rows' vectors with the full-text query and computes cosine similarity in Go. If embedding a row fails, the row keeps an empty vector and is retried on the next rebuild, with a warning log and a metric. A failure never blocks a `ready` write.
+
+**Query.** `toolgate_find_tools` embeds the query with the same model, with the timeout. The candidates are every search row the session's policy allows (as before), not only the full-text matches. Ranking uses reciprocal rank fusion (k = 60) of the full-text rank and the cosine rank. If the embeddings call fails or times out, the search uses full-text only, writes a metric, and still answers. The query text is never logged.
+
+**Data and egress.** The query and the tool documents are sent to the endpoint. The admin docs say to run the endpoint in the cluster, and the chart's network policy allows egress only to the configured host and port.
+
+**Synonyms.** The synonym list keeps only general computing vocabulary chosen before the fixture's misses were known: folder/directory, file/document, message/post/chat, mail/email, remove/delete, show/list/get/read, fetch/download, search/find/look up, remember/memory/note, history/recent/past. Groups added after looking at the misses are removed.
+
 ### Search quality
 
 AC-4-03. The fixture is `test/fixtures/toolsearch/`:
@@ -236,7 +256,7 @@ AC-4-03. The fixture is `test/fixtures/toolsearch/`:
 
 One agent writes the fixture and opens it in its own PR before any ranking code merges. The search worker may not change it. So the fixture isn't fitted to the ranking.
 
-The AC-4-03 test is an integration test. It loads the fixture through the real rebuild code into PostgreSQL and runs every task through the real search. It passes when the expected tool is in the top 5 for at least 90 percent of the tasks. If full-text search misses the bar, the worker hands back `HANDOFF: question` with the scores. The worker doesn't add a new search backend.
+The AC-4-03 test is an integration test. It loads the fixture through the real rebuild code into PostgreSQL and runs every task through the real search, **with embeddings configured**. In CI, the embeddings endpoint is Hugging Face text-embeddings-inference (CPU image from `ghcr.io/huggingface/text-embeddings-inference`, pinned by digest) with `BAAI/bge-small-en-v1.5`, cached between runs. The test passes when the expected tool is in the top 5 for at least 90 percent of the tasks. It also prints the full-text-only score for information, which doesn't gate. If hybrid search misses the bar, the worker hands back with the per-task misses and doesn't add words or change the fixture.
 
 ## 6. Tool curation
 
@@ -600,6 +620,9 @@ Phase 1's rows (phase 1 §4), phase 2's rows (phase 2 §10) and phase 3's rows (
 | 252 | `toolgate_find_tools` query with no words, or only stop words | — | `{"tools": []}` with the message in §5. No SQL runs when no words remain. | unit |
 | 253 | Override `name` equals a hidden tool's upstream name | — | With `toolFilter.deny`, the template is invalid. With `toolFilter.allow`, the tool list checks fail the instance. | unit |
 | 254 | UI turned off (phase 3 row 162) | scope entries exist | The rows stay but do nothing, `deny` entries included, so a deny stops applying after the restart. | unit |
+| 255 | Embeddings endpoint down, slow or erroring | search | The search uses full-text only, writes a metric, and answers. | unit |
+| 256 | Embeddings model changed in the setting | rows embedded with the old model | The next rebuild embeds them again. Until then, those rows rank by full-text only. | integration |
+| 257 | No embeddings setting | — | Full-text only, as before. No call is made. | unit |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
