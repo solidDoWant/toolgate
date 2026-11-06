@@ -184,6 +184,33 @@ func (q *Queries) EndIdleSession(ctx context.Context, arg EndIdleSessionParams) 
 	return i, err
 }
 
+const endLiveSession = `-- name: EndLiveSession :one
+UPDATE sessions
+SET ended_at = now()
+WHERE id = $1 AND ended_at IS NULL
+RETURNING id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind
+`
+
+func (q *Queries) EndLiveSession(ctx context.Context, id int64) (Session, error) {
+	row := q.db.QueryRow(ctx, endLiveSession, id)
+	var i Session
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.SessionID,
+		&i.Workspace,
+		&i.Attestation,
+		&i.Email,
+		&i.Name,
+		&i.Groups,
+		&i.CreatedAt,
+		&i.LastSeenAt,
+		&i.EndedAt,
+		&i.Kind,
+	)
+	return i, err
+}
+
 const forgetEndedSessionServers = `-- name: ForgetEndedSessionServers :many
 DELETE FROM session_servers ss
 USING sessions s

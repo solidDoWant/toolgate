@@ -3,6 +3,8 @@ package gateway
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
@@ -23,6 +25,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 	"github.com/solidDoWant/toolgate/internal/version"
 )
@@ -137,6 +140,9 @@ type mcpBinding struct {
 type mcpSession struct {
 	binding mcpBinding
 	tools   *sessionTools
+	// connectorSession is the sessions row of a session tied to this MCP
+	// session (auth.MCPSessionPrefix), which ends with it. Zero otherwise.
+	connectorSession int64
 
 	// The fields below are guarded by mcpEndpoint.mu. active counts the
 	// requests and streams in progress on the session; idle releases it
@@ -146,11 +152,13 @@ type mcpSession struct {
 	idle       *time.Timer
 }
 
-// mcpEndpoint serves MCP. It must run behind auth.Middleware with the
-// session header required. Each MCP session gets its own mcp.Server, so a
+// mcpEndpoint serves MCP. It must run behind auth.Middleware in its MCP
+// mode. Each MCP session gets its own mcp.Server, so a
 // change to one session's proxied tools sends list_changed to it alone.
 type mcpEndpoint struct {
-	newServer func(stateless bool) *mcp.Server
+	// newServer makes an MCP session's server. A non-empty sessionID is the
+	// Mcp-Session-Id the go-sdk assigns to the session it initializes.
+	newServer func(stateless bool, sessionID string) *mcp.Server
 	callTool  mcp.ToolHandler
 	// handler is the stateful handler. It serves every revision before
 	// 2026-07-28, and server/discover on every revision.
@@ -162,6 +170,8 @@ type mcpEndpoint struct {
 	discoverServer *mcp.Server
 	sessions       *sessionStore
 	logger         *slog.Logger
+	// endSession ends a session tied to an MCP session that closed.
+	endSession func(ctx context.Context, id int64, reason string) error
 
 	idleTimeout time.Duration
 
@@ -173,7 +183,7 @@ type mcpEndpoint struct {
 }
 
 // NewMCPHandler returns the MCP endpoint. Wrap it in auth.Middleware with
-// requireSession set; a request without an identity gets 401.
+// mcp set; a request without an identity gets 401.
 func NewMCPHandler(options MCPOptions) http.Handler {
 	auditOutput := options.AuditOutput
 	if auditOutput == nil {
@@ -198,10 +208,13 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		stateless: make(map[mcpBinding]*mcpSession),
 
 		idleTimeout: options.MCPSessionIdleTimeout,
+		endSession: func(ctx context.Context, id int64, reason string) error {
+			return runtime.EndSession(ctx, options.Database, auditOutput, id, reason)
+		},
 	}
 
 	if endpoint.idleTimeout <= 0 {
-		endpoint.idleTimeout = defaultMCPSessionIdleTimeout
+		endpoint.idleTimeout = testtime.Scale(defaultMCPSessionIdleTimeout)
 	}
 
 	subscribe := options.Subscribe
@@ -261,10 +274,17 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 
 	implementation := &mcp.Implementation{Name: "toolgate", Version: version.Get()}
 
-	endpoint.newServer = func(stateless bool) *mcp.Server {
+	endpoint.newServer = func(stateless bool, sessionID string) *mcp.Server {
 		serverOptions := &mcp.ServerOptions{SetCacheable: privateToolLists}
 		if stateless {
 			serverOptions.SupportedProtocolVersions = []string{mcprequest.StatelessRevision}
+		}
+
+		// GetSessionID can't read the request, but a server is made for
+		// one initialize, so the closure hands the go-sdk the ID chosen
+		// for it.
+		if sessionID != "" {
+			serverOptions.GetSessionID = func() string { return sessionID }
 		}
 
 		server := mcp.NewServer(implementation, serverOptions)
@@ -347,17 +367,42 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 
 	stateless := mcprequest.Stateless(request)
+	mcpSessionID := request.Header.Get(mcpSessionHeader)
 
-	if identity.Session == "" {
+	// A client without the session header gets a session tied to its MCP
+	// session: a new ID at initialize, and mcp.<Mcp-Session-Id> after
+	// (docs/design/phase-4.md §9). The binding check below refuses an ID
+	// this replica didn't assign to this identity, so a client can't pick
+	// such a session.
+	var newSessionID string
+
+	connector := identity.Session == ""
+	if connector {
 		if stateless {
 			writeInvalidRequest(writer, body, statelessNoSessionMessage)
 
 			return
 		}
 
-		http.Error(writer, "Sign in again: run `toolgate login`.", http.StatusUnauthorized)
+		if mcpSessionID == "" {
+			if mcprequest.MethodOf(request, body) != initializeMethod {
+				http.Error(writer, "Send initialize first to start an MCP session.", http.StatusBadRequest)
 
-		return
+				return
+			}
+
+			newSessionID, err = newMCPSessionID()
+			if err != nil {
+				e.logger.ErrorContext(request.Context(), "session ID generation failed", "error", err)
+				http.Error(writer, "The gateway can't start a session right now. Try again later.", http.StatusServiceUnavailable)
+
+				return
+			}
+
+			identity.Session = auth.MCPSessionPrefix + newSessionID
+		} else {
+			identity.Session = auth.MCPSessionPrefix + mcpSessionID
+		}
 	}
 
 	binding := mcpBinding{
@@ -368,7 +413,6 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	// A request on an MCP session bound to another workspace or
 	// attestation gets 404 before the session lookup's 400, so the client
 	// initializes again and then learns the workspace changed.
-	mcpSessionID := request.Header.Get(mcpSessionHeader)
 	if !stateless && mcpSessionID != "" && !e.boundTo(mcpSessionID, binding) {
 		http.Error(writer, "session not found", http.StatusNotFound)
 
@@ -415,6 +459,10 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 		if request.Method == http.MethodDelete {
 			defer e.unbind(mcpSessionID)
+
+			if known.connectorSession != 0 {
+				defer e.endConnectorSession(request.Context(), known.connectorSession, endReasonDelete)
+			}
 		}
 
 		known.tools.setCurrent(current)
@@ -428,10 +476,13 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			createdID string
 		)
 
-		server := e.newServer(false)
+		server := e.newServer(false, newSessionID)
 		ctx = context.WithValue(ctx, newServerCtxKey{}, server)
 		writer = &bindingWriter{ResponseWriter: writer, onSessionID: func(id string) {
 			created = &mcpSession{binding: binding, tools: newSessionTools(server, e.callTool, current), active: 1}
+			if connector {
+				created.connectorSession = session.ID
+			}
 			createdID = id
 			e.bind(id, created)
 		}}
@@ -476,7 +527,7 @@ func (e *mcpEndpoint) acquireStateless(binding mcpBinding, current requestContex
 
 	held, found := e.stateless[binding]
 	if !found {
-		tools := newSessionTools(e.newServer(true), e.callTool, current)
+		tools := newSessionTools(e.newServer(true, ""), e.callTool, current)
 		held = &mcpSession{binding: binding, tools: tools}
 		e.stateless[binding] = held
 	}
@@ -689,6 +740,49 @@ func (e *mcpEndpoint) expire(id string, session *mcpSession) {
 			_ = open.Close()
 		}
 	}
+
+	if session.connectorSession != 0 {
+		e.endConnectorSession(context.Background(), session.connectorSession, endReasonIdle)
+	}
+}
+
+// The session.end reasons of a session tied to an MCP session.
+const (
+	endReasonDelete = "mcp-session-delete"
+	endReasonIdle   = "mcp-session-idle"
+)
+
+// endSessionTimeout bounds the end transaction of a session tied to an MCP
+// session.
+const endSessionTimeout = 30 * time.Second
+
+// endConnectorSession ends the session tied to an MCP session that closed.
+// It runs after the request or the idle timer, so the client's
+// cancellation can't stop it. A failure is logged: the session then ends
+// on the reconciler's idle pass, and nothing can resume it because its
+// MCP session is gone.
+func (e *mcpEndpoint) endConnectorSession(ctx context.Context, id int64, reason string) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), endSessionTimeout)
+	defer cancel()
+
+	if err := e.endSession(ctx, id, reason); err != nil {
+		e.logger.ErrorContext(ctx, "ending the session of a closed MCP session failed", "error", err)
+	}
+}
+
+// initializeMethod is the JSON-RPC method that starts an MCP session.
+const initializeMethod = "initialize"
+
+// newMCPSessionID returns the Mcp-Session-Id of a new MCP session of a
+// client without the session header: 32 lowercase hex characters from
+// crypto/rand.
+func newMCPSessionID() (string, error) {
+	random := make([]byte, 16)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(random), nil
 }
 
 // forget removes a binding and stops its idle timer. The caller holds e.mu.

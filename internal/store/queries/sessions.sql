@@ -42,6 +42,12 @@ SET ended_at = now()
 WHERE id = @id AND ended_at IS NULL AND last_seen_at < now() - @idle_timeout::interval
 RETURNING *;
 
+-- name: EndLiveSession :one
+UPDATE sessions
+SET ended_at = now()
+WHERE id = @id AND ended_at IS NULL
+RETURNING *;
+
 -- name: ListIdleSessions :many
 SELECT * FROM sessions
 WHERE ended_at IS NULL AND last_seen_at < now() - @idle_timeout::interval
