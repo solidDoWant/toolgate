@@ -31,11 +31,25 @@ type keyPair struct {
 func newCertAuthority(tb testing.TB) *certAuthority {
 	tb.Helper()
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	ca, err := newCertAuthorityE()
 	require.NoError(tb, err)
 
+	return ca
+}
+
+func newCertAuthorityE() (*certAuthority, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+
+	serial, err := newSerialE()
+	if err != nil {
+		return nil, err
+	}
+
 	template := &x509.Certificate{
-		SerialNumber:          newSerial(tb),
+		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: "toolgate test CA"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(24 * time.Hour),
@@ -45,15 +59,20 @@ func newCertAuthority(tb testing.TB) *certAuthority {
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
-	require.NoError(tb, err)
+	if err != nil {
+		return nil, err
+	}
+
 	cert, err := x509.ParseCertificate(der)
-	require.NoError(tb, err)
+	if err != nil {
+		return nil, err
+	}
 
 	return &certAuthority{
 		cert:    cert,
 		key:     key,
 		certPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
-	}
+	}, nil
 }
 
 // issue signs a leaf certificate for commonName. Server certificates carry
@@ -61,11 +80,25 @@ func newCertAuthority(tb testing.TB) *certAuthority {
 func (ca *certAuthority) issue(tb testing.TB, commonName string, usage x509.ExtKeyUsage, hosts ...string) keyPair {
 	tb.Helper()
 
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	pair, err := ca.issueE(commonName, usage, hosts...)
 	require.NoError(tb, err)
 
+	return pair
+}
+
+func (ca *certAuthority) issueE(commonName string, usage x509.ExtKeyUsage, hosts ...string) (keyPair, error) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return keyPair{}, err
+	}
+
+	serial, err := newSerialE()
+	if err != nil {
+		return keyPair{}, err
+	}
+
 	template := &x509.Certificate{
-		SerialNumber: newSerial(tb),
+		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
@@ -82,21 +115,30 @@ func (ca *certAuthority) issue(tb testing.TB, commonName string, usage x509.ExtK
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, template, ca.cert, &key.PublicKey, ca.key)
-	require.NoError(tb, err)
+	if err != nil {
+		return keyPair{}, err
+	}
+
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
-	require.NoError(tb, err)
+	if err != nil {
+		return keyPair{}, err
+	}
 
 	return keyPair{
 		CertPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}),
 		KeyPEM:  pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
-	}
+	}, nil
 }
 
 func newSerial(tb testing.TB) *big.Int {
 	tb.Helper()
 
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
+	serial, err := newSerialE()
 	require.NoError(tb, err)
 
 	return serial
+}
+
+func newSerialE() (*big.Int, error) {
+	return rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 127))
 }

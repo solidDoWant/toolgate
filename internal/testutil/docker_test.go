@@ -51,7 +51,7 @@ func TestStartHelperWithoutDocker(t *testing.T) {
 	case "s3":
 		testutil.StartS3(t)
 	case "postgres-fail":
-		t.Logf("container-id=%s", testutil.StartPostgres(t).ContainerID)
+		t.Logf("container-id=%s", testutil.StartPostgresDedicated(t).ContainerID)
 	case "s3-fail":
 		t.Logf("container-id=%s", testutil.StartS3(t).ContainerID)
 	}

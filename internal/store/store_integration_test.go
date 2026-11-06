@@ -47,7 +47,8 @@ func migratedPool(t *testing.T) (*testutil.Postgres, *pgxpool.Pool) {
 }
 
 func TestMigrateCreatesSchema(t *testing.T) {
-	_, pool := migratedPool(t)
+	pool := openPool(t, testutil.StartPostgresEmpty(t).ConnString())
+	require.NoError(t, store.Migrate(t.Context(), pool))
 	ctx := t.Context()
 
 	for _, table := range []string{"sessions", "session_servers", "instances", "user_secrets", "audit_events"} {
@@ -113,7 +114,7 @@ func TestLiveInstanceUniqueIndex(t *testing.T) {
 }
 
 func TestMigrateConcurrently(t *testing.T) {
-	pg := testutil.StartPostgres(t)
+	pg := testutil.StartPostgresEmpty(t)
 
 	const gateways = 5
 
@@ -153,7 +154,7 @@ func TestMigrateConcurrently(t *testing.T) {
 }
 
 func TestMigrateWaitsForAnotherGatewaysMigration(t *testing.T) {
-	pg := testutil.StartPostgres(t)
+	pg := testutil.StartPostgresEmpty(t)
 	ctx := t.Context()
 
 	// Hold the migration lock as another gateway mid-migration would.
@@ -228,7 +229,7 @@ func TestListenerReconnectsAndReportsMissed(t *testing.T) {
 
 	var terminated int
 	require.NoError(t, pool.QueryRow(ctx,
-		"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN%' AND pid <> pg_backend_pid()) AS t").Scan(&terminated))
+		"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%' AND pid <> pg_backend_pid()) AS t").Scan(&terminated))
 	require.Equal(t, 1, terminated, "the listener's connection")
 
 	assert.Equal(t, store.Event{Missed: true}, nextEvent(t, events))
@@ -244,7 +245,9 @@ func TestNewConnectionsUseRotatedClientCertificate(t *testing.T) {
 
 	conn, err := pgx.Connect(ctx, pg.ConnString())
 	require.NoError(t, err)
-	_, err = conn.Exec(ctx, "CREATE ROLE rotated LOGIN")
+
+	rotatedRole := pg.RoleName("rotated")
+	_, err = conn.Exec(ctx, "CREATE ROLE "+pgx.Identifier{rotatedRole}.Sanitize()+" LOGIN")
 	require.NoError(t, err)
 	require.NoError(t, conn.Close(ctx))
 
@@ -255,18 +258,18 @@ func TestNewConnectionsUseRotatedClientCertificate(t *testing.T) {
 
 	// The connection string names the role the rotated certificate is
 	// for, so only the rotated files can authenticate.
-	pool := openPool(t, pg.ConnStringFor("rotated", certFile, keyFile))
+	pool := openPool(t, pg.ConnStringFor(rotatedRole, certFile, keyFile))
 
 	err = pool.Ping(ctx)
 	require.Error(t, err, "the original certificate is for another user")
 
-	rotatedCert, rotatedKey := pg.IssueClientCert(t, "rotated")
+	rotatedCert, rotatedKey := pg.IssueClientCert(t, rotatedRole)
 	copyFile(t, rotatedCert, certFile)
 	copyFile(t, rotatedKey, keyFile)
 
 	var user string
 	require.NoError(t, pool.QueryRow(ctx, "SELECT current_user").Scan(&user))
-	assert.Equal(t, "rotated", user)
+	assert.Equal(t, rotatedRole, user)
 }
 
 func startListener(t *testing.T, pool *pgxpool.Pool) (<-chan store.Event, func()) {
