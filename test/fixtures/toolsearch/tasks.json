@@ -1,0 +1,532 @@
+{
+  "tasks": [
+    {
+      "id": "t01",
+      "task": "Open a ticket on the billing-service repo saying the invoice PDF is blank.",
+      "expected": {
+        "server": "github",
+        "tool": "create_issue"
+      }
+    },
+    {
+      "id": "t02",
+      "task": "Show me what is written in issue 212 of our web app project.",
+      "expected": {
+        "server": "github",
+        "tool": "get_issue"
+      }
+    },
+    {
+      "id": "t03",
+      "task": "Reply on ticket 88 that we shipped a fix in the latest release.",
+      "expected": {
+        "server": "github",
+        "tool": "add_issue_comment"
+      }
+    },
+    {
+      "id": "t04",
+      "task": "Which bugs are still open in the payments repository?",
+      "expected": {
+        "server": "github",
+        "tool": "list_issues"
+      }
+    },
+    {
+      "id": "t05",
+      "task": "Propose my feature-login branch for merging into main.",
+      "expected": {
+        "server": "github",
+        "tool": "create_pull_request"
+      }
+    },
+    {
+      "id": "t06",
+      "task": "Squash and land pull request 431 now that it is approved.",
+      "expected": {
+        "server": "github",
+        "tool": "merge_pull_request"
+      }
+    },
+    {
+      "id": "t07",
+      "task": "Find every place in our GitHub org that calls parseConfig.",
+      "expected": {
+        "server": "github",
+        "tool": "search_code"
+      }
+    },
+    {
+      "id": "t08",
+      "task": "Start a new branch called hotfix-timeout off of main in the api repo.",
+      "expected": {
+        "server": "github",
+        "tool": "create_branch"
+      }
+    },
+    {
+      "id": "t09",
+      "task": "Read the README from the main branch of the acme/tools repo on GitHub.",
+      "expected": {
+        "server": "github",
+        "tool": "get_file_contents"
+      }
+    },
+    {
+      "id": "t10",
+      "task": "What changes were made recently on the release branch of the api repository?",
+      "expected": {
+        "server": "github",
+        "tool": "list_commits"
+      }
+    },
+    {
+      "id": "t11",
+      "task": "Make my own copy of the upstream project under my account.",
+      "expected": {
+        "server": "github",
+        "tool": "fork_repository"
+      }
+    },
+    {
+      "id": "t12",
+      "task": "Give me every running workload across the whole cluster.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "pods_list"
+      }
+    },
+    {
+      "id": "t13",
+      "task": "What pods are there in the staging namespace?",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "pods_list_in_namespace"
+      }
+    },
+    {
+      "id": "t14",
+      "task": "Show the status of the pod called web-7d9f in the prod namespace.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "pods_get"
+      }
+    },
+    {
+      "id": "t15",
+      "task": "Kill the stuck pod worker-3 so it gets recreated.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "pods_delete"
+      }
+    },
+    {
+      "id": "t16",
+      "task": "I need the output from the api container's stdout in pod api-0.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "pods_log"
+      }
+    },
+    {
+      "id": "t17",
+      "task": "Run ls /etc inside the running pod cache-1.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "pods_exec"
+      }
+    },
+    {
+      "id": "t18",
+      "task": "Which namespaces exist on this cluster?",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "namespaces_list"
+      }
+    },
+    {
+      "id": "t19",
+      "task": "Show recent warnings from the cluster, such as failed scheduling.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "events_list"
+      }
+    },
+    {
+      "id": "t20",
+      "task": "Fetch the Deployment named checkout and show its spec.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "resources_get"
+      }
+    },
+    {
+      "id": "t21",
+      "task": "Apply this manifest to the cluster.",
+      "expected": {
+        "server": "kubernetes",
+        "tool": "resources_create_or_update"
+      }
+    },
+    {
+      "id": "t22",
+      "task": "Open /home/me/notes.txt and tell me what it says.",
+      "expected": {
+        "server": "filesystem",
+        "tool": "read_file"
+      }
+    },
+    {
+      "id": "t23",
+      "task": "Save this text into a new file called out.txt on disk.",
+      "expected": {
+        "server": "filesystem",
+        "tool": "write_file"
+      }
+    },
+    {
+      "id": "t24",
+      "task": "Change the port number on line 12 of the local config file.",
+      "expected": {
+        "server": "filesystem",
+        "tool": "edit_file"
+      }
+    },
+    {
+      "id": "t25",
+      "task": "Make a folder called backups in my home directory.",
+      "expected": {
+        "server": "filesystem",
+        "tool": "create_directory"
+      }
+    },
+    {
+      "id": "t26",
+      "task": "What is inside my Downloads folder?",
+      "expected": {
+        "server": "filesystem",
+        "tool": "list_directory"
+      }
+    },
+    {
+      "id": "t27",
+      "task": "Rename report-draft.docx on disk to report-final.docx.",
+      "expected": {
+        "server": "filesystem",
+        "tool": "move_file"
+      }
+    },
+    {
+      "id": "t28",
+      "task": "Look through the project folder for every file ending in .tf.",
+      "expected": {
+        "server": "filesystem",
+        "tool": "search_files"
+      }
+    },
+    {
+      "id": "t29",
+      "task": "How big is the log file and when was it last changed?",
+      "expected": {
+        "server": "filesystem",
+        "tool": "get_file_info"
+      }
+    },
+    {
+      "id": "t30",
+      "task": "How many orders were placed last week? Run it against the database.",
+      "expected": {
+        "server": "postgres",
+        "tool": "query"
+      }
+    },
+    {
+      "id": "t31",
+      "task": "What tables does the Postgres database have?",
+      "expected": {
+        "server": "postgres",
+        "tool": "list_tables"
+      }
+    },
+    {
+      "id": "t32",
+      "task": "Tell me the columns and types of the customers table.",
+      "expected": {
+        "server": "postgres",
+        "tool": "describe_table"
+      }
+    },
+    {
+      "id": "t33",
+      "task": "Select the top ten rows from the scores table in the local SQLite file.",
+      "expected": {
+        "server": "sqlite",
+        "tool": "read_query"
+      }
+    },
+    {
+      "id": "t34",
+      "task": "Update the status of user 5 to inactive in the SQLite database.",
+      "expected": {
+        "server": "sqlite",
+        "tool": "write_query"
+      }
+    },
+    {
+      "id": "t35",
+      "task": "Set up a new table for storing inventory in the SQLite file.",
+      "expected": {
+        "server": "sqlite",
+        "tool": "create_table"
+      }
+    },
+    {
+      "id": "t36",
+      "task": "Note down that sales peak on Fridays as a finding for the memo.",
+      "expected": {
+        "server": "sqlite",
+        "tool": "append_insight"
+      }
+    },
+    {
+      "id": "t37",
+      "task": "Which files have I modified in my local checkout?",
+      "expected": {
+        "server": "git",
+        "tool": "git_status"
+      }
+    },
+    {
+      "id": "t38",
+      "task": "Show me my edits that I have not staged yet.",
+      "expected": {
+        "server": "git",
+        "tool": "git_diff_unstaged"
+      }
+    },
+    {
+      "id": "t39",
+      "task": "Record my staged work in the local history with the message 'fix typo'.",
+      "expected": {
+        "server": "git",
+        "tool": "git_commit"
+      }
+    },
+    {
+      "id": "t40",
+      "task": "Who made the last five commits in this clone?",
+      "expected": {
+        "server": "git",
+        "tool": "git_log"
+      }
+    },
+    {
+      "id": "t41",
+      "task": "Make a local branch named experiment for this working copy.",
+      "expected": {
+        "server": "git",
+        "tool": "git_create_branch"
+      }
+    },
+    {
+      "id": "t42",
+      "task": "Switch my working copy over to the develop branch.",
+      "expected": {
+        "server": "git",
+        "tool": "git_checkout"
+      }
+    },
+    {
+      "id": "t43",
+      "task": "What chat rooms can I post in?",
+      "expected": {
+        "server": "slack",
+        "tool": "slack_list_channels"
+      }
+    },
+    {
+      "id": "t44",
+      "task": "Tell the #ops channel that the deploy has finished.",
+      "expected": {
+        "server": "slack",
+        "tool": "slack_post_message"
+      }
+    },
+    {
+      "id": "t45",
+      "task": "Answer in the thread under the incident announcement saying I am on it.",
+      "expected": {
+        "server": "slack",
+        "tool": "slack_reply_to_thread"
+      }
+    },
+    {
+      "id": "t46",
+      "task": "Put a thumbs-up emoji on that last chat message.",
+      "expected": {
+        "server": "slack",
+        "tool": "slack_add_reaction"
+      }
+    },
+    {
+      "id": "t47",
+      "task": "Catch me up on what was said in #general this morning.",
+      "expected": {
+        "server": "slack",
+        "tool": "slack_get_channel_history"
+      }
+    },
+    {
+      "id": "t48",
+      "task": "Who is in our chat workspace?",
+      "expected": {
+        "server": "slack",
+        "tool": "slack_get_users"
+      }
+    },
+    {
+      "id": "t49",
+      "task": "Which calendars do I have access to?",
+      "expected": {
+        "server": "google-calendar",
+        "tool": "list-calendars"
+      }
+    },
+    {
+      "id": "t50",
+      "task": "What meetings do I have tomorrow?",
+      "expected": {
+        "server": "google-calendar",
+        "tool": "list-events"
+      }
+    },
+    {
+      "id": "t51",
+      "task": "Schedule a one hour planning meeting with Dana on Thursday at 3pm.",
+      "expected": {
+        "server": "google-calendar",
+        "tool": "create-event"
+      }
+    },
+    {
+      "id": "t52",
+      "task": "Move my Monday standup to start half an hour later.",
+      "expected": {
+        "server": "google-calendar",
+        "tool": "update-event"
+      }
+    },
+    {
+      "id": "t53",
+      "task": "Cancel the team lunch on Friday.",
+      "expected": {
+        "server": "google-calendar",
+        "tool": "delete-event"
+      }
+    },
+    {
+      "id": "t54",
+      "task": "When are Sam and Priya both free next Tuesday?",
+      "expected": {
+        "server": "google-calendar",
+        "tool": "get-freebusy"
+      }
+    },
+    {
+      "id": "t55",
+      "task": "Write to bob@example.com that the contract is signed and send it.",
+      "expected": {
+        "server": "gmail",
+        "tool": "send_email"
+      }
+    },
+    {
+      "id": "t56",
+      "task": "Prepare a message to my landlord about the leak but do not send it yet.",
+      "expected": {
+        "server": "gmail",
+        "tool": "draft_email"
+      }
+    },
+    {
+      "id": "t57",
+      "task": "Open the message with ID 18c3 and show me its text.",
+      "expected": {
+        "server": "gmail",
+        "tool": "read_email"
+      }
+    },
+    {
+      "id": "t58",
+      "task": "Find the messages from the airline about my booking.",
+      "expected": {
+        "server": "gmail",
+        "tool": "search_emails"
+      }
+    },
+    {
+      "id": "t59",
+      "task": "Throw away that spam message for good.",
+      "expected": {
+        "server": "gmail",
+        "tool": "delete_email"
+      }
+    },
+    {
+      "id": "t60",
+      "task": "What folders and tags do I have in my inbox?",
+      "expected": {
+        "server": "gmail",
+        "tool": "list_email_labels"
+      }
+    },
+    {
+      "id": "t61",
+      "task": "Add a new inbox tag named Receipts.",
+      "expected": {
+        "server": "gmail",
+        "tool": "create_label"
+      }
+    },
+    {
+      "id": "t62",
+      "task": "Download the page at https://example.com/docs and summarise it.",
+      "expected": {
+        "server": "fetch",
+        "tool": "fetch"
+      }
+    },
+    {
+      "id": "t63",
+      "task": "Remember that Alice is the lead engineer on the Atlas project.",
+      "expected": {
+        "server": "memory",
+        "tool": "create_entities"
+      }
+    },
+    {
+      "id": "t64",
+      "task": "Record that Alice manages Bob.",
+      "expected": {
+        "server": "memory",
+        "tool": "create_relations"
+      }
+    },
+    {
+      "id": "t65",
+      "task": "What do I already know about the Atlas project from my saved notes?",
+      "expected": {
+        "server": "memory",
+        "tool": "search_nodes"
+      }
+    },
+    {
+      "id": "t66",
+      "task": "Dump everything you have remembered so far.",
+      "expected": {
+        "server": "memory",
+        "tool": "read_graph"
+      }
+    }
+  ]
+}
