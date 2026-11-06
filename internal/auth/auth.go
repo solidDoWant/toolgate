@@ -132,8 +132,10 @@ type RefusalRecorder interface {
 type Options struct {
 	// IssuerURL is the IdP's issuer. Its discovery document names the JWKS.
 	IssuerURL string
-	// Audience must be one of the token's audiences.
-	Audience string
+	// Audiences are the 1 to 8 audiences a user access token may be for.
+	// They share the issuer and its signing keys. A token is checked by the
+	// verifier of the first of them listed in its audience claim.
+	Audiences []string
 	// Claim names. Empty names take the defaults `email`, `email_verified`
 	// and `groups`.
 	EmailClaim         string
@@ -154,16 +156,21 @@ type Options struct {
 
 // Authenticator checks user access tokens and the identity headers.
 type Authenticator struct {
-	verifier *oidc.IDTokenVerifier
-	issuer   string
+	verifiers []audienceVerifier
+	issuer    string
+	accounts  *serviceAccountVerifier
+	spiffe    *spiffeVerifier
+	attest    *attestationVerifier
+	claims    claimNames
+	recorder  RefusalRecorder
+	limiter   *RateLimiter
+	dropped   prometheus.Counter
+}
+
+// audienceVerifier verifies user access tokens for one audience.
+type audienceVerifier struct {
 	audience string
-	accounts *serviceAccountVerifier
-	spiffe   *spiffeVerifier
-	attest   *attestationVerifier
-	claims   claimNames
-	recorder RefusalRecorder
-	limiter  *RateLimiter
-	dropped  prometheus.Counter
+	verifier *oidc.IDTokenVerifier
 }
 
 type claimNames struct {
@@ -178,8 +185,14 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		return nil, errors.New("auth: the issuer URL is required")
 	}
 
-	if options.Audience == "" {
-		return nil, errors.New("auth: the audience is required")
+	if len(options.Audiences) == 0 {
+		return nil, errors.New("auth: an audience is required")
+	}
+
+	for _, audience := range options.Audiences {
+		if audience == "" {
+			return nil, errors.New("auth: an audience must not be empty")
+		}
 	}
 
 	provider, err := oidc.NewProvider(ctx, options.IssuerURL)
@@ -221,16 +234,25 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		}
 	}
 
+	// One provider, so every audience's verifier shares the discovery
+	// document and the cached key set.
+	verifiers := make([]audienceVerifier, 0, len(options.Audiences))
+	for _, audience := range options.Audiences {
+		verifiers = append(verifiers, audienceVerifier{
+			audience: audience,
+			verifier: provider.VerifierContext(context.WithoutCancel(ctx), &oidc.Config{ClientID: audience}),
+		})
+	}
+
 	return &Authenticator{
-		attest:   attest,
-		verifier: provider.VerifierContext(context.WithoutCancel(ctx), &oidc.Config{ClientID: options.Audience}),
-		issuer:   options.IssuerURL,
-		audience: options.Audience,
-		accounts: accounts,
-		spiffe:   spiffe,
-		claims:   claims,
-		recorder: options.Recorder,
-		limiter:  NewRateLimiter(),
+		attest:    attest,
+		verifiers: verifiers,
+		issuer:    options.IssuerURL,
+		accounts:  accounts,
+		spiffe:    spiffe,
+		claims:    claims,
+		recorder:  options.Recorder,
+		limiter:   NewRateLimiter(),
 		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "toolgate_auth_refusals_dropped_total",
 			Help: "Failed sign-ins not written to the audit log because their remote address passed 10 a minute.",
@@ -384,7 +406,19 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 		return identity, nil, refusal
 	}
 
-	verified, err := a.verifier.Verify(request.Context(), token)
+	verifier := a.verifierFor(token)
+	if verifier == nil {
+		refusal := unverifiedRefusal(token)
+		refusal.Reason = "invalid token"
+
+		if refusal.Audience != nil {
+			refusal.Reason = "audience not allowed"
+		}
+
+		return Identity{}, nil, &refusal
+	}
+
+	verified, err := verifier.Verify(request.Context(), token)
 	if err != nil {
 		refusal := unverifiedRefusal(token)
 		refusal.Reason = "invalid token"
@@ -405,6 +439,40 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 	identity.Expiry = verified.Expiry
 
 	return identity, claims, nil
+}
+
+// verifierFor returns the verifier of the first configured audience in the
+// token's unverified audience claim, or nil when the token names none of
+// them. The chosen verifier checks the signature, issuer, audience and expiry
+// itself, so a forged audience claim gains nothing.
+func (a *Authenticator) verifierFor(token string) *oidc.IDTokenVerifier {
+	audiences := unverifiedAudiences(token)
+
+	for _, candidate := range a.verifiers {
+		for _, audience := range audiences {
+			if audience == candidate.audience {
+				return candidate.verifier
+			}
+		}
+	}
+
+	return nil
+}
+
+// unverifiedAudiences reads a token's audience claim without checking its
+// signature.
+func unverifiedAudiences(token string) []string {
+	parsed, err := jwt.ParseSigned(token, tokenAlgorithms)
+	if err != nil {
+		return nil
+	}
+
+	var claims jwt.Claims
+	if err := parsed.UnsafeClaimsWithoutVerification(&claims); err != nil {
+		return nil
+	}
+
+	return claims.Audience
 }
 
 func (a *Authenticator) identityFromClaims(subject string, claims map[string]json.RawMessage) (Identity, error) {

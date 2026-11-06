@@ -73,7 +73,7 @@ func newMCPFixtureWithAuth(t *testing.T, authOptions *auth.Options, configure ..
 		options = *authOptions
 	}
 
-	options.IssuerURL, options.Audience = provider.Issuer, provider.Audience
+	options.IssuerURL, options.Audiences = provider.Issuer, []string{provider.Audience}
 
 	authenticator, err := auth.New(t.Context(), options)
 	require.NoError(t, err)

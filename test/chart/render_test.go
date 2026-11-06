@@ -412,6 +412,33 @@ func TestInstanceLimits(t *testing.T) {
 	}
 }
 
+func TestOIDCAudienceSetting(t *testing.T) {
+	gatewayEnv := func(t *testing.T, extraArgs ...string) map[string]string {
+		t.Helper()
+
+		manifests, err := render(t, quickStartValues, extraArgs...)
+		require.NoError(t, err)
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		values := map[string]string{}
+
+		for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+			values[variable.Name] = variable.Value
+		}
+
+		return values
+	}
+
+	t.Run("one string", func(t *testing.T) {
+		assert.Equal(t, "coder-toolgate", gatewayEnv(t, "--set", "config.oidc.audience=coder-toolgate")["TOOLGATE_OIDC_AUDIENCE"])
+	})
+
+	t.Run("a list", func(t *testing.T) {
+		values := gatewayEnv(t, "--set", "config.oidc.audience={toolgate,coder-toolgate}")
+		assert.Equal(t, "toolgate,coder-toolgate", values["TOOLGATE_OIDC_AUDIENCE"])
+	})
+}
+
 func TestWebUISettings(t *testing.T) {
 	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
 		t.Helper()

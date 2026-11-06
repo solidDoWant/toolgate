@@ -161,7 +161,7 @@ func newGateway(t *testing.T, options ingest.Options) *gateway {
 
 	authenticator, err := auth.New(t.Context(), auth.Options{
 		IssuerURL: provider.Issuer,
-		Audience:  provider.Audience,
+		Audiences: []string{provider.Audience},
 		Recorder:  recorder,
 	})
 	require.NoError(t, err)

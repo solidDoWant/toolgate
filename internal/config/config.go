@@ -104,9 +104,15 @@ type Config struct {
 	// and accepts only access tokens this issuer signed.
 	OIDCIssuerURL string `json:"oidcIssuerURL" env:"TOOLGATE_OIDC_ISSUER_URL"`
 
-	// The audience that users' access tokens must contain, such as
-	// `toolgate`. Required. The gateway refuses a token for another audience.
-	OIDCAudience string `json:"oidcAudience" env:"TOOLGATE_OIDC_AUDIENCE"`
+	// The audiences that users' access tokens may be for, such as `toolgate`
+	// or `[toolgate, coder-toolgate]`: one value or a list of 1 to 8. Each
+	// is the client ID of an OIDC client at the `oidcIssuerURL` provider,
+	// and is at most 256 characters long. Required. In the environment
+	// variable, separate the audiences with commas. The gateway accepts a
+	// token that has at least one of these audiences, and refuses a token
+	// for none of them. Every audience is a client whose access tokens the
+	// gateway accepts, so list only clients made for toolgate.
+	OIDCAudience Audiences `json:"oidcAudience" env:"TOOLGATE_OIDC_AUDIENCE"`
 
 	// The access token claim that holds the user's email address.
 	OIDCEmailClaim string `json:"oidcEmailClaim" env:"TOOLGATE_OIDC_EMAIL_CLAIM"`
@@ -548,6 +554,64 @@ func Default() Config {
 	}
 }
 
+// Audience limits.
+const (
+	maxAudiences      = 8
+	maxAudienceLength = 256
+)
+
+// Audiences is a list of OIDC audiences. In YAML it is one string or a list
+// of strings, so a single-value setting is a one-item list.
+type Audiences []string
+
+// UnmarshalJSON parses one string or a list of strings.
+func (a *Audiences) UnmarshalJSON(data []byte) error {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		*a = Audiences{single}
+
+		return nil
+	}
+
+	var list []string
+	if err := json.Unmarshal(data, &list); err != nil {
+		return errors.New("must be a string or a list of strings")
+	}
+
+	*a = list
+
+	return nil
+}
+
+func (a Audiences) validate() []error {
+	if len(a) == 0 {
+		return []error{errors.New("oidcAudience: required")}
+	}
+
+	var problems []error
+
+	if len(a) > maxAudiences {
+		problems = append(problems, fmt.Errorf("oidcAudience: %d audiences, at most %d are allowed", len(a), maxAudiences))
+	}
+
+	seen := make(map[string]bool, len(a))
+
+	for _, audience := range a {
+		switch {
+		case audience == "":
+			problems = append(problems, errors.New("oidcAudience: an audience must not be empty"))
+		case len(audience) > maxAudienceLength:
+			problems = append(problems, fmt.Errorf("oidcAudience: an audience is longer than %d characters", maxAudienceLength))
+		case seen[audience]:
+			problems = append(problems, fmt.Errorf("oidcAudience: %q is listed more than once", audience))
+		}
+
+		seen[audience] = true
+	}
+
+	return problems
+}
+
 // Duration is a time.Duration written as a Go duration string (`30s`).
 type Duration time.Duration
 
@@ -725,22 +789,30 @@ func applyEnv(cfg *Config, getenv func(string) string) []error {
 			}
 
 			target.SetInt(int64(number))
+		case *Audiences:
+			target.Set(reflect.ValueOf(Audiences(splitList(raw))))
 		case *[]string:
-			var list []string
-
-			for _, item := range strings.Split(raw, ",") {
-				if item = strings.TrimSpace(item); item != "" {
-					list = append(list, item)
-				}
-			}
-
-			target.Set(reflect.ValueOf(list))
+			target.Set(reflect.ValueOf(splitList(raw)))
 		default:
 			problems = append(problems, fmt.Errorf("%s: unsupported field type %s", name, field.Type))
 		}
 	}
 
 	return problems
+}
+
+// splitList splits a comma-separated environment variable, dropping empty
+// items.
+func splitList(raw string) []string {
+	var list []string
+
+	for _, item := range strings.Split(raw, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			list = append(list, item)
+		}
+	}
+
+	return list
 }
 
 // Validate returns one error for each invalid field, naming its YAML key.
@@ -790,9 +862,7 @@ func (c Config) Validate() []error {
 		problems = append(problems, fmt.Errorf("oidcIssuerURL: %q is not an http or https URL", c.OIDCIssuerURL))
 	}
 
-	if c.OIDCAudience == "" {
-		problems = append(problems, errors.New("oidcAudience: required"))
-	}
+	problems = append(problems, c.OIDCAudience.validate()...)
 
 	for key, value := range map[string]string{
 		"oidcEmailClaim":         c.OIDCEmailClaim,
