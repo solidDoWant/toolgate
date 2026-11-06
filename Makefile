@@ -24,12 +24,13 @@ fmt: ## Format Go code (gofmt + goimports through golangci-lint).
 	golangci-lint fmt ./...
 
 .PHONY: lint
-lint: ## Run every linter and check (golangci-lint, go mod tidy, shellcheck, Python syntax, chart lint), then fail if any failed.
+lint: ## Run every linter and check (golangci-lint, go mod tidy, shellcheck, Python syntax, image references, chart lint), then fail if any failed.
 	@failed=""; \
 	golangci-lint run ./... || failed="$$failed golangci-lint"; \
 	go mod tidy -diff || failed="$$failed go-mod-tidy"; \
 	shellcheck $$(git ls-files --cached --others --exclude-standard -- '*.sh' 'scripts/agents/sched-status') || failed="$$failed shellcheck"; \
 	./scripts/check-python.sh || failed="$$failed python"; \
+	./scripts/check-images.py || failed="$$failed images"; \
 	$(MAKE) --no-print-directory chart-lint || failed="$$failed chart-lint"; \
 	if [ -n "$$failed" ]; then echo "lint failed:$$failed" >&2; exit 1; fi
 
@@ -46,6 +47,7 @@ test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tes
 	./scripts/agents/wait-ci_test.sh
 	./scripts/ci/test-guard_test.py
 	./scripts/acceptance-scoreboard_test.py
+	./scripts/check-images_test.py
 	./scripts/e2e/shard_test.py
 
 .PHONY: test-guard

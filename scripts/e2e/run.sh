@@ -67,6 +67,8 @@ release_namespace=toolgate-system
 deps_namespace=toolgate-e2e
 image_tag="e2e-$suffix"
 gateway_repository=ghcr.io/soliddowant/toolgate
+# Kubernetes 1.35 (the chart needs it), through the Docker Hub mirror, pinned by digest.
+kind_node_image=mirror.gcr.io/kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
 mcpserver_image="localhost/toolgate-e2e-mcpserver:$image_tag"
 work="$(mktemp -d)"
 export KUBECONFIG="$work/kubeconfig"
@@ -108,7 +110,7 @@ printf 'FROM scratch\nCOPY mcpserver /mcpserver\nUSER 65532:65532\nEXPOSE 8080\n
 docker build --quiet --tag "$mcpserver_image" "$work/mcpserver" >&2
 
 log "creating kind cluster $cluster"
-kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
+kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
 kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" >&2
 
 log "installing Flux"

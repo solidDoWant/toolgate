@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres
+          image: mirror.gcr.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
           env:
             - {name: POSTGRES_USER, value: toolgate}
             - {name: POSTGRES_DB, value: toolgate}
@@ -49,7 +49,7 @@ spec:
     spec:
       containers:
         - name: s3
-          image: versitygw
+          image: ghcr.io/versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316
           command: [sh, -c, "mkdir -p /data /meta && exec versitygw --port :7070 posix --sidecar /meta /data"]
           env:
             - name: ROOT_ACCESS_KEY_ID
@@ -87,7 +87,7 @@ spec:
     spec:
       containers:
         - name: registry
-          image: mirror.gcr.io/library/registry:3@sha256:d4032d4cc323c1731c707931ecada07a53076eac38e3b61ae57533f170f2c6c3
+          image: ghcr.io/distribution/distribution:3.1.2@sha256:d106962e6fe3fa69c178cec77eeeee5edb626b8df6535b7bd6b95e658a0a5ca9
           ports:
             - {name: registry, containerPort: 5000}
           readinessProbe:
