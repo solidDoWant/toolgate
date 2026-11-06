@@ -5,6 +5,7 @@
 #     through its rawCRDs link) and deepcopy methods, with controller-gen;
 #   - sqlc.yaml: query code, with sqlc;
 #   - internal/config: the gateway configuration reference in docs/admin/;
+#   - internal/apidoc: the OpenAPI document of the /api/v1/ routes, docs/dev/openapi.yaml;
 #   - the chart's values.yaml: the chart values reference in docs/admin/.
 # Generated code is committed and never edited by hand.
 set -euo pipefail
@@ -22,6 +23,10 @@ if [[ -f sqlc.yaml ]]; then
 fi
 if [[ -f internal/config/config.go ]]; then
 	go run ./internal/config/docgen internal/config/config.go docs/admin/configuration.md
+	ran=1
+fi
+if [[ -d internal/apidoc/docgen ]]; then
+	go run ./internal/apidoc/docgen docs/dev/openapi.yaml
 	ran=1
 fi
 if [[ -f deploy/charts/toolgate/values.yaml ]]; then

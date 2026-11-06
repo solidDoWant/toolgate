@@ -1,0 +1,187 @@
+openapi: 3.1.0
+info:
+  title: toolgate gateway API
+  version: v1
+paths:
+  /api/v1/secrets:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretsSecretList'
+          description: OK
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+      summary: 'List the caller''s secrets: names and dates only'
+  /api/v1/secrets/{name}:
+    delete:
+      parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          pattern: ^[A-Za-z0-9._-]{1,128}$
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "404":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Not Found
+      summary: Delete one of the caller's secrets
+    put:
+      parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          pattern: ^[A-Za-z0-9._-]{1,128}$
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SecretsSecretInfo'
+          description: OK
+        "400":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Bad Request
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "413":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Request Entity Too Large
+      summary: Store the request body as a secret's value
+  /api/v1/sessions:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionsapiList'
+          description: OK
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: List the caller's open sessions and their enabled servers
+  /api/v1/settings:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                additionalProperties: {}
+                type: object
+          description: OK
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: Get the merged Claude Code settings that match the caller
+components:
+  schemas:
+    SecretsSecretInfo:
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+        updatedAt:
+          format: date-time
+          type: string
+      type: object
+    SecretsSecretList:
+      properties:
+        secrets:
+          items:
+            $ref: '#/components/schemas/SecretsSecretInfo'
+          type:
+          - array
+          - "null"
+      type: object
+    SessionsapiList:
+      properties:
+        sessions:
+          items:
+            $ref: '#/components/schemas/SessionsapiSession'
+          type:
+          - array
+          - "null"
+        truncated:
+          type: boolean
+      type: object
+    SessionsapiServer:
+      properties:
+        enabledAt:
+          format: date-time
+          type: string
+        name:
+          type: string
+      type: object
+    SessionsapiSession:
+      properties:
+        attestation:
+          type: string
+        createdAt:
+          format: date-time
+          type: string
+        lastSeenAt:
+          format: date-time
+          type: string
+        servers:
+          items:
+            $ref: '#/components/schemas/SessionsapiServer'
+          type:
+          - array
+          - "null"
+        session:
+          type: string
+        workspace:
+          type: string
+      type: object
