@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"text/tabwriter"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -69,6 +71,8 @@ func servers(args []string, stdout, stderr io.Writer) int {
 // request.
 type identityTransport struct {
 	header http.Header
+	// refused is set when the gateway answers 401.
+	refused *atomic.Bool
 }
 
 func (t identityTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -77,7 +81,12 @@ func (t identityTransport) RoundTrip(request *http.Request) (*http.Response, err
 		request.Header[name] = values
 	}
 
-	return http.DefaultTransport.RoundTrip(request)
+	response, err := http.DefaultTransport.RoundTrip(request)
+	if err == nil && response.StatusCode == http.StatusUnauthorized {
+		t.refused.Store(true)
+	}
+
+	return response, err
 }
 
 // listServers connects to the gateway's MCP endpoint and calls
@@ -85,11 +94,20 @@ func (t identityTransport) RoundTrip(request *http.Request) (*http.Response, err
 // otherwise a new one for this command; the workspace is the one
 // `toolgate headers` would send from this directory.
 func listServers(ctx context.Context) (gateway.ListServersResult, error) {
-	access, err := signedInGateway(ctx)
-	if err != nil {
-		return gateway.ListServersResult{}, err
-	}
+	var result gateway.ListServersResult
 
+	err := withAccess(ctx, func(access gatewayAccess) error {
+		var err error
+
+		result, err = listServersWith(ctx, access)
+
+		return err
+	})
+
+	return result, err
+}
+
+func listServersWith(ctx context.Context, access gatewayAccess) (gateway.ListServersResult, error) {
 	session := os.Getenv(headers.SessionEnv)
 	if session == "" {
 		session = "cli-" + rand.Text()
@@ -110,13 +128,19 @@ func listServers(ctx context.Context) (gateway.ListServersResult, error) {
 	header.Set(auth.SessionHeader, session)
 	header.Set(auth.WorkspaceHeader, workspace)
 
+	refused := &atomic.Bool{}
+
 	client := mcp.NewClient(&mcp.Implementation{Name: "toolgate", Version: version.Get()}, nil)
 
 	clientSession, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint:   access.gateway + gateway.MCPPath,
-		HTTPClient: &http.Client{Transport: identityTransport{header: header}},
+		HTTPClient: &http.Client{Transport: identityTransport{header: header, refused: refused}},
 	}, nil)
 	if err != nil {
+		if refused.Load() {
+			err = errors.Join(errUnauthorized, err)
+		}
+
 		return gateway.ListServersResult{}, fmt.Errorf("connect to the gateway: %w", err)
 	}
 

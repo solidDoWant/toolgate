@@ -12,6 +12,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
+	"github.com/solidDoWant/toolgate/internal/client/tokencommand"
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 )
 
@@ -32,6 +33,10 @@ type gatewayAccess struct {
 // signedInGateway loads the sign-in settings and gets a new access token with
 // the stored refresh token.
 func signedInGateway(ctx context.Context) (gatewayAccess, error) {
+	if source := tokencommand.FromEnv(); source.Command != "" {
+		return tokenCommandGateway(ctx, source)
+	}
+
 	if socket := spiffe.Socket(); socket != "" {
 		return spiffeGateway(ctx, socket)
 	}
@@ -79,6 +84,64 @@ func spiffeGateway(ctx context.Context, socket string) (gatewayAccess, error) {
 	return gatewayAccess{gateway: gateway, accessToken: token}, nil
 }
 
+// tokenCommandGateway gets the user token from TOOLGATE_TOKEN_COMMAND. The
+// stored sign-in is ignored, apart from the gateway URL.
+func tokenCommandGateway(ctx context.Context, source tokencommand.Source) (gatewayAccess, error) {
+	gateway, err := spiffeGatewayURL()
+	if err != nil {
+		return gatewayAccess{}, err
+	}
+
+	token, err := source.Token(ctx)
+	if err != nil {
+		return gatewayAccess{}, err
+	}
+
+	return gatewayAccess{gateway: gateway, accessToken: token}, nil
+}
+
+// errUnauthorized marks a gateway answer of 401.
+var errUnauthorized = errors.New("the gateway refused the token")
+
+// withAccess runs call with the user's access token. When the token came
+// from TOOLGATE_TOKEN_COMMAND and the gateway answers 401, it deletes the
+// cached token, runs the command once more and calls again, once.
+func withAccess(ctx context.Context, call func(gatewayAccess) error) error {
+	access, err := signedInGateway(ctx)
+	if err != nil {
+		return err
+	}
+
+	err = call(access)
+	if !errors.Is(err, errUnauthorized) {
+		return err
+	}
+
+	token, refreshErr := refreshedToken(ctx)
+	if refreshErr != nil {
+		return err
+	}
+
+	access.accessToken = token
+
+	return call(access)
+}
+
+// refreshedToken deletes the cached command token and runs the command
+// again. It fails when TOOLGATE_TOKEN_COMMAND is not in use.
+func refreshedToken(ctx context.Context) (string, error) {
+	source := tokencommand.FromEnv()
+	if source.Command == "" {
+		return "", errors.New("no token command")
+	}
+
+	if err := source.Invalidate(); err != nil {
+		return "", err
+	}
+
+	return source.Token(ctx)
+}
+
 // spiffeGatewayURL returns the gateway URL for a command that uses the SPIFFE
 // credential.
 func spiffeGatewayURL() (string, error) {
@@ -117,7 +180,12 @@ func (g gatewayAccess) do(ctx context.Context, method, path string, body io.Read
 
 		message, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
 
-		return nil, fmt.Errorf("the gateway answered %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		err := fmt.Errorf("the gateway answered %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		if response.StatusCode == http.StatusUnauthorized {
+			err = errors.Join(errUnauthorized, err)
+		}
+
+		return nil, err
 	}
 
 	return response, nil

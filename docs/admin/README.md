@@ -11,6 +11,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 - [Chart values reference](chart-values.md): every value of the chart. This page is generated from the chart.
 - [Gateway configuration reference](configuration.md): every setting of `toolgate serve`. This page is generated from the code.
 - [Pod sign-in](pod-sign-in.md): how pods sign in with a Kubernetes service-account token.
+- [Coder workspaces](coder.md): sign in workspaces through Coder's external auth, with `TOOLGATE_TOKEN_COMMAND`.
 - [SPIFFE sign-in](spiffe-sign-in.md): how workloads sign in with a SPIFFE JWT-SVID, and the `spiffeIDs` access list.
 - [The web UI](web-ui.md): how to turn on the web UI, its OIDC client, its sessions and its admins.
 

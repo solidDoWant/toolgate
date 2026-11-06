@@ -143,11 +143,10 @@ func (t *tailer) run(ctx context.Context) error {
 // once opens one stream and prints its events until it ends. It returns nil
 // when the gateway ended the stream cleanly.
 func (t *tailer) once(ctx context.Context) error {
-	access, err := signedInGateway(ctx)
-	if err != nil {
-		return err
-	}
+	return withAccess(ctx, func(access gatewayAccess) error { return t.onceWith(ctx, access) })
+}
 
+func (t *tailer) onceWith(ctx context.Context, access gatewayAccess) error {
 	target := access.gateway + audittail.Path
 	if t.after != "" {
 		target += "?after=" + url.QueryEscape(t.after)
@@ -169,7 +168,11 @@ func (t *tailer) once(ctx context.Context) error {
 
 	if response.StatusCode != http.StatusOK {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
+
 		err := fmt.Errorf("the gateway answered %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		if response.StatusCode == http.StatusUnauthorized {
+			err = errors.Join(errUnauthorized, err)
+		}
 
 		if response.StatusCode == http.StatusBadRequest || response.StatusCode == http.StatusForbidden {
 			return errors.Join(errTailRefused, err)

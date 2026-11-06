@@ -12,6 +12,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
+	"github.com/solidDoWant/toolgate/internal/client/tokencommand"
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 )
 
@@ -107,6 +108,10 @@ func credentialHeaders(ctx context.Context) (map[string]string, error) {
 // TOOLGATE_SPIFFE_SOCKET is set, otherwise the stored sign-in's access token.
 // A failed fetch never falls back to the sign-in.
 func bearerToken(ctx context.Context) (string, error) {
+	if source := tokencommand.FromEnv(); source.Command != "" {
+		return source.Token(ctx)
+	}
+
 	if socket := spiffe.Socket(); socket != "" {
 		return spiffe.FetchToken(ctx, socket)
 	}

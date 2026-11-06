@@ -17,6 +17,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/settingssync"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
+	"github.com/solidDoWant/toolgate/internal/client/tokencommand"
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 	"github.com/solidDoWant/toolgate/internal/settings"
 )
@@ -87,6 +88,10 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 		notes = append(notes, "toolgate: the session could not be recorded, so the toolgate MCP servers may not connect: "+err.Error())
 	}
 
+	if source := tokencommand.FromEnv(); source.Command != "" {
+		return strings.Join(append(notes, tokenCommandSettingsNotes(ctx, source)...), "\n")
+	}
+
 	if socket := spiffe.Socket(); socket != "" {
 		return strings.Join(append(notes, spiffeSettingsNotes(ctx, socket)...), "\n")
 	}
@@ -131,6 +136,22 @@ func spiffeSettingsNotes(ctx context.Context, socket string) []string {
 	return syncSettings(ctx, access.gateway, access.accessToken, dir)
 }
 
+// tokenCommandSettingsNotes syncs the settings with the token from
+// TOOLGATE_TOKEN_COMMAND. It never falls back to the stored sign-in.
+func tokenCommandSettingsNotes(ctx context.Context, source tokencommand.Source) []string {
+	access, err := tokenCommandGateway(ctx, source)
+	if err != nil {
+		return []string{"toolgate: the token command failed (" + err.Error() + ")."}
+	}
+
+	dir, err := configDir()
+	if err != nil {
+		return []string{"toolgate: " + err.Error()}
+	}
+
+	return syncSettings(ctx, access.gateway, access.accessToken, dir)
+}
+
 // writeSessionFile writes the session ID from the hook input to the session
 // file of the Claude Code process.
 func writeSessionFile(stdin io.Reader) error {
@@ -164,6 +185,12 @@ func writeSessionFile(stdin io.Reader) error {
 // ~/.claude/settings.json. It returns the notes for the session.
 func syncSettings(ctx context.Context, gateway, accessToken, dir string) []string {
 	profile, err := fetchSettings(ctx, gateway, accessToken)
+	if errors.Is(err, errUnauthorized) {
+		if token, refreshErr := refreshedToken(ctx); refreshErr == nil {
+			profile, err = fetchSettings(ctx, gateway, token)
+		}
+	}
+
 	if err != nil {
 		return []string{"toolgate: the settings profile could not be fetched: " + err.Error()}
 	}
@@ -205,7 +232,12 @@ func fetchSettings(ctx context.Context, gateway, accessToken string) (map[string
 	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("the gateway answered %s", response.Status)
+		err := fmt.Errorf("the gateway answered %s", response.Status)
+		if response.StatusCode == http.StatusUnauthorized {
+			err = errors.Join(errUnauthorized, err)
+		}
+
+		return nil, err
 	}
 
 	content, err := io.ReadAll(io.LimitReader(response.Body, maxSettingsResponseBytes+1))
