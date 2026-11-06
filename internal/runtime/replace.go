@@ -25,6 +25,7 @@ import (
 const (
 	ReplaceReasonRestart        = "restart"
 	ReplaceReasonResolverExpiry = "resolver-expiry"
+	ReplaceReasonHealthCheck    = "health-check"
 )
 
 // Replacer replaces live instances with new pending rows at the template's
@@ -91,6 +92,12 @@ func (r *Replacer) now() time.Time {
 // a replacement doesn't change how many instances run. It returns the new
 // row, or a zero row when nothing was replaced.
 func (r *Replacer) Replace(ctx context.Context, instance db.Instance, reason, user string) (db.Instance, error) {
+	return r.replace(ctx, instance, reason, user, false)
+}
+
+// replace is Replace. When repair is true, the replacement is a repair: its
+// time is added to the repair history the replacement carries.
+func (r *Replacer) replace(ctx context.Context, instance db.Instance, reason, user string, repair bool) (db.Instance, error) {
 	if !r.Stops.Templates.IsLoaded() {
 		return db.Instance{}, nil
 	}
@@ -136,7 +143,12 @@ func (r *Replacer) Replace(ctx context.Context, instance db.Instance, reason, us
 			return store.Notify(ctx, tx, store.KindInstance, current.ID)
 		}
 
-		replacement, err = r.insertReplacement(ctx, queries, current)
+		repairs := recentRepairs(current.Repairs, r.now())
+		if repair {
+			repairs = append(repairs, pgtype.Timestamptz{Time: r.now(), Valid: true})
+		}
+
+		replacement, err = r.insertReplacement(ctx, queries, current, repairs)
 		if err != nil {
 			return err
 		}
@@ -183,7 +195,9 @@ func (r *Replacer) Replace(ctx context.Context, instance db.Instance, reason, us
 
 // insertReplacement inserts the pending row that replaces current. The stop
 // conditions were checked, so the template exists with current's uid.
-func (r *Replacer) insertReplacement(ctx context.Context, queries *db.Queries, current db.Instance) (db.Instance, error) {
+func (r *Replacer) insertReplacement(ctx context.Context, queries *db.Queries, current db.Instance,
+	repairs []pgtype.Timestamptz,
+) (db.Instance, error) {
 	template, found := r.Stops.Templates.Running(types.NamespacedName{Namespace: current.TemplateNs, Name: current.TemplateName})
 	if !found {
 		return db.Instance{}, fmt.Errorf("template %s/%s is gone", current.TemplateNs, current.TemplateName)
@@ -221,6 +235,7 @@ func (r *Replacer) insertReplacement(ctx context.Context, queries *db.Queries, c
 		Namespace:      namespace,
 		TraceContext:   telemetry.EncodeContext(ctx),
 		LastUsedAt:     pgtype.Timestamptz{Time: lastUsed.Time, Valid: lastUsed.Valid},
+		Repairs:        repairs,
 	})
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("insert replacement: %w", err)

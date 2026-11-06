@@ -214,6 +214,14 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Logger:           logger,
 	}
 
+	repairer := &runtime.Repairer{
+		Pool:        pool,
+		Replacer:    replacer,
+		Starter:     starter,
+		AuditOutput: options.auditOutput,
+		Log:         logger,
+	}
+
 	// The monitor runs only on the Lease holder, like every runnable that
 	// does not say otherwise.
 	monitor := &runtime.Monitor{
@@ -232,7 +240,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	queries := db.New(pool)
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
 		runtime.RowCleanup(queries, approvalExpirer.Pass(sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, teardown.Step, starter.Step, monitor.Step)))))))
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, repairer.Step, teardown.Step, starter.Step, monitor.Step)))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

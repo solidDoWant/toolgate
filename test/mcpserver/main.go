@@ -4,11 +4,16 @@
 // files of a mounted Secret, and every other configured tool name echoes its
 // arguments. It serves streamable HTTP at /mcp.
 //
+// GET /healthz answers with the health status, 200 at start. PUT
+// /healthz?status=503 sets it, so a test can make a health check fail and
+// pass again.
+//
 // Configuration, by flag or environment variable:
 //
 //	-listen      MCPSERVER_LISTEN       listen address (default :8080)
 //	-tools       MCPSERVER_TOOLS        comma-separated tool names (default env,secrets)
 //	-secrets-dir MCPSERVER_SECRETS_DIR  directory the secrets tool reads (default /secrets)
+//	-health      MCPSERVER_HEALTH       status /healthz answers at start (default 200)
 package main
 
 import (
@@ -20,6 +25,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -47,6 +54,7 @@ func run(args []string) error {
 	listen := flags.String("listen", envOr("MCPSERVER_LISTEN", ":8080"), "listen address")
 	tools := flags.String("tools", envOr("MCPSERVER_TOOLS", envTool+","+secretsTool), "comma-separated tool names")
 	secretsDir := flags.String("secrets-dir", envOr("MCPSERVER_SECRETS_DIR", "/secrets"), "directory the secrets tool reads")
+	health := flags.String("health", envOr("MCPSERVER_HEALTH", "200"), "status /healthz answers at start")
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -59,8 +67,30 @@ func run(args []string) error {
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil))
-	mux.HandleFunc("/healthz", func(writer http.ResponseWriter, _ *http.Request) {
+
+	healthStatus, err := parseStatus(*health)
+	if err != nil {
+		return err
+	}
+
+	var status atomic.Int64
+
+	status.Store(int64(healthStatus))
+
+	mux.HandleFunc("GET /healthz", func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(int(status.Load()))
 		_, _ = writer.Write([]byte("ok\n"))
+	})
+	mux.HandleFunc("PUT /healthz", func(writer http.ResponseWriter, request *http.Request) {
+		next, err := parseStatus(request.URL.Query().Get("status"))
+		if err != nil {
+			http.Error(writer, err.Error(), http.StatusBadRequest)
+
+			return
+		}
+
+		status.Store(int64(next))
+		writer.WriteHeader(http.StatusNoContent)
 	})
 
 	httpServer := &http.Server{Addr: *listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
@@ -84,4 +114,13 @@ func run(args []string) error {
 	}
 
 	return nil
+}
+
+func parseStatus(text string) (int, error) {
+	status, err := strconv.Atoi(text)
+	if err != nil || status < 100 || status > 599 {
+		return 0, fmt.Errorf("health status %q is not an HTTP status", text)
+	}
+
+	return status, nil
 }

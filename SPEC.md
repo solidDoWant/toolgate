@@ -176,6 +176,8 @@ With `shared`, all instances go in one configured namespace and are told apart b
 
 **Health.** The leader runs each instance's `healthCheck`, apart from the MCP ping. After `failureThreshold` failures in a row, a `ready` instance becomes unhealthy and stays `ready`. Its tools leave every session's tool list, calls are refused with reason `not-ready`, and `toolgate_server_status` shows the reason. After `successThreshold` passes in a row, it becomes healthy again and its tools come back. Each change writes `instance.health`.
 
+**Repair.** The reconciler repairs an unhealthy instance as `healthCheck.onFailure` says. `replace` (the default) replaces it with a new instance, as a restart does, and writes `instance.stop` with reason `health-check`. `reapply` renders the instance again, applies its objects again, and writes `instance.reapply`. If the template changed after the instance started, `reapply` replaces the instance instead. If the instance is still unhealthy `failureThreshold × interval` after a reapply, that is one more repair. `none` makes no repair. At most `maxRepairs` repairs are made in 30 minutes, counted across replacements. Instead of one more repair, the instance fails with the reason "Health check still failing after `N` repairs in 30 minutes: `<last reason>`" and writes `instance.fail`. The next enable starts a new instance with no repair history.
+
 **Template changes.** An instance keeps the template generation it was started with, and the `healthCheck` (with `http.service` rendered) in its `health_check` column. A new generation applies to instances started afterwards. `toolgate_server_status` shows when an instance is older than its template. The owner of an outdated instance (an admin, for a shared one) can restart it from the web UI. The gateway then replaces it with a new instance at the current generation, and sessions keep the server enabled.
 
 **Stopping.**
@@ -231,7 +233,7 @@ In globs, `*` matches any run of characters, including `/`. A template that does
 - `tool.decision` (allow or refuse, with the deciding rule), `tool.result` (success or error, duration, sizes);
 - `rule.change`, `secret.set`, `secret.delete`;
 - phase 2: `grant.*`, `approval.*`, `block.*`;
-- phase 3: `instance.health`, with no payload.
+- phase 3: `instance.health` and `instance.reapply`, with no payload.
 
 Every event carries principal, workspace, session, attestation, server, tool, trace ID and request ID. Tool arguments and results are not logged to stdout. They are stored only when `audit.payloads` is on. Payloads over 64 KiB go to S3 (with object lock when the bucket supports it), referenced from the row. Rows are kept for `audit.retention` (default 90 days) and deleted in batches. Secrets and tokens are never logged.
 

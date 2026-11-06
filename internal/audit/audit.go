@@ -28,7 +28,9 @@ const (
 	TypeInstanceStop  = "instance.stop"
 	// TypeInstanceHealth is a change of a ready instance's health
 	// (docs/design/phase-3.md §6).
-	TypeInstanceHealth  = "instance.health"
+	TypeInstanceHealth = "instance.health"
+	// TypeInstanceReapply is a reapply repair of an unhealthy instance.
+	TypeInstanceReapply = "instance.reapply"
 	TypeToolDecision    = "tool.decision"
 	TypeToolResult      = "tool.result"
 	TypeRuleChange      = "rule.change"
