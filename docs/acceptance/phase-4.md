@@ -15,7 +15,7 @@ Same rules as phase 1. The tag is `[AC-4-nn]`. This checklist is at feature leve
 
 ## Delegated access
 
-- **AC-4-14 Management sessions.** A user marks some of their verified workspaces as management workspaces. Only sessions there get `toolgate_list_scopes`, `toolgate_allow` and `toolgate_deny`. Other sessions, unverified sessions and other users' sessions never get them.
+- **AC-4-14 Access tools are ordinary tools.** `toolgate_list_scopes`, `toolgate_allow` and `toolgate_deny` belong to a built-in server named `toolgate`. They're the same operations as the CLI and the web UI, as tool calls. Policy, workspace lists, defaults, rules and audit govern them like any other server's tools, so they're usable in any session where the user allows the `toolgate` server, and nowhere else. They act only on the calling user's own workspaces and sessions.
 - **AC-4-15 Allow needs the user.** `toolgate_allow`, for a workspace or a session of the same user and a set of servers or tools, creates a request and returns a link (and a URL elicitation where supported). Nothing changes until the user approves it in the browser with a step-up. A session-scoped allow ends with that session.
 - **AC-4-16 Deny is immediate.** `toolgate_deny`, for a workspace or session of the same user and a set of servers or tools, takes effect at once. The target's affected tools are withdrawn within 5 seconds. Tool-level denies work inside an allowed server.
 - **AC-4-17 Own scope.** In any session, a user's agent can drop a server from its own session at once (`toolgate_disable_server`) and, in a verified workspace, ask for a server outside the list, as in AC-4-02.
