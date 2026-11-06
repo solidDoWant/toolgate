@@ -29,7 +29,8 @@ type catalogChanges struct {
 // §3, "Fan-out of list_changed"). It re-syncs every MCP session on an
 // instance:<id> notification, after missed notifications, and when a rule or
 // template changes, and the MCP sessions of one toolgate session on
-// session:<id>. A template change re-syncs every session too: a session that
+// session:<id>, and the MCP sessions of one principal on grant:<id> and
+// scope:<id>. A template change re-syncs every session too: a session that
 // doesn't enable the template keeps the same list, so it gets nothing. A
 // sync sends list_changed only when the session's list really changed. It
 // runs for the life of the process.
@@ -117,6 +118,8 @@ func (e *mcpEndpoint) handleEvent(tools *metaTools, event store.Event) {
 		e.resync(tools, func(requestContext) bool { return true })
 	case event.Kind == store.KindGrant:
 		e.resyncGrantPrincipal(tools, event.ID)
+	case event.Kind == store.KindScope:
+		e.resyncScopePrincipal(tools, event.ID)
 	case event.Kind == store.KindSession:
 		id, err := strconv.ParseInt(event.ID, 10, 64)
 		if err != nil {
@@ -148,6 +151,39 @@ func (e *mcpEndpoint) resyncGrantPrincipal(tools *metaTools, id string) {
 	}
 
 	e.resync(tools, func(current requestContext) bool { return current.identity.Principal == grant.Principal })
+}
+
+// resyncScopePrincipal re-syncs the MCP sessions of the principal whose
+// user_scopes row changed (docs/design/phase-3.md §10, "The 5 s bound").
+func (e *mcpEndpoint) resyncScopePrincipal(tools *metaTools, id string) {
+	if tools.database == nil {
+		return
+	}
+
+	everyone := func(requestContext) bool { return true }
+
+	scopeID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		e.resync(tools, everyone)
+
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), fanOutTimeout)
+	principal, err := db.New(tools.database).GetUserScopePrincipal(ctx, scopeID)
+
+	cancel()
+
+	if err != nil {
+		// Without the row the principal is unknown, so every session is
+		// re-synced; a sync sends list_changed only when a list changed.
+		e.logger.Error("reading a changed user scope failed", slog.String("error", err.Error()))
+		e.resync(tools, everyone)
+
+		return
+	}
+
+	e.resync(tools, func(current requestContext) bool { return current.identity.Principal == principal })
 }
 
 // resync brings the proxied tools of every MCP session that matches up to

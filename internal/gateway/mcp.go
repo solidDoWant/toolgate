@@ -81,6 +81,10 @@ type MCPOptions struct {
 	// ApprovalTimeout is how long an approval waits for a person and stays
 	// usable once approved. Zero means DefaultApprovalTimeout.
 	ApprovalTimeout time.Duration
+	// WorkspaceScoping turns on the workspace-scope step for signed-in
+	// users (docs/design/phase-3.md §10). Set it only on a gateway with the
+	// web UI: without it the step is off.
+	WorkspaceScoping bool
 }
 
 // defaultMCPSessionIdleTimeout is the MCPSessionIdleTimeout when MCPOptions
@@ -212,6 +216,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		sharedNamespace:      options.SharedNamespace,
 		approvalURL:          options.ApprovalURL,
 		approvalTimeout:      valueOr(options.ApprovalTimeout, DefaultApprovalTimeout),
+		workspaceScoping:     options.WorkspaceScoping,
 	}
 
 	endpoint.callTool = tools.callTool

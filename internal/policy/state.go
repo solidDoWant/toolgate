@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/auth"
 )
 
 // State is the policy state one request loads from PostgreSQL before it
@@ -16,6 +17,32 @@ type State struct {
 	Grants []Grant
 	// Blocks are the live temporary blocks, oldest first.
 	Blocks []*TemporaryBlock
+	// Scope is the effective list of a signed-in user's session. Its zero
+	// value doesn't apply, so it allows every server.
+	Scope Scope
+}
+
+// Scope is the effective list of servers of a signed-in user's request
+// (docs/design/phase-3.md §10, "The effective list"). It only refuses: a
+// server it allows still has to pass every other step.
+type Scope struct {
+	// Applies is set for identities of kind user on a gateway with the web
+	// UI. When it is false, step 4 passes every server.
+	Applies bool
+	// All allows every server.
+	All bool
+	// Servers are the allowed server names when All is false.
+	Servers map[string]bool
+}
+
+// allows reports whether the scope lets identity use server. Only
+// identities of kind user are ever scoped.
+func (s Scope) allows(identity auth.Identity, server string) bool {
+	if !s.Applies || identity.Kind != auth.KindUser {
+		return true
+	}
+
+	return s.All || s.Servers[server]
 }
 
 // Grant is one live grant: it lets Principal pass an opt-in environment on
@@ -82,4 +109,58 @@ func (s State) grantFor(principal, session, namespace, server, tool string) (Gra
 	}
 
 	return Grant{}, false
+}
+
+// Values of a user's scoping defaults.
+const (
+	ScopeDefaultNone = "none"
+	ScopeDefaultAll  = "all"
+)
+
+// ScopeRows are the scoping rows of one signed-in user's request, as
+// stored.
+type ScopeRows struct {
+	// VerifiedDefault and UnverifiedDefault are the user_scopes row's
+	// defaults. Empty, as for a missing row, means none.
+	VerifiedDefault   string
+	UnverifiedDefault string
+	// HasList says the user has a list for the request's verified
+	// workspace; ListServers are its servers.
+	HasList     bool
+	ListServers []string
+	// Additions are the servers added to the request's session only.
+	Additions []string
+}
+
+// EffectiveScope builds the scope of a request from its rows
+// (docs/design/phase-3.md §10, "The effective list"). In a verified
+// workspace it is the workspace's list if there is one, else the verified
+// default, plus the session's additions. An unverified session gets the
+// unverified default and nothing more: a claimed workspace never selects a
+// list and a claimed session ID never adds servers. Identities that aren't
+// of kind user get a scope that doesn't apply.
+func EffectiveScope(identity auth.Identity, rows ScopeRows) Scope {
+	if identity.Kind != auth.KindUser {
+		return Scope{}
+	}
+
+	if identity.Attestation != attestationAttested {
+		return Scope{Applies: true, All: rows.UnverifiedDefault == ScopeDefaultAll}
+	}
+
+	scope := Scope{Applies: true, Servers: make(map[string]bool, len(rows.ListServers)+len(rows.Additions))}
+
+	if rows.HasList {
+		for _, server := range rows.ListServers {
+			scope.Servers[server] = true
+		}
+	} else {
+		scope.All = rows.VerifiedDefault == ScopeDefaultAll
+	}
+
+	for _, server := range rows.Additions {
+		scope.Servers[server] = true
+	}
+
+	return scope
 }

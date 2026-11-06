@@ -24,6 +24,9 @@ const (
 	KindGrant    = "grant"
 	KindBlock    = "block"
 	KindApproval = "approval"
+	// KindScope names a user_scopes row by its ID: the user's defaults,
+	// lists or session additions changed.
+	KindScope = "scope"
 )
 
 const (

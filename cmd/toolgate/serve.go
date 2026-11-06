@@ -168,6 +168,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		SharedNamespace:      cfg.SharedNamespace,
 		ApprovalURL:          approvalURL,
 		ApprovalTimeout:      time.Duration(cfg.ApprovalTimeout),
+		WorkspaceScoping:     cfg.UIEnabled(),
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {

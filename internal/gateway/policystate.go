@@ -13,17 +13,30 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// policyState loads the grants and temporary blocks one request decides
-// with (docs/design/phase-2.md §3, "Loading grants and blocks"). There is no
+// policyState loads the grants, temporary blocks and, for a signed-in user
+// on a gateway with workspace scoping, the scoping rows one request decides
+// with (docs/design/phase-2.md §3, "Loading grants and blocks", and
+// docs/design/phase-3.md §10). There is no
 // cache of rows: a revoke on another replica refuses the next decision here
 // at once.
 func (m *metaTools) policyState(ctx context.Context, identity auth.Identity) (policy.State, error) {
-	rows, err := store.LoadPolicyState(ctx, m.database, identity.Principal, identity.Attestation != auth.AttestationAttested)
+	var scope store.ScopeQuery
+	if m.workspaceScoping && identity.Kind == auth.KindUser {
+		scope.Load = true
+		if identity.Attestation == auth.AttestationAttested {
+			scope.Workspace, scope.Session = identity.Workspace, identity.Session
+		}
+	}
+
+	rows, err := store.LoadPolicyState(ctx, m.database, identity.Principal, identity.Attestation != auth.AttestationAttested, scope)
 	if err != nil {
 		return policy.State{}, err
 	}
 
 	state := policy.State{Grants: make([]policy.Grant, 0, len(rows.Grants))}
+	if scope.Load {
+		state.Scope = policy.EffectiveScope(identity, rows.Scope)
+	}
 
 	for _, grant := range rows.Grants {
 		state.Grants = append(state.Grants, policy.Grant{

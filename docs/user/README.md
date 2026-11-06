@@ -207,6 +207,22 @@ The interactive shell of a workspace can have a keychain session that the proces
 
 The sign-in lasts until your identity provider ends it. For Authentik, this is the "Refresh token validity" setting of the OAuth2 provider. When the refresh token stops working, `toolgate headers` shows "Sign in again: run `toolgate login`.", prints no headers and exits with a non-zero code.
 
+## Servers in each workspace
+
+If your gateway has the web UI, toolgate limits the servers that each of your sessions can use. The set of servers that a session can use is its effective list.
+
+A session has a verified workspace when its workspace proved where it runs, for example a Coder workspace with a workload token. A session without this proof is unverified. The workspace name that your machine sends does not prove anything.
+
+- In a verified workspace, the effective list is your list for that workspace. If you have no list for it, your default for verified workspaces applies: all your servers, or none. Servers that you added to this session only are also on the effective list.
+- In an unverified session, your default for unverified sessions applies: all your servers, or none. Lists and servers added to one session do not apply.
+- If you did not set your defaults, both defaults are none. Then no session can use a server.
+
+The effective list never gives you a server that your admin does not let you use.
+
+In a verified workspace, `toolgate_list_servers` shows a server that is not on the effective list as `blocked`, with "not allowed in this workspace; enable it to ask". In an unverified session, it does not show the server. Claude does not get the tools of the server. If a server leaves the effective list, it stays turned on, but its tools go away. If the server comes back on the list, its tools come back, and you do not turn it on again.
+
+A workspace list does not protect you from a process that has your token. The process can leave out the workload token, and toolgate then treats its session as unverified. A workspace's list limits a process holding your token only while the default for unverified sessions is nothing.
+
 ## The headers that Claude Code sends
 
 The toolgate plugin tells Claude Code to run `toolgate headers` before it connects to the gateway. This command prints three request headers as JSON:
@@ -294,6 +310,8 @@ toolgate checks each request. If it refuses a request, Claude gets a short messa
 | Secret `NAME` isn't set. Run `toolgate secret set NAME`. | The server needs a secret from you. | Run the command, and then turn on the server again. See [Set your secrets](#set-your-secrets). |
 | You already have 20 servers running, the limit for each user. | You reached the number of servers that one user can run. | Turn off servers that you do not use, or wait until idle servers stop. |
 | The gateway is already running its limit of 200 servers. | The gateway runs as many servers as it can. | Try again later, or ask your admin. |
+| Server `NAME` isn't in the list for workspace `WORKSPACE`. Allow it in the Workspaces page or with `toolgate workspace allow NAME`. | The server is not on the effective list of this verified workspace. | Add the server to the list of the workspace. See [Servers in each workspace](#servers-in-each-workspace). |
+| Server `NAME` isn't allowed in sessions without a verified workspace. ... | The session is unverified, and your default for unverified sessions is none. | Set the default for unverified sessions to all, or use the server from a verified workspace. See [Servers in each workspace](#servers-in-each-workspace). |
 | This session already has 32 servers enabled. | One session can have 32 servers turned on at most. | Turn off a server in this session first. |
 
 The numbers in the limit messages are the values that your admin set. A tool that a rule blocks does not show in the list of tools, so Claude does not try to use it.

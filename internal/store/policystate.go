@@ -5,7 +5,9 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -21,13 +23,43 @@ ORDER BY created_at, id`
 FROM temporary_blocks
 WHERE expires_at > now()
 ORDER BY created_at, id`
+
+	userScopeSQL = `SELECT verified_default, unverified_default FROM user_scopes WHERE principal = $1`
+
+	// One row per server, or one row with a NULL server for an empty list.
+	workspaceListSQL = `SELECT wls.server
+FROM user_scopes us
+JOIN workspace_lists wl ON wl.scope_id = us.id
+LEFT JOIN workspace_list_servers wls ON wls.list_id = wl.id
+WHERE us.principal = $1 AND wl.workspace = $2
+ORDER BY wls.server`
+
+	sessionAdditionsSQL = `SELECT sa.server
+FROM session_additions sa
+JOIN sessions s ON s.id = sa.session_pk
+WHERE s.principal = $1 AND s.session_id = $2
+ORDER BY sa.server`
 )
+
+// ScopeQuery says which scoping rows LoadPolicyState reads. The zero value
+// reads none.
+type ScopeQuery struct {
+	// Load reads the principal's user_scopes row.
+	Load bool
+	// Workspace and Session are the request's verified workspace and its
+	// session ID. When Workspace is empty, the list and the session's
+	// additions aren't read: an unverified session has neither.
+	Workspace string
+	Session   string
+}
 
 // PolicyRows are the rows one decision loads: the principal's live grants
 // and every live temporary block, oldest first.
 type PolicyRows struct {
 	Grants []db.Grant
 	Blocks []db.TemporaryBlock
+	// Scope holds the scoping rows ScopeQuery asked for.
+	Scope policy.ScopeRows
 }
 
 // LoadPolicyState reads the policy state of one request in one round trip,
@@ -36,7 +68,7 @@ type PolicyRows struct {
 // of attested identities.
 func LoadPolicyState(ctx context.Context, conn interface {
 	SendBatch(context.Context, *pgx.Batch) pgx.BatchResults
-}, principal string, withGrants bool,
+}, principal string, withGrants bool, scope ScopeQuery,
 ) (PolicyRows, error) {
 	var (
 		rows  PolicyRows
@@ -59,9 +91,60 @@ func LoadPolicyState(ctx context.Context, conn interface {
 		return err
 	})
 
+	if scope.Load {
+		queueScopeQueries(&batch, principal, scope, &rows.Scope)
+	}
+
 	if err := conn.SendBatch(ctx, &batch).Close(); err != nil {
-		return PolicyRows{}, fmt.Errorf("load grants and temporary blocks: %w", err)
+		return PolicyRows{}, fmt.Errorf("load policy state: %w", err)
 	}
 
 	return rows, nil
+}
+
+// queueScopeQueries adds the scoping queries of docs/design/phase-3.md §10
+// ("Policy order") to batch, writing their results to rows. A missing
+// user_scopes row leaves both defaults empty, which means none.
+func queueScopeQueries(batch *pgx.Batch, principal string, scope ScopeQuery, rows *policy.ScopeRows) {
+	batch.Queue(userScopeSQL, principal).Query(func(result pgx.Rows) error {
+		defer result.Close()
+
+		if result.Next() {
+			if err := result.Scan(&rows.VerifiedDefault, &rows.UnverifiedDefault); err != nil {
+				return err
+			}
+		}
+
+		return result.Err()
+	})
+
+	if scope.Workspace == "" {
+		return
+	}
+
+	batch.Queue(workspaceListSQL, principal, scope.Workspace).Query(func(result pgx.Rows) error {
+		servers, err := pgx.CollectRows(result, pgx.RowTo[pgtype.Text])
+		if err != nil {
+			return err
+		}
+
+		rows.HasList = len(servers) > 0
+
+		for _, server := range servers {
+			if server.Valid {
+				rows.ListServers = append(rows.ListServers, server.String)
+			}
+		}
+
+		return nil
+	})
+
+	batch.Queue(sessionAdditionsSQL, principal, scope.Session).Query(func(result pgx.Rows) error {
+		additions, err := pgx.CollectRows(result, pgx.RowTo[string])
+		if len(additions) > 0 {
+			rows.Additions = additions
+		}
+
+		return err
+	})
 }

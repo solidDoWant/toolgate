@@ -26,3 +26,7 @@ ORDER BY sa.server;
 INSERT INTO user_scopes (principal, verified_default, unverified_default)
 VALUES (@principal, @verified_default, @unverified_default)
 ON CONFLICT (principal) DO NOTHING;
+
+-- name: GetUserScopePrincipal :one
+-- The principal of a user_scopes row, for a scope:<id> notification.
+SELECT principal FROM user_scopes WHERE id = @id;

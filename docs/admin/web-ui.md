@@ -4,6 +4,16 @@ For: admins who turn on the toolgate web UI.
 
 The web UI is a set of pages under `/ui/` on the gateway's main port. Users sign in to it with your identity provider (IdP). The UI is on only when you set `config.ui.clientID` in the chart (`oidcUIClientID` in the [gateway configuration](configuration.md)).
 
+## Workspace scoping
+
+When the web UI is on, toolgate limits the servers of each session of a signed-in user to an effective list. Each user chooses this list for each verified workspace, and chooses two defaults: one for verified workspaces and one for sessions without a verified workspace. Each default is all servers or none. The effective list only refuses. It never gives a user a server that the template does not give them. Service accounts and SPIFFE workloads do not have an effective list.
+
+Scoping needs the web UI, because only the UI can ask the user to sign in again before access gets wider. If you turn off the UI, scoping is off. The lists of the users stay in the database, but they do nothing, so the users can use more servers after the restart.
+
+Upgrade note: After upgrading with the web UI on, every user sees no servers until they choose their defaults on the Workspaces page.
+
+A user who has no defaults gets none for both defaults. Tell your users before you upgrade.
+
 ## Make the OIDC client
 
 The web UI uses its own OIDC client. It is not the client of `toolgate login`, because it uses the authorization code grant with a redirect URI.

@@ -95,6 +95,9 @@ type metaTools struct {
 	// gateway has no web UI.
 	approvalURL     func(id string) string
 	approvalTimeout time.Duration
+	// workspaceScoping turns on the workspace-scope step for signed-in
+	// users. It is on only on a gateway with the web UI.
+	workspaceScoping bool
 	// waiters counts the calls waiting for an approval on this replica.
 	waiters approvalWaiters
 }
@@ -204,11 +207,17 @@ func (m *metaTools) serverStatus(ctx context.Context, request *mcp.CallToolReque
 	return nil, result, nil
 }
 
+// notInWorkspaceReason is the list_servers reason of a server outside a
+// verified workspace's effective list (docs/design/phase-3.md §10,
+// "Effects").
+const notInWorkspaceReason = "not allowed in this workspace; enable it to ask"
+
 var errNoIdentity = errors.New("Sign in again: run `toolgate login`.") //nolint:staticcheck // A sentence for the model.
 
 // entry describes template for the request's identity. visible is false when
-// the identity has no catalog access to it; any other refusal shows the
-// server as blocked with the reason.
+// the identity has no catalog access to it, or when the workspace-scope
+// step refuses it in an unverified session, where an enable can't ask. Any
+// other refusal shows the server as blocked with the reason.
 func (m *metaTools) entry(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, enabled map[types.NamespacedName]bool, state policy.State) (entry ServerEntry, visible bool, err error) {
 	decision := m.policy.Decide(policy.Request{Identity: current.identity, Template: template, State: state})
 	if !decision.Allowed && decision.Step == policy.StepAccess {
@@ -225,6 +234,14 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 	if !decision.Allowed {
 		entry.Status = StatusBlocked
 		entry.Reason = decision.Reason
+
+		if decision.Step == policy.StepWorkspaceScope {
+			if current.identity.Attestation != auth.AttestationAttested {
+				return ServerEntry{}, false, nil
+			}
+
+			entry.Reason = notInWorkspaceReason
+		}
 
 		return entry, true, nil
 	}
