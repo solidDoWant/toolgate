@@ -96,6 +96,37 @@ spec:
                     maxItems: 1024
                     type: array
                 type: object
+              declaredTools:
+                description: |-
+                  DeclaredTools is the admin's own list of the server's tools. It is
+                  shown while no instance runs, and the gateway does not learn the
+                  list from instances.
+                items:
+                  description: DeclaredTool is one tool of the server, as the admin
+                    states it.
+                  properties:
+                    description:
+                      description: Description is the tool's description.
+                      maxLength: 4096
+                      type: string
+                    inputSchema:
+                      description: InputSchema is the JSON Schema of the tool's input,
+                        an object.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    name:
+                      description: Name is the tool's own name.
+                      maxLength: 128
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 512
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               description:
                 description: Description is shown to users and the model in the catalog.
                 maxLength: 1024
@@ -248,10 +279,43 @@ spec:
                 x-kubernetes-validations:
                 - message: scope must be one of per-session, per-user, shared
                   rule: self in ['per-session', 'per-user', 'shared']
+              start:
+                default: onCall
+                description: |-
+                  Start says when an instance starts: onCall (the default) when a call
+                  needs it, or onEnable when a session enables the server.
+                type: string
+                x-kubernetes-validations:
+                - message: start must be one of onCall, onEnable
+                  rule: self in ['onCall', 'onEnable']
               startTimeout:
                 description: StartTimeout is how long an instance may take to become
                   ready.
                 type: string
+              toolFilter:
+                description: |-
+                  ToolFilter hides tools: it lists the upstream names to expose
+                  (allow) or to hide (deny).
+                properties:
+                  allow:
+                    description: Allow lists the upstream names exposed. Every other
+                      tool is hidden.
+                    items:
+                      maxLength: 128
+                      type: string
+                    maxItems: 512
+                    type: array
+                  deny:
+                    description: Deny lists the upstream names hidden.
+                    items:
+                      maxLength: 128
+                      type: string
+                    maxItems: 512
+                    type: array
+                type: object
+                x-kubernetes-validations:
+                - message: set exactly one of allow and deny
+                  rule: has(self.allow) != has(self.deny)
               tools:
                 additionalProperties:
                   description: ToolOverride changes the policy for one tool of a server.
@@ -267,6 +331,10 @@ spec:
                     blocked:
                       description: Blocked refuses every call to the tool.
                       type: boolean
+                    description:
+                      description: Description replaces the tool's description.
+                      maxLength: 4096
+                      type: string
                     environments:
                       description: Environments overrides the server's access.environments
                         for this tool.
@@ -274,6 +342,23 @@ spec:
                       x-kubernetes-validations:
                       - message: environments must be one of any, opt-in, attested
                         rule: self in ['any', 'opt-in', 'attested']
+                    inputDescriptions:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        InputDescriptions maps a top-level property of the tool's input
+                        schema to the description it gets.
+                      maxProperties: 64
+                      type: object
+                      x-kubernetes-validations:
+                      - message: each input description must be at most 4096 characters
+                        rule: self.all(key, size(self[key]) <= 4096)
+                    name:
+                      description: Name is the name the tool is exposed under, instead
+                        of its own.
+                      maxLength: 128
+                      pattern: ^[A-Za-z0-9_.-]{1,128}$
+                      type: string
                   type: object
                 description: Tools holds per-tool overrides, keyed by the tool's own
                   name.

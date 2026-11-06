@@ -63,6 +63,27 @@ type MCPServerTemplateSpec struct {
 	// +kubebuilder:validation:MaxProperties=256
 	Tools map[string]ToolOverride `json:"tools,omitempty"`
 
+	// Start says when an instance starts: onCall (the default) when a call
+	// needs it, or onEnable when a session enables the server.
+	// +optional
+	// +kubebuilder:default=onCall
+	// +kubebuilder:validation:XValidation:rule="self in ['onCall', 'onEnable']",message="start must be one of onCall, onEnable"
+	Start string `json:"start,omitempty"`
+
+	// DeclaredTools is the admin's own list of the server's tools. It is
+	// shown while no instance runs, and the gateway does not learn the
+	// list from instances.
+	// +optional
+	// +kubebuilder:validation:MaxItems=512
+	// +listType=map
+	// +listMapKey=name
+	DeclaredTools []DeclaredTool `json:"declaredTools,omitempty"`
+
+	// ToolFilter hides tools: it lists the upstream names to expose
+	// (allow) or to hide (deny).
+	// +optional
+	ToolFilter *ToolFilter `json:"toolFilter,omitempty"`
+
 	// Endpoint is where the instance serves MCP.
 	// +required
 	Endpoint Endpoint `json:"endpoint"`
@@ -213,6 +234,62 @@ type ToolOverride struct {
 	// Blocked refuses every call to the tool.
 	// +optional
 	Blocked bool `json:"blocked,omitempty"`
+
+	// Name is the name the tool is exposed under, instead of its own.
+	// +optional
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9_.-]{1,128}$`
+	Name string `json:"name,omitempty"`
+
+	// Description replaces the tool's description.
+	// +optional
+	// +kubebuilder:validation:MaxLength=4096
+	Description string `json:"description,omitempty"`
+
+	// InputDescriptions maps a top-level property of the tool's input
+	// schema to the description it gets.
+	// +optional
+	// +kubebuilder:validation:MaxProperties=64
+	// +kubebuilder:validation:XValidation:rule="self.all(key, size(self[key]) <= 4096)",message="each input description must be at most 4096 characters"
+	InputDescriptions map[string]string `json:"inputDescriptions,omitempty"`
+}
+
+// DeclaredTool is one tool of the server, as the admin states it.
+type DeclaredTool struct {
+	// Name is the tool's own name.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	Name string `json:"name"`
+
+	// Description is the tool's description.
+	// +optional
+	// +kubebuilder:validation:MaxLength=4096
+	Description string `json:"description,omitempty"`
+
+	// InputSchema is the JSON Schema of the tool's input, an object.
+	// +optional
+	// +kubebuilder:validation:Type=object
+	// +kubebuilder:pruning:PreserveUnknownFields
+	InputSchema *runtime.RawExtension `json:"inputSchema,omitempty"`
+}
+
+// ToolFilter lists tool names to expose or to hide. Exactly one of Allow and
+// Deny is set.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.allow) != has(self.deny)",message="set exactly one of allow and deny"
+type ToolFilter struct {
+	// Allow lists the upstream names exposed. Every other tool is hidden.
+	// +optional
+	// +kubebuilder:validation:MaxItems=512
+	// +kubebuilder:validation:items:MaxLength=128
+	Allow []string `json:"allow,omitempty"`
+
+	// Deny lists the upstream names hidden.
+	// +optional
+	// +kubebuilder:validation:MaxItems=512
+	// +kubebuilder:validation:items:MaxLength=128
+	Deny []string `json:"deny,omitempty"`
 }
 
 // Endpoint is the Service and path an instance serves MCP on.

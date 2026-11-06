@@ -1100,3 +1100,30 @@ func TestStarterKeepsHealthCheckItStartedWith(t *testing.T) {
 	require.NoError(t, next.starter.Step(t.Context(), next.instance))
 	assert.Nil(t, next.store.healthCheck)
 }
+
+func TestCheckCuratedToolList(t *testing.T) {
+	template := &v1alpha1.MCPServerTemplate{ObjectMeta: metav1.ObjectMeta{Name: "github"}}
+	template.Spec.Tools = map[string]v1alpha1.ToolOverride{"create_issue": {Name: "open_issue"}}
+	tools := []*mcp.Tool{{Name: "create_issue"}, {Name: "open_issue"}}
+
+	_, reason := runtime.CheckCuratedToolList(template, tools)
+	assert.Equal(t, "Tool name `open_issue` of `open_issue` collides with another tool.", reason)
+
+	// Hiding the other tool removes the collision, and the stored list is
+	// the upstream list, not the curated one.
+	template.Spec.ToolFilter = &v1alpha1.ToolFilter{Allow: []string{"create_issue"}}
+
+	_, reason = runtime.CheckCuratedToolList(template, tools)
+	assert.Equal(t, "Tool name `open_issue` of `create_issue` is the name of a hidden tool.", reason)
+
+	template.Spec.ToolFilter = &v1alpha1.ToolFilter{Deny: []string{"open_issue"}}
+
+	_, reason = runtime.CheckCuratedToolList(template, tools)
+	assert.Equal(t, "Tool name `open_issue` of `create_issue` is the name of a hidden tool.", reason)
+
+	template.Spec.Tools = nil
+
+	encoded, reason := runtime.CheckCuratedToolList(template, tools)
+	require.Empty(t, reason)
+	assert.Contains(t, string(encoded), "open_issue")
+}
