@@ -440,11 +440,11 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 127 | UI and CLI write the same principal's lists at once | each other | Both lock the `user_scopes` row, so they run in turn. Each is a set operation on the current rows. | unit |
 | 128 | `deny` of a server | session additions of it in that workspace | Deleted in the same transaction, so the deny withdraws it from those sessions too. | unit |
 | 129 | An agent runs `toolgate workspace allow` | — | 202 and a pending `change` request. Nothing widens until the user approves with a step-up. | AC-3-17 |
-| 130 | A 0.2 replica serves a session | rolling upgrade to 0.3 | It doesn't apply step 4, so its sessions see more until the rollout ends. The tables are new, so 0.2 never reads them. | unit |
-| 131 | Enable of a server outside the effective list | — | A pending `server` request and a URL elicitation, or the error with the link (§10, "Session additions"). | AC-3-19 |
-| 132 | "This session only" approved (replica B) | enable waiting (replica A) | B locks the `sessions` row, inserts `session_additions`, and commits with `approval:<id>` and `session:<id>`. A re-decides with fresh state and goes on. | AC-3-19 |
+| 130 | A 0.2 replica serves a session | rolling upgrade to 0.3 | It doesn't apply step 4, so its sessions see more until the rollout ends. The tables are new, so 0.2 never reads them. An attested session that reaches a 0.2 replica is seen with its claimed workspace, because 0.2 ignores the header, so it gets 404 and then 400 (row 118) until the rollout ends. | unit |
+| 131 | Enable of a server outside the effective list | — | In a verified workspace: a pending `server` request and a URL elicitation, or the error with the link (§10, "Session additions"). In an unverified session: refused with how to change `unverified_default`, with no request and no approval. | AC-3-19 |
+| 132 | "This session only" approved (replica B) | enable waiting (replica A) | B locks the `sessions` row, then `user_scopes`, inserts `session_additions`, and commits with `approval:<id>` and `session:<id>`. A re-decides with fresh state and goes on. | AC-3-19 |
 | 133 | "Always" approved | enables waiting in two sessions of that workspace | `scope:<id>` wakes both. Both pass step 4 and go on. The other session's own request stays pending and expires unused. | integration |
-| 134 | Session ends | pending "session only" request | The page says "This session has ended." and writes nothing. "Always" still works. | integration |
+| 134 | Session ends | pending `server` request | The end transaction expires it and writes `access.expire`. The page shows it expired and offers nothing. | integration |
 | 135 | Session ends | its session additions | Deleted in the end transaction. A restarted session has none. | AC-3-19 |
 | 136 | Another session in the same workspace | a session-only addition in the first | Not applied: additions are keyed by `session_pk`. | AC-3-19 |
 | 137 | Same enable again, or a retry | its request pending | The lookup finds the pending row (as phase 2 row 46). | unit |
@@ -464,6 +464,17 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 151 | Two helpers with an empty command cache | each other | The `token-command.lock` lock lets one run the command. The other reads its cached token. | unit |
 | 152 | `TOOLGATE_TOKEN_COMMAND` and `TOOLGATE_SPIFFE_SOCKET` both set, or two attestation variables | — | Every command exits non-zero naming the variables. | unit |
 | 153 | Audience removed from `oidcAudience` | open sessions using it | Settings are read at start. After the restart, its tokens get 401 (row 149). | unit |
+| 154 | Session ends and restarts, in another workspace or with no attestation | pending session-only request | The end expired the request (row 134), so the old link offers nothing. A session approval also needs the session's current workspace and attestation to equal the request's, so it never applies to the restarted session. | integration |
+| 155 | TokenReview or the pod GET fails with a transport error or a 5xx | attested request | 503 with `Retry-After: 1`, and no `auth.refuse`. The session keeps its workspace. | unit |
+| 156 | Client leaves out the attestation in a listed workspace | — | Served as unverified, with `unverified_default`. The docs and the Workspaces page say a list limits a process holding the user's token only while that default is nothing. | unit |
+| 157 | Session ends | addition enable waiting | The wake reads `ended_at`, stops with "This session ended while waiting for `immich`.", and writes `server.enable` (refuse). It never restarts the session. | integration |
+| 158 | Client sends another unverified session's ID and claimed workspace | — | It gets only `unverified_default`. Unverified sessions have no additions, so a claimed ID never widens. | unit |
+| 159 | Server removed from the list, or default narrowed | call waiting for approval | Phase 2's wait re-decides steps 1 to 4, so the call is refused at step `workspace-scope` on the next wake, and the approval isn't used. | unit |
+| 160 | "Always" or "session" approved at 64 servers in the list, 200 lists, or 32 additions in the session | — | The transaction rolls back, the request stays pending, and the page names the limit. | unit |
+| 161 | `deny` and a "session" approval of the same server | each other | The approval locks the `sessions` row, then `user_scopes`, so they run in turn. If the deny commits last, it deletes the addition. | unit |
+| 162 | UI turned off (`oidcUIClientID` removed) | lists exist | Settings are read at start. After the restart scoping is off, so access widens, as for row 153. The rows stay, and the workspace API answers 409 with "Workspace scoping is off, because this gateway has no web UI." | unit |
+| 163 | "Session" approval | `session_additions` row already there | `ON CONFLICT DO NOTHING` keeps the row, and the approval succeeds. | unit |
+| 164 | `toolgate workspace deny --session ID` | additions in that session | Deletes them in one transaction, which locks the `sessions` row and then `user_scopes`, and notifies `session:<id>`. Lists don't change. | unit |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
@@ -498,7 +509,7 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - tail backlog 20 events from the past 24 h, `after` at most 31 days back, 500 rows a query; 4 tails per principal on each replica, and 64 on each replica;
   - health check: HTTP body 64 KiB read, path 1024 characters, at most 10 repairs in 30 minutes;
   - attestation header 16 KiB; token command output 16 KiB, its standard error passed through up to 4 KiB; workspace ID 256 characters; key values 63 characters;
-  - 200 workspace lists per principal, 64 servers per list, 32 session additions per session, 100 pending access requests per principal; 1 to 8 audiences.
+  - 200 workspace lists per principal, 64 servers per list, 32 session additions per session, 100 pending access requests per principal (a count of its own); 1 to 8 audiences.
 - **Audit events:** `instance.health` on every change of health, and `instance.reapply` for each reapply, both with no payload (§6). Health failures are `instance.fail` with the check's reason. §10 adds `workspace.change`, `workspace.defaults`, `session.addition`, `access.request`, `access.approve`, `access.deny` and `access.expire`. `auth.refuse` for an attestation carries the verified user's principal.
 - **Libraries:**
   - `go.opentelemetry.io/collector/pdata` (the `ptraceotlp`, `pmetricotlp` and `plogotlp` packages);
@@ -520,13 +531,14 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - §13: `toolgate migrate`, `toolgate otel-headers`' output and `TOOLGATE_SPIFFE_SOCKET`;
   - §15: the `instances` column and the partition function;
   - §21 question 2: answered by SPIFFE;
-  - §2: no change. Principle 2 holds: a claimed workspace never selects a list, and the scope step only refuses;
+  - §2: no change. Principle 2 holds without exceptions: a claimed workspace never selects a list, a claimed session ID never adds servers (only sessions with a verified workspace get session additions), and the scope step only refuses;
   - §5: the `X-Toolgate-Attestation` header;
   - §6: attested user sessions (a user token plus a bound workload token), the identity kinds, `oidcAudience` as a list, and `TOOLGATE_TOKEN_COMMAND` under client sign-in;
+  - §7: `toolgate_list_servers` shows servers outside a verified workspace's effective list as `blocked`;
   - §10: the workspace-scope step as step 4, approval moving to step 5;
-  - §13: `toolgate workspace list`, `allow`, `deny`, `clear` and `defaults`, `toolgate login --token-store`, and the new client variables;
+  - §13: `toolgate workspace list`, `allow`, `deny` (with `--session`), `clear` and `defaults`, `toolgate login --token-store`, and the new client variables;
   - §14: the Workspaces page, and the approval page's server-access and change requests;
-  - §15: `user_scopes`, `workspace_lists`, `workspace_list_servers`, `session_additions` and `access_requests`.
+  - §15: `user_scopes`, `workspace_lists`, `workspace_list_servers`, `session_additions`, `access_requests` and `sessions.kind`.
 - **Errors to the model** follow phase 1: short sentences naming what to do next.
 
 ## 10. Workspace and session scoping
@@ -543,6 +555,7 @@ So a session gets two credentials: the user's own token says *who*, and a worklo
 - The approval wait's step 3 test becomes `Kind != user`.
 - Scoping (below) applies only to `Kind == user`. Service accounts and SPIFFE workloads keep phase 1 and §4: templates and rules decide what they reach.
 - Identities the UI builds for its own decisions (phase 2's Servers page, grants, approvals) are `Kind == user`, and their decisions skip the scope step: the UI shows the user's whole catalog, not one session's view.
+- Identities rebuilt from a session snapshot take `Kind` from the new `sessions.kind` column (State), never from attestation or prefix. That covers the reconciler's access re-check, `runtime.ownerHasAccess` in `internal/runtime/stop.go`, which phase 1 row 11 relies on, and the starter's render identity. An attested snapshot can now be a user, a service account or a SPIFFE ID, so inferring would judge a pod's per-user instance against `users` and `groups`, or an attested user whose `sub` looks like `system:serviceaccount:…` as a service account.
 
 ### Attested user sessions
 
@@ -571,7 +584,7 @@ workspaceAttestation:
 - The key names are the only integration. Coder's template keys are the defaults, and nothing in code knows about Coder.
 - `namespaces` is required, and each must be a namespace name. It's separate from `serviceAccountNamespaces`: that list lets a pod sign in *as itself*. The docs say not to list workspace namespaces there unless pods should also sign in as their own service accounts.
 - `workspaceID` may use `{userID}`, `{username}` and `{workspace}`. It must start with a literal segment that isn't `claimed`, `k8s` or empty, so a verified workspace never looks like a claimed one, a pod's or a SPIFFE path. It's rendered at most 256 characters.
-- `spiffeIDPattern` names a trust domain in `spiffeTrustDomains`. Each placeholder is one whole path segment. It's compiled at start into a `regexp` with `regexp.QuoteMeta` around the literal parts and a named group `([A-Za-z0-9._-]+)` per placeholder. SPIFFE paths can't hold `@`, so with `spiffeIDPattern` set, `match.by` must be `claim`. Otherwise the configuration is refused at start.
+- `spiffeIDPattern` names a trust domain in `spiffeTrustDomains`. Each placeholder is one whole path segment. It's compiled at start into a `regexp` with `regexp.QuoteMeta` around the literal parts and a named group `([A-Za-z0-9._-]+)` per placeholder. SPIFFE paths can't hold `@`, so with `spiffeIDPattern` set, `match.by` must be `claim`. The pattern must also contain `{<match.key>}`, so there's an owner to compare, and every placeholder that `workspaceID` uses, so it can be rendered. Otherwise the configuration is refused at start. A captured value longer than 63 characters is refused, as for pod keys.
 
 **The request.** The client sends the user token in `Authorization`, as today, and the workload token in `X-Toolgate-Attestation`, raw, without `Bearer`. The header is at most 16 KiB, like `Authorization`, and is exempt from the 128-character `X-Toolgate-*` limit.
 
@@ -580,7 +593,8 @@ workspaceAttestation:
 2. If the identity's `Kind` isn't `user`, ignore the header. A workload is already attested as itself.
 3. If the header is absent, go on as today: `user` attestation, `claimed/…` workspace.
 4. Otherwise verify and bind it (below). On success, set `Attestation = attested` and `Workspace` to the rendered `workspaceID`. Then the `X-Toolgate-Workspace` header doesn't change it, as for pods.
-5. On any failure, keep `user` attestation and the claimed workspace, write `auth.refuse` with the reason, and serve the request. **Never a 401 just for the attestation.** The event uses phase 1's rate limit. Unlike other refusals, it carries the verified user's principal, because the user token passed.
+5. On a failed verdict, keep `user` attestation and the claimed workspace, write `auth.refuse` with the reason, and serve the request. **Never a 401 just for the attestation.** The event uses phase 1's rate limit. Unlike other refusals, it carries the verified user's principal, because the user token passed. Every refusal reason listed below is a verdict.
+6. If the check is unavailable (a transport error or a 5xx from TokenReview or the pod GET), answer 503 with `Retry-After: 1` and write no `auth.refuse`. Falling back here would move a live attested session to another workspace, and it would then get 404 and 400 (rows 117 and 118) although its binding was valid all along.
 
 **Verifying the attestation token.** The verifier is chosen by the token's unverified `sub`, as phase 1 routes bearer tokens:
 - `spiffe://…`: `jwtsvid.ParseAndValidate` with the §4 bundles and audience `toolgate`. It's refused when `spiffeIDPattern` is empty or doesn't match the ID.
@@ -590,7 +604,7 @@ workspaceAttestation:
 - For KubeVirt, the token is bound to the VM's `virt-launcher` pod, whose controller is the `VirtualMachineInstance`. KubeVirt copies the VM template's labels to that pod, so the same reading works and the gateway never reads VMIs. The docs say a VM template must set the keys in `spec.template.metadata`.
 - **Match.** With `by: email`, the `email` key's value must equal the user token's verified email, compared with `strings.EqualFold`. An unverified email counts as absent (phase 1 §7), so it never matches. With `by: claim`, the configured claim of the user token must be a string equal to the named key's value. The docs say to choose a claim the user can't change, such as one the IdP sets from the same directory as Coder.
 - Every key that `workspaceID` uses must be present and match `^[A-Za-z0-9._-]{1,63}$` (the label-value syntax), so a value can't add path segments.
-- **Refusal reasons:** "attestation token invalid", "attestation namespace not allowed", "attestation not bound to a pod", "attestation pod lookup failed", "attestation owner key missing", "attestation owner mismatch", "attestation owner claim missing", "attestation workspace key invalid", "attestation SPIFFE ID doesn't match the pattern", "attestation header repeated or too large".
+- **Refusal reasons:** "attestation token invalid", "attestation namespace not allowed", "attestation not bound to a pod", "attestation pod lookup failed" (the pod isn't found, or its UID differs), "attestation owner key missing", "attestation owner mismatch", "attestation owner claim missing", "attestation workspace key invalid", "attestation SPIFFE ID doesn't match the pattern", "attestation header repeated or too large".
 
 **Binding a JWT-SVID.** The SVID's ID must match `spiffeIDPattern`. The captured `{username}` or `{userID}` is compared with the user token's claim, as for pods, and `{workspace}` fills `workspaceID`. SPIRE's registration entries are admin-written, so the ID is as trustworthy as the labels.
 
@@ -699,27 +713,29 @@ One more additive migration. New IDs follow phase 2 §2.
 - `user_scopes(id bigserial, principal text unique, verified_default, unverified_default, updated_at)`. Each default is `none` or `all`, default `none`. The row is created on a principal's first scoping write and never deleted. A missing row means both `none`.
 - `workspace_lists(id bigserial, scope_id, workspace, created_at, updated_at)`, unique `(scope_id, workspace)`, where `scope_id` refers to `user_scopes.id`. At most 200 lists per principal. `workspace` is at most 256 characters and never starts with `claimed/`.
 - `workspace_list_servers(list_id, server, added_at)`, primary key `(list_id, server)`. At most 64 servers per list. `server` is a server name (phase 1 §7 makes names unique).
-- `session_additions(session_pk, server, request_id, created_at)`, primary key `(session_pk, server)`. At most 32 per session, the enabled-server limit.
+- `session_additions(session_pk, server, request_id, created_at)`, primary key `(session_pk, server)`. At most 32 per session, the enabled-server limit. Only sessions with a verified workspace get them (Session additions).
+- `sessions` gains `kind` (`user`, `service-account` or `spiffe`), written on create and on restart from the identity's `Kind`. The migration backfills it from attestation and principal prefix, which is exact for 0.2 rows, because 0.2 has no attested users. `ownerHasAccess` and the render identity read it (Identity kinds).
 - `access_requests(id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope)`.
   - `kind` is `server` (an enable outside the list, AC-3-19) or `change` (a CLI change that widens, below).
   - `session_pk` and `server` are set for `server`. `change` is JSON for `change`. `decided_scope` is `session` or `workspace`.
-  - Statuses, compare-and-set writes, `approvalTimeout` and the leader's expiry pass are exactly phase 2's for approvals (phase 2 §2). At most 100 pending per principal, with the same advisory-lock count.
+  - Statuses, compare-and-set writes, `approvalTimeout` and the leader's expiry pass are exactly phase 2's for approvals (phase 2 §2). At most 100 pending per principal. That's a count of its own, separate from phase 2's approvals count, under its own advisory lock on the principal.
   - **Why not the `approvals` table:** its `session_pk`, `arguments_sha256` and `tool` are `NOT NULL` with checks, and relaxing them would hand 0.2 replicas rows they can't scan during a rolling upgrade. The code that waits, notifies and expires is shared. Only the row type differs.
 - **Notifications:** `scope:<user_scopes.id>` for any change to a principal's defaults or lists. A replica reads the row's principal, which is never deleted, and sends `list_changed` to that principal's streams. Access requests send `approval:<id>`, because IDs are unique UUIDv7 values across both tables, so a waiter reads its own table. A new `session_additions` row sends the existing `session:<id>`.
-- **Ending a session** (phase 1 §2) also deletes its `session_additions` rows, in the same transaction.
+- **Ending a session** (phase 1 §2) also deletes its `session_additions` rows and sets its pending `server` requests to `expired`, writing `access.expire` for each, in the same transaction. A restart reuses the same `sessions.id` with the new request's workspace and attestation, so an old request must never apply to it.
 - **Cleanup:** the leader deletes access requests 7 days after they stopped being live, as for approvals.
-- **Audit events:** `workspace.change` (workspace, servers added and removed, `cleared`, and `via`: `ui`, `cli` or the request ID); `workspace.defaults` (old and new values); `session.addition` (session, server, request ID); and `access.request`, `access.approve`, `access.deny`, `access.expire`, written as phase 2 writes the approval events.
+- **Audit events:** `workspace.change` (workspace, servers added and removed, `cleared`, and `via`: `ui`, `cli` or the request ID); `workspace.defaults` (old and new values); `session.addition` (session, server, and the request ID, or `removed` for `deny --session`); and `access.request`, `access.approve`, `access.deny`, `access.expire`, written as phase 2 writes the approval events.
 
 ### Workspace access lists and defaults
 
 AC-3-17 and AC-3-18.
 
 **The effective list** of a request with `Kind == user`:
-- **Verified workspace** (attestation `attested`, from the binding above): the workspace's list if one exists, else everything when `verified_default` is `all`, else nothing.
-- **Unverified** (attestation `user`): everything when `unverified_default` is `all`, else nothing.
-- In both cases, plus the session's `session_additions`.
+- **Verified workspace** (attestation `attested`, from the binding above): the workspace's list if one exists, else everything when `verified_default` is `all`, else nothing. Plus the session's `session_additions`.
+- **Unverified** (attestation `user`): everything when `unverified_default` is `all`, else nothing. Nothing more: an unverified session never has session additions.
 
-Lists exist only for verified workspaces. A claimed workspace never selects a list, so a client can't pick a list by claiming a name, and principle 2 holds without exceptions. Everything the effective list allows still has to pass the other steps.
+Lists and session additions exist only for verified workspaces. A claimed workspace never selects a list, so a client can't pick a list by claiming a name. A claimed session ID never adds servers either: an unverified session's ID is only claimed, and any client with the user's token could send it (`GET /api/v1/sessions` lists it). So a claimed field never widens access, and principle 2 holds without exceptions. Everything the effective list allows still has to pass the other steps.
+
+**Dropping the attestation.** The attestation is optional for the client. A process holding the user's token can leave it out, even inside a listed workspace, and is then served as unverified, with `unverified_default`. The user docs and the defaults form on the Workspaces page say so: "A workspace's list limits a process holding your token only while the default for unverified sessions is nothing." Nothing in the gateway changes for this.
 
 **Policy order** (`SPEC.md` §10, phase 2 §3) gains a step, after the blocks and before approval:
 1. catalog access;
@@ -730,18 +746,24 @@ Lists exist only for verified workspaces. A claimed workspace never selects a li
 
 The step only refuses, so it never widens anything: a server on a list that the user can't reach is refused at step 1 or 2 first (AC-3-17). `Decide` stays pure. The policy state batch (phase 2 §3) gains three queries in the same round trip, for `Kind == user` only: the `user_scopes` row, the list for (principal, verified workspace) with its servers, and the additions joined through `sessions` on (principal, session ID). `policy.State` gains `Scope{Applies, All bool; Servers set}`.
 
+**Calls waiting for approval.** Phase 2 §4 step 5 re-decides steps 1 to 3 on each wake. It now re-decides steps 1 to 4. So a server removed from the list, or a narrowed default, refuses a call that's waiting for approval on the next wake, with the step-4 message, and the approval isn't used.
+
 **Effects**, on the paths phase 1 §3 already decides:
-- `toolgate_list_servers` leaves out servers the step refuses.
+- `toolgate_list_servers`, in a verified workspace, shows servers the step refuses with status `blocked` and the reason "not allowed in this workspace; enable it to ask", so the model can find a name to enable (AC-3-19). In an unverified session it leaves them out, because enabling them can't ask.
 - `tools/list` leaves out their tools.
 - A call is refused with "Server `k8s` isn't in the list for workspace `coder/alice/mail`. Allow it in the Workspaces page or with `toolgate workspace allow k8s`."
-- An enable starts a session addition (below).
+- An enable starts a session addition in a verified workspace, and is refused in an unverified session (below).
 - A server that leaves the list stays enabled with no tools, like a grant that expired (phase 2 §3), and its tools come back without a new enable when it returns.
 
 **The 5 s bound.** Every write notifies `scope:<id>` in its transaction. Every replica sends `list_changed` to the principal's streams, and the next decision loads fresh state, so a call after the commit is refused at once. A `LISTEN` reconnect sends `list_changed` to all streams, as before. A test measures the bound.
 
-**Without the web UI** (`oidcUIClientID` empty), the scope step is off and nothing above applies. Widening needs a step-up, and only the UI can do one. So a gateway without the UI behaves as in 0.2, and the docs say scoping needs the UI.
+**Without the web UI** (`oidcUIClientID` empty), the scope step is off and nothing above applies. Widening needs a step-up, and only the UI can do one. So a gateway without the UI behaves as in 0.2, and the docs say scoping needs the UI. If the UI is turned off while lists exist, the rows stay but do nothing, so access widens after the restart, as for row 153. Then `GET /api/v1/workspaces` and `POST /api/v1/workspaces/changes` answer 409 with "Workspace scoping is off, because this gateway has no web UI.", and `GET /ui/workspaces` doesn't exist.
 
-**Writes** lock the principal's `user_scopes` row (`INSERT … ON CONFLICT DO NOTHING`, then `SELECT … FOR UPDATE`), check the limits, change the rows, write the event, notify, and commit. A write *widens* when it adds a server to a list, clears a list while `verified_default` is `all`, or changes a default from `none` to `all`. Everything else narrows. `allow` refuses a server the user has no catalog access to, with "You don't have access to server `x`.", to catch typos. Access lost later leaves the entry in place, but it does nothing. `deny` also deletes that server's `session_additions` for the user's open sessions in that workspace, so a deny really removes it. `clear` deletes the list, so the default applies again.
+**Upgrading with the UI on.** Both defaults are `none`, and a missing `user_scopes` row means `none` (AC-3-18). There's no "only once a row exists" rule. So after the upgrade, every user session sees no servers until the user chooses defaults or lists. The CHANGELOG and the admin docs carry a prominent upgrade note: "After upgrading with the web UI on, every user sees no servers until they choose their defaults on the Workspaces page." The e2e harness (`scripts/e2e/run.sh` sets `config.ui.clientID`) writes `user_scopes(verified_default = 'all', unverified_default = 'all')` for the e2e principals through the store package during setup, so no phase 1 or phase 2 acceptance test changes. Tests of AC-3-17 to AC-3-19 set their own rows.
+
+**Writes** lock the principal's `user_scopes` row (`INSERT … ON CONFLICT DO NOTHING`, then `SELECT … FOR UPDATE`), check the limits, change the rows, write the event, notify, and commit. A write *widens* when it adds a server to a list, clears a list while `verified_default` is `all`, or changes a default from `none` to `all`. Everything else narrows. `allow` refuses a server the user has no catalog access to, with "You don't have access to server `x`.", to catch typos. Access lost later leaves the entry in place, but it does nothing. `deny` also deletes that server's `session_additions` for the user's open sessions in that workspace, so a deny really removes it. Lists are allow lists, so `deny` on a workspace with no list changes nothing and answers 409 with "Workspace `x` has no list. Add one with `toolgate workspace allow` first." Denying a list's last server keeps an empty list, which gives nothing. Only `clear` deletes a list, so the default applies again.
+
+**Removing a session's additions.** `deny --session ID SERVER…` deletes those servers' `session_additions` for that one session, and leaves every list as it is. It narrows, so it applies at once. The session must be the caller's own, else 404. It locks the `sessions` row and then the `user_scopes` row, the same order as a "session" approval, writes `session.addition` with `removed`, and notifies `session:<id>`.
 
 **Web UI: `GET /ui/workspaces`.** Access `user`.
 - It shows the defaults, each list with its servers, and the verified workspaces of the user's open sessions, each with an "Add a list" button.
@@ -750,46 +772,57 @@ The step only refuses, so it never widens anything: a server on a list that the 
 
 **API and CLI.** Bearer tokens can't prove a step-up (phase 2 §9). An agent in a workspace holds the user's token, so a widening call from the CLI never applies directly. It creates a `change` access request that the user approves in the browser.
 - `GET /api/v1/workspaces` returns `{"current", "defaults": {"verified", "unverified"}, "workspaces": [{"workspace", "servers", "updatedAt"}]}`, where `current` is the request's verified workspace or `null`.
-- `POST /api/v1/workspaces/changes` takes `{"action": "allow"|"deny"|"clear"|"defaults", "workspace", "servers", "verified", "unverified"}`. A narrowing change applies and answers 200 `{"applied": true}`. A widening one inserts a pending `change` request and answers 202 `{"request", "url"}`. Only `Kind == user` may call it; others get 403.
+- `POST /api/v1/workspaces/changes` takes `{"action": "allow"|"deny"|"clear"|"defaults", "workspace", "session", "servers", "verified", "unverified"}`. `session` is only for `deny`, in place of `workspace`. A narrowing change applies and answers 200 `{"applied": true}`. A widening one inserts a pending `change` request and answers 202 `{"request", "url"}`. Only `Kind == user` may call it; others get 403.
 - `GET /api/v1/access-requests/{id}` returns `{"id", "status", "expiresAt"}`, to the requester only. Others get 404.
 - `toolgate workspace list` prints the defaults and a table: `WORKSPACE`, `SERVERS`, `UPDATED`.
 - `toolgate workspace allow SERVER…`, `deny SERVER…` and `clear` take `--workspace ID`. It defaults to `current`, and without one they exit with "This machine has no verified workspace. Pass --workspace."
+- `toolgate workspace deny --session ID SERVER…` removes that session's additions (above). It can't be combined with `--workspace`.
 - `toolgate workspace defaults [--verified none|all] [--unverified none|all]`.
 - For a 202, the CLI prints "Approve this change at `<url>`. Waiting… (Ctrl-C stops waiting; the request stays open until it expires.)". It then polls the request every 2 s until it's decided or expired, and exits 0 only when approved.
 - The approval page for a `change` shows the change as a before-and-after list, with Approve (step-up) and Deny. Approving applies the change in the same transaction as the compare-and-set, as a set operation on the current list, so a list that changed in between needs no merge.
 
 ### Session additions
 
-AC-3-19. An enable whose only refusal is step 4 asks the user, reusing phase 2 §4's elicitation, wait and fan-out.
+AC-3-19. In a session with a verified workspace, an enable whose only refusal is step 4 asks the user, reusing phase 2 §4's elicitation, wait and fan-out.
 
-1. **Find or insert a request.** Use the same order as phase 2 §4 step 1: the request named by `RequestState` (a lookup key only, so every field must match), then a pending `server` request for this session and server. If none is found, insert one with the session's workspace and whether it's verified, write `access.request`, notify, and commit.
-2. **No elicitation**, or `decline`/`cancel`: return "Server `immich` isn't allowed in workspace `coder/alice/mail`. Allow it at `<publicURL>/ui/approvals/<id>`, then enable it again." For an unverified session, the message says "in sessions without a verified workspace". The request stays pending. The enable writes `server.enable` (refuse, `workspace-scope`, with the request ID).
+**Unverified sessions never ask.** An unverified session gets the user's `unverified_default` and nothing more (Effective list). An enable outside it is refused at once with "Server `immich` isn't allowed in sessions without a verified workspace. To allow all your servers in them, set the default for unverified sessions to all on the Workspaces page, or run `toolgate workspace defaults --unverified all`." No request is inserted and no approval is offered. The enable writes `server.enable` (refuse, `workspace-scope`).
+
+1. **Find or insert a request.** Phase 2 §4 steps 1 and 4 apply in full, with `server` requests in place of approvals. That covers the lookup order (the request named by `RequestState`, a lookup key only, so every field must match, then a pending `server` request for this session and server), its rules for a named request that's no longer pending, and the rule that a request carrying `InputResponses` never gets `InputRequests` back. Their messages:
+   - A named request that was denied: "Adding `immich` was denied (request `<id>`)."
+   - A named request that expired: step 4's timeout message.
+   - A request carrying `InputResponses` whose lookup inserted a new row: step 2's message, with no wait.
+
+   If none is found, insert one with the session's workspace and `verified` true, write `access.request`, notify, and commit.
+2. **No elicitation**, or `decline`/`cancel`: return "Server `immich` isn't allowed in workspace `coder/alice/mail`. Allow it at `<publicURL>/ui/approvals/<id>`, then enable it again." The request stays pending. The enable writes `server.enable` (refuse, `workspace-scope`, with the request ID).
 3. **Elicitation:** return the URL elicitation with `RequestState` set to the request ID, as phase 2 §4 step 4.
-4. **Wait** as phase 2 §4 step 5: on `approval:<id>`, `scope:<id>`, `session:<id>`, a missed event or the 10 s tick, re-read the request and decide steps 1 to 4 again with fresh state.
-   - If step 4 now passes (approved here, or the server was added another way), go on with phase 1 enable step 2.
-   - If steps 1 to 3 refuse, stop with that refusal.
-   - Denied: "Adding `immich` was denied (request `<id>`)."
-   - Expired: as phase 2's timeout, with "Nobody allowed `immich` within 10 minutes (request `<id>`)."
-   - Cancel or disconnect: stop and write nothing.
+4. **Wait** as phase 2 §4 step 5: on `approval:<id>`, `scope:<id>`, `session:<id>`, a missed event or the 10 s tick, re-read the request and the session's `ended_at`, and decide steps 1 to 4 again with fresh state. Every outcome but cancel writes `server.enable`, so every decision is recorded:
+   - If step 4 now passes (approved here, or the server was added another way), go on with phase 1 enable step 2, which writes the allow with the request ID.
+   - If steps 1 to 3 refuse, stop with that refusal, and write `server.enable` (refuse, with the refusing step).
+   - The session has ended: stop with "This session ended while waiting for `immich`." and write `server.enable` (refuse, `workspace-scope`, reason `session-ended`). It never goes on to phase 1 enable step 4, which would restart the ended session.
+   - Denied: "Adding `immich` was denied (request `<id>`)." Write `server.enable` (refuse, `workspace-scope`, reason `addition-denied`).
+   - Expired: as phase 2's timeout, with "Nobody allowed `immich` within `<approvalTimeout>` (request `<id>`).", the setting rendered in words, for example "10 minutes". Write `server.enable` (refuse, `workspace-scope`, reason `addition-timeout`).
+   - Cancel or disconnect: stop and write nothing, as phase 2.
    - Waits count toward phase 2's 32 per principal per replica.
-5. **The page** (`/ui/approvals/<id>`, which looks the ID up in both tables; owner only, else 404) shows the server, session and workspace. It offers "Allow for this session", "Always allow in this workspace" (only when the workspace is verified), and Deny. Both approvals need the phase 2 step-up. Deny doesn't.
-6. **Approving writes the effect.** One transaction locks the `sessions` row first (phase 1's lock order), then the `user_scopes` row for "always". It compare-and-sets `pending` to `approved` with `decided_scope`, then:
-   - **session:** checks the session hasn't ended, inserts `session_additions`, writes `session.addition`, and notifies `session:<id>`. If the session has ended, the page says "This session has ended." and nothing changes.
+5. **The page** (`/ui/approvals/<id>`, which looks the ID up in both tables; owner only, else 404) shows the server, session and workspace. It offers "Allow for this session", "Always allow in this workspace", and Deny. A request that's no longer pending shows its status and offers nothing. Both approvals need the phase 2 step-up. Deny doesn't.
+6. **Approving writes the effect.** One transaction locks the `sessions` row first (phase 1's lock order), then the `user_scopes` row, for both choices. The "session" choice takes the `user_scopes` lock too, so it runs in turn with a `deny`, and a deny that commits later never leaves the addition in place. It compare-and-sets `pending` to `approved` with `decided_scope`, then:
+   - **session:** checks the session hasn't ended, and that its current workspace equals the request's and its attestation is `attested`, as the request's `verified` says. If the session has ended, the page says "This session has ended." If it's now in another workspace, or unverified, the page says "This session is now in another workspace." In both cases the transaction rolls back and nothing changes. Otherwise it inserts `session_additions` with `ON CONFLICT DO NOTHING`, so an existing row is kept and the approval still succeeds, writes `session.addition`, and notifies `session:<id>`.
    - **workspace:** adds the server to the workspace's list, creating the list if there was none (so a workspace with `none` and no list gets a list of just this server). Writes `workspace.change` with `via` set to the request ID, and notifies `scope:<id>`.
+   - **Limits:** if the approval would pass 32 additions for the session, 64 servers in the list or 200 lists, the transaction rolls back and the request stays pending. The page says "This session already has 32 added servers.", "Workspace `x`'s list already has 64 servers." or "You already have 200 workspace lists.", followed by "Remove one, then approve again."
    - In both cases it writes `access.approve` and notifies `approval:<id>`.
    Because the approver writes the effect, a waiter that died loses nothing. The next enable passes step 4 at once. A request is never "used" by a later call, so it needs no `used_at`.
 
-**Where session-only rows end.** Ending a session deletes them (State). A restarted session starts with none, and other sessions in the workspace never see them, because they are keyed by `session_pk`.
+**Where session-only rows end.** Ending a session deletes them and expires its pending `server` requests (State). A restarted session starts with none and inherits no pending request, and other sessions in the workspace never see them, because they are keyed by `session_pk`. Before then, `toolgate workspace deny --session ID` removes them.
 
 **Calls** of a server outside the effective list never elicit. They're refused with the message in "Effects". Only enable asks, because that's when the person is deciding what the session needs.
 
 ### Tests
 
-- **AC-3-16 (e2e):** a pod in an allowed namespace, labelled for the fake IdP's user, sends a user token plus a projected token. The test checks `attested`, the `coder/…` workspace, the user's per-user instance and secrets, and an `opt-in` server with no grant. A second pod, labelled for another user, falls back to `user` with an `auth.refuse` naming "attestation owner mismatch". The KubeVirt path is a unit test against a fake API server: a `virt-launcher`-shaped pod whose controller is a VMI, and the client's TokenRequest call with its `boundObjectRef`. The SPIFFE binding reuses §4's test bundle endpoint.
-- **AC-3-17 and AC-3-18 (integration):** list, enable and call filtering, withdrawal within 5 s across two replicas, `allow` of a server outside catalog access, both defaults both ways, and a CLI widen that applies only after the approval.
-- **AC-3-19 (browser, chromedp as in phase 2):** "this session" and "always", the step-up, a second session not getting a session-only addition, and the end of the session removing it. The no-elicitation path is an integration test.
-- **AC-3-20 (e2e):** `toolgate login --token-store file` against the fake IdP with no D-Bus session. The device code is approved by the test, and a later `toolgate headers` from a process without the login's environment gets a token.
-- **AC-3-21 (integration):** `TOOLGATE_TOKEN_COMMAND` printing a fake-IdP token for a second audience, accepted with the user's principal; an unlisted audience refused; plus unit tests for the timeout, the size limit, the cache, the lock and the 401 retry.
+- **Harness:** the e2e setup writes `user_scopes` rows with both defaults `all` for the e2e principals, through the store package ("Upgrading with the UI on"), so earlier acceptance tests keep passing.
+- **AC-3-16 (e2e):** a pod in an allowed namespace, labelled for the fake IdP's user, sends a user token plus a projected token. The test checks `attested`, the `coder/…` workspace, the user's per-user instance and secrets, an `opt-in` server with no grant, and a server whose access names only one of the user's groups. A second pod, labelled for another user, falls back to `user` with an `auth.refuse` naming "attestation owner mismatch". Its session gets the claimed workspace, and the `opt-in` server is refused. The KubeVirt path is a unit test against a fake API server: a `virt-launcher`-shaped pod whose controller is a VMI, and the client's TokenRequest call with its `boundObjectRef`. The SPIFFE binding reuses §4's test bundle endpoint.
+- **AC-3-17 and AC-3-18 (integration):** list, enable and call filtering, withdrawal within 5 s across two replicas, `allow` of a server outside catalog access, a listed server the user loses access to later staying refused (row 125), both defaults both ways, and a CLI widen that applies only after the approval. The UI path is covered too: a widening POST with a fresh step-up applies, and one without it is refused.
+- **AC-3-19 (browser, chromedp as in phase 2):** "this session" and "always", the step-up, a second session not getting a session-only addition, and the end of the session removing it. The no-elicitation path and the unverified session's refusal are integration tests.
+- **AC-3-20 (e2e):** `toolgate login --token-store file` against the fake IdP with no D-Bus session. The device code is approved by the test, and a later `toolgate headers` from a process without the login's environment gets a token. The test opens an MCP session with those headers and checks it acts as the user. Then the fake IdP revokes the refresh token, and `headers` fails with "Sign in again".
+- **AC-3-21 (integration):** the CLI runs with an empty config directory (no sign-in), `TOOLGATE_GATEWAY`, and `TOOLGATE_TOKEN_COMMAND` printing a fake-IdP token for the second audience. The test opens an MCP session with `toolgate headers`' output, and checks the principal and groups through `toolgate sessions` and an enable of a group-only server. Second-audience tokens with a bad signature, an expired `exp` or a wrong issuer each get 401, and an unlisted audience is refused. Unit tests cover the timeout, the size limit, the cache, the lock and the 401 retry.
 
 ## Decisions on the draft's open questions
 
