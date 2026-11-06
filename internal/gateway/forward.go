@@ -377,12 +377,12 @@ func (m *metaTools) decideAndRun(ctx context.Context, current requestContext, re
 		return nil, fmt.Errorf("The call wasn't forwarded: the gateway can't record it. Try again later. (%w)", err) //nolint:staticcheck // A sentence for the model.
 	}
 
-	return m.forwardAndRecord(ctx, current, instance, template, tool, request.Params.Arguments)
+	return m.forwardAndRecord(ctx, current, request, instance, template, tool, request.Params.Arguments)
 }
 
 // forwardAndRecord is phase 1 call steps 5 and 6: it forwards an allowed
 // call to instance and writes tool.result.
-func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, error) {
+func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext, request *mcp.CallToolRequest, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, error) {
 	server := template.Name
 	recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
 
@@ -395,7 +395,12 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 	)
 
 	if isBuiltin(template) {
-		result, outcome = m.callBuiltin(ctx, current, tool, arguments)
+		var err error
+
+		result, outcome, err = m.callBuiltin(ctx, current, request, tool, arguments)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		result, outcome = m.forward(ctx, instance, template, tool, arguments)
 	}

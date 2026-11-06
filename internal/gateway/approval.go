@@ -399,7 +399,7 @@ func (m *metaTools) useApproval(ctx context.Context, call approvalCall, approval
 		return nil, true, fmt.Errorf("The call wasn't forwarded: the gateway can't record it. Try again later. (%w)", err) //nolint:staticcheck // A sentence for the model.
 	}
 
-	result, err := m.forwardAndRecord(ctx, call.current, instance, template, call.tool, call.arguments)
+	result, err := m.forwardAndRecord(ctx, call.current, call.request, instance, template, call.tool, call.arguments)
 
 	return result, true, err
 }

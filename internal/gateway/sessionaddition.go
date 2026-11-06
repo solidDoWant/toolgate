@@ -408,30 +408,7 @@ func (m *metaTools) decideAddition(ctx context.Context, enable additionEnable, i
 // expired and, only when it wins, writes access.expire and notifies
 // approval:<id>.
 func (m *metaTools) expireServerRequest(ctx context.Context, enable additionEnable, request db.AccessRequest) (bool, error) {
-	won := false
-
-	err := pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
-		queries := db.New(tx)
-
-		expired, err := queries.ExpireDueAccessRequest(ctx, request.ID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-
-		if err != nil {
-			return fmt.Errorf("expire access request: %w", err)
-		}
-
-		won = true
-
-		if err := audit.NewRecorder(m.auditOutput, queries).Record(ctx, accessEvent(enable.current.identity, typeAccessExpire, expired)); err != nil {
-			return err
-		}
-
-		return store.Notify(ctx, tx, store.KindApproval, request.ID)
-	})
-
-	return won, err
+	return m.expireAccessRequest(ctx, enable.current.identity, request.ID)
 }
 
 // awaitAdditionWake blocks until a notification about the request, the
