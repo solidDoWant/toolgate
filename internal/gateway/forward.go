@@ -395,7 +395,7 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 	)
 
 	if isBuiltin(template) {
-		result, outcome = m.callBuiltin(ctx, current, tool)
+		result, outcome = m.callBuiltin(ctx, current, tool, arguments)
 	} else {
 		result, outcome = m.forward(ctx, instance, template, tool, arguments)
 	}
