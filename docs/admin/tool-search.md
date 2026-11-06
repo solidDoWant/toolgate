@@ -64,3 +64,22 @@ The extension `vector` (pgvector) must be available in your PostgreSQL. The migr
 - A minimal PostgreSQL image, plus the pgvector extension image mounted as a CloudNativePG image volume extension.
 
 The database user that runs the migration must be allowed to create the extensions `vector` and `pg_trgm`. `pg_trgm` is a trusted extension, so the database owner can create it. `vector` is not trusted in the standard images, so a superuser must create it, or the migration user must be a superuser. If a superuser has run `CREATE EXTENSION vector` in the database, the migration skips the step. The split-role SQL in the chart page does this.
+
+## Compare two embedding models offline
+
+Before you switch models, you can score each one on a fixed set of tasks. The repository holds 66 task descriptions and the tools they should find, in `test/fixtures/toolsearch/`. Run this from a checkout of the repository, on a machine with Go and Docker:
+
+```
+make search-eval EMBED_URL=http://localhost:8080 EMBED_MODEL=BAAI/bge-small-en-v1.5
+```
+
+`EMBED_URL` and `EMBED_MODEL` are the same as `config.toolSearchEmbeddings.url` and `model`. The command starts a temporary PostgreSQL in Docker, loads the tools with the real gateway code, and runs every task through the real search.
+
+It prints:
+
+- The number of tasks (out of 66) with the expected tool in the top 5, for words only and for words plus meaning.
+- One line for each task the search missed, with the tool it wanted and the tools it returned.
+
+Run the command once for each model and compare the numbers. The command never changes the task set, and it does not fail on a low score. The bar for the default model is 59 of 66.
+
+This test uses a fixed task set, not your own tools. To see how a model does in real sessions, use the hit rates from the metrics. See [Metrics](metrics.md).

@@ -58,6 +58,11 @@ test-guard: ## Fail if HEAD deletes or skips an [AC-N-nn] scenario test since it
 test-integration: ## Run the integration-tagged tests (GO_TEST_JSON=file also writes the go test -json events there; PostgreSQL with TLS client certificates and S3 in Docker, a fake OIDC provider and an envtest API server in process; they skip cleanly without Docker or KUBEBUILDER_ASSETS).
 	timeout 30m ./scripts/ci/go-test-json.sh -race -count=1 -tags integration -timeout 25m ./...
 
+.PHONY: search-eval
+search-eval: ## Score the tool search fixture (AC-4-03) against any embeddings endpoint: make search-eval EMBED_URL=http://host EMBED_MODEL=name. Prints the words-only and hybrid scores and each miss. Needs Docker for PostgreSQL. Never gates CI.
+	@test -n "$(EMBED_URL)" && test -n "$(EMBED_MODEL)" || { echo "usage: make search-eval EMBED_URL=<url> EMBED_MODEL=<model>" >&2; exit 2; }
+	SEARCH_EVAL_EMBED_URL='$(EMBED_URL)' SEARCH_EVAL_EMBED_MODEL='$(EMBED_MODEL)' timeout 15m go test -tags integration -count=1 -v -timeout 14m -run '^TestSearchEval$$' ./internal/gateway/
+
 .PHONY: test-e2e
 test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server), then delete it. E2E_SHARD=i/n runs shard i of n only.
 	./scripts/e2e/run.sh ./scripts/test-e2e.sh
