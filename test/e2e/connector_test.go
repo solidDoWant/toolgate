@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"context"
 	"crypto/tls"
 	"encoding/json"
 	"io"
@@ -14,11 +13,11 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 	"k8s.io/apimachinery/pkg/util/rand"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
@@ -33,8 +32,9 @@ const connectorRedirect = "http://127.0.0.1:1/callback"
 
 // TestAC4_09ConnectorSignIn reaches the gateway at its public URL, so the
 // default mcpPublicURL (publicURL + /mcp) is the resource clients use. A
-// go-sdk client with the AuthorizationCodeHandler finds the IdP through the
-// protected resource metadata and signs in with the connector client.
+// client following the MCP authorization spec finds the IdP through the
+// protected resource metadata, signs in with the connector client using
+// PKCE, and connects with the access token.
 func TestAC4_09ConnectorSignIn(t *testing.T) {
 	provider := oidcProvider(t)
 	admin := adminClient(t)
@@ -69,24 +69,47 @@ func TestAC4_09ConnectorSignIn(t *testing.T) {
 		user := testutil.OIDCUser{Subject: "connector-" + rand.String(8), Email: "connector@example.com", EmailVerified: true}
 		session := "e2e-" + rand.String(8)
 
-		handler, err := mcpauth.NewAuthorizationCodeHandler(&mcpauth.AuthorizationCodeHandlerConfig{
-			PreregisteredClient:      &oauthex.ClientCredentials{ClientID: provider.ConnectorClientID},
-			RedirectURL:              connectorRedirect,
-			AuthorizationCodeFetcher: connectorSignIn(t, user),
-			AcceptUnadvertisedIss:    true,
-			ScopeFilter:              func([]string) []string { return []string{oidc.ScopeOpenID, "email", "profile"} },
-			Client:                   client,
-		})
+		// Find the authorization server the way the MCP authorization spec
+		// says: the 401's WWW-Authenticate header names the metadata
+		// document, and the document names the IdP.
+		unauthorized := postMCP(t, client, resource, "")
+		challenges, err := oauthex.ParseWWWAuthenticate(unauthorized.Header.Values("WWW-Authenticate"))
+		require.NoError(t, err)
+		require.Len(t, challenges, 1)
+		assert.Equal(t, "bearer", challenges[0].Scheme)
+
+		metadata := getResourceMetadata(t, client, challenges[0].Params["resource_metadata"])
+		require.Len(t, metadata.AuthorizationServers, 1)
+
+		identityProvider, err := oidc.NewProvider(t.Context(), metadata.AuthorizationServers[0])
+		require.NoError(t, err)
+
+		config := oauth2.Config{
+			ClientID:    provider.ConnectorClientID,
+			Endpoint:    identityProvider.Endpoint(),
+			RedirectURL: connectorRedirect,
+			Scopes:      []string{oidc.ScopeOpenID, "email", "profile"},
+		}
+		verifier := oauth2.GenerateVerifier()
+		state := rand.String(16)
+		resourceParameter := oauth2.SetAuthURLParam("resource", metadata.Resource)
+
+		code := connectorSignIn(t, user,
+			config.AuthCodeURL(state, oauth2.S256ChallengeOption(verifier), resourceParameter), state)
+
+		token, err := config.Exchange(t.Context(), code, oauth2.VerifierOption(verifier), resourceParameter)
 		require.NoError(t, err)
 
 		mcpClient := mcp.NewClient(&mcp.Implementation{Name: "toolgate-e2e-connector", Version: "0"}, nil)
 		connected, err := mcpClient.Connect(t.Context(), &mcp.StreamableClientTransport{
 			Endpoint: resource,
 			HTTPClient: &http.Client{Transport: headerTransport{
-				header: http.Header{auth.SessionHeader: {session}},
-				next:   insecure,
+				header: http.Header{
+					auth.SessionHeader: {session},
+					"Authorization":    {"Bearer " + token.AccessToken},
+				},
+				next: insecure,
 			}},
-			OAuthHandler: handler,
 		}, nil)
 		require.NoError(t, err)
 		t.Cleanup(func() { _ = connected.Close() })
@@ -162,68 +185,54 @@ func getResourceMetadata(t *testing.T, client *http.Client, target string) oauth
 	return metadata
 }
 
-// connectorSignIn returns the authorization code fetcher of a connector: it
-// opens the authorization URL, signs in at the fake IdP's sign-in page as
-// user, and reads the code from the redirect to connectorRedirect.
-func connectorSignIn(t *testing.T, user testutil.OIDCUser) mcpauth.AuthorizationCodeFetcher {
+// connectorSignIn acts as a connector's browser: it opens authorizationURL,
+// signs in at the fake IdP's sign-in page as user, and returns the code from
+// the redirect to connectorRedirect after checking its state.
+func connectorSignIn(t *testing.T, user testutil.OIDCUser, authorizationURL, state string) string {
 	t.Helper()
 
 	browser := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
-	redirect := func(ctx context.Context, method, target string, form url.Values) (*url.URL, error) {
+	redirect := func(method, target string, form url.Values) *url.URL {
 		var body io.Reader
 		if form != nil {
 			body = strings.NewReader(form.Encode())
 		}
 
-		request, err := http.NewRequestWithContext(ctx, method, target, body)
-		if err != nil {
-			return nil, err
-		}
+		request, err := http.NewRequestWithContext(t.Context(), method, target, body)
+		require.NoError(t, err)
 
 		if form != nil {
 			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 
 		response, err := browser.Do(request)
-		if err != nil {
-			return nil, err
-		}
+		require.NoError(t, err)
 
 		_, _ = io.Copy(io.Discard, response.Body)
 		_ = response.Body.Close()
 
-		return response.Location()
+		location, err := response.Location()
+		require.NoError(t, err, "%s %s redirects", method, target)
+
+		return location
 	}
 
-	return func(ctx context.Context, args *mcpauth.AuthorizationArgs) (*mcpauth.AuthorizationResult, error) {
-		page, err := redirect(ctx, http.MethodGet, args.URL, nil)
-		if err != nil {
-			return nil, err
-		}
+	page := redirect(http.MethodGet, authorizationURL, nil)
+	next := redirect(http.MethodPost, page.String(), url.Values{
+		"authRequestID":  {page.Query().Get("authRequestID")},
+		"subject":        {user.Subject},
+		"email":          {user.Email},
+		"email_verified": {map[bool]string{true: "true", false: "false"}[user.EmailVerified]},
+		"groups":         {strings.Join(user.Groups, ",")},
+	})
+	callback := redirect(http.MethodGet, next.String(), nil)
 
-		next, err := redirect(ctx, http.MethodPost, page.String(), url.Values{
-			"authRequestID":  {page.Query().Get("authRequestID")},
-			"subject":        {user.Subject},
-			"email":          {user.Email},
-			"email_verified": {map[bool]string{true: "true", false: "false"}[user.EmailVerified]},
-			"groups":         {strings.Join(user.Groups, ",")},
-		})
-		if err != nil {
-			return nil, err
-		}
+	require.True(t, strings.HasPrefix(callback.String(), connectorRedirect), "the IdP redirects to the connector's callback")
+	require.Equal(t, state, callback.Query().Get("state"))
 
-		callback, err := redirect(ctx, http.MethodGet, next.String(), nil)
-		if err != nil {
-			return nil, err
-		}
+	code := callback.Query().Get("code")
+	require.NotEmpty(t, code)
 
-		assert.True(t, strings.HasPrefix(callback.String(), connectorRedirect), "the IdP redirects to the connector's callback")
-
-		return &mcpauth.AuthorizationResult{
-			Code:  callback.Query().Get("code"),
-			State: callback.Query().Get("state"),
-			Iss:   callback.Query().Get("iss"),
-		}, nil
-	}
+	return code
 }
