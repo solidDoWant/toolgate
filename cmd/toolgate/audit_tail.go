@@ -157,7 +157,7 @@ func (t *tailer) onceWith(ctx context.Context, access gatewayAccess) error {
 		return err
 	}
 
-	request.Header.Set("Authorization", "Bearer "+access.accessToken)
+	setCredentials(request.Header, access.accessToken, access.attestation)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

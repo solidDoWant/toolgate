@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/client/attestation"
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/settingssync"
@@ -88,12 +89,19 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 		notes = append(notes, "toolgate: the session could not be recorded, so the toolgate MCP servers may not connect: "+err.Error())
 	}
 
+	// A failed attestation sends nothing: the request would change the
+	// session's attestation.
+	attested, err := attestation.FromEnv().Token(ctx)
+	if err != nil {
+		return strings.Join(append(notes, "toolgate: the attestation failed, so the settings profile was not fetched ("+err.Error()+")."), "\n")
+	}
+
 	if source := tokencommand.FromEnv(); source.Command != "" {
-		return strings.Join(append(notes, tokenCommandSettingsNotes(ctx, source)...), "\n")
+		return strings.Join(append(notes, tokenCommandSettingsNotes(ctx, source, attested)...), "\n")
 	}
 
 	if socket := spiffe.Socket(); socket != "" {
-		return strings.Join(append(notes, spiffeSettingsNotes(ctx, socket)...), "\n")
+		return strings.Join(append(notes, spiffeSettingsNotes(ctx, socket, attested)...), "\n")
 	}
 
 	dir, err := configDir()
@@ -107,7 +115,7 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 
 		accessToken, err = headers.AccessToken(ctx, nil, clientSettings, tokenStoreFor(dir, clientSettings))
 		if err == nil {
-			notes = append(notes, syncSettings(ctx, clientSettings.Gateway, accessToken, dir)...)
+			notes = append(notes, syncSettings(ctx, clientSettings.Gateway, accessToken, attested, dir)...)
 
 			return strings.Join(notes, "\n")
 		}
@@ -122,7 +130,7 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 
 // spiffeSettingsNotes syncs the settings with a JWT-SVID. It never falls
 // back to the stored sign-in.
-func spiffeSettingsNotes(ctx context.Context, socket string) []string {
+func spiffeSettingsNotes(ctx context.Context, socket, attested string) []string {
 	access, err := spiffeGateway(ctx, socket)
 	if err != nil {
 		return []string{"toolgate: the SPIFFE sign-in failed (" + err.Error() + ")."}
@@ -133,12 +141,12 @@ func spiffeSettingsNotes(ctx context.Context, socket string) []string {
 		return []string{"toolgate: " + err.Error()}
 	}
 
-	return syncSettings(ctx, access.gateway, access.accessToken, dir)
+	return syncSettings(ctx, access.gateway, access.accessToken, attested, dir)
 }
 
 // tokenCommandSettingsNotes syncs the settings with the token from
 // TOOLGATE_TOKEN_COMMAND. It never falls back to the stored sign-in.
-func tokenCommandSettingsNotes(ctx context.Context, source tokencommand.Source) []string {
+func tokenCommandSettingsNotes(ctx context.Context, source tokencommand.Source, attested string) []string {
 	access, err := tokenCommandGateway(ctx, source)
 	if err != nil {
 		return []string{"toolgate: the token command failed (" + err.Error() + ")."}
@@ -149,7 +157,7 @@ func tokenCommandSettingsNotes(ctx context.Context, source tokencommand.Source) 
 		return []string{"toolgate: " + err.Error()}
 	}
 
-	return syncSettings(ctx, access.gateway, access.accessToken, dir)
+	return syncSettings(ctx, access.gateway, access.accessToken, attested, dir)
 }
 
 // writeSessionFile writes the session ID from the hook input to the session
@@ -183,11 +191,11 @@ func writeSessionFile(stdin io.Reader) error {
 
 // syncSettings fetches the merged settings profile and merges it into
 // ~/.claude/settings.json. It returns the notes for the session.
-func syncSettings(ctx context.Context, gateway, accessToken, dir string) []string {
-	profile, err := fetchSettings(ctx, gateway, accessToken)
+func syncSettings(ctx context.Context, gateway, accessToken, attested, dir string) []string {
+	profile, err := fetchSettings(ctx, gateway, accessToken, attested)
 	if errors.Is(err, errUnauthorized) {
 		if token, refreshErr := refreshedToken(ctx); refreshErr == nil {
-			profile, err = fetchSettings(ctx, gateway, token)
+			profile, err = fetchSettings(ctx, gateway, token, attested)
 		}
 	}
 
@@ -217,13 +225,13 @@ func syncSettings(ctx context.Context, gateway, accessToken, dir string) []strin
 	return notes
 }
 
-func fetchSettings(ctx context.Context, gateway, accessToken string) (map[string]json.RawMessage, error) {
+func fetchSettings(ctx context.Context, gateway, accessToken, attested string) (map[string]json.RawMessage, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(gateway, "/")+settings.Path, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	request.Header.Set("Authorization", "Bearer "+accessToken)
+	setCredentials(request.Header, accessToken, attested)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

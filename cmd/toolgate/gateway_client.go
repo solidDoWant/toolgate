@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/client/attestation"
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
@@ -28,11 +30,40 @@ var errNotSignedIn = errors.New("not signed in. Run toolgate login")
 type gatewayAccess struct {
 	gateway     string
 	accessToken string
+
+	// attestation is the workload token for X-Toolgate-Attestation, or ""
+	// when no attestation is configured.
+	attestation string
+}
+
+// setCredentials sets the user's token and, when there is one, the
+// attestation on a request's headers.
+func setCredentials(header http.Header, accessToken, attestation string) {
+	header.Set("Authorization", "Bearer "+accessToken)
+
+	if attestation != "" {
+		header.Set(auth.AttestationHeader, attestation)
+	}
 }
 
 // signedInGateway loads the sign-in settings and gets a new access token with
 // the stored refresh token.
 func signedInGateway(ctx context.Context) (gatewayAccess, error) {
+	access, err := userGateway(ctx)
+	if err != nil {
+		return gatewayAccess{}, err
+	}
+
+	access.attestation, err = attestation.FromEnv().Token(ctx)
+	if err != nil {
+		return gatewayAccess{}, err
+	}
+
+	return access, nil
+}
+
+// userGateway gets the gateway URL and the user's token.
+func userGateway(ctx context.Context) (gatewayAccess, error) {
 	if source := tokencommand.FromEnv(); source.Command != "" {
 		return tokenCommandGateway(ctx, source)
 	}
@@ -168,7 +199,7 @@ func (g gatewayAccess) do(ctx context.Context, method, path string, body io.Read
 		return nil, err
 	}
 
-	request.Header.Set("Authorization", "Bearer "+g.accessToken)
+	setCredentials(request.Header, g.accessToken, g.attestation)
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {

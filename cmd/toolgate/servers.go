@@ -124,7 +124,7 @@ func listServersWith(ctx context.Context, access gatewayAccess) (gateway.ListSer
 	}
 
 	header := http.Header{}
-	header.Set("Authorization", "Bearer "+access.accessToken)
+	setCredentials(header, access.accessToken, access.attestation)
 	header.Set(auth.SessionHeader, session)
 	header.Set(auth.WorkspaceHeader, workspace)
 

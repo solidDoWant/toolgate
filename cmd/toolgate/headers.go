@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/client/attestation"
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
@@ -88,6 +89,11 @@ func credentialHeaders(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 
+	attested, err := attestation.FromEnv().Token(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	workingDir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("read the working directory: %w", err)
@@ -98,10 +104,16 @@ func credentialHeaders(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 
-	return map[string]string{
+	values := map[string]string{
 		"Authorization":      "Bearer " + accessToken,
 		auth.WorkspaceHeader: workspace,
-	}, nil
+	}
+
+	if attested != "" {
+		values[auth.AttestationHeader] = attested
+	}
+
+	return values, nil
 }
 
 // bearerToken returns the token for the gateway: a fresh JWT-SVID when
