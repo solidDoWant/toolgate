@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/apidoc"
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 )
@@ -29,6 +30,41 @@ type SecretInfo struct {
 // SecretList is the body of `GET /api/v1/secrets`.
 type SecretList struct {
 	Secrets []SecretInfo `json:"secrets"`
+}
+
+// SecretName is the request type of the operations that name one secret.
+type SecretName struct {
+	Name string `path:"name" pattern:"^[A-Za-z0-9._-]{1,128}$"`
+}
+
+// Operations describes the API's routes.
+var Operations = []apidoc.Operation{
+	{
+		Method: http.MethodPut, Path: "/api/v1/secrets/{name}", Summary: "Store the request body as a secret's value",
+		Request: SecretName{},
+		Responses: []apidoc.Response{
+			{Status: http.StatusOK, Body: SecretInfo{}},
+			{Status: http.StatusBadRequest, Body: apidoc.TextError(""), ContentType: "text/plain"},
+			{Status: http.StatusUnauthorized, Body: apidoc.TextError(""), ContentType: "text/plain"},
+			{Status: http.StatusRequestEntityTooLarge, Body: apidoc.TextError(""), ContentType: "text/plain"},
+		},
+	},
+	{
+		Method: http.MethodGet, Path: "/api/v1/secrets", Summary: "List the caller's secrets: names and dates only",
+		Responses: []apidoc.Response{
+			{Status: http.StatusOK, Body: SecretList{}},
+			{Status: http.StatusUnauthorized, Body: apidoc.TextError(""), ContentType: "text/plain"},
+		},
+	},
+	{
+		Method: http.MethodDelete, Path: "/api/v1/secrets/{name}", Summary: "Delete one of the caller's secrets",
+		Request: SecretName{},
+		Responses: []apidoc.Response{
+			{Status: http.StatusNoContent},
+			{Status: http.StatusNotFound, Body: apidoc.TextError(""), ContentType: "text/plain"},
+			{Status: http.StatusUnauthorized, Body: apidoc.TextError(""), ContentType: "text/plain"},
+		},
+	},
 }
 
 // API serves `/api/v1/secrets` for the identity auth.Middleware put in the

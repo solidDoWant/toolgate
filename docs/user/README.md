@@ -114,6 +114,12 @@ To see the servers that you can use, run `toolgate servers`. It shows the same l
 
 The list depends on the workspace. `toolgate servers` sends the same workspace that Claude Code sends from the current directory. If you set `TOOLGATE_SESSION`, the command uses that session, and the `ENABLED` column shows the servers that are enabled in it.
 
+## See your open sessions
+
+To see your open sessions, run `toolgate sessions`. A session is one Claude Code conversation with the gateway. The command prints a table with these columns: `SESSION`, `WORKSPACE`, `LAST SEEN` and `SERVERS`. The `SERVERS` column lists the servers that are enabled in the session. A dash means that no server is enabled.
+
+The command shows only your own sessions. It leaves out sessions that ended and sessions that had no request for longer than the idle time that your admin set. If you have more than 200 open sessions, the command shows the newest 200 and says so.
+
 ## Use servers in Claude Code
 
 You do not call the gateway yourself. Ask Claude for what you need, and Claude uses four tools of the `toolgate` server:
