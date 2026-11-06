@@ -236,10 +236,7 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 			continue
 		}
 
-		decision := m.policy.Decide(policy.Request{
-			Identity: current.identity, Template: template, Tool: curated.UpstreamName,
-			ExposedTool: curated.ExposedName, State: state,
-		})
+		decision := m.policy.Decide(toolPolicyRequest(current, template, curated.UpstreamName, curated.ExposedName, state))
 
 		access := accessAllowed
 
@@ -490,10 +487,7 @@ func (m *metaTools) addFoundTools(ctx context.Context, current requestContext, t
 			continue
 		}
 
-		decision := m.policy.Decide(policy.Request{
-			Identity: current.identity, Template: template, Tool: curated.UpstreamName,
-			ExposedTool: curated.ExposedName, State: state,
-		})
+		decision := m.policy.Decide(toolPolicyRequest(current, template, curated.UpstreamName, curated.ExposedName, state))
 		if !decision.Allowed && !asksForTool(current, decision) {
 			continue
 		}

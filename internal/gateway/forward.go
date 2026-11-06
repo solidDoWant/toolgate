@@ -684,10 +684,22 @@ func withExposedDetail(ctx context.Context, details map[string]any) map[string]a
 // policyRequest builds the policy request of a call of the upstream tool
 // name tool. Rules match the exposed name too.
 func (m *metaTools) policyRequest(current requestContext, template *v1alpha1.MCPServerTemplate, tool string, state policy.State) policy.Request {
-	return policy.Request{
-		Identity: current.identity, Template: template, Tool: tool,
-		ExposedTool: toolcatalog.ExposedName(template, tool), State: state,
+	return toolPolicyRequest(current, template, tool, toolcatalog.ExposedName(template, tool), state)
+}
+
+// toolPolicyRequest builds the policy request about one tool, by its
+// upstream and exposed names. For a built-in tool it adds the exact name a
+// session sees, such as toolgate_allow, so rules naming it match.
+func toolPolicyRequest(current requestContext, template *v1alpha1.MCPServerTemplate, upstream, exposed string, state policy.State) policy.Request {
+	request := policy.Request{
+		Identity: current.identity, Template: template, Tool: upstream,
+		ExposedTool: exposed, State: state,
 	}
+	if proxied, ok := builtinProxiedName(template.Name, upstream); ok {
+		request.ProxiedTool = proxied
+	}
+
+	return request
 }
 
 func callEvent(current requestContext, eventType, server, tool string, details map[string]any) audit.Event {
