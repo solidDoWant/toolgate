@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -312,12 +314,30 @@ func bob() user {
 	return user{claims: testutil.TokenClaims{Subject: "bob"}, session: "session-1"}
 }
 
+// mcpRequestsOf sums the MCP request counter of a method over every
+// revision.
+func mcpRequestsOf(method string) float64 {
+	total := 0.0
+
+	for _, revision := range append([]string{"other"}, opsmetrics.Revisions...) {
+		total += opsmetrics.Value("toolgate_mcp_requests_total", map[string]string{"revision": revision, "method": method})
+	}
+
+	return total
+}
+
 func TestMCPEndpointOffersMetaTools(t *testing.T) {
 	fixture := newMCPFixture(t)
+
+	initializes, lists := mcpRequestsOf("initialize"), mcpRequestsOf("tools/list")
+
 	session := fixture.connect(t, alice())
 
 	result, err := session.ListTools(t.Context(), nil)
 	require.NoError(t, err)
+
+	assert.InDelta(t, initializes+1, mcpRequestsOf("initialize"), 0, "one initialize")
+	assert.InDelta(t, lists+1, mcpRequestsOf("tools/list"), 0, "one tools/list")
 
 	var names []string
 	for _, tool := range result.Tools {

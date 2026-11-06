@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -198,6 +200,11 @@ func TestApproveAndDeny(t *testing.T) {
 	token := url.Values{ui.CSRFField: {csrfTokenOf("decide-session")}}
 	next := env.listen(t)
 
+	outcome := func(outcome string) float64 {
+		return opsmetrics.Value("toolgate_approval_requests_total", map[string]string{"kind": "tool", "outcome": outcome})
+	}
+	approved, denied := outcome("approved"), outcome("denied")
+
 	t.Run("approve", func(t *testing.T) {
 		id := approvalID(0)
 		env.insertApproval(t, id, "dave", time.Minute)
@@ -211,6 +218,8 @@ func TestApproveAndDeny(t *testing.T) {
 
 		row := env.approvalRow(t, id)
 		assert.Equal(t, "approved", row.Status)
+		assert.InDelta(t, approved+1, outcome("approved"), 0)
+		assert.InDelta(t, denied, outcome("denied"), 0)
 		assert.Equal(t, "dave", row.DecidedBy.String)
 		assert.WithinDuration(t, time.Now().Add(approvalTimeout), row.ExpiresAt.Time, time.Minute,
 			"expires_at is now() + approvalTimeout")
@@ -233,6 +242,7 @@ func TestApproveAndDeny(t *testing.T) {
 		assert.Equal(t, "approval:"+id, next())
 
 		assert.Equal(t, "denied", env.approvalRow(t, id).Status)
+		assert.InDelta(t, denied+1, outcome("denied"), 0)
 		assert.Len(t, env.approvalEvents(t, "approval.deny", id), 1)
 	})
 }

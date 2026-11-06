@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/apimachinery/pkg/types"
@@ -297,6 +299,10 @@ func (m *metaTools) expireApproval(ctx context.Context, call approvalCall, id st
 
 		return store.Notify(ctx, tx, store.KindApproval, id)
 	})
+	if err == nil && won {
+		opsmetrics.ApprovalOutcome(opsmetrics.KindTool, opsmetrics.OutcomeExpired, 1)
+	}
+
 	if err != nil {
 		return false, err
 	}

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -377,6 +379,8 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 
 	request.Body = io.NopCloser(bytes.NewReader(body))
+
+	opsmetrics.MCPRequest(request.Header.Get(mcprequest.ProtocolVersionHeader), mcprequest.MethodOf(request, body))
 
 	// A server/discover needs no session on any revision, and makes none:
 	// the stateful handler answers it from the shared discover server.
