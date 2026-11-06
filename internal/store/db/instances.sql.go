@@ -11,6 +11,26 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addInstanceRepair = `-- name: AddInstanceRepair :execrows
+UPDATE instances
+SET repairs = array_append(repairs, $1::timestamptz), updated_at = now()
+WHERE id = $2 AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NOT NULL
+`
+
+type AddInstanceRepairParams struct {
+	RepairedAt pgtype.Timestamptz
+	ID         string
+}
+
+// Records a reapply repair of a ready, unhealthy instance.
+func (q *Queries) AddInstanceRepair(ctx context.Context, arg AddInstanceRepairParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addInstanceRepair, arg.RepairedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countLiveInstances = `-- name: CountLiveInstances :one
 SELECT count(*) FROM instances
 WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped')
@@ -306,10 +326,10 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 const insertReplacementInstance = `-- name: InsertReplacementInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at, repairs
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, now(), $12
+    $8, $9, $10, $11, now(), $12, $13::timestamptz[]
 )
 RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs
 `
@@ -327,10 +347,12 @@ type InsertReplacementInstanceParams struct {
 	Namespace      string
 	TraceContext   string
 	LastUsedAt     pgtype.Timestamptz
+	Repairs        []pgtype.Timestamptz
 }
 
 // Inserts the pending row that replaces an instance. last_used_at is carried
-// over from the old row, so a replacement doesn't count as use.
+// over from the old row, so a replacement doesn't count as use, and so is
+// the repair history.
 func (q *Queries) InsertReplacementInstance(ctx context.Context, arg InsertReplacementInstanceParams) (Instance, error) {
 	row := q.db.QueryRow(ctx, insertReplacementInstance,
 		arg.ID,
@@ -345,6 +367,7 @@ func (q *Queries) InsertReplacementInstance(ctx context.Context, arg InsertRepla
 		arg.Namespace,
 		arg.TraceContext,
 		arg.LastUsedAt,
+		arg.Repairs,
 	)
 	var i Instance
 	err := row.Scan(

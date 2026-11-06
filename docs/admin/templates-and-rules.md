@@ -113,6 +113,16 @@ After `failureThreshold` failures in a row, the instance is unhealthy. Its statu
 
 After `successThreshold` passes in a row, the instance is healthy again and its tools come back. Each change of health writes an `instance.health` event to the audit log.
 
+When an instance becomes unhealthy, toolgate repairs it as `onFailure` says:
+
+- `replace`: toolgate stops the instance and starts a new one, as a restart does. Sessions keep the server enabled, and the tools come back when the new instance is ready. The audit log gets an `instance.stop` event with the reason `health-check`.
+- `reapply`: toolgate renders the objects of the instance again and applies them again. This repairs objects that someone changed or deleted. The instance keeps its ID and stays unhealthy until the check passes. If it is still unhealthy `failureThreshold × interval` later, toolgate makes one more repair. Each repair writes an `instance.reapply` event.
+- `none`: toolgate makes no repair. The tools stay away until the check passes again.
+
+`maxRepairs` limits the repairs in 30 minutes. The count continues across the new instances that `replace` starts. When one more repair would go over the limit, toolgate makes no repair. Instead the instance fails with a reason such as "Health check still failing after 3 repairs in 30 minutes: GET http://db-proxy:8080/healthz answered 503, expected 200", and the audit log gets an `instance.fail` event. Sessions keep the server enabled with no tools. The next time a user enables the server, a new instance starts with a count of zero.
+
+With `reapply`, toolgate can only render the template version that the instance started from. If the template changed since then, toolgate makes no `reapply` repair for that instance.
+
 ## Who can use a server
 
 A user can use a server only when both of these checks pass:

@@ -231,7 +231,7 @@ In globs, `*` matches any run of characters, including `/`. A template that does
 - `tool.decision` (allow or refuse, with the deciding rule), `tool.result` (success or error, duration, sizes);
 - `rule.change`, `secret.set`, `secret.delete`;
 - phase 2: `grant.*`, `approval.*`, `block.*`;
-- phase 3: `instance.health`, with no payload.
+- phase 3: `instance.health` and `instance.reapply`, with no payload.
 
 Every event carries principal, workspace, session, attestation, server, tool, trace ID and request ID. Tool arguments and results are not logged to stdout. They are stored only when `audit.payloads` is on. Payloads over 64 KiB go to S3 (with object lock when the bucket supports it), referenced from the row. Rows are kept for `audit.retention` (default 90 days) and deleted in batches. Secrets and tokens are never logged.
 

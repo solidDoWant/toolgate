@@ -126,13 +126,14 @@ SELECT * FROM instances WHERE id = @id FOR UPDATE;
 
 -- name: InsertReplacementInstance :one
 -- Inserts the pending row that replaces an instance. last_used_at is carried
--- over from the old row, so a replacement doesn't count as use.
+-- over from the old row, so a replacement doesn't count as use, and so is
+-- the repair history.
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at, repairs
 ) VALUES (
     @id, @template_ns, @template_name, @template_uid, @generation, @scope, @scope_key,
-    @owner_principal, @render_session, @namespace, @trace_context, now(), @last_used_at
+    @owner_principal, @render_session, @namespace, @trace_context, now(), @last_used_at, @repairs::timestamptz[]
 )
 RETURNING *;
 
@@ -146,4 +147,10 @@ WHERE id = @id AND status = 'ready' AND desired = 'running' AND unhealthy_since 
 -- Marks a ready, unhealthy instance healthy again.
 UPDATE instances
 SET unhealthy_since = NULL, unhealthy_reason = '', updated_at = now()
+WHERE id = @id AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NOT NULL;
+
+-- name: AddInstanceRepair :execrows
+-- Records a reapply repair of a ready, unhealthy instance.
+UPDATE instances
+SET repairs = array_append(repairs, @repaired_at::timestamptz), updated_at = now()
 WHERE id = @id AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NOT NULL;
