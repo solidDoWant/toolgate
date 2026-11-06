@@ -60,7 +60,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 	kube := templateClient(t)
 
 	name := createTemplate(t, kube, "e2e-resume", "per-session", testServerResources(t, image, 0, nil))
-	requireTemplateValid(t, kube, name)
+	requireTemplateStartsOnEnable(t, kube, name)
 
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
 

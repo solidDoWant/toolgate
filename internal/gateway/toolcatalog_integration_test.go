@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/catalog"
 	toolruntime "github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -67,10 +68,18 @@ func (f *mcpFixture) catalogRows(t *testing.T, uid string) []db.ToolCatalog {
 	return rows
 }
 
+// startOnEnable makes the template start its instance on enable, so an
+// enable waits for the instance although the template has a catalog list.
+func (f *mcpFixture) startOnEnable(template *v1alpha1.MCPServerTemplate) {
+	template.Spec.Start = catalog.StartOnEnable
+	f.catalog.Set(template, nil)
+}
+
 func TestToolCatalogLists(t *testing.T) {
 	t.Run("a starting instance lists the catalog list; row 185: a different real list reaches the session and other scope keys", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
+		fixture.startOnEnable(template)
 		fixture.learn(t, string(template.UID), template.Generation, "old")
 		start := toolruntime.PostgresStartStore{Pool: fixture.pool}
 
@@ -102,6 +111,7 @@ func TestToolCatalogLists(t *testing.T) {
 	t.Run("row 187: with no row for the current generation the list falls back to the newest older row", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
+		fixture.startOnEnable(template)
 		fixture.learn(t, string(template.UID), template.Generation-1, "older")
 		fixture.learn(t, string(template.UID), template.Generation+1, "from-the-future")
 
@@ -115,6 +125,7 @@ func TestToolCatalogLists(t *testing.T) {
 	t.Run("row 188: declared tools are listed while others start and nothing is learned from a ready instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
+		fixture.startOnEnable(template)
 		template.Spec.DeclaredTools = []v1alpha1.DeclaredTool{{Name: "declared", InputSchema: &runtime.RawExtension{Raw: []byte(`{"type":"object"}`)}}}
 		fixture.catalog.Set(template, nil)
 		fixture.learn(t, string(template.UID), template.Generation, "learned")
@@ -154,6 +165,7 @@ func TestToolCatalogLists(t *testing.T) {
 			t.Run(test.name, func(t *testing.T) {
 				fixture := newMCPFixture(t)
 				template := fixture.addEnableTemplate("github", "per-user", anyone)
+				fixture.startOnEnable(template)
 				require.Equal(t, int64(2), template.Generation)
 				fixture.learn(t, string(template.UID), template.Generation, "old")
 				start := toolruntime.PostgresStartStore{Pool: fixture.pool}
@@ -179,6 +191,7 @@ func TestToolCatalogLists(t *testing.T) {
 	t.Run("an instance that was ready before and is pending again withdraws the tools", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
+		fixture.startOnEnable(template)
 		fixture.learn(t, string(template.UID), template.Generation, "old")
 
 		client := fixture.connectObserved(t, alice())
