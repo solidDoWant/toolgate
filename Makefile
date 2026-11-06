@@ -39,8 +39,8 @@ lint-fix: ## Run golangci-lint and apply its fixes.
 	golangci-lint run --fix ./...
 
 .PHONY: test
-test: ## Run unit tests: Go (race detector), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, the e2e shard selection, and the image build and release tests.
-	go test -race -count=1 ./...
+test: ## Run unit tests: Go (race detector; GO_TEST_JSON=file also writes the go test -json events there), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, the e2e shard selection, and the image build and release tests.
+	./scripts/ci/go-test-json.sh -race -count=1 ./...
 	./scripts/build-images_test.sh
 	./scripts/release_test.sh
 	./scripts/agents/scheduler_test.py
@@ -55,8 +55,8 @@ test-guard: ## Fail if HEAD deletes or skips an [AC-N-nn] scenario test since it
 	./scripts/ci/test-guard.py --base $(or $(BASE),origin/master)
 
 .PHONY: test-integration
-test-integration: ## Run the integration-tagged tests (PostgreSQL with TLS client certificates and S3 in Docker, a fake OIDC provider and an envtest API server in process; they skip cleanly without Docker or KUBEBUILDER_ASSETS).
-	timeout 30m go test -race -count=1 -tags integration -timeout 25m ./...
+test-integration: ## Run the integration-tagged tests (GO_TEST_JSON=file also writes the go test -json events there; PostgreSQL with TLS client certificates and S3 in Docker, a fake OIDC provider and an envtest API server in process; they skip cleanly without Docker or KUBEBUILDER_ASSETS).
+	timeout 30m ./scripts/ci/go-test-json.sh -race -count=1 -tags integration -timeout 25m ./...
 
 .PHONY: test-e2e
 test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server), then delete it. E2E_SHARD=i/n runs shard i of n only.

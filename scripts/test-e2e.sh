@@ -6,7 +6,8 @@
 # E2E_SHARD=i/n runs only shard i of n of the top-level tests
 # (scripts/e2e/shard.py); unset, it runs them all. E2E_SKIP_ACCEPTANCE=true
 # leaves out the acceptance tests, for a caller that runs them next with
-# scripts/acceptance.sh (scripts/ci/e2e.sh), so they do not run twice.
+# scripts/acceptance.sh, so they do not run twice. GO_TEST_JSON=file also
+# writes the go test -json events there.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -28,4 +29,4 @@ if [[ -n "${E2E_SHARD:-}" || "${E2E_SKIP_ACCEPTANCE:-false}" == true ]]; then
 	args=(-run "$pattern")
 fi
 
-timeout 60m go test -count=1 -tags e2e -timeout 55m "${args[@]}" ./...
+timeout 60m ./scripts/ci/go-test-json.sh -count=1 -tags e2e -timeout 55m "${args[@]}" ./...
