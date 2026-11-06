@@ -13,6 +13,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // Custom health check defaults and limits (docs/design/phase-3.md §6). The
@@ -84,6 +85,10 @@ func decodeHealthCheck(encoded []byte) (storedHealthCheck, bool, error) {
 	if check.Interval.Duration <= 0 {
 		check.Interval.Duration = defaultCheckInterval
 	}
+
+	// The interval paces the checks and the reapply recheck. The timeout
+	// bounds a real request and isn't scaled.
+	check.Interval.Duration = testtime.Scale(check.Interval.Duration)
 
 	if check.Timeout.Duration <= 0 {
 		check.Timeout.Duration = defaultCheckTimeout

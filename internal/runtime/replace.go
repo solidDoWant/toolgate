@@ -19,6 +19,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // Reasons a live instance is replaced, written to its instance.stop event.
@@ -65,7 +66,7 @@ const ResolverExpiryMargin = 60 * time.Second
 // replacement's render calls the resolvers again.
 func (r *Replacer) ExpiryStep(ctx context.Context, instance db.Instance) error {
 	if !isLive(instance) || !instance.ResolvedExpiresAt.Valid ||
-		!instance.ResolvedExpiresAt.Time.Before(r.now().Add(ResolverExpiryMargin)) {
+		!instance.ResolvedExpiresAt.Time.Before(r.now().Add(testtime.Scale(ResolverExpiryMargin))) {
 		return nil
 	}
 

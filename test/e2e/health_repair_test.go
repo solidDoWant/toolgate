@@ -22,13 +22,24 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 )
 
+// healthInterval and healthTimeout are the smallest interval and timeout
+// the CRD allows. The gateway scales the interval it checks at, and the
+// timeout bounds a real request, so it isn't scaled.
 const (
 	healthInterval = 10 * time.Second
 	healthTimeout  = time.Second
-	// unhealthyBound is interval × failureThreshold plus one timeout
-	// (docs/design/phase-3.md §6), plus time for the write and the fan-out.
-	unhealthyBound = healthInterval + healthTimeout + 10*time.Second
 )
+
+// scaledHealthInterval is how often the e2e gateway runs the check.
+func scaledHealthInterval() time.Duration {
+	return scaled(healthInterval)
+}
+
+// unhealthyBound is interval × failureThreshold plus one timeout
+// (docs/design/phase-3.md §6), plus time for the write and the fan-out.
+func unhealthyBound() time.Duration {
+	return scaledHealthInterval() + healthTimeout + 10*time.Second
+}
 
 // notReady matches the refusal of a call to an unhealthy or starting server.
 var notReady = regexp.MustCompile("is unhealthy|isn't ready")
@@ -93,7 +104,7 @@ func requireWithdrawn(t *testing.T, session *gatewaySession, name string) {
 		for _, tool := range prefixedTools(name) {
 			assert.NotContains(collect, listed, tool)
 		}
-	}, unhealthyBound, 250*time.Millisecond, "the tools are withdrawn within interval × failureThreshold + timeout")
+	}, unhealthyBound(), 250*time.Millisecond, "the tools are withdrawn within interval × failureThreshold + timeout")
 
 	result, err := session.session.CallTool(t.Context(), &mcp.CallToolParams{Name: name + "__env", Arguments: map[string]any{}})
 	if err == nil {
@@ -136,7 +147,10 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 	})
 
 	t.Run("[AC-3-13] reapply: deleted objects are applied again, the instance keeps its ID, and the tools come back once the check passes", func(t *testing.T) {
-		name := createHealthTemplate(t, kube, "e2e-health-reapply", runtime.OnFailureReapply, 3, nil)
+		// A scaled recheck reapplies again within seconds while the check
+		// fails, so the most repairs the CRD allows leave time to set the
+		// check passing before they run out.
+		name := createHealthTemplate(t, kube, "e2e-health-reapply", runtime.OnFailureReapply, 10, nil)
 		session := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
 
@@ -149,7 +163,8 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			_, err := admin.CoreV1().Services(instance.Name).Get(t.Context(), "mcp", metav1.GetOptions{})
 			assert.NoError(collect, err)
-		}, 3*healthInterval+time.Minute, time.Second, "the reapply applies the deleted Service again")
+		}, 3*scaledHealthInterval()+2*scaled(runtime.DefaultPassInterval)+time.Minute, time.Second,
+			"the reapply applies the deleted Service again")
 
 		setHealth(t, admin, instance.Name, http.StatusOK)
 		requireToolsBack(t, session, name)
@@ -170,7 +185,7 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 			namespaces := instanceNamespaces(t, t.Context(), admin, name)
 
 			return len(namespaces) != 1 || namespaces[0].Name != instance.Name
-		}, 2*healthInterval, time.Second, "the instance is not replaced")
+		}, 2*scaledHealthInterval(), time.Second, "the instance is not replaced")
 		assert.NotSubset(t, listedTools(t, t.Context(), session.session), prefixedTools(name))
 
 		setHealth(t, admin, instance.Name, http.StatusOK)
@@ -205,7 +220,7 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 
 			assert.True(collect, replaced, "one replacement")
 			assert.Empty(collect, namespaces, "the replacement failed and was torn down")
-		}, enableTimeout+3*unhealthyBound, time.Second)
+		}, enableTimeout+3*unhealthyBound(), time.Second)
 
 		assert.NotSubset(t, listedTools(t, t.Context(), session.session), prefixedTools(name), "the tools stay withdrawn")
 	})

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // Resolver limits (docs/design/phase-2.md §6).
@@ -223,7 +225,7 @@ func (h *HTTPResolvers) Resolve(ctx context.Context, request ResolveRequest) (Re
 		return Resolved{}, fmt.Errorf("resolver `%s` answered with an `expiresAt` that isn't RFC 3339", endpoint.Name)
 	}
 
-	if expiresAt.Before(h.now().Add(MinResolvedLifetime)) {
+	if expiresAt.Before(h.now().Add(testtime.Scale(MinResolvedLifetime))) {
 		return Resolved{}, fmt.Errorf("resolver `%s` answered with an `expiresAt` less than 2 minutes away", endpoint.Name)
 	}
 

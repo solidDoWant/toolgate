@@ -17,6 +17,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // How an unhealthy instance is repaired (docs/design/phase-3.md §6).
@@ -71,7 +72,7 @@ func repairPolicyOf(instance db.Instance) (repairPolicy, error) {
 	policy := repairPolicy{
 		onFailure:  OnFailureReplace,
 		maxRepairs: defaultMaxRepairs,
-		recheck:    defaultCheckFailureThreshold * defaultCheckInterval,
+		recheck:    defaultCheckFailureThreshold * testtime.Scale(defaultCheckInterval),
 	}
 
 	check, found, err := decodeHealthCheck(instance.HealthCheck)

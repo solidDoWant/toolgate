@@ -92,10 +92,11 @@ func TestAC2_18Resolver(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 
-	// The first value expires 2 minutes and 10 seconds after it is
-	// resolved, so the reconciler replaces the instance about a minute
-	// later.
-	handler := testResolver(t, 2*time.Minute+10*time.Second)
+	// The first value lives just over the scaled minimum, plus time for the
+	// instance to start and the test to read the value before the
+	// reconciler replaces it, a scaled expiry margin before it expires.
+	lifetime := scaled(runtime.MinResolvedLifetime) + 45*time.Second
+	handler := testResolver(t, lifetime)
 
 	name := createTemplate(t, kube, "e2e-resolver", "per-user", resolverServerResources(t, image))
 	requireTemplateValid(t, kube, name)
@@ -126,7 +127,7 @@ func TestAC2_18Resolver(t *testing.T) {
 			namespaces := instanceNamespaces(collect, t.Context(), admin, name)
 			require.Len(collect, namespaces, 1)
 			assert.NotEqual(collect, oldID, namespaces[0].Labels[runtime.LabelInstance])
-		}, 2*time.Minute+enableTimeout, time.Second, "the instance is replaced before its value expires")
+		}, lifetime+enableTimeout, time.Second, "the instance is replaced before its value expires")
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Subset(collect, listedTools(collect, t.Context(), session.session), prefixedTools(name))

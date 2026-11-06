@@ -41,6 +41,15 @@ The gateway scales the durations that it stores or waits for. It does not scale 
 
 `scripts/e2e/run.sh` builds the gateway image with the `e2e` tag. It sets `TOOLGATE_TEST_TIME_SCALE` to `0.1` in the chart (through `config.extraEnv`) and for the tests. To use a different value, set `TOOLGATE_TEST_TIME_SCALE` before you run the script. The default values of the chart never set the variable.
 
+The runtime in `internal/runtime` scales these waits:
+
+- The 30-second interval between two full passes of the reconciler (`DefaultPassInterval`).
+- The 60 seconds that an object's `Ready` condition must stay `False` before the object counts as failed (`ReadyFailureHold`).
+- The 2-minute minimum validity of a resolved value (`MinResolvedLifetime`), and the 60 seconds before its expiry when the instance is replaced (`ResolverExpiryMargin`).
+- The interval of a custom health check and of the MCP ping. The health check timeout bounds a real request, so the runtime does not scale it.
+
+The CRD limits for a health check do not change: the `interval` is 10 seconds to 10 minutes, and the `timeout` is 1 second to 60 seconds. The API server enforces them. The tests use the smallest values that the CRD allows, and the e2e gateway then checks every second.
+
 The e2e tests are built with the `e2e` tag too, so they read the same scale. To get the deadline for a scaled wait, call `scaled(d)` in `test/e2e`. Do not write the scaled number of seconds in the test. `TestTimeScaleMatchesGateway` makes sure that the gateway and the tests use the same value.
 
 ## Run one shard
