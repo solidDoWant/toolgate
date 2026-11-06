@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,11 @@ const lastSeenInterval = time.Minute
 // live session started with (design row 22).
 var errWorkspaceChanged = errors.New("this session started in a different workspace; start a new session to use another one")
 
+// errSessionEnded means a request named a session tied to an MCP session
+// (auth.MCPSessionPrefix) that has ended. Such a session ends with its MCP
+// session and is never resumed (docs/design/phase-4.md §9).
+var errSessionEnded = errors.New("this session ended with its MCP session")
+
 // sessionStore keeps the sessions rows (docs/design/phase-1.md §2). toolgate's
 // session state is keyed by (principal, X-Toolgate-Session), never by the MCP
 // session.
@@ -39,7 +45,9 @@ type sessionStore struct {
 
 // resolve returns the live session row for identity, creating it or
 // restarting it when it ended. A live session whose stored workspace differs
-// from the request's gets errWorkspaceChanged.
+// from the request's gets errWorkspaceChanged. An ended session tied to an
+// MCP session gets errSessionEnded: a request that raced the end of its MCP
+// session must not resume it.
 func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, searchMode bool) (db.Session, error) {
 	queries := db.New(s.pool)
 
@@ -63,6 +71,10 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, sear
 	}
 
 	if session.EndedAt.Valid {
+		if strings.HasPrefix(identity.Session, auth.MCPSessionPrefix) {
+			return db.Session{}, errSessionEnded
+		}
+
 		session, err = s.restart(ctx, session.ID, identity)
 		if err != nil {
 			return db.Session{}, err
