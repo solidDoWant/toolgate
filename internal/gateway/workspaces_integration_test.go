@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
 
@@ -454,6 +456,43 @@ func TestAC3_17WorkspaceLists(t *testing.T) {
 		status, _ := api.change(t, attestedAlice(), workspacesapi.Change{Action: "deny", Session: "session-1", Workspace: aliceWorkspace, Servers: []string{"slack"}})
 		assert.Equal(t, http.StatusBadRequest, status, "session and workspace can't be combined")
 		assert.Equal(t, []string{"slack"}, fixture.sessionAdditions(t, session.ID))
+	})
+
+	t.Run("row 127: concurrent writes to the same principal's lists run in turn as set operations", func(t *testing.T) {
+		fixture, api := newScopedFixture(t)
+
+		const writers = 16
+
+		servers := make([]string, 0, writers)
+		for index := range writers {
+			name := fmt.Sprintf("server-%02d", index)
+			fixture.addTemplate(name, "per-user", aliceAndBob)
+			servers = append(servers, name)
+		}
+
+		// The row exists first, so only its lock orders the writers.
+		require.NoError(t, store.EnsureUserScope(t.Context(), fixture.pool, "alice"))
+
+		var group sync.WaitGroup
+
+		errs := make(chan error, writers)
+
+		for _, server := range servers {
+			group.Go(func() {
+				errs <- api.workspaces.Apply(t.Context(), aliceIdentity(), gateway.WorkspaceChange{
+					Action: gateway.WorkspaceAllow, Workspace: aliceWorkspace, Servers: []string{server},
+				}, gateway.ViaUI)
+			})
+		}
+
+		group.Wait()
+		close(errs)
+
+		for err := range errs {
+			require.NoError(t, err)
+		}
+
+		assert.Equal(t, map[string][]string{aliceWorkspace: servers}, api.lists(t, attestedAlice()))
 	})
 
 	t.Run("the list and server limits hold at exactly their size", func(t *testing.T) {
