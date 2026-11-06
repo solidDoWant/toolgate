@@ -97,3 +97,21 @@ SELECT * FROM sessions
 WHERE principal = @principal AND ended_at IS NULL
 ORDER BY last_seen_at DESC
 LIMIT @max_rows::bigint;
+
+-- name: ListOpenSessionsWithServers :many
+-- The principal's open sessions (not ended, seen within the idle timeout),
+-- newest first and at most max_rows of them, each with one row per enabled
+-- server (none gives one row with NULL server columns).
+WITH open_sessions AS (
+    SELECT id, session_id, workspace, attestation, created_at, last_seen_at
+    FROM sessions
+    WHERE principal = @principal AND ended_at IS NULL
+      AND last_seen_at > now() - @idle_timeout::interval
+    ORDER BY last_seen_at DESC, id DESC
+    LIMIT @max_rows::bigint
+)
+SELECT s.id, s.session_id, s.workspace, s.attestation, s.created_at, s.last_seen_at,
+       ss.template_name AS server_name, ss.enabled_at AS server_enabled_at
+FROM open_sessions s
+LEFT JOIN session_servers ss ON ss.session_pk = s.id
+ORDER BY s.last_seen_at DESC, s.id DESC, ss.template_ns, ss.template_name;

@@ -14,11 +14,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/apidoc"
 	"github.com/solidDoWant/toolgate/internal/auth"
 )
 
 // Path is the route the SessionStart hook fetches.
 const Path = "/api/v1/settings"
+
+// Operations describes the route.
+var Operations = []apidoc.Operation{{
+	Method: http.MethodGet, Path: Path, Summary: "Get the merged Claude Code settings that match the caller",
+	Responses: []apidoc.Response{
+		{Status: http.StatusOK, Body: map[string]any{}},
+		{Status: http.StatusUnauthorized, Body: apidoc.TextError(""), ContentType: "text/plain"},
+		{Status: http.StatusInternalServerError, Body: apidoc.TextError(""), ContentType: "text/plain"},
+	},
+}}
 
 // NestedKeys are the top-level settings keys merged one level deeper: their
 // own keys are merged one by one instead of replaced as a whole.

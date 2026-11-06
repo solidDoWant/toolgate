@@ -54,3 +54,5 @@ The tag starts the `release` workflow (`.github/workflows/release.yml`). The wor
 The web UI uses htmx 2.0.7. The file `internal/ui/static/htmx-2.0.7.min.js` is in the repository and is embedded in the binary. There is no JavaScript build step.
 
 `make vendor-htmx` downloads the package from the npm registry. It compares the package with the registry's `integrity` value, writes the file, and writes its SHA-256 to `internal/ui/static/SHA256SUMS`. `make check-generate` fails when the file and `SHA256SUMS` do not match. The version is in the file name, so a browser never uses an old copy from its cache with new pages. To change the version, change it in `scripts/vendor-htmx.sh`, in the file name in the layout template and in the tests.
+
+[openapi.yaml](openapi.yaml) describes the gateway's `/api/v1/` routes. `make generate` writes it from the operations that each API package exports, and `make check-generate` fails when it is stale.

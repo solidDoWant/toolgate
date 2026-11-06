@@ -113,6 +113,102 @@ spec:
                 - port
                 - service
                 type: object
+              healthCheck:
+                description: |-
+                  HealthCheck is a custom HTTP check of a running instance. Without
+                  it, only the MCP ping runs.
+                properties:
+                  failureThreshold:
+                    default: 3
+                    description: |-
+                      FailureThreshold is the number of failures in a row that make the
+                      instance unhealthy.
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  http:
+                    description: HTTP is the request to make.
+                    properties:
+                      expectedStatus:
+                        default: 200
+                        description: ExpectedStatus is the status that counts as a
+                          pass.
+                        format: int32
+                        maximum: 599
+                        minimum: 100
+                        type: integer
+                      path:
+                        description: Path is the HTTP path. It is not rendered.
+                        maxLength: 1024
+                        type: string
+                        x-kubernetes-validations:
+                        - message: path must start with /
+                          rule: self.startsWith('/')
+                      port:
+                        description: Port is the Service port.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      service:
+                        description: |-
+                          Service is the name of a Service among the template's resources. It
+                          is rendered like endpoint.service.
+                        maxLength: 63
+                        minLength: 1
+                        type: string
+                    required:
+                    - path
+                    - port
+                    - service
+                    type: object
+                  interval:
+                    default: 30s
+                    description: Interval is the time between checks.
+                    type: string
+                  maxRepairs:
+                    default: 3
+                    description: MaxRepairs is the number of repairs allowed within
+                      30 minutes.
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  onFailure:
+                    default: replace
+                    description: |-
+                      OnFailure says how an unhealthy instance is repaired: replace,
+                      reapply or none.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: onFailure must be one of replace, reapply, none
+                      rule: self in ['replace', 'reapply', 'none']
+                  successThreshold:
+                    default: 1
+                    description: |-
+                      SuccessThreshold is the number of passes in a row that make the
+                      instance healthy again.
+                    format: int32
+                    maximum: 10
+                    minimum: 1
+                    type: integer
+                  timeout:
+                    default: 5s
+                    description: Timeout is how long one check may take.
+                    type: string
+                required:
+                - http
+                type: object
+                x-kubernetes-validations:
+                - message: timeout must be less than interval
+                  rule: duration(self.timeout) < duration(self.interval)
+                - message: interval must be between 10s and 10m
+                  rule: duration(self.interval) >= duration('10s') && duration(self.interval)
+                    <= duration('10m')
+                - message: timeout must be between 1s and 60s
+                  rule: duration(self.timeout) >= duration('1s') && duration(self.timeout)
+                    <= duration('60s')
               idleStop:
                 description: |-
                   IdleStop is how long a per-user or shared instance runs with no

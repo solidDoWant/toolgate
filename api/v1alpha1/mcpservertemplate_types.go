@@ -72,6 +72,92 @@ type MCPServerTemplateSpec struct {
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:items:XPreserveUnknownFields
 	Resources []runtime.RawExtension `json:"resources,omitempty"`
+
+	// HealthCheck is a custom HTTP check of a running instance. Without
+	// it, only the MCP ping runs.
+	// +optional
+	HealthCheck *HealthCheck `json:"healthCheck,omitempty"`
+}
+
+// HealthCheck is an HTTP check toolgate runs against a ready instance. While
+// it fails, the instance's tools are withdrawn and calls are refused.
+//
+// +kubebuilder:validation:XValidation:rule="duration(self.timeout) < duration(self.interval)",message="timeout must be less than interval"
+// +kubebuilder:validation:XValidation:rule="duration(self.interval) >= duration('10s') && duration(self.interval) <= duration('10m')",message="interval must be between 10s and 10m"
+// +kubebuilder:validation:XValidation:rule="duration(self.timeout) >= duration('1s') && duration(self.timeout) <= duration('60s')",message="timeout must be between 1s and 60s"
+type HealthCheck struct {
+	// HTTP is the request to make.
+	// +required
+	HTTP HealthCheckHTTP `json:"http"`
+
+	// Interval is the time between checks.
+	// +optional
+	// +kubebuilder:default="30s"
+	Interval metav1.Duration `json:"interval,omitempty"`
+
+	// Timeout is how long one check may take.
+	// +optional
+	// +kubebuilder:default="5s"
+	Timeout metav1.Duration `json:"timeout,omitempty"`
+
+	// FailureThreshold is the number of failures in a row that make the
+	// instance unhealthy.
+	// +optional
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	FailureThreshold int32 `json:"failureThreshold,omitempty"`
+
+	// SuccessThreshold is the number of passes in a row that make the
+	// instance healthy again.
+	// +optional
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	SuccessThreshold int32 `json:"successThreshold,omitempty"`
+
+	// OnFailure says how an unhealthy instance is repaired: replace,
+	// reapply or none.
+	// +optional
+	// +kubebuilder:default=replace
+	// +kubebuilder:validation:XValidation:rule="self in ['replace', 'reapply', 'none']",message="onFailure must be one of replace, reapply, none"
+	OnFailure string `json:"onFailure,omitempty"`
+
+	// MaxRepairs is the number of repairs allowed within 30 minutes.
+	// +optional
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
+	MaxRepairs int32 `json:"maxRepairs,omitempty"`
+}
+
+// HealthCheckHTTP is the GET request of a health check.
+type HealthCheckHTTP struct {
+	// Service is the name of a Service among the template's resources. It
+	// is rendered like endpoint.service.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	Service string `json:"service"`
+
+	// Port is the Service port.
+	// +required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port"`
+
+	// Path is the HTTP path. It is not rendered.
+	// +required
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:XValidation:rule="self.startsWith('/')",message="path must start with /"
+	Path string `json:"path"`
+
+	// ExpectedStatus is the status that counts as a pass.
+	// +optional
+	// +kubebuilder:default=200
+	// +kubebuilder:validation:Minimum=100
+	// +kubebuilder:validation:Maximum=599
+	ExpectedStatus int32 `json:"expectedStatus,omitempty"`
 }
 
 // Access lists the identities that may use a server, and the environments

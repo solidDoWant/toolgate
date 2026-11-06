@@ -142,3 +142,45 @@ func TestHeadersWithoutSignIn(t *testing.T) {
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "Run toolgate login.")
 }
+
+func TestAC3OtelHeadersPrintsTokenAndWorkspaceWithoutSession(t *testing.T) {
+	isolateUserConfig(t)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("TOOLGATE_SESSION", "")
+	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
+
+	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
+	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
+	gatewayURL := startGateway(t, provider, provider.ClientID)
+
+	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+
+	var stdout, errOut strings.Builder
+
+	code = run([]string{"otel-headers"}, &stdout, &errOut)
+	require.Equal(t, 0, code, "stderr: %s", errOut.String())
+
+	var headers map[string]string
+	require.NoError(t, json.Unmarshal([]byte(stdout.String()), &headers))
+	assert.Len(t, headers, 2)
+	assert.Equal(t, "laptop-widgets", headers["X-Toolgate-Workspace"])
+
+	// The MCP middleware needs a session; ingest does not, so add one only
+	// to check the token.
+	headers["X-Toolgate-Session"] = "s1"
+	identity, status := identityThroughGateway(t, provider, headers)
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "alice", identity.Principal)
+}
+
+func TestOtelHeadersWithoutSignIn(t *testing.T) {
+	isolateUserConfig(t)
+
+	var stdout, stderr strings.Builder
+
+	code := run([]string{"otel-headers"}, &stdout, &stderr)
+	assert.Equal(t, 1, code)
+	assert.Empty(t, stdout.String())
+	assert.Contains(t, stderr.String(), "Run toolgate login.")
+}

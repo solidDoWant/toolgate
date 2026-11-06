@@ -137,6 +137,14 @@ spec:
     delete_repository: {environments: attested, approval: required}
     list_secrets: {blocked: true}
   endpoint: {service: github-mcp, port: 8080, path: /mcp}
+  healthCheck:                  # optional; HTTP GET against a Service of the instance
+    http: {service: github-mcp, port: 8080, path: /healthz, expectedStatus: 200}
+    interval: 30s               # 10s-10m; timeout 1s-60s, less than interval
+    timeout: 5s
+    failureThreshold: 3         # 1-10
+    successThreshold: 1         # 1-10
+    onFailure: replace          # replace (default) | reapply | none
+    maxRepairs: 3               # 1-10 repairs in 30 minutes
   resources: [ ... Kubernetes objects ... ]
 ```
 
@@ -165,7 +173,7 @@ With `shared`, all instances go in one configured namespace and are told apart b
 
 **Readiness.** An instance is `ready` when every object is current by kstatus (`sigs.k8s.io/cli-utils/pkg/kstatus`) and an MCP `initialize` against `endpoint` succeeds. It is `failed` when `startTimeout` passes or kstatus reports a failure, with the reason taken from the objects' conditions and events. One rule comes before kstatus: an object whose `Ready` condition has stayed `False` for 60 s at its current generation counts as failed, with the `Ready` message as the reason. This covers HelmReleases whose install keeps failing while helm-controller retries.
 
-**Template changes.** An instance keeps the template generation it was started with. A new generation applies to instances started afterwards. `toolgate_server_status` shows when an instance is older than its template. The owner of an outdated instance (an admin, for a shared one) can restart it from the web UI. The gateway then replaces it with a new instance at the current generation, and sessions keep the server enabled.
+**Template changes.** An instance keeps the template generation it was started with, and the `healthCheck` (with `http.service` rendered) in its `health_check` column. A new generation applies to instances started afterwards. `toolgate_server_status` shows when an instance is older than its template. The owner of an outdated instance (an admin, for a shared one) can restart it from the web UI. The gateway then replaces it with a new instance at the current generation, and sessions keep the server enabled.
 
 **Stopping.**
 - A per-session instance stops when its last session disables it or ends.
@@ -241,7 +249,8 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 | `toolgate servers` | 1 | List the catalog as the CLI user sees it |
 | `toolgate otel-headers` | 3 | `otelHeadersHelper` output |
 | `toolgate admin rewrap` | 1 | §11 |
-| `toolgate audit tail`, `toolgate sessions` | 3 | |
+| `toolgate sessions` | 3 | List the caller's open sessions and their enabled servers (`GET /api/v1/sessions`) |
+| `toolgate audit tail` | 3 | |
 
 **Workspace ID (user attestation):** `toolgate headers` sends `TOOLGATE_WORKSPACE` if set. Otherwise it sends `<hostname>/<git remote repo name or directory name>`, normalised to the header pattern: each character outside `[A-Za-z0-9._-]` becomes `-`, and the value is cut to 128 characters. The repo name is the last path element of the remote `origin`, without `.git`.
 

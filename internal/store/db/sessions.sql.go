@@ -383,6 +383,71 @@ func (q *Queries) ListOpenSessionsOfPrincipal(ctx context.Context, arg ListOpenS
 	return items, nil
 }
 
+const listOpenSessionsWithServers = `-- name: ListOpenSessionsWithServers :many
+WITH open_sessions AS (
+    SELECT id, session_id, workspace, attestation, created_at, last_seen_at
+    FROM sessions
+    WHERE principal = $1 AND ended_at IS NULL
+      AND last_seen_at > now() - $2::interval
+    ORDER BY last_seen_at DESC, id DESC
+    LIMIT $3::bigint
+)
+SELECT s.id, s.session_id, s.workspace, s.attestation, s.created_at, s.last_seen_at,
+       ss.template_name AS server_name, ss.enabled_at AS server_enabled_at
+FROM open_sessions s
+LEFT JOIN session_servers ss ON ss.session_pk = s.id
+ORDER BY s.last_seen_at DESC, s.id DESC, ss.template_ns, ss.template_name
+`
+
+type ListOpenSessionsWithServersParams struct {
+	Principal   string
+	IdleTimeout pgtype.Interval
+	MaxRows     int64
+}
+
+type ListOpenSessionsWithServersRow struct {
+	ID              int64
+	SessionID       string
+	Workspace       string
+	Attestation     string
+	CreatedAt       pgtype.Timestamptz
+	LastSeenAt      pgtype.Timestamptz
+	ServerName      pgtype.Text
+	ServerEnabledAt pgtype.Timestamptz
+}
+
+// The principal's open sessions (not ended, seen within the idle timeout),
+// newest first and at most max_rows of them, each with one row per enabled
+// server (none gives one row with NULL server columns).
+func (q *Queries) ListOpenSessionsWithServers(ctx context.Context, arg ListOpenSessionsWithServersParams) ([]ListOpenSessionsWithServersRow, error) {
+	rows, err := q.db.Query(ctx, listOpenSessionsWithServers, arg.Principal, arg.IdleTimeout, arg.MaxRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOpenSessionsWithServersRow{}
+	for rows.Next() {
+		var i ListOpenSessionsWithServersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.Workspace,
+			&i.Attestation,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.ServerName,
+			&i.ServerEnabledAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionServers = `-- name: ListSessionServers :many
 SELECT session_pk, template_ns, template_name, enabled_at FROM session_servers WHERE session_pk = $1 ORDER BY template_ns, template_name
 `

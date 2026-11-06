@@ -62,6 +62,19 @@ func buildHeaders(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 
+	values, err := credentialHeaders(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	values[auth.SessionHeader] = session
+
+	return values, nil
+}
+
+// credentialHeaders returns the Authorization and workspace headers shared
+// by `toolgate headers` and `toolgate otel-headers`.
+func credentialHeaders(ctx context.Context) (map[string]string, error) {
 	dir, err := configDir()
 	if err != nil {
 		return nil, err
@@ -89,7 +102,38 @@ func buildHeaders(ctx context.Context) (map[string]string, error) {
 
 	return map[string]string{
 		"Authorization":      "Bearer " + accessToken,
-		auth.SessionHeader:   session,
 		auth.WorkspaceHeader: workspace,
 	}, nil
+}
+
+// printOtelHeaders runs `toolgate otel-headers`: it prints the headers for
+// Claude Code's otelHeadersHelper as a JSON object and returns the exit
+// code. It doesn't wait for a session file.
+func printOtelHeaders(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 {
+		_, _ = fmt.Fprintf(stderr, "toolgate otel-headers: unexpected argument %q\n", args[0])
+
+		return 2
+	}
+
+	values, err := credentialHeaders(context.Background())
+	if errors.Is(err, login.ErrNotSignedIn) || errors.Is(err, tokenstore.ErrNotFound) {
+		_, _ = fmt.Fprintln(stderr, "toolgate otel-headers: not signed in. Run toolgate login.")
+
+		return 1
+	}
+
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "toolgate otel-headers: %v\n", err)
+
+		return 1
+	}
+
+	if err := json.NewEncoder(stdout).Encode(values); err != nil {
+		_, _ = fmt.Fprintf(stderr, "toolgate otel-headers: %v\n", err)
+
+		return 1
+	}
+
+	return 0
 }

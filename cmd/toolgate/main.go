@@ -16,9 +16,11 @@ const usage = `Usage: toolgate <command>
 Commands:
   login     Sign in (login [--gateway URL])
   headers   Print the request headers for Claude Code's headersHelper
+  otel-headers  Print the request headers for Claude Code's otelHeadersHelper
   hook      Run a Claude Code hook (hook session-start)
   logout    Remove the stored sign-in token
   secret    Manage your secrets (secret set NAME | list | delete NAME)
+  sessions  List your open sessions and their enabled servers
   servers   List the servers you can use
   serve     Run the gateway (serve --config FILE)
   admin     Admin commands (admin rewrap --config FILE)
@@ -55,6 +57,8 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return status(stdout, stderr)
 	case "headers":
 		return printHeaders(args[1:], stdout, stderr)
+	case "otel-headers":
+		return printOtelHeaders(args[1:], stdout, stderr)
 	case "hook":
 		return hook(args[1:], stdin, stdout, stderr)
 	case "logout":
@@ -63,6 +67,8 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return secret(args[1:], stdin, stdout, stderr)
 	case "servers":
 		return servers(args[1:], stdout, stderr)
+	case "sessions":
+		return sessions(args[1:], stdout, stderr)
 	case "serve":
 		return serve(args[1:], stdout, stderr)
 	case "admin":

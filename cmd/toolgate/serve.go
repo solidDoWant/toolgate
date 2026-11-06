@@ -29,6 +29,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/secrets"
+	"github.com/solidDoWant/toolgate/internal/sessionsapi"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
@@ -97,6 +98,14 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 	}
+
+	(&sessionsapi.Handler{
+		Queries:     db.New(server.Database()),
+		IdleTimeout: time.Duration(cfg.SessionIdleTimeout),
+		Log:         logger,
+	}).Register(server, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
 
 	payloads, err := newAuditPayloads(ctx, cfg, server)
 	if err != nil {
