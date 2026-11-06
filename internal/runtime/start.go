@@ -927,6 +927,10 @@ func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, string, e
 	}
 	defer func() { _ = session.Close() }()
 
+	// The probe has already listed tools once against this budget. The
+	// list below gets a full budget of its own.
+	budget.Reset()
+
 	tools, err := listAll(ctx, session, budget)
 	if err != nil {
 		return nil, "", fmt.Errorf("tools/list %s: %w", endpoint, err)
