@@ -29,13 +29,15 @@ const accessRequestPollInterval = 2 * time.Second
 const workspaceUsage = `Usage: toolgate workspace <command>
 
 Commands:
-  list                                   Show your defaults and workspace lists
+  list                                   Show your defaults, unverified allow list and workspace lists
   allow [--workspace ID | --session ID] SERVER|SERVER__TOOL...
                                          Allow servers or tools in a workspace, or in one session
+  allow --unverified SERVER...           Add servers to the unverified allow list
   deny [--workspace ID | --session ID] SERVER|SERVER__TOOL...
                                          Deny servers or tools in a workspace, or in one session
+  deny --unverified SERVER...            Remove servers from the unverified allow list
   clear [--workspace ID]                 Delete a workspace's list
-  defaults [--verified none|all] [--unverified none|all]
+  defaults [--verified none|all] [--unverified none|all|list]
                                          Show or set the defaults
 `
 
@@ -137,6 +139,7 @@ type workspaceOptions struct {
 	verified           string
 	unverified         string
 	servers            []string
+	unverifiedList     bool
 	workspaceSet       bool
 	verifiedSet, uvSet bool
 }
@@ -153,9 +156,10 @@ func parseWorkspaceArgs(command string, args []string, stderr io.Writer) (worksp
 	case "allow", "deny":
 		flags.StringVar(&options.workspace, "workspace", "", "workspace `ID` (default: this machine's verified workspace)")
 		flags.StringVar(&options.session, "session", "", command+" in this open session `ID` of yours only")
+		flags.BoolVar(&options.unverifiedList, "unverified", false, "change the unverified allow list: the servers of sessions without a verified workspace")
 	case "defaults":
 		flags.StringVar(&options.verified, "verified", "", "default for verified workspaces: none or all")
-		flags.StringVar(&options.unverified, "unverified", "", "default for unverified sessions: none or all")
+		flags.StringVar(&options.unverified, "unverified", "", "default for unverified sessions: none, all or list")
 	}
 
 	// Flags may come before or after the server names.
@@ -216,14 +220,22 @@ func parseWorkspaceArgs(command string, args []string, stderr io.Writer) (worksp
 		return fail("--session can't be combined with --workspace")
 	}
 
+	if options.unverifiedList && (options.session != "" || options.workspaceSet) {
+		return fail("--unverified can't be combined with --workspace or --session")
+	}
+
 	if command == "defaults" {
 		for _, value := range []struct {
 			name, value string
 			set         bool
-		}{{"verified", options.verified, options.verifiedSet}, {"unverified", options.unverified, options.uvSet}} {
+		}{{"verified", options.verified, options.verifiedSet}} {
 			if value.set && value.value != "none" && value.value != "all" {
 				return fail("--%s must be none or all", value.name)
 			}
+		}
+
+		if options.uvSet && options.unverified != "none" && options.unverified != "all" && options.unverified != "list" {
+			return fail("--unverified must be none, all or list")
 		}
 	}
 
@@ -240,13 +252,15 @@ func runWorkspaceCommand(ctx context.Context, env workspaceEnv, access gatewayAc
 		}
 
 		return postChange(ctx, env, access, workspacesapi.Change{
-			Action: "defaults", Verified: options.verified, Unverified: options.unverified,
+			Action: "defaults", Verified: options.verified, Unverified: workspacesapi.Unverified{Default: options.unverified},
 		})
 	}
 
 	change := workspacesapi.Change{Action: command, Servers: options.servers}
 
 	switch {
+	case options.unverifiedList:
+		change.Unverified = workspacesapi.Unverified{List: true}
 	case options.session != "":
 		change.Session = options.session
 	case options.workspace != "":
@@ -300,6 +314,7 @@ func printWorkspaces(ctx context.Context, env workspaceEnv, access gatewayAccess
 
 	_, _ = fmt.Fprintf(env.stdout, "Default for verified workspaces: %s\n", terminalSafe(list.Defaults.Verified))
 	_, _ = fmt.Fprintf(env.stdout, "Default for unverified sessions: %s\n", terminalSafe(list.Defaults.Unverified))
+	_, _ = fmt.Fprintf(env.stdout, "Unverified allow list: %s\n", joinedOrDash(list.Defaults.UnverifiedServers))
 
 	if len(list.Workspaces) == 0 {
 		_, _ = fmt.Fprintln(env.stdout, "\nYou have no workspace lists.")

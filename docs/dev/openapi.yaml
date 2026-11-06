@@ -429,10 +429,7 @@ components:
         session:
           type: string
         unverified:
-          enum:
-          - none
-          - all
-          type: string
+          $ref: '#/components/schemas/WorkspacesapiUnverified'
         verified:
           enum:
           - none
@@ -444,8 +441,21 @@ components:
     WorkspacesapiDefaults:
       properties:
         unverified:
+          enum:
+          - none
+          - all
+          - list
           type: string
+        unverifiedServers:
+          items:
+            type: string
+          type:
+          - array
+          - "null"
         verified:
+          enum:
+          - none
+          - all
           type: string
       type: object
     WorkspacesapiList:
@@ -470,6 +480,16 @@ components:
         url:
           type: string
       type: object
+    WorkspacesapiUnverified:
+      oneOf:
+      - type: boolean
+      - $ref: '#/components/schemas/WorkspacesapiUnverifiedDefault'
+    WorkspacesapiUnverifiedDefault:
+      enum:
+      - none
+      - all
+      - list
+      type: string
     WorkspacesapiWorkspace:
       properties:
         denied:

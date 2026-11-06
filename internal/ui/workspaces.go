@@ -28,6 +28,8 @@ const unverifiedDefaultNote = "A workspace's list limits a process holding your 
 type WorkspaceSource interface {
 	// Scopes returns principal's defaults and lists.
 	Scopes(ctx context.Context, principal string) (gateway.WorkspaceScopes, error)
+	// AccessibleServers returns the servers identity has access to.
+	AccessibleServers(identity auth.Identity) []string
 	// OpenWorkspaces returns the verified workspaces of principal's open
 	// sessions.
 	OpenWorkspaces(ctx context.Context, principal string) ([]string, error)
@@ -63,6 +65,12 @@ func (u *UI) registerWorkspaces() {
 	}
 }
 
+// unverifiedChoice is one checkbox of the unverified allow list.
+type unverifiedChoice struct {
+	Server  string
+	Checked bool
+}
+
 // workspaceList is one list on the Workspaces page.
 type workspaceList struct {
 	Workspace string
@@ -73,6 +81,9 @@ type workspaceList struct {
 type workspacesPage struct {
 	VerifiedDefault   string
 	UnverifiedDefault string
+	// UnverifiedChoices are the checkboxes of "Only these servers": every
+	// server the user has access to, and every server on the list.
+	UnverifiedChoices []unverifiedChoice
 	Note              string
 	Lists             []workspaceList
 	// OpenWorkspaces are the verified workspaces of the user's open
@@ -116,6 +127,14 @@ func (u *UI) renderWorkspaces(writer http.ResponseWriter, request *http.Request,
 		Error:             message,
 	}
 
+	choices := u.options.Workspaces.AccessibleServers(sessionIdentity(session))
+	choices = append(choices, scopes.UnverifiedServers...)
+	slices.Sort(choices)
+
+	for _, server := range slices.Compact(choices) {
+		data.UnverifiedChoices = append(data.UnverifiedChoices, unverifiedChoice{Server: server, Checked: slices.Contains(scopes.UnverifiedServers, server)})
+	}
+
 	listed := map[string]bool{}
 
 	for _, list := range scopes.Lists {
@@ -150,6 +169,12 @@ func (u *UI) workspaceChangeHandler(action string) http.Handler {
 		if action == gateway.WorkspaceDefaults {
 			change.Verified = request.PostFormValue("verified")
 			change.Unverified = request.PostFormValue("unverified")
+
+			if change.Unverified == gateway.ScopeList {
+				u.saveUnverifiedDefaults(writer, request, change)
+
+				return
+			}
 		} else {
 			change.Workspace = strings.TrimSpace(request.PostFormValue("workspace"))
 			if change.Workspace == "" {
@@ -165,28 +190,96 @@ func (u *UI) workspaceChangeHandler(action string) http.Handler {
 			}
 		}
 
-		apply := u.options.Workspaces.ApplyNarrowing
-		if session.freshFor(StepUpMaxAge, time.Now()) {
-			apply = u.options.Workspaces.Apply
-		}
-
-		err := apply(ctx, sessionIdentity(session), change, gateway.ViaUI)
-
-		var refusal *gateway.WorkspaceError
-
-		switch {
-		case errors.Is(err, gateway.ErrWorkspaceChangeWidens):
-			writer.Header().Set("Cache-Control", "no-store")
-			http.Redirect(writer, request, StepUpURL(WorkspacesPath), http.StatusSeeOther)
-		case errors.As(err, &refusal):
-			u.renderWorkspaces(writer, request, refusal.Status, refusal.Message)
-		case err != nil:
-			u.logger.ErrorContext(ctx, "cannot change a workspace list", "error", err)
-			http.Error(writer, "The gateway can't save the change. Try again later.", http.StatusInternalServerError)
-		default:
-			http.Redirect(writer, request, WorkspacesPath, http.StatusSeeOther)
-		}
+		u.answerWorkspaceChange(writer, request, u.applyWorkspaceChanges(ctx, session, change))
 	})
+}
+
+// applyWorkspaceChanges applies changes in order with the session's
+// identity: any change with a sign-in at most StepUpMaxAge old, else only
+// narrowing ones. It stops at the first error.
+func (u *UI) applyWorkspaceChanges(ctx context.Context, session Session, changes ...gateway.WorkspaceChange) error {
+	apply := u.options.Workspaces.ApplyNarrowing
+	if session.freshFor(StepUpMaxAge, time.Now()) {
+		apply = u.options.Workspaces.Apply
+	}
+
+	for _, change := range changes {
+		if err := apply(ctx, sessionIdentity(session), change, gateway.ViaUI); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// saveUnverifiedDefaults saves the defaults form with "Only these
+// servers": the unverified allow list becomes the checked servers, then the
+// defaults are set. The narrowing part, removing servers, runs first, so
+// it applies even when the rest needs a step-up.
+func (u *UI) saveUnverifiedDefaults(writer http.ResponseWriter, request *http.Request, defaults gateway.WorkspaceChange) {
+	session, _ := SessionFrom(request.Context())
+	ctx := request.Context()
+
+	scopes, err := u.options.Workspaces.Scopes(ctx, session.Principal)
+	if err != nil {
+		u.answerWorkspaceChange(writer, request, err)
+
+		return
+	}
+
+	checked := map[string]bool{}
+	for _, server := range request.PostForm["unverified_server"] {
+		checked[strings.TrimSpace(server)] = true
+	}
+
+	var removed, added []string
+
+	for _, server := range scopes.UnverifiedServers {
+		if !checked[server] {
+			removed = append(removed, server)
+		}
+	}
+
+	for server := range checked {
+		if server != "" && !slices.Contains(scopes.UnverifiedServers, server) {
+			added = append(added, server)
+		}
+	}
+
+	slices.Sort(added)
+
+	var changes []gateway.WorkspaceChange
+
+	if len(removed) > 0 {
+		changes = append(changes, gateway.WorkspaceChange{Action: gateway.WorkspaceDeny, UnverifiedList: true, Servers: removed})
+	}
+
+	if len(added) > 0 {
+		changes = append(changes, gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, UnverifiedList: true, Servers: added})
+	}
+
+	changes = append(changes, defaults)
+
+	u.answerWorkspaceChange(writer, request, u.applyWorkspaceChanges(ctx, session, changes...))
+}
+
+// answerWorkspaceChange answers a form of the Workspaces page after its
+// changes ran with err.
+func (u *UI) answerWorkspaceChange(writer http.ResponseWriter, request *http.Request, err error) {
+	var refusal *gateway.WorkspaceError
+
+	switch {
+	case errors.Is(err, gateway.ErrWorkspaceChangeWidens):
+		writer.Header().Set("Cache-Control", "no-store")
+		http.Redirect(writer, request, StepUpURL(WorkspacesPath), http.StatusSeeOther)
+	case errors.As(err, &refusal):
+		u.renderWorkspaces(writer, request, refusal.Status, refusal.Message)
+	case err != nil:
+		u.logger.ErrorContext(request.Context(), "cannot change a workspace list", "error", err)
+		http.Error(writer, "The gateway can't save the change. Try again later.", http.StatusInternalServerError)
+	default:
+		http.Redirect(writer, request, WorkspacesPath, http.StatusSeeOther)
+	}
 }
 
 // Texts the page of an access request shows.

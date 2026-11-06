@@ -1,7 +1,7 @@
 {{define "content"}}
 {{with .Data}}
 {{with .Error}}<p class="error">{{.}}</p>
-{{end}}{{if .StepUpURL}}<p>Adding servers, clearing a list while the default for verified workspaces is all, and changing a default to all need a fresh sign-in.</p>
+{{end}}{{if .StepUpURL}}<p>Adding servers, clearing a list while the default for verified workspaces is all, changing a default to all, and changing the default for unverified sessions from nothing to only these servers need a fresh sign-in.</p>
 <a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
 {{end}}
 <h2>Defaults</h2>
@@ -16,7 +16,12 @@
 <select name="unverified">
 <option value="none"{{if eq .UnverifiedDefault "none"}} selected{{end}}>nothing</option>
 <option value="all"{{if eq .UnverifiedDefault "all"}} selected{{end}}>all my servers</option>
+<option value="list"{{if eq .UnverifiedDefault "list"}} selected{{end}}>only these servers</option>
 </select></label>
+<fieldset id="unverified-servers"><legend>Only these servers</legend>
+{{range .UnverifiedChoices}}<label><input type="checkbox" name="unverified_server" value="{{.Server}}"{{if .Checked}} checked{{end}}> {{.Server}}</label>
+{{else}}<p>You have access to no servers.</p>
+{{end}}</fieldset>
 <p class="note">{{.Note}}</p>
 <button type="submit">Save defaults</button>
 </form>

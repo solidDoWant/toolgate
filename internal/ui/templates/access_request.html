@@ -28,7 +28,10 @@
 {{end}}{{end}}
 {{with .Scope}}<h2>Change</h2>
 <dl id="scope-target">
-{{if .Session}}<dt>Target session</dt><dd>{{.Session}}</dd>
+{{if .Unverified}}<dt>Target</dt><dd>your sessions without a verified workspace</dd>
+<dt>Default before</dt><dd>{{.Before.Default}}</dd>
+<dt>Default after</dt><dd>{{.After.Default}}</dd>
+{{else if .Session}}<dt>Target session</dt><dd>{{.Session}}</dd>
 <dt>In workspace</dt><dd>{{.Workspace}}</dd>
 {{else}}<dt>Target workspace</dt><dd>{{.Workspace}}</dd>
 {{end}}<dt>Asked by session</dt><dd>{{if .AskedBy}}{{.AskedBy}}{{else}}none (the CLI){{end}}</dd>

@@ -89,6 +89,9 @@ SELECT @scope_id, unnest(@servers::text[])
 ON CONFLICT DO NOTHING
 RETURNING server;
 
+-- name: CountUnverifiedServers :one
+SELECT count(*) FROM unverified_servers WHERE scope_id = @scope_id;
+
 -- name: ListUnverifiedServers :many
 SELECT server FROM unverified_servers WHERE scope_id = @scope_id ORDER BY server;
 

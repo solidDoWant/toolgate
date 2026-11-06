@@ -1032,18 +1032,27 @@ func (q *Queries) RemoveWorkspaceSessionAdditions(ctx context.Context, arg Remov
 
 const setUserScopeDefaults = `-- name: SetUserScopeDefaults :exec
 UPDATE user_scopes
-SET verified_default = $1, unverified_default = $2, unverified_list = false, updated_at = now()
-WHERE id = $3
+SET verified_default = $1, unverified_default = $2, unverified_list = $3, updated_at = now()
+WHERE id = $4
 `
 
 type SetUserScopeDefaultsParams struct {
 	VerifiedDefault   string
 	UnverifiedDefault string
+	UnverifiedList    bool
 	ID                int64
 }
 
+// Sets both defaults. The default list is stored as unverified_default none
+// with unverified_list true; a write of none or all sets unverified_list
+// false (docs/design/phase-4.md §2).
 func (q *Queries) SetUserScopeDefaults(ctx context.Context, arg SetUserScopeDefaultsParams) error {
-	_, err := q.db.Exec(ctx, setUserScopeDefaults, arg.VerifiedDefault, arg.UnverifiedDefault, arg.ID)
+	_, err := q.db.Exec(ctx, setUserScopeDefaults,
+		arg.VerifiedDefault,
+		arg.UnverifiedDefault,
+		arg.UnverifiedList,
+		arg.ID,
+	)
 	return err
 }
 
