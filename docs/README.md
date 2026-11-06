@@ -50,6 +50,7 @@ docs/admin/
   user-secrets.md          How user secrets are encrypted, and how to rotate the key.
   settings-profiles.md     How to give Claude Code settings to users with SettingsProfile objects.
   instances.md             When instances stop, how they are removed, and their metrics.
+  metrics.md               Every metric the gateway exports, the series budget, example queries.
   templates-and-rules.md   How to write MCPServerTemplate and ToolgateRule objects.
   telemetry.md             How to send Claude Code telemetry through the gateway, with the usage queries.
   security-model.md        What toolgate protects against, and what claimed workspaces and sessions cannot.

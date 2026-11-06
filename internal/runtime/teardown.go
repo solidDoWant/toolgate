@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -63,6 +64,8 @@ type Metrics struct {
 	// NamespacesStuck counts instance namespaces Terminating for longer
 	// than StuckAfter.
 	NamespacesStuck prometheus.Gauge
+	// Sessions counts open sessions, by whether the workspace is verified.
+	Sessions *prometheus.GaugeVec
 }
 
 // NewMetrics returns unregistered instance metrics.
@@ -76,12 +79,16 @@ func NewMetrics() *Metrics {
 			Name: "toolgate_instance_namespaces_stuck",
 			Help: "Instance namespaces Terminating for more than 10 minutes. Set by the replica holding the leader Lease.",
 		}),
+		Sessions: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "toolgate_sessions",
+			Help: "Open sessions (not ended), by whether the session is attested (verified). Set by the replica holding the leader Lease.",
+		}, []string{"verified"}),
 	}
 }
 
 // Collectors returns the metrics for registration.
 func (m *Metrics) Collectors() []prometheus.Collector {
-	return []prometheus.Collector{m.Instances, m.NamespacesStuck}
+	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions}
 }
 
 // Step takes one instance one step towards stopped. It is a Step of the
@@ -359,6 +366,22 @@ func (m *Metrics) update(ctx context.Context, queries *db.Queries, stuck int) er
 	}
 
 	m.NamespacesStuck.Set(float64(stuck))
+
+	sessions, err := queries.CountOpenSessionsByAttestation(ctx)
+	if err != nil {
+		return fmt.Errorf("count sessions: %w", err)
+	}
+
+	// Both series always exist on the leader, so a scaler reads 0 rather
+	// than a missing series.
+	open := map[string]int64{"true": 0, "false": 0}
+	for _, row := range sessions {
+		open[strconv.FormatBool(row.Attestation == "attested")] += row.Total
+	}
+
+	for verified, total := range open {
+		m.Sessions.WithLabelValues(verified).Set(float64(total))
+	}
 
 	return nil
 }

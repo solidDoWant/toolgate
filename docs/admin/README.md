@@ -31,5 +31,6 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 - [Operations](operations.md): backups, upgrades, key rotation, instance limits, the audit log, and how to remove toolgate.
 - [User secrets](user-secrets.md): how to make and rotate the keyset that encrypts user secrets.
 - [Instance stops and cleanup](instances.md): when toolgate stops a server, the instance limits, and the metrics for stuck namespaces.
+- [Metrics](metrics.md): each metric the gateway exports, the series budget, and example queries.
 
 [`SPEC.md`](../../SPEC.md) describes the full rules of the system.
