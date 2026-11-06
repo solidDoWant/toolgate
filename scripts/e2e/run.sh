@@ -26,6 +26,13 @@
 #       TOOLGATE_E2E_OTLP_LISTEN      address the test process serves the test
 #                                     OTLP/HTTP receiver on; the chart's
 #                                     config.otlpEndpoint points at it
+#       TOOLGATE_E2E_OTLP_FORWARD_TO  the telemetry test backend's OTLP/HTTP
+#                                     port-forward; the test OTLP receiver
+#                                     passes every export on to it
+#       TOOLGATE_E2E_PROMETHEUS_URL   the test backend's Prometheus, to run
+#                                     PromQL on
+#       TOOLGATE_E2E_LOKI_URL         the test backend's Loki
+#       TOOLGATE_E2E_TEMPO_URL        the test backend's Tempo
 #       TOOLGATE_E2E_S3_ENDPOINT      the S3 server inside the cluster
 #       TOOLGATE_E2E_WORKLOAD_NAMESPACE  a namespace whose pods' service
 #                                     account tokens the gateway accepts
@@ -80,6 +87,7 @@ cleanup() {
 		kubectl get pods --all-namespaces -o wide >&2 || true
 		kubectl -n "$release_namespace" logs --all-containers --prefix --tail=100 -l app.kubernetes.io/name=toolgate >&2 || true
 	fi
+	((${#lgtm_forwards[@]} == 0)) || kill "${lgtm_forwards[@]}" 2>/dev/null || true
 	if [[ "${E2E_KEEP_CLUSTER:-false}" == true ]]; then
 		log "keeping cluster $cluster (KUBECONFIG=$KUBECONFIG); delete it with: kind delete cluster --name $cluster"
 	else
@@ -127,7 +135,23 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 	(select(.kind == "Deployment" and .metadata.name == "postgres") | .spec.template.spec.containers[0].image) = strenv(POSTGRES_IMAGE) |
 	(select(.kind == "Deployment" and .metadata.name == "s3") | .spec.template.spec.containers[0].image) = strenv(S3_IMAGE)
 ' test/e2e/manifests/dependencies.yaml | kubectl -n "$deps_namespace" apply -f - >&2
-kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry --timeout 5m >&2
+kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
+kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry deployment/otel-lgtm --timeout 5m >&2
+
+# Port-forwards to the telemetry test backend, alive until the script exits.
+free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
+lgtm_forwards=()
+for lgtm_port in 4318 9090 3100 3200; do
+	local_port="$(free_port)"
+	kubectl -n "$deps_namespace" port-forward --address 127.0.0.1 service/otel-lgtm "$local_port:$lgtm_port" >"$work/lgtm-forward-$lgtm_port.log" 2>&1 &
+	lgtm_forwards+=("$!")
+	case "$lgtm_port" in
+		4318) export TOOLGATE_E2E_OTLP_FORWARD_TO="http://127.0.0.1:$local_port" ;;
+		9090) export TOOLGATE_E2E_PROMETHEUS_URL="http://127.0.0.1:$local_port" ;;
+		3100) export TOOLGATE_E2E_LOKI_URL="http://127.0.0.1:$local_port" ;;
+		3200) export TOOLGATE_E2E_TEMPO_URL="http://127.0.0.1:$local_port" ;;
+	esac
+done
 
 log "pushing the test chart"
 helm package test/e2e/charts/mcpserver --destination "$work/charts" >&2
@@ -194,6 +218,8 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.ui.adminGroup=toolgate-admins \
 	--set config.ui.publicURL="https://$TOOLGATE_E2E_UI_LISTEN" \
 	--set config.ui.approvalTimeout=1m \
+	--set 'config.extraEnv[1].name=TOOLGATE_OTLP_INGEST' \
+	--set 'config.extraEnv[1].value=true' \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \

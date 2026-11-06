@@ -63,7 +63,7 @@ func run(m *testing.M) int {
 			return 1
 		}
 
-		traceReceiver = &testutil.OTLPReceiver{}
+		traceReceiver = &testutil.OTLPReceiver{ForwardTo: os.Getenv("TOOLGATE_E2E_OTLP_FORWARD_TO")}
 		server := &http.Server{Handler: traceReceiver, ReadHeaderTimeout: 10 * time.Second}
 
 		go func() { _ = server.Serve(listener) }()
