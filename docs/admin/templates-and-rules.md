@@ -85,6 +85,10 @@ The name of the template is the name of the server. It has 31 characters at most
 - `resources`: the Kubernetes objects that toolgate applies for each instance.
 - `healthCheck`: an optional HTTP check of a running instance. See [Health checks](#health-checks).
 
+**Upgrade note.** `toolFilter` and the `name`, `description` and `inputDescriptions` fields take effect only after every gateway pod runs this version. During a rolling upgrade, an older pod ignores them: it lists hidden tools, forwards calls to them and does not rename tools. Each call still gets a recorded decision. To hide a tool as a security control, use `tools.<name>.blocked`. It works on both versions.
+
+A call of a hidden tool, or of a renamed tool by its own name, is refused with the reason `not-offered`. The gateway records the refusal and does not forward the call. Rules and approvals use the tool's own name. A rule's `tools` pattern matches both the tool's own name and its new name. The audit log shows the new name in `exposedTool` when it differs.
+
 ## Health checks
 
 A template can add a `healthCheck`. It is a `GET` request to a Service in the instance namespace. The request passes when the status is the one you expect. Without a `healthCheck`, toolgate only does its MCP ping.

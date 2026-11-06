@@ -13,7 +13,6 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
-	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/testtime"
@@ -253,7 +252,7 @@ func (m *metaTools) decideWhileWaiting(ctx context.Context, call approvalCall, i
 		return nil, err
 	}
 
-	decision := m.decide(ctx, policy.Request{Identity: call.current.identity, Template: template, Tool: call.tool, State: state})
+	decision := m.decide(ctx, m.policyRequest(call.current, template, call.tool, state))
 	if decision.Allowed {
 		return nil, nil
 	}

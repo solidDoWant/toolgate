@@ -74,7 +74,15 @@ func templateClient(t *testing.T) client.Client {
 func testServerResources(t *testing.T, image string, readinessDelay time.Duration, extraEnv map[string]string) []k8sruntime.RawExtension {
 	t.Helper()
 
-	env := []map[string]any{{"name": "MCPSERVER_TOOLS", "value": strings.Join(testServerTools, ",")}}
+	return testServerResourcesWithTools(t, image, testServerTools, readinessDelay, extraEnv)
+}
+
+// testServerResourcesWithTools is testServerResources for a test MCP server
+// that exposes tools.
+func testServerResourcesWithTools(t *testing.T, image string, tools []string, readinessDelay time.Duration, extraEnv map[string]string) []k8sruntime.RawExtension {
+	t.Helper()
+
+	env := []map[string]any{{"name": "MCPSERVER_TOOLS", "value": strings.Join(tools, ",")}}
 	for name, value := range extraEnv {
 		env = append(env, map[string]any{"name": name, "value": value})
 	}
