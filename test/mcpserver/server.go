@@ -31,6 +31,11 @@ type options struct {
 	SecretsDir string
 	// Environ returns the environment the env tool reports.
 	Environ func() []string
+	// Calls counts the calls to each tool. Optional.
+	Calls *callCounter
+	// ProtocolVersions, when set, restricts the protocol versions the
+	// server speaks.
+	ProtocolVersions []string
 }
 
 // echoResult is the structured result of an echo tool.
@@ -41,7 +46,7 @@ type echoResult struct {
 
 // newServer returns an MCP server that exposes options.Tools.
 func newServer(options options) (*mcp.Server, error) {
-	server := mcp.NewServer(&mcp.Implementation{Name: "toolgate-test-mcpserver", Version: "0.0.0"}, nil)
+	server := newBareServer(options.ProtocolVersions)
 
 	seen := map[string]bool{}
 
@@ -56,11 +61,15 @@ func newServer(options options) (*mcp.Server, error) {
 		case envTool:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns the server's environment variables."},
 				func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, map[string]string, error) {
+					options.Calls.add(name)
+
 					return nil, environment(options.Environ()), nil
 				})
 		case secretsTool:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns the files in the mounted secrets directory, by file name."},
 				func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, map[string]string, error) {
+					options.Calls.add(name)
+
 					files, err := readSecrets(options.SecretsDir)
 
 					return nil, files, err
@@ -68,6 +77,8 @@ func newServer(options options) (*mcp.Server, error) {
 		default:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Echoes its arguments."},
 				func(_ context.Context, _ *mcp.CallToolRequest, arguments map[string]any) (*mcp.CallToolResult, echoResult, error) {
+					options.Calls.add(name)
+
 					if arguments == nil {
 						arguments = map[string]any{}
 					}
@@ -78,6 +89,31 @@ func newServer(options options) (*mcp.Server, error) {
 	}
 
 	return server, nil
+}
+
+// newBareServer returns a server with no tools. A non-empty versions
+// restricts the protocol versions it speaks.
+func newBareServer(versions []string) *mcp.Server {
+	var serverOptions *mcp.ServerOptions
+
+	if len(versions) > 0 {
+		serverOptions = &mcp.ServerOptions{SupportedProtocolVersions: versions}
+	}
+
+	return mcp.NewServer(&mcp.Implementation{Name: "toolgate-test-mcpserver", Version: "0.0.0"}, serverOptions)
+}
+
+// newToolListServer returns a server whose tools are specs, and the set
+// that replaces them.
+func newToolListServer(specs []toolSpec, calls *callCounter, versions []string) (*mcp.Server, *toolSet, error) {
+	server := newBareServer(versions)
+	tools := &toolSet{server: server, calls: calls}
+
+	if err := tools.set(specs); err != nil {
+		return nil, nil, err
+	}
+
+	return server, tools, nil
 }
 
 // environment turns KEY=value entries into a map.

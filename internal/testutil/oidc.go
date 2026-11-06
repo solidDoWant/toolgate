@@ -46,6 +46,14 @@ type OIDCOptions struct {
 	// UIRedirectURIs are the UI client's redirect URIs, as globs
 	// (github.com/bmatcuk/doublestar). Default DefaultOIDCUIRedirectURI.
 	UIRedirectURIs []string
+	// ConnectorClientID is the public authorization-code client of a
+	// connector, which must use PKCE. It is also the audience of the access
+	// tokens the connector client gets, because the provider puts the
+	// client ID in the audience. Default DefaultOIDCConnectorClientID.
+	ConnectorClientID string
+	// ConnectorRedirectURIs are the connector client's redirect URIs, as
+	// globs. Default DefaultOIDCConnectorRedirectURI.
+	ConnectorRedirectURIs []string
 	// OmitAuthTime makes the provider leave auth_time out of the ID tokens
 	// of the UI's sign-ins, as some IdPs do.
 	OmitAuthTime bool
@@ -91,7 +99,10 @@ type OIDCProvider struct {
 	Issuer     string
 	ClientID   string
 	UIClientID string
-	Audience   string
+	// ConnectorClientID is the client ID of the connector client, and the
+	// audience of its access tokens.
+	ConnectorClientID string
+	Audience          string
 
 	storage *oidcStorage
 	server  *httptest.Server
@@ -125,6 +136,14 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		options.UIClientID = DefaultOIDCUIClientID
 	}
 
+	if options.ConnectorClientID == "" {
+		options.ConnectorClientID = DefaultOIDCConnectorClientID
+	}
+
+	if options.ConnectorRedirectURIs == nil {
+		options.ConnectorRedirectURIs = []string{DefaultOIDCConnectorRedirectURI}
+	}
+
 	if options.UIRedirectURIs == nil {
 		options.UIRedirectURIs = []string{DefaultOIDCUIRedirectURI}
 	}
@@ -155,6 +174,11 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 		uiClient: &uiClient{
 			id:           options.UIClientID,
 			redirectURIs: options.UIRedirectURIs,
+			loginURL:     options.Issuer + OIDCSignInPath,
+		},
+		connectorClient: &uiClient{
+			id:           options.ConnectorClientID,
+			redirectURIs: options.ConnectorRedirectURIs,
 			loginURL:     options.Issuer + OIDCSignInPath,
 		},
 		omitAuthTime: options.OmitAuthTime,
@@ -198,12 +222,13 @@ func NewOIDCProvider(options OIDCOptions) (*OIDCProvider, error) {
 	server.Start()
 
 	return &OIDCProvider{
-		Issuer:     options.Issuer,
-		ClientID:   options.ClientID,
-		UIClientID: options.UIClientID,
-		Audience:   options.Audience,
-		storage:    store,
-		server:     server,
+		Issuer:            options.Issuer,
+		ClientID:          options.ClientID,
+		UIClientID:        options.UIClientID,
+		Audience:          options.Audience,
+		ConnectorClientID: options.ConnectorClientID,
+		storage:           store,
+		server:            server,
 	}, nil
 }
 
@@ -442,12 +467,14 @@ func (u *oidcUsers) claims(subject string) map[string]any {
 type oidcStorage struct {
 	*storage.Storage
 
-	users        *oidcUsers
-	client       *deviceClient
-	uiClient     *uiClient
-	omitAuthTime bool
-	authRequests *uiAuthRequests
-	onSubject    func(ctx context.Context, subject string) error
+	users    *oidcUsers
+	client   *deviceClient
+	uiClient *uiClient
+	// connectorClient is the authorization-code client of a connector.
+	connectorClient *uiClient
+	omitAuthTime    bool
+	authRequests    *uiAuthRequests
+	onSubject       func(ctx context.Context, subject string) error
 
 	revokedMu sync.Mutex
 	revoked   map[string]bool
@@ -474,6 +501,8 @@ func (s *oidcStorage) GetClientByClientID(_ context.Context, clientID string) (o
 		return s.client, nil
 	case s.uiClient.id:
 		return s.uiClient, nil
+	case s.connectorClient.id:
+		return s.connectorClient, nil
 	default:
 		return nil, errors.New("client not found")
 	}
