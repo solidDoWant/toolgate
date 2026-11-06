@@ -35,6 +35,9 @@ type StartStore interface {
 	MarkReady(ctx context.Context, id string, tools []byte) (bool, error)
 	// MarkFailed moves an instance from status from to failed.
 	MarkFailed(ctx context.Context, id, from, reason string) (bool, error)
+	// SetHealth marks a ready instance healthy, or unhealthy with reason,
+	// as HealthStore does.
+	SetHealth(ctx context.Context, instance db.Instance, healthy bool, reason string) (bool, error)
 }
 
 // PostgresStartStore is the StartStore and HealthStore on PostgreSQL. Each

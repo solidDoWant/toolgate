@@ -123,6 +123,12 @@ When an instance becomes unhealthy, toolgate repairs it as `onFailure` says:
 
 With `reapply`, toolgate can only render the current version of the template. If the template changed after the instance started, toolgate replaces the instance instead, as with `replace`. This counts as one repair.
 
+### Failed objects of a ready instance
+
+toolgate also checks the Kubernetes objects of each ready instance, on each pass of the reconciler (every 30 seconds) and on each change to the instance. An object fails when kstatus reports that it failed. An object also fails when its `Ready` condition stays `False` for 60 seconds at the current generation of the object. For example, this happens when the `OCIRepository` of a HelmRelease points at a tag that does not exist. Pods have no generation on their `Ready` condition, so only kstatus judges them. A pod that only restarts is left to the health checks.
+
+When an object fails, the instance becomes unhealthy, as above, with a reason such as "OCIRepository mcpserver failed: `<Ready message>`". toolgate repairs it as `onFailure` says, within the `maxRepairs` limit. A template without `healthCheck` uses `replace` with the default limit of 3. When no object fails anymore, an instance without `healthCheck` becomes healthy again. An instance with `healthCheck` becomes healthy again when its check passes.
+
 ## Who can use a server
 
 A user can use a server only when both of these checks pass:
