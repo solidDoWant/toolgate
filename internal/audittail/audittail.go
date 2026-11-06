@@ -191,10 +191,10 @@ func (h *Handler) Register(mux Mux, authenticate func(http.Handler) http.Handler
 }
 
 // IsAdmin reports whether identity may see every principal's events: a
-// user whose token groups hold adminGroup. Service accounts and other
-// attested identities never are.
+// user, at any attestation, whose token groups hold adminGroup. Service
+// accounts and SPIFFE workloads never are.
 func IsAdmin(identity auth.Identity, adminGroup string) bool {
-	return adminGroup != "" && identity.Attestation == auth.AttestationUser && slices.Contains(identity.Groups, adminGroup)
+	return adminGroup != "" && identity.Kind == auth.KindUser && slices.Contains(identity.Groups, adminGroup)
 }
 
 // errStreamEnd ends a stream because the client is gone.

@@ -125,6 +125,7 @@ func (v *serviceAccountVerifier) verify(ctx context.Context, token string) (Iden
 	identity := Identity{
 		Principal:   review.Status.User.Username,
 		Workspace:   workspace,
+		Kind:        KindServiceAccount,
 		Attestation: AttestationAttested,
 	}
 

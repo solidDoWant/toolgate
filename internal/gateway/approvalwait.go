@@ -91,10 +91,10 @@ func (m *metaTools) awaitApproval(ctx context.Context, call approvalCall, found 
 	id := found.approval.ID
 	responses := call.request.Params.InputResponses
 
-	// Step 3: a client that can't show the page, a service account (which
-	// can't sign in to the UI), or a request with responses whose approval
-	// the user never saw.
-	if !supportsURLElicitation(ctx, call.request) || call.current.identity.Attestation == auth.AttestationAttested ||
+	// Step 3: a client that can't show the page, an identity that isn't a
+	// user (it can't sign in to the UI), or a request with responses whose
+	// approval the user never saw.
+	if !supportsURLElicitation(ctx, call.request) || call.current.identity.Kind != auth.KindUser ||
 		(responses != nil && found.inserted) {
 		result, err := m.refusePending(ctx, call, id)
 

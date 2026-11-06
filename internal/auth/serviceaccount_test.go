@@ -184,6 +184,7 @@ func TestAC1_04PodSignIn(t *testing.T) {
 		identity := decodeIdentity(t, response.Body.Bytes())
 		assert.Equal(t, "system:serviceaccount:ci:runner", identity.Principal)
 		assert.Equal(t, auth.AttestationAttested, identity.Attestation)
+		assert.Equal(t, auth.KindServiceAccount, identity.Kind)
 		assert.Equal(t, "k8s/ci/Job/runner", identity.Workspace)
 		assert.Equal(t, "s-1", identity.Session)
 	})

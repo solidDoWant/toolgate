@@ -305,6 +305,7 @@ func sessionIdentity(session Session) auth.Identity {
 		Principal:   session.Principal,
 		Email:       session.Email,
 		Groups:      session.Groups,
+		Kind:        auth.KindUser,
 		Attestation: auth.AttestationUser,
 	}
 }

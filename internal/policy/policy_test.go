@@ -22,6 +22,7 @@ func laptopUser() auth.Identity {
 		Groups:      []string{"dev"},
 		Workspace:   "claimed/default",
 		Session:     "session-1",
+		Kind:        auth.KindUser,
 		Attestation: auth.AttestationUser,
 	}
 }
@@ -31,6 +32,7 @@ func pod(namespace string) auth.Identity {
 		Principal:   "system:serviceaccount:" + namespace + ":runner",
 		Workspace:   "k8s/" + namespace + "/ReplicaSet/runner-abc",
 		Session:     "session-2",
+		Kind:        auth.KindServiceAccount,
 		Attestation: auth.AttestationAttested,
 	}
 }
@@ -111,6 +113,7 @@ func spiffeWorkload() auth.Identity {
 		Principal:   "spiffe://coder.example.com/owner/alice/workspace/dev",
 		Workspace:   "/owner/alice/workspace/dev",
 		Session:     "session-3",
+		Kind:        auth.KindSPIFFE,
 		Attestation: auth.AttestationAttested,
 	}
 }
@@ -148,6 +151,39 @@ func TestSPIFFECatalogAccess(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestKindPicksAccessList(t *testing.T) {
+	tests := []struct {
+		name      string
+		principal string
+		access    v1alpha1.Access
+		allowed   bool
+	}{
+		{name: "SPIFFE-like subject in users", principal: "spiffe://coder.example.com/alice", access: v1alpha1.Access{Users: []string{"spiffe://coder.example.com/alice"}}, allowed: true},
+		{name: "SPIFFE-like subject by group", principal: "spiffe://coder.example.com/alice", access: v1alpha1.Access{Groups: []string{"dev"}}, allowed: true},
+		{name: "SPIFFE-like subject in spiffeIDs", principal: "spiffe://coder.example.com/alice", access: v1alpha1.Access{SPIFFEIDs: []string{"spiffe://*"}}},
+		{name: "service-account-like subject in users", principal: "system:serviceaccount:ci:runner", access: v1alpha1.Access{Users: []string{"system:serviceaccount:ci:runner"}}, allowed: true},
+		{name: "service-account-like subject by group", principal: "system:serviceaccount:ci:runner", access: v1alpha1.Access{Groups: []string{"dev"}}, allowed: true},
+		{name: "service-account-like subject in serviceAccounts", principal: "system:serviceaccount:ci:runner", access: v1alpha1.Access{ServiceAccounts: []string{"system:serviceaccount:ci:runner"}}},
+	}
+
+	for _, test := range tests {
+		for _, attestation := range []string{auth.AttestationUser, auth.AttestationAttested} {
+			t.Run(test.name+" at "+attestation, func(t *testing.T) {
+				identity := auth.Identity{Principal: test.principal, Groups: []string{"dev"}, Kind: auth.KindUser, Attestation: attestation}
+
+				assert.Equal(t, test.allowed, policy.HasAccess(identity, test.access))
+			})
+		}
+	}
+
+	t.Run("no kind matches nothing", func(t *testing.T) {
+		identity := auth.Identity{Principal: "alice-sub", Groups: []string{"dev"}, Attestation: auth.AttestationUser}
+		access := v1alpha1.Access{Users: []string{"alice-sub"}, Groups: []string{"dev"}, ServiceAccounts: []string{"alice-sub"}, SPIFFEIDs: []string{"*"}}
+
+		assert.False(t, policy.HasAccess(identity, access))
+	})
 }
 
 func TestRuleMatchesSPIFFEWorkspace(t *testing.T) {

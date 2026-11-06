@@ -49,6 +49,14 @@ const (
 	AttestationAttested = "attested"
 )
 
+// Identity kinds: which verifier accepted the bearer token
+// (docs/design/phase-3.md §10).
+const (
+	KindUser           = "user"
+	KindServiceAccount = "service-account"
+	KindSPIFFE         = "spiffe"
+)
+
 // headerValuePattern is the pattern both identity headers must match.
 var headerValuePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
@@ -67,6 +75,11 @@ type Identity struct {
 	Workspace string `json:"workspace"`
 	// Session is the X-Toolgate-Session header. Nobody verifies it.
 	Session string `json:"session,omitempty"`
+	// Kind is KindUser, KindServiceAccount or KindSPIFFE, set by the
+	// verifier that accepted the bearer token. It decides the access list
+	// and whether the identity is a signed-in user; the principal's form and
+	// the attestation never do.
+	Kind string `json:"kind"`
 	// Attestation is AttestationUser for users and AttestationAttested for
 	// pods.
 	Attestation string `json:"attestation"`
@@ -360,7 +373,7 @@ func (a *Authenticator) identityFromClaims(subject string, claims map[string]jso
 		return Identity{}, errors.New("no subject")
 	}
 
-	identity := Identity{Principal: subject, Attestation: AttestationUser}
+	identity := Identity{Principal: subject, Kind: KindUser, Attestation: AttestationUser}
 
 	// An unverified email is treated as absent (docs/design/phase-1.md §7).
 	var verifiedEmail bool
