@@ -214,6 +214,13 @@ func (c *Client) embedBatch(ctx context.Context, operation string, texts []strin
 	vectors, err := c.callBatch(ctx, texts)
 
 	c.metrics.duration.WithLabelValues(operation).Observe(time.Since(started).Seconds())
+
+	// A caller that gave up (cancelled, or its own deadline passed) says
+	// nothing about the endpoint, so the circuit state stays as it was.
+	if err != nil && ctx.Err() != nil {
+		return vectors, err
+	}
+
 	c.breaker.record(err != nil)
 
 	return vectors, err
