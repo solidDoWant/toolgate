@@ -253,7 +253,7 @@ func (m *metaTools) listedTools(ctx context.Context, current requestContext, tem
 			return nil, false, err
 		}
 
-		if found && newest.FailedAt.Valid && newest.Generation == template.Generation {
+		if found && newest.FailedAt.Valid && newest.Generation == template.Generation && newest.TemplateUid == string(template.UID) {
 			return nil, false, nil
 		}
 	default:
