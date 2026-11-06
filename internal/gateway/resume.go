@@ -78,6 +78,11 @@ func (m *metaTools) restoreServers(ctx context.Context, tx pgx.Tx, current reque
 // A serialization failure or unique violation is retried once. It runs in a
 // savepoint of the restart's transaction outer.
 func (m *metaTools) restoreInTransaction(ctx context.Context, outer pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate) error {
+	lazy, err := m.startsOnCall(ctx, template)
+	if err != nil {
+		return err
+	}
+
 	attempt := func() error {
 		return pgx.BeginFunc(ctx, outer, func(tx pgx.Tx) error {
 			queries := db.New(tx)
@@ -91,18 +96,25 @@ func (m *metaTools) restoreInTransaction(ctx context.Context, outer pgx.Tx, curr
 				return err
 			}
 
-			instance, err := m.liveOrNewInstance(ctx, queries, current, template)
-			if err != nil {
-				return err
+			// An `onCall` server comes back without an instance.
+			var instance db.Instance
+			if !lazy {
+				instance, err = m.liveOrNewInstance(ctx, queries, current, template)
+				if err != nil {
+					return err
+				}
 			}
 
-			return m.recordEnable(ctx, tx, current, template, instance, map[string]any{
-				"decision": "allow", "instance": instance.ID, "resume": true,
-			})
+			details := map[string]any{"decision": "allow", "resume": true}
+			if instance.ID != "" {
+				details["instance"] = instance.ID
+			}
+
+			return m.recordEnable(ctx, tx, current, template, instance, details)
 		})
 	}
 
-	err := attempt()
+	err = attempt()
 	if retryable(err) {
 		err = attempt()
 	}

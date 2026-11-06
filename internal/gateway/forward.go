@@ -22,6 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
@@ -249,6 +250,27 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return nil, err
 	}
 
+	// Step 5: an `onCall` server with no live instance starts on this call,
+	// unless its newest instance failed on the current generation
+	// (docs/design/phase-4.md §4).
+	if instance.ID == "" && template.UID != "" {
+		started, refusal, err := m.startForCall(ctx, current, template)
+		if err != nil {
+			return nil, err
+		}
+
+		if refusal != nil {
+			return m.refuseCall(ctx, current, server, tool, refusal.details, refusal.message)
+		}
+
+		if started.ID != "" {
+			instance, status, reason = started, StatusStarting, ""
+			if started.Status == statusReady {
+				status = statusReady
+			}
+		}
+	}
+
 	if status == StatusStarting && instance.ID != "" {
 		instance, status, reason, err = m.waitForCall(ctx, request, current, template, instance)
 		if err != nil {
@@ -271,6 +293,17 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return m.refuseCall(ctx, current, server, tool,
 			map[string]any{"reason": reasonNotReady, "status": status, "detail": instance.UnhealthyReason},
 			unhealthyMessage(server, instance))
+	}
+
+	// Step 6: the ready instance must still offer the tool.
+	listed, err := instanceOffers(instance, template, tool)
+	if err != nil {
+		return nil, err
+	}
+
+	if !listed {
+		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonNotOffered},
+			fmt.Sprintf("Server `%s` doesn't offer `%s` any more.", server, exposed))
 	}
 
 	// Step 3: policy.
@@ -570,4 +603,147 @@ func callArguments(arguments json.RawMessage) any {
 
 func errorResult(message string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: message}}}
+}
+
+// callRefusal is a refusal found while starting an instance for a call.
+type callRefusal struct {
+	details map[string]any
+	message string
+}
+
+// startForCall is call step 5 for a session whose server has no live
+// instance. For an `onCall` server with a catalog list it refuses when the
+// newest instance failed on the template's current generation, and
+// otherwise returns the live instance, inserting a pending one within the
+// limits. Other servers return the zero instance and are handled as before.
+func (m *metaTools) startForCall(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, *callRefusal, error) {
+	lazy, err := m.startsOnCall(ctx, template)
+	if err != nil || !lazy {
+		return db.Instance{}, nil, err
+	}
+
+	var instance db.Instance
+
+	var refusal *callRefusal
+
+	attempt := func() error {
+		instance, refusal = db.Instance{}, nil
+
+		return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
+			queries := db.New(tx)
+
+			if err := m.lockSession(ctx, tx, current); err != nil {
+				return err
+			}
+
+			enabled, err := m.isEnabled(ctx, queries, current.session.ID, template)
+			if err != nil {
+				return err
+			}
+
+			if !enabled {
+				refusal = &callRefusal{
+					details: map[string]any{"reason": reasonNotEnabled},
+					message: fmt.Sprintf("Server `%s` isn't enabled in this session. Call `%s` first.", template.Name, ToolEnableServer),
+				}
+
+				return nil
+			}
+
+			key := scopeKey(template.Spec.Scope, current.identity)
+			if err := queries.LockInstanceScope(ctx, db.LockInstanceScopeParams{
+				TemplateNs: template.Namespace, TemplateName: template.Name, ScopeKey: key,
+			}); err != nil {
+				return fmt.Errorf("lock instance scope: %w", err)
+			}
+
+			live, err := queries.GetLiveInstance(ctx, db.GetLiveInstanceParams{
+				TemplateNs: template.Namespace, TemplateName: template.Name, ScopeKey: key,
+			})
+			if err == nil {
+				instance = live
+
+				return nil
+			}
+
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("read live instance: %w", err)
+			}
+
+			newest, err := queries.GetNewestInstance(ctx, db.GetNewestInstanceParams{
+				TemplateNs: template.Namespace, TemplateName: template.Name, ScopeKey: key,
+			})
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("read newest instance: %w", err)
+			}
+
+			if err == nil && newest.FailedAt.Valid && newest.Generation == template.Generation {
+				reason := newest.Reason
+				if reason == "" {
+					reason = "it failed to start"
+				}
+
+				refusal = &callRefusal{
+					details: map[string]any{"reason": reasonNotReady, "status": StatusFailed, "detail": newest.Reason},
+					message: fmt.Sprintf("Server `%s` failed to start: %s Enable `%s` again to retry.", template.Name, sentence(reason), template.Name),
+				}
+
+				return nil
+			}
+
+			if err := m.checkInstanceLimits(ctx, queries, current, template); err != nil {
+				return err
+			}
+
+			instance, err = insertInstance(ctx, queries, current, template, key, m.sharedNamespace)
+			if err != nil {
+				return err
+			}
+
+			return store.Notify(ctx, tx, store.KindInstance, instance.ID)
+		})
+	}
+
+	err = attempt()
+	if retryable(err) {
+		err = attempt()
+	}
+
+	var limitErr *instanceLimitError
+	if errors.As(err, &limitErr) {
+		return db.Instance{}, &callRefusal{
+			details: map[string]any{"reason": "limit", "limit": limitErr.limit},
+			message: limitErr.message,
+		}, nil
+	}
+
+	return instance, refusal, err
+}
+
+// sentence ends text with a full stop.
+func sentence(text string) string {
+	if strings.HasSuffix(text, ".") {
+		return text
+	}
+
+	return text + "."
+}
+
+// instanceOffers reports whether the curated tool list of a ready instance
+// holds the upstream tool.
+func instanceOffers(instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string) (bool, error) {
+	var upstream []*mcp.Tool
+	if len(instance.Tools) > 0 {
+		if err := json.Unmarshal(instance.Tools, &upstream); err != nil {
+			return false, fmt.Errorf("decode tools of instance %s: %w", instance.ID, err)
+		}
+	}
+
+	for _, curated := range toolcatalog.Curate(template, upstream) {
+		if curated.UpstreamName == tool {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

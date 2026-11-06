@@ -109,8 +109,13 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 		return nil, EnableResult{}, err
 	}
 
+	lazy, err := m.startsOnCall(ctx, template)
+	if err != nil {
+		return nil, EnableResult{}, err
+	}
+
 	// Steps 3 and 4.
-	instance, err := m.enableInTransaction(ctx, current, template, requestID)
+	instance, err := m.enableInTransaction(ctx, current, template, requestID, lazy)
 
 	var limitErr *instanceLimitError
 	if errors.As(err, &limitErr) {
@@ -127,6 +132,17 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 
 	if err != nil {
 		return nil, EnableResult{}, err
+	}
+
+	// An `onCall` server with a catalog list doesn't wait: its instance, if
+	// any, starts in the background and the first call waits for it.
+	if lazy {
+		names, err := m.syncSession(ctx, request.Session, current)
+		if err != nil {
+			return nil, EnableResult{}, err
+		}
+
+		return nil, EnableResult{Name: template.Name, Tools: names[template.Name]}, nil
 	}
 
 	// Step 5.
@@ -262,14 +278,14 @@ func (m *metaTools) checkSecrets(ctx context.Context, current requestContext, te
 // one when there is none. requestID, when set, is the session addition's
 // access request, recorded with the allow. A serialization failure or
 // unique violation is retried once.
-func (m *metaTools) enableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string) (db.Instance, error) {
+func (m *metaTools) enableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string, lazy bool) (db.Instance, error) {
 	var instance db.Instance
 
 	attempt := func() error {
 		return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
 			var err error
 
-			instance, err = m.enableTx(ctx, tx, current, template, requestID)
+			instance, err = m.enableTx(ctx, tx, current, template, requestID, lazy)
 
 			return err
 		})
@@ -283,7 +299,7 @@ func (m *metaTools) enableInTransaction(ctx context.Context, current requestCont
 	return instance, err
 }
 
-func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string) (db.Instance, error) {
+func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string, lazy bool) (db.Instance, error) {
 	queries := db.New(tx)
 
 	if err := m.lockSession(ctx, tx, current); err != nil {
@@ -312,12 +328,22 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 		return db.Instance{}, fmt.Errorf("enable server: %w", err)
 	}
 
-	instance, err := m.liveOrNewInstance(ctx, queries, current, template)
+	var instance db.Instance
+	if lazy {
+		instance, err = m.retryInstance(ctx, queries, current, template)
+	} else {
+		instance, err = m.liveOrNewInstance(ctx, queries, current, template)
+	}
+
 	if err != nil {
 		return db.Instance{}, err
 	}
 
-	details := map[string]any{"decision": "allow", "instance": instance.ID}
+	details := map[string]any{"decision": "allow"}
+	if instance.ID != "" {
+		details["instance"] = instance.ID
+	}
+
 	if requestID != "" {
 		details[sessionAdditionRequest] = requestID
 	}
@@ -370,7 +396,60 @@ func (m *metaTools) recordEnable(ctx context.Context, tx pgx.Tx, current request
 		return err
 	}
 
+	if instance.ID == "" {
+		return nil
+	}
+
 	return store.Notify(ctx, tx, store.KindInstance, instance.ID)
+}
+
+// startsOnCall reports whether template's instance starts on the first call
+// rather than on enable: its start is `onCall` (the default) and it has a
+// catalog list (docs/design/phase-4.md §3, "Starting").
+func (m *metaTools) startsOnCall(ctx context.Context, template *v1alpha1.MCPServerTemplate) (bool, error) {
+	if template.Spec.Start == catalog.StartOnEnable || template.UID == "" {
+		return false, nil
+	}
+
+	_, found, err := m.catalogList(ctx, template)
+
+	return found, err
+}
+
+// retryInstance is the enable of an `onCall` server: it inserts an instance
+// only when the newest one failed and none is live, and returns the zero
+// instance otherwise. An enable after a failure is how a user retries.
+func (m *metaTools) retryInstance(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, error) {
+	key := scopeKey(template.Spec.Scope, current.identity)
+	params := db.GetLiveInstanceParams{TemplateNs: template.Namespace, TemplateName: template.Name, ScopeKey: key}
+
+	if err := queries.LockInstanceScope(ctx, db.LockInstanceScopeParams(params)); err != nil {
+		return db.Instance{}, fmt.Errorf("lock instance scope: %w", err)
+	}
+
+	live, err := queries.GetLiveInstance(ctx, params)
+	if err == nil {
+		return live, nil
+	}
+
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return db.Instance{}, fmt.Errorf("read live instance: %w", err)
+	}
+
+	newest, err := queries.GetNewestInstance(ctx, db.GetNewestInstanceParams(params))
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && !newest.FailedAt.Valid) {
+		return db.Instance{}, nil
+	}
+
+	if err != nil {
+		return db.Instance{}, fmt.Errorf("read newest instance: %w", err)
+	}
+
+	if err := m.checkInstanceLimits(ctx, queries, current, template); err != nil {
+		return db.Instance{}, err
+	}
+
+	return insertInstance(ctx, queries, current, template, key, m.sharedNamespace)
 }
 
 var errTooManyServers = fmt.Errorf("This session already has %d servers enabled. Disable one with `%s` first.", MaxEnabledServers, ToolDisableServer) //nolint:staticcheck // A sentence for the model.
