@@ -217,10 +217,18 @@ func (s *oidcStorage) DeleteAuthRequest(ctx context.Context, id string) error {
 }
 
 func (s *oidcStorage) CreateAccessToken(ctx context.Context, request op.TokenRequest) (string, time.Time, error) {
+	if err := s.subjectReady(ctx, request.GetSubject()); err != nil {
+		return "", time.Time{}, err
+	}
+
 	return s.Storage.CreateAccessToken(ctx, unwrapTokenRequest(request))
 }
 
 func (s *oidcStorage) CreateAccessAndRefreshTokens(ctx context.Context, request op.TokenRequest, currentRefreshToken string) (string, string, time.Time, error) {
+	if err := s.subjectReady(ctx, request.GetSubject()); err != nil {
+		return "", "", time.Time{}, err
+	}
+
 	return s.Storage.CreateAccessAndRefreshTokens(ctx, unwrapTokenRequest(request), currentRefreshToken)
 }
 

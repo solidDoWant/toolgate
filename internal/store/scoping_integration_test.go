@@ -205,3 +205,26 @@ func TestScopingReadQueries(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, additions, "another principal's session ID never matches")
 }
+
+func TestEnsureUserScope(t *testing.T) {
+	_, pool := migratedPool(t)
+	ctx := t.Context()
+	queries := db.New(pool)
+
+	require.NoError(t, store.EnsureUserScope(ctx, pool, "alice"))
+	require.NoError(t, store.EnsureUserScope(ctx, pool, "alice"), "a second call is a no-op")
+
+	scope, err := queries.GetUserScope(ctx, "alice")
+	require.NoError(t, err)
+	assert.Equal(t, "all", scope.VerifiedDefault)
+	assert.Equal(t, "all", scope.UnverifiedDefault)
+
+	_, err = pool.Exec(ctx, "INSERT INTO user_scopes (principal) VALUES ('bob')")
+	require.NoError(t, err)
+	require.NoError(t, store.EnsureUserScope(ctx, pool, "bob"))
+
+	scope, err = queries.GetUserScope(ctx, "bob")
+	require.NoError(t, err)
+	assert.Equal(t, "none", scope.VerifiedDefault, "an existing row is not overwritten")
+	assert.Equal(t, "none", scope.UnverifiedDefault)
+}
