@@ -279,6 +279,31 @@ type Config struct {
 	// never what is allowed. The chart sets it from `config.toolSearch`.
 	ToolSearch bool `json:"toolSearch" env:"TOOLGATE_TOOL_SEARCH"`
 
+	// The base URL of an endpoint that speaks the OpenAI embeddings API
+	// (`POST <url>/v1/embeddings`), such as Hugging Face text-embeddings-
+	// inference or Ollama run in the cluster. If it is set, tool search ranks
+	// by meaning as well as by words, and the gateway sends the search query
+	// and the tool descriptions to this endpoint. If it is empty, search uses
+	// words only. It must be an `http://` or `https://` URL.
+	// `toolSearchEmbeddingsModel` is then required. The chart sets it from
+	// `config.toolSearchEmbeddings.url`.
+	ToolSearchEmbeddingsURL string `json:"toolSearchEmbeddingsURL" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_URL"`
+
+	// The model name sent to the embeddings endpoint, such as
+	// `BAAI/bge-small-en-v1.5`. Changing it makes the gateway embed all tools
+	// again.
+	ToolSearchEmbeddingsModel string `json:"toolSearchEmbeddingsModel" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_MODEL"`
+
+	// The path of a file that holds an API key for the embeddings endpoint,
+	// sent as `Authorization: Bearer`. Mount it from a Kubernetes Secret.
+	// Empty means no key.
+	ToolSearchEmbeddingsAPIKeyFile string `json:"toolSearchEmbeddingsAPIKeyFile" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_API_KEY_FILE"`
+
+	// How long one request to the embeddings endpoint may take. Write it as a
+	// Go duration, such as `2s`. It must be from 100 milliseconds to 30
+	// seconds. A search that runs out of time uses words only.
+	ToolSearchEmbeddingsTimeout Duration `json:"toolSearchEmbeddingsTimeout" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_TIMEOUT"`
+
 	// The URL of the S3 API that stores large audit payloads, such as
 	// `https://s3.example.com`. If it is empty, the gateway uses the AWS S3
 	// endpoint of `auditS3Region`. The gateway gets its S3 credentials from
@@ -578,6 +603,8 @@ func Default() Config {
 		SessionIdleTimeout:     Duration(2 * time.Hour),
 		SessionResumeWindow:    Duration(24 * time.Hour),
 		ApprovalTimeout:        Duration(10 * time.Minute),
+
+		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
 	}
 }
 
@@ -962,6 +989,7 @@ func (c Config) Validate() []error {
 		problems = append(problems, errors.New("approvalTimeout: must be from 1m to 1h"))
 	}
 
+	problems = append(problems, c.validateToolSearchEmbeddings()...)
 	problems = append(problems, c.validateUI()...)
 	problems = append(problems, c.validateResolvers()...)
 	problems = append(problems, c.validateSPIFFETrustDomains()...)
@@ -1089,4 +1117,28 @@ func validateAddress(key, address string) []error {
 	}
 
 	return nil
+}
+
+// validateToolSearchEmbeddings checks the embeddings settings of tool search.
+func (c Config) validateToolSearchEmbeddings() []error {
+	if c.ToolSearchEmbeddingsURL == "" {
+		return nil
+	}
+
+	var problems []error
+
+	endpoint, err := url.Parse(c.ToolSearchEmbeddingsURL)
+	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
+		problems = append(problems, errors.New("toolSearchEmbeddingsURL: must be an http:// or https:// URL"))
+	}
+
+	if c.ToolSearchEmbeddingsModel == "" {
+		problems = append(problems, errors.New("toolSearchEmbeddingsModel: required when toolSearchEmbeddingsURL is set"))
+	}
+
+	if c.ToolSearchEmbeddingsTimeout < Duration(100*time.Millisecond) || c.ToolSearchEmbeddingsTimeout > Duration(30*time.Second) {
+		problems = append(problems, errors.New("toolSearchEmbeddingsTimeout: must be from 100ms to 30s"))
+	}
+
+	return problems
 }

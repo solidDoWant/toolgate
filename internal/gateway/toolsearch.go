@@ -174,7 +174,7 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 		}
 	}
 
-	rows, stopWordsOnly, err := m.searchRows(ctx, uids, tsQuery(words), tsQuery(expandWords(words)), strings.Join(words, " "))
+	rows, stopWordsOnly, err := m.searchRows(ctx, uids, input.Query, tsQuery(words), tsQuery(expandWords(words)), strings.Join(words, " "))
 	if err != nil {
 		return nil, FindToolsResult{}, err
 	}
@@ -248,7 +248,20 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 // searchRows runs the ranking query in a read-only transaction with a
 // statement timeout. stopWordsOnly is true when every word of the query is a
 // stop word, so the query is empty and matches nothing.
-func (m *metaTools) searchRows(ctx context.Context, uids []string, query, expanded, plain string) (rows []db.SearchToolsRow, stopWordsOnly bool, err error) {
+func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, query, expanded, plain string) (rows []db.SearchToolsRow, stopWordsOnly bool, err error) {
+	// The query vector is fetched before the transaction. A failure means
+	// words only; the query text is never logged.
+	var queryVector []float32
+
+	if m.embedder != nil && len(uids) > 0 {
+		vectors, embedErr := m.embedder.Embed(ctx, []string{rawQuery})
+		if embedErr != nil {
+			m.embedder.CountError("query")
+		} else {
+			queryVector = vectors[0]
+		}
+	}
+
 	err = pgx.BeginTxFunc(ctx, m.database, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL statement_timeout = %d", searchTimeout.Milliseconds())); err != nil {
 			return fmt.Errorf("set the search timeout: %w", err)
@@ -268,6 +281,19 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, query, expand
 		}
 
 		if len(uids) == 0 {
+			return nil
+		}
+
+		if queryVector != nil {
+			vectorRows, err := queries.SearchToolsWithVectors(ctx, db.SearchToolsWithVectorsParams{
+				Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids,
+			})
+			if err != nil {
+				return fmt.Errorf("search the tools: %w", err)
+			}
+
+			rows = fuseRanks(vectorRows, queryVector, m.embedder.Model())
+
 			return nil
 		}
 

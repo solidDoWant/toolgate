@@ -468,12 +468,12 @@ func (q *Queries) InsertScopeEntry(ctx context.Context, arg InsertScopeEntryPara
 }
 
 const insertToolSearch = `-- name: InsertToolSearch :exec
-INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, document)
-VALUES ($1, $2, $3, $4, $5, $6, $7::text,
+INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, embedding, embedding_model, document)
+VALUES ($1, $2, $3, $4, $5, $6, $7::text, COALESCE($8::real[], '{}'), $9::text,
     setweight(to_tsvector('english', $7::text), 'A')
-    || setweight(to_tsvector('english', $8::text), 'B')
-    || setweight(to_tsvector('english', $9::text), 'C')
-    || setweight(to_tsvector('english', $10::text), 'C'))
+    || setweight(to_tsvector('english', $10::text), 'B')
+    || setweight(to_tsvector('english', $11::text), 'C')
+    || setweight(to_tsvector('english', $12::text), 'C'))
 `
 
 type InsertToolSearchParams struct {
@@ -484,6 +484,8 @@ type InsertToolSearchParams struct {
 	UpstreamName     string
 	ExposedName      string
 	NamePart         string
+	Embedding        []float32
+	EmbeddingModel   string
 	DescriptionPart  string
 	ServerPart       string
 	InputPart        string
@@ -500,6 +502,8 @@ func (q *Queries) InsertToolSearch(ctx context.Context, arg InsertToolSearchPara
 		arg.UpstreamName,
 		arg.ExposedName,
 		arg.NamePart,
+		arg.Embedding,
+		arg.EmbeddingModel,
 		arg.DescriptionPart,
 		arg.ServerPart,
 		arg.InputPart,
@@ -824,6 +828,31 @@ func (q *Queries) ListToolSearchUIDs(ctx context.Context) ([]string, error) {
 	return items, nil
 }
 
+const listToolSearchUIDsNeedingEmbedding = `-- name: ListToolSearchUIDsNeedingEmbedding :many
+SELECT DISTINCT template_uid FROM tool_search WHERE embedding_model <> $1::text OR cardinality(embedding) = 0
+`
+
+// The templates that have a row not embedded with the given model.
+func (q *Queries) ListToolSearchUIDsNeedingEmbedding(ctx context.Context, model string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listToolSearchUIDsNeedingEmbedding, model)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var template_uid string
+		if err := rows.Scan(&template_uid); err != nil {
+			return nil, err
+		}
+		items = append(items, template_uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUnverifiedServers = `-- name: ListUnverifiedServers :many
 SELECT server FROM unverified_servers WHERE scope_id = $1 ORDER BY server
 `
@@ -916,6 +945,78 @@ func (q *Queries) SearchTools(ctx context.Context, arg SearchToolsParams) ([]Sea
 			&i.TemplateName,
 			&i.UpstreamName,
 			&i.ExposedName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchToolsWithVectors = `-- name: SearchToolsWithVectors :many
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name,
+       tool_search.embedding, tool_search.embedding_model,
+       (tool_search.document @@ q)::boolean AS matched,
+       (CASE WHEN tool_search.document @@ q THEN
+           ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1)
+           + 0.3 * word_similarity(tool_search.name_text, $1::text)
+       ELSE 0 END)::float8 AS score
+FROM tool_search, to_tsquery('english', $2::text) AS q, to_tsquery('english', $3::text) AS q0
+WHERE tool_search.template_uid = ANY($4::text[])
+ORDER BY tool_search.exposed_name
+LIMIT 5000
+`
+
+type SearchToolsWithVectorsParams struct {
+	Plain        string
+	Expanded     string
+	Query        string
+	TemplateUids []string
+}
+
+type SearchToolsWithVectorsRow struct {
+	TemplateUid    string
+	TemplateNs     string
+	TemplateName   string
+	UpstreamName   string
+	ExposedName    string
+	Embedding      []float32
+	EmbeddingModel string
+	Matched        bool
+	Score          float64
+}
+
+// Like SearchTools, but returns every row of the candidate templates with its
+// vector, so a replica can fuse the word rank with the vector rank. matched
+// says the row matches the expanded query; score is the word score.
+func (q *Queries) SearchToolsWithVectors(ctx context.Context, arg SearchToolsWithVectorsParams) ([]SearchToolsWithVectorsRow, error) {
+	rows, err := q.db.Query(ctx, searchToolsWithVectors,
+		arg.Plain,
+		arg.Expanded,
+		arg.Query,
+		arg.TemplateUids,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchToolsWithVectorsRow{}
+	for rows.Next() {
+		var i SearchToolsWithVectorsRow
+		if err := rows.Scan(
+			&i.TemplateUid,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.UpstreamName,
+			&i.ExposedName,
+			&i.Embedding,
+			&i.EmbeddingModel,
+			&i.Matched,
+			&i.Score,
 		); err != nil {
 			return nil, err
 		}

@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/embeddings"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -37,6 +39,9 @@ import (
 const templateNamespace = "toolgate-servers"
 
 type mcpFixture struct {
+	// embedder, when set, embeds the search rows that declareTools writes.
+	embedder *embeddings.Client
+
 	provider *testutil.OIDCProvider
 	pool     *pgxpool.Pool
 	catalog  *catalog.Catalog

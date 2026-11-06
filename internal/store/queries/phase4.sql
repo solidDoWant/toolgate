@@ -19,8 +19,8 @@ DELETE FROM tool_catalog WHERE template_uid = @template_uid AND generation < @ge
 -- name: InsertToolSearch :exec
 -- The document has weighted parts (docs/design/phase-4.md §5); name_text
 -- feeds the trigram term of the ranking.
-INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, document)
-VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name, @name_part::text,
+INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, embedding, embedding_model, document)
+VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name, @name_part::text, COALESCE(@embedding::real[], '{}'), @embedding_model::text,
     setweight(to_tsvector('english', @name_part::text), 'A')
     || setweight(to_tsvector('english', @description_part::text), 'B')
     || setweight(to_tsvector('english', @server_part::text), 'C')
@@ -176,6 +176,27 @@ FROM tool_search, to_tsquery('english', @expanded::text) AS q, to_tsquery('engli
 WHERE tool_search.template_uid = ANY(@template_uids::text[]) AND tool_search.document @@ q
 ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, @plain::text)) DESC, tool_search.exposed_name
 LIMIT 100;
+
+-- name: SearchToolsWithVectors :many
+-- Like SearchTools, but returns every row of the candidate templates with its
+-- vector, so a replica can fuse the word rank with the vector rank. matched
+-- says the row matches the expanded query; score is the word score.
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name,
+       tool_search.embedding, tool_search.embedding_model,
+       (tool_search.document @@ q)::boolean AS matched,
+       (CASE WHEN tool_search.document @@ q THEN
+           ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1)
+           + 0.3 * word_similarity(tool_search.name_text, @plain::text)
+       ELSE 0 END)::float8 AS score
+FROM tool_search, to_tsquery('english', @expanded::text) AS q, to_tsquery('english', @query::text) AS q0
+WHERE tool_search.template_uid = ANY(@template_uids::text[])
+ORDER BY tool_search.exposed_name
+LIMIT 5000;
+
+-- name: ListToolSearchUIDsNeedingEmbedding :many
+-- The templates that have a row not embedded with the given model.
+SELECT DISTINCT template_uid FROM tool_search WHERE embedding_model <> @model::text OR cardinality(embedding) = 0;
 
 -- name: QueryIsEmpty :one
 SELECT numnode(to_tsquery('english', @query::text)) = 0;

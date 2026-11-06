@@ -5,10 +5,16 @@ package gateway_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/solidDoWant/toolgate/internal/embeddings"
+	"github.com/solidDoWant/toolgate/internal/testutil"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -31,7 +37,7 @@ func (f *mcpFixture) declareTools(t *testing.T, template *v1alpha1.MCPServerTemp
 	f.catalog.Set(template, nil)
 
 	require.NoError(t, pgx.BeginFunc(t.Context(), f.pool, func(tx pgx.Tx) error {
-		return toolruntime.RebuildToolSearch(t.Context(), tx, string(template.UID), template)
+		return toolruntime.RebuildToolSearchEmbedded(t.Context(), tx, string(template.UID), template, f.embedder, nil)
 	}))
 }
 
@@ -435,7 +441,16 @@ func TestAC4_03SearchQuality(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, target))
 	}
 
-	fixture := newMCPFixture(t)
+	endpoint := testutil.StartEmbeddings(t)
+
+	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: endpoint.Model, Timeout: 30 * time.Second})
+	require.NoError(t, err)
+
+	// The first replica searches with embeddings; the second, made after the
+	// embedder is cleared, searches by words only.
+	active := embedder
+	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Embedder = active })
+	fixture.embedder = embedder
 
 	for _, server := range servers.Servers {
 		template := fixture.addEnableTemplate(server.Name, "per-user", anyone)
@@ -452,23 +467,36 @@ func TestAC4_03SearchQuality(t *testing.T) {
 		fixture.declareTools(t, template, declaredTools...)
 	}
 
-	client := fixture.connect(t, searching(alice()))
-	hits := 0
+	score := func(label string) float64 {
+		client := fixture.connect(t, searching(alice()))
+		hits := 0
 
-	for _, task := range tasks.Tasks {
-		found, _ := findTools(t, client, task.Task, 5)
-		expected := gateway.ProxiedToolName(task.Expected.Server, task.Expected.Tool)
+		for _, task := range tasks.Tasks {
+			found, _ := findTools(t, client, task.Task, 5)
+			expected := gateway.ProxiedToolName(task.Expected.Server, task.Expected.Tool)
 
-		if contains(foundNames(found), expected) {
-			hits++
-		} else {
-			t.Logf("miss %s: wanted %s, got %v", task.ID, expected, foundNames(found))
+			if contains(foundNames(found), expected) {
+				hits++
+			} else {
+				t.Logf("%s miss %s: wanted %s, got %v", label, task.ID, expected, foundNames(found))
+			}
 		}
+
+		rate := float64(hits) / float64(len(tasks.Tasks))
+		t.Logf("%s top-5 hits: %d of %d (%.1f%%)", label, hits, len(tasks.Tasks), rate*100)
+
+		return rate
 	}
 
-	rate := float64(hits) / float64(len(tasks.Tasks))
-	t.Logf("top-5 hits: %d of %d (%.1f%%)", hits, len(tasks.Tasks), rate*100)
-	assert.GreaterOrEqual(t, rate, 0.9)
+	hybrid := score("hybrid")
+
+	// The words-only score is for information; it does not gate.
+	active = nil
+	fixture.server = fixture.replica(t)
+
+	score("words only")
+
+	assert.GreaterOrEqual(t, hybrid, 0.9)
 }
 
 func contains(values []string, want string) bool {
@@ -479,4 +507,28 @@ func contains(values []string, want string) bool {
 	}
 
 	return false
+}
+
+// A failing embeddings endpoint never fails a search: it answers by words
+// and counts the failure.
+func TestToolSearchEmbeddingsEndpointDown(t *testing.T) {
+	var calls atomic.Int32
+
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(endpoint.Close)
+
+	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: "m"})
+	require.NoError(t, err)
+
+	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Embedder = embedder })
+	template := fixture.addEnableTemplate("github", "per-user", anyone)
+	fixture.declareTools(t, template, declared("echo", "Echo text back to the caller"))
+
+	found, _ := findTools(t, fixture.connect(t, searching(alice())), "echo text", 0)
+	require.NotEmpty(t, found.Tools)
+	assert.Equal(t, "github__echo", found.Tools[0].Name)
+	assert.Positive(t, calls.Load(), "the endpoint was called")
 }

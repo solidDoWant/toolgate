@@ -75,6 +75,13 @@ settings from `config`.
 {{- $env = append $env (dict "name" "TOOLGATE_APPROVAL_TIMEOUT" "value" .) }}
 {{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH" "value" (toString (default false $config.toolSearch))) -}}
+{{- with $config.toolSearchEmbeddings }}
+{{- range $setting, $name := dict "url" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_URL" "model" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_MODEL" "apiKeyFile" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_API_KEY_FILE" "timeout" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_TIMEOUT" }}
+{{- with index $.Values.config.toolSearchEmbeddings $setting }}
+{{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

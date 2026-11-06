@@ -128,6 +128,25 @@ config:
   # with that header. It only changes which tools a session lists.
   toolSearch: false
 
+  # Optional embeddings for tool search. With `url` set, search ranks by
+  # meaning as well as by words. The gateway sends the search query and the
+  # tool descriptions to this endpoint, so run it in the cluster. Allow egress
+  # from the gateway pods only to this host and port.
+  toolSearchEmbeddings:
+    # -- Base URL of an endpoint that speaks the OpenAI embeddings API
+    # (`POST <url>/v1/embeddings`), such as `http://tei.tools.svc:80`. Empty
+    # means search uses words only.
+    url: ""
+    # -- Model name sent to the endpoint, such as `BAAI/bge-small-en-v1.5`.
+    # Required when `url` is set. Changing it embeds all tools again.
+    model: ""
+    # -- Path of a file that holds an API key for the endpoint, mounted from a
+    # Secret with `persistence`. Empty means no key.
+    apiKeyFile: ""
+    # -- How long one request to the endpoint may take, as a Go duration.
+    # Empty means 2s.
+    timeout: ""
+
   audit:
     # -- Store audit payloads: the arguments of each tool call and approval
     # request, and each tool result. Payloads under 64 KiB go in PostgreSQL,

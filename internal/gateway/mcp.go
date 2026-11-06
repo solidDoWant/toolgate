@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/embeddings"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -102,6 +104,8 @@ type MCPOptions struct {
 	// ToolSearch is the gateway's default for tool search mode, used by a
 	// request that sends no X-Toolgate-Tool-Search header.
 	ToolSearch bool
+	// Embedder embeds search queries for tool search; nil means words only.
+	Embedder *embeddings.Client
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -277,6 +281,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		workspaceScoping:     options.WorkspaceScoping,
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
+		embedder:             options.Embedder,
 	}
 
 	if tools.workspaces == nil {

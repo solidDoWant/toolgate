@@ -29,6 +29,15 @@ type SearchParts struct {
 	Input string
 }
 
+// MaxEmbeddingTextBytes cuts the text sent to the embeddings endpoint.
+const MaxEmbeddingTextBytes = 2 << 10
+
+// EmbeddingText is the text of the document sent to the embeddings endpoint:
+// the parts in weight order, cut at MaxEmbeddingTextBytes.
+func (p SearchParts) EmbeddingText() string {
+	return cutText(strings.Join([]string{p.Name, p.Description, p.Server, p.Input}, ". "), MaxEmbeddingTextBytes)
+}
+
 // SearchPartsOf builds the search document parts of a curated tool of
 // template.
 func SearchPartsOf(template *v1alpha1.MCPServerTemplate, tool Tool) SearchParts {

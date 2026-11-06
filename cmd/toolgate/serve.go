@@ -120,6 +120,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	searchEmbedder, err := newToolSearchEmbedder(cfg, server)
+	if err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
+
 	templates := catalog.New()
 	rules := policy.NewRules()
 
@@ -198,6 +205,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		Workspaces:           workspaces,
 		SessionIdleTimeout:   testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
 		ToolSearch:           cfg.ToolSearch,
+		Embedder:             searchEmbedder,
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {
@@ -244,6 +252,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			auditOutput:     stdout,
 			listener:        listener,
 			tracerProvider:  server.TracerProvider(),
+			embedder:        searchEmbedder,
 		})
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)

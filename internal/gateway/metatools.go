@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/embeddings"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,7 +79,9 @@ type listServersInput struct{}
 // metaTools implements the toolgate_* tools.
 type metaTools struct {
 	// metrics counts calls and starts. Nil means none.
-	metrics     *runtime.Metrics
+	metrics *runtime.Metrics
+	// embedder embeds search queries; nil means words only.
+	embedder    *embeddings.Client
 	database    *pgxpool.Pool
 	catalog     *catalog.Catalog
 	policy      *policy.Engine

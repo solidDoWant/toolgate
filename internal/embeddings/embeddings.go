@@ -1,0 +1,207 @@
+// Package embeddings calls an endpoint that speaks the OpenAI embeddings API
+// (POST <url>/v1/embeddings) and ranks vectors by cosine similarity. It uses
+// the standard library only (docs/design/phase-4.md §5).
+package embeddings
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"math"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+const (
+	// DefaultTimeout bounds one request when Options.Timeout is zero.
+	DefaultTimeout = 2 * time.Second
+	// BatchSize is the number of texts sent in one request.
+	BatchSize = 32
+	// maxResponseBytes bounds the response body.
+	maxResponseBytes = 16 << 20
+	// maxDimensions bounds the length of one vector.
+	maxDimensions = 8192
+)
+
+// Options configure a Client.
+type Options struct {
+	// URL is the endpoint's base URL, such as `http://tei.tools.svc:80`.
+	URL string
+	// Model is the model name sent in each request.
+	Model string
+	// APIKey, when set, is sent as `Authorization: Bearer`.
+	APIKey string
+	// Timeout bounds each request. Zero means DefaultTimeout.
+	Timeout time.Duration
+	// HTTPClient overrides the HTTP client; nil means a plain client.
+	HTTPClient *http.Client
+}
+
+// Client calls the embeddings endpoint.
+type Client struct {
+	endpoint string
+	model    string
+	apiKey   string
+	timeout  time.Duration
+	http     *http.Client
+	errors   *prometheus.CounterVec
+}
+
+// New returns a client, or an error when the URL is not an http(s) URL or the
+// model is empty.
+func New(options Options) (*Client, error) {
+	parsed, err := url.Parse(options.URL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, fmt.Errorf("the embeddings URL must be an http or https URL")
+	}
+
+	if options.Model == "" {
+		return nil, errors.New("the embeddings model is required")
+	}
+
+	timeout := options.Timeout
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+
+	client := options.HTTPClient
+	if client == nil {
+		client = &http.Client{}
+	}
+
+	return &Client{
+		endpoint: strings.TrimRight(options.URL, "/") + "/v1/embeddings",
+		model:    options.Model,
+		apiKey:   options.APIKey,
+		timeout:  timeout,
+		http:     client,
+		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_search_embedding_errors_total",
+			Help: "Failed calls of the tool search embeddings endpoint, by use (query or document).",
+		}, []string{"use"}),
+	}, nil
+}
+
+// Model returns the model name.
+func (c *Client) Model() string { return c.model }
+
+// Collectors returns the client's metrics.
+func (c *Client) Collectors() []prometheus.Collector { return []prometheus.Collector{c.errors} }
+
+// CountError counts a failed use of the endpoint. use is `query` or `document`.
+func (c *Client) CountError(use string) { c.errors.WithLabelValues(use).Inc() }
+
+type request struct {
+	Model string   `json:"model"`
+	Input []string `json:"input"`
+}
+
+type response struct {
+	Data []struct {
+		Index     int       `json:"index"`
+		Embedding []float32 `json:"embedding"`
+	} `json:"data"`
+}
+
+// Embed returns one vector for each text, in order. It sends at most
+// BatchSize texts per request and gives each request the client's timeout.
+// An error never holds the text or the API key.
+func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error) {
+	vectors := make([][]float32, 0, len(texts))
+
+	for start := 0; start < len(texts); start += BatchSize {
+		end := min(start+BatchSize, len(texts))
+
+		batch, err := c.embedBatch(ctx, texts[start:end])
+		if err != nil {
+			return nil, err
+		}
+
+		vectors = append(vectors, batch...)
+	}
+
+	return vectors, nil
+}
+
+func (c *Client) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	body, err := json.Marshal(request{Model: c.model, Input: texts})
+	if err != nil {
+		return nil, fmt.Errorf("encode the embeddings request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	httpRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("build the embeddings request: %w", err)
+	}
+
+	httpRequest.Header.Set("Content-Type", "application/json")
+
+	if c.apiKey != "" {
+		httpRequest.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	httpResponse, err := c.http.Do(httpRequest)
+	if err != nil {
+		// The URL error can hold the endpoint, never the texts.
+		return nil, fmt.Errorf("call the embeddings endpoint: %w", err)
+	}
+	defer func() { _ = httpResponse.Body.Close() }()
+
+	if httpResponse.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("the embeddings endpoint answered %d", httpResponse.StatusCode)
+	}
+
+	var decoded response
+	if err := json.NewDecoder(io.LimitReader(httpResponse.Body, maxResponseBytes)).Decode(&decoded); err != nil {
+		return nil, fmt.Errorf("decode the embeddings response: %w", err)
+	}
+
+	if len(decoded.Data) != len(texts) {
+		return nil, fmt.Errorf("the embeddings endpoint returned %d vectors for %d texts", len(decoded.Data), len(texts))
+	}
+
+	vectors := make([][]float32, len(texts))
+
+	for _, item := range decoded.Data {
+		if item.Index < 0 || item.Index >= len(texts) || vectors[item.Index] != nil ||
+			len(item.Embedding) == 0 || len(item.Embedding) > maxDimensions {
+			return nil, errors.New("the embeddings endpoint returned an invalid vector")
+		}
+
+		vectors[item.Index] = item.Embedding
+	}
+
+	return vectors, nil
+}
+
+// Cosine returns the cosine similarity of two vectors, or 0 when their
+// lengths differ or either is empty or all zeros.
+func Cosine(a, b []float32) float64 {
+	if len(a) == 0 || len(a) != len(b) {
+		return 0
+	}
+
+	var dot, normA, normB float64
+
+	for index := range a {
+		dot += float64(a[index]) * float64(b[index])
+		normA += float64(a[index]) * float64(a[index])
+		normB += float64(b[index]) * float64(b[index])
+	}
+
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
