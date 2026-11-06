@@ -9,6 +9,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -231,6 +233,8 @@ func endSessionAdditions(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, 
 	recorder := audit.NewRecorder(auditOutput, queries)
 
 	for _, request := range expired {
+		opsmetrics.ApprovalOutcome(request.Kind, opsmetrics.OutcomeCancelled, 1)
+
 		attestation := "user"
 		if request.Verified {
 			attestation = "attested"

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
@@ -310,8 +312,9 @@ func (a *Authenticator) Collectors() []prometheus.Collector {
 // finds the identity with IdentityFrom.
 func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		identity, claims, refusal := a.authenticate(request)
+		identity, claims, refusal, route := a.authenticate(request)
 		if refusal != nil {
+			opsmetrics.AuthResult(refusedKind(route, request, mcp), opsmetrics.ResultRefused)
 			a.refuse(request, *refusal)
 			writer.Header().Set("WWW-Authenticate", a.challenge(mcp, refusal.Reason != reasonMissingToken))
 			http.Error(writer, "Sign in again: run `toolgate login`.", http.StatusUnauthorized)
@@ -345,6 +348,8 @@ func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 
 		identity.Session = session
 
+		opsmetrics.AuthResult(signInKind(identity, mcp), opsmetrics.ResultOK)
+
 		// The attestation never authenticates: it runs only for a signed-in
 		// user, and a workload is already attested as itself.
 		if a.attest != nil && identity.Kind == KindUser {
@@ -363,6 +368,10 @@ func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 			}
 
 			identity = attested
+
+			if identity.Attestation == AttestationAttested {
+				opsmetrics.AuthResult(opsmetrics.AuthUser, opsmetrics.ResultAttested)
+			}
 		}
 
 		// An attested identity's workspace was verified, so the header
@@ -373,6 +382,39 @@ func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 
 		next.ServeHTTP(writer, request.WithContext(WithIdentity(request.Context(), identity)))
 	})
+}
+
+// signInKind is the sign-in metric kind of an authenticated identity. A user
+// on the MCP endpoint without a session header is a connector: a client
+// that cannot send the plugin's headers.
+func signInKind(identity Identity, mcp bool) string {
+	switch identity.Kind {
+	case KindServiceAccount:
+		return opsmetrics.AuthServiceAccount
+	case KindSPIFFE:
+		return opsmetrics.AuthSPIFFE
+	}
+
+	if mcp && identity.Session == "" {
+		return opsmetrics.AuthConnector
+	}
+
+	return opsmetrics.AuthUser
+}
+
+// refusedKind is the sign-in metric kind of a refused request: the kind of
+// the verifier that refused it, or a user (a connector on the MCP endpoint
+// without a session header) when none was chosen.
+func refusedKind(route string, request *http.Request, mcp bool) string {
+	if route != "" {
+		return route
+	}
+
+	if mcp && request.Header.Get(SessionHeader) == "" {
+		return opsmetrics.AuthConnector
+	}
+
+	return opsmetrics.AuthUser
 }
 
 // reasonMissingToken is the refusal reason of a request that sent no bearer
@@ -414,21 +456,21 @@ func headerValue(request *http.Request, name string) (value string, set, valid b
 // authenticate verifies the bearer token. It returns the identity without the
 // header fields and, for a user, the token's claims; or the refusal to
 // record.
-func (a *Authenticator) authenticate(request *http.Request) (Identity, map[string]json.RawMessage, *Refusal) {
+func (a *Authenticator) authenticate(request *http.Request) (Identity, map[string]json.RawMessage, *Refusal, string) {
 	header := request.Header.Values("Authorization")
 	if len(header) != 1 {
-		return Identity{}, nil, &Refusal{Reason: reasonMissingToken}
+		return Identity{}, nil, &Refusal{Reason: reasonMissingToken}, ""
 	}
 
 	if len(header[0]) > MaxAuthorizationBytes {
-		return Identity{}, nil, &Refusal{Reason: "token too large"}
+		return Identity{}, nil, &Refusal{Reason: "token too large"}, ""
 	}
 
 	scheme, token, found := strings.Cut(header[0], " ")
 	token = strings.TrimSpace(token)
 
 	if !found || !strings.EqualFold(scheme, "Bearer") || token == "" {
-		return Identity{}, nil, &Refusal{Reason: reasonMissingToken}
+		return Identity{}, nil, &Refusal{Reason: reasonMissingToken}, ""
 	}
 
 	// The unverified claims only pick the verifier; each verifies fully,
@@ -438,7 +480,7 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 	if a.spiffe != nil && isSPIFFESubject(subject) {
 		identity, refusal := a.spiffe.verify(request.Context(), token, subject)
 
-		return identity, nil, refusal
+		return identity, nil, refusal, opsmetrics.AuthSPIFFE
 	}
 
 	if a.accounts != nil && issuer != a.issuer {
@@ -449,7 +491,7 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 			identity.Expiry = unverifiedExpiry(token)
 		}
 
-		return identity, nil, refusal
+		return identity, nil, refusal, opsmetrics.AuthServiceAccount
 	}
 
 	verifier := a.verifierFor(token)
@@ -461,7 +503,7 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 			refusal.Reason = "audience not allowed"
 		}
 
-		return Identity{}, nil, &refusal
+		return Identity{}, nil, &refusal, ""
 	}
 
 	verified, err := verifier.Verify(request.Context(), token)
@@ -469,22 +511,22 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 		refusal := unverifiedRefusal(token)
 		refusal.Reason = "invalid token"
 
-		return Identity{}, nil, &refusal
+		return Identity{}, nil, &refusal, ""
 	}
 
 	var claims map[string]json.RawMessage
 	if err := verified.Claims(&claims); err != nil {
-		return Identity{}, nil, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}
+		return Identity{}, nil, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}, ""
 	}
 
 	identity, err := a.identityFromClaims(verified.Subject, claims)
 	if err != nil {
-		return Identity{}, nil, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}
+		return Identity{}, nil, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}, ""
 	}
 
 	identity.Expiry = verified.Expiry
 
-	return identity, claims, nil
+	return identity, claims, nil, ""
 }
 
 // verifierFor returns the verifier of the first configured audience in the

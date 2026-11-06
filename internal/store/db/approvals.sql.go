@@ -50,6 +50,38 @@ func (q *Queries) ApproveApproval(ctx context.Context, arg ApproveApprovalParams
 	return i, err
 }
 
+const countPendingRequestsByKind = `-- name: CountPendingRequestsByKind :many
+SELECT 'tool'::text AS kind, count(*) AS total FROM approvals WHERE status = 'pending' AND expires_at > now()
+UNION ALL
+SELECT kind, count(*) AS total FROM access_requests WHERE status = 'pending' AND expires_at > now() GROUP BY kind
+`
+
+type CountPendingRequestsByKindRow struct {
+	Kind  string
+	Total int64
+}
+
+// Counts pending, unexpired approvals (kind tool) and access requests, by kind, for the pending gauge.
+func (q *Queries) CountPendingRequestsByKind(ctx context.Context) ([]CountPendingRequestsByKindRow, error) {
+	rows, err := q.db.Query(ctx, countPendingRequestsByKind)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountPendingRequestsByKindRow{}
+	for rows.Next() {
+		var i CountPendingRequestsByKindRow
+		if err := rows.Scan(&i.Kind, &i.Total); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const denyApproval = `-- name: DenyApproval :one
 UPDATE approvals
 SET status = 'denied', decided_at = now(), decided_by = $1

@@ -121,6 +121,12 @@ func TestMetricsOnSeparatePort(t *testing.T) {
 	status, body := get(t, "http://"+running.server.MetricsAddr().String()+"/metrics", nil)
 	assert.Equal(t, http.StatusOK, status)
 	assert.Contains(t, body, "go_goroutines")
+	assert.Contains(t, body, "process_cpu_seconds_total")
+	assert.Contains(t, body, `toolgate_build_info{version="`)
+	assert.Contains(t, body, `toolgate_db_pool_connections{state="max"}`)
+	assert.Contains(t, body, "toolgate_db_pool_acquire_total")
+	assert.NotContains(t, body, "toolgate_leader", "a replica that does not hold the Lease exports no leader series")
+	assert.NotContains(t, body, "toolgate_approval_requests_pending")
 
 	status, _ = get(t, running.url("/metrics"), nil)
 	assert.Equal(t, http.StatusNotFound, status)

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
@@ -520,7 +522,7 @@ func (u *UI) approveAccessRequest(writer http.ResponseWriter, request *http.Requ
 		// "Allow for this session" or "Always allow in this workspace".
 		choice := request.PostFormValue("scope")
 
-		u.decideAccessRequest(writer, request, accessRequest, func(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error {
+		u.decideAccessRequest(writer, request, accessRequest, opsmetrics.OutcomeApproved, func(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error {
 			return u.options.Workspaces.ApproveServerRequest(ctx, tx, identity, id, choice)
 		})
 
@@ -528,20 +530,20 @@ func (u *UI) approveAccessRequest(writer http.ResponseWriter, request *http.Requ
 	}
 
 	if accessRequest.Kind == "scope" {
-		u.decideAccessRequest(writer, request, accessRequest, u.options.Workspaces.ApproveScopeRequest)
+		u.decideAccessRequest(writer, request, accessRequest, opsmetrics.OutcomeApproved, u.options.Workspaces.ApproveScopeRequest)
 
 		return
 	}
 
-	u.decideAccessRequest(writer, request, accessRequest, u.options.Workspaces.ApproveChangeRequest)
+	u.decideAccessRequest(writer, request, accessRequest, opsmetrics.OutcomeApproved, u.options.Workspaces.ApproveChangeRequest)
 }
 
 // denyAccessRequest denies a pending access request. It needs no step-up.
 func (u *UI) denyAccessRequest(writer http.ResponseWriter, request *http.Request, accessRequest db.AccessRequest) {
-	u.decideAccessRequest(writer, request, accessRequest, u.options.Workspaces.DenyAccessRequest)
+	u.decideAccessRequest(writer, request, accessRequest, opsmetrics.OutcomeDenied, u.options.Workspaces.DenyAccessRequest)
 }
 
-func (u *UI) decideAccessRequest(writer http.ResponseWriter, request *http.Request, accessRequest db.AccessRequest,
+func (u *UI) decideAccessRequest(writer http.ResponseWriter, request *http.Request, accessRequest db.AccessRequest, outcome string,
 	decide func(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error,
 ) {
 	session, _ := SessionFrom(request.Context())
@@ -562,6 +564,7 @@ func (u *UI) decideAccessRequest(writer http.ResponseWriter, request *http.Reque
 		u.logger.ErrorContext(ctx, "cannot decide an access request", "error", err)
 		http.Error(writer, "The gateway can't save your decision. Try again later.", http.StatusInternalServerError)
 	default:
+		opsmetrics.ApprovalOutcome(accessRequest.Kind, outcome, 1)
 		http.Redirect(writer, request, ApprovalPath(accessRequest.ID), http.StatusSeeOther)
 	}
 }

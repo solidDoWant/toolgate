@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -207,7 +209,7 @@ func (u *UI) approve(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	u.decide(writer, request, typeApprovalApprove, func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error) {
+	u.decide(writer, request, typeApprovalApprove, opsmetrics.OutcomeApproved, func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error) {
 		return queries.ApproveApproval(request.Context(), db.ApproveApprovalParams{
 			ID: id, DecidedBy: decidedBy,
 			ApprovalTimeout: pgtype.Interval{Microseconds: testtime.Scale(u.approvalTimeout()).Microseconds(), Valid: true},
@@ -222,7 +224,7 @@ func (u *UI) deny(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	u.decide(writer, request, typeApprovalDeny, func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error) {
+	u.decide(writer, request, typeApprovalDeny, opsmetrics.OutcomeDenied, func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error) {
 		return queries.DenyApproval(request.Context(), db.DenyApprovalParams{ID: id, DecidedBy: decidedBy})
 	})
 }
@@ -234,7 +236,7 @@ var errApprovalUndecidable = errors.New("the approval isn't pending")
 // decide runs one compare-and-set on a pending approval of the user and,
 // only when it wins, writes the event and notifies approval:<id> in the same
 // transaction. When it matches nothing, the page shows the real status.
-func (u *UI) decide(writer http.ResponseWriter, request *http.Request, eventType string,
+func (u *UI) decide(writer http.ResponseWriter, request *http.Request, eventType, outcome string,
 	update func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error),
 ) {
 	session, _ := SessionFrom(request.Context())
@@ -288,6 +290,7 @@ func (u *UI) decide(writer http.ResponseWriter, request *http.Request, eventType
 		return
 	}
 
+	opsmetrics.ApprovalOutcome(opsmetrics.KindTool, outcome, 1)
 	http.Redirect(writer, request, ApprovalPath(row.Approval.ID), http.StatusSeeOther)
 }
 

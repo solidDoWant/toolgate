@@ -8,7 +8,9 @@ A metric label is either a fixed set of values or the name of a template that yo
 
 A series is one metric with one set of label values. A metrics backend uses memory for each series, so toolgate keeps the number small and stable.
 
-Each replica exports at most `300 + 10 × T` series, where `T` is the number of templates. The metrics with a `server` label add up to 12 series for each template: 6 call outcomes, 2 start outcomes, 1 health failure series and 3 repair actions. A test in the toolgate source checks this limit, with 10 templates and every outcome and revision, and checks that every label value belongs to a fixed set.
+Each replica exports at most `300 + 10 × T` series, where `T` is the number of templates. The metrics with a `server` label add up to 12 series for each template: 6 call outcomes, 2 start outcomes, 1 health failure series and 3 repair actions. A test in the toolgate source checks this limit, with 10 templates and every outcome and revision, and checks that every label value belongs to a fixed set. The test also counts every outcome of every kind of approval request.
+
+The process and Go metrics add about 50 series. The Go metrics are the basic memory and garbage collector set, not the full runtime list.
 
 ## Leader-only metrics
 
@@ -17,6 +19,8 @@ Only the replica that holds the leader Lease sets these metrics. The other repli
 - `toolgate_sessions`
 - `toolgate_instances`
 - `toolgate_instance_namespaces_stuck`
+- `toolgate_approval_requests_pending`
+- `toolgate_leader`
 
 When the leader changes, the new leader sets the metrics within 30 seconds.
 
@@ -126,3 +130,71 @@ increase(toolgate_audit_payload_errors_total[1h]) > 0
 ## Tool search quality
 
 The counters `toolgate_tool_search_total`, `toolgate_tool_search_hits_total` (extra label `rank`), `toolgate_tool_search_researches_total` and `toolgate_tool_search_no_call_total` show how well tool search works in real use. They have the labels `degraded` and `embedding_model`. See [Tool search](tool-search.md#search-quality-in-use).
+
+## Approvals
+
+`toolgate_approval_requests_total{kind, outcome}` counts approval and access requests that reached an outcome. The label `kind` is `tool` (a tool call that needs approval), `server` (a request to enable a server), `scope` or `change`. The label `outcome` is `approved`, `denied`, `expired` or `cancelled`. A request is `cancelled` when its session ended before anyone decided.
+
+```promql
+sum by (kind) (increase(toolgate_approval_requests_total{outcome="expired"}[1h]))
+```
+
+`toolgate_approval_requests_pending{kind}` is a gauge of the requests that wait for a decision and have not expired. All four kinds are always present on the leader.
+
+```promql
+max(sum by (kind) (toolgate_approval_requests_pending)) > 20
+```
+
+Suggested alert: pending approvals that grow for 30 minutes mean that nobody decides.
+
+```promql
+deriv(max(sum(toolgate_approval_requests_pending))[30m:]) > 0
+```
+
+## Clients
+
+`toolgate_mcp_requests_total{revision, method}` counts MCP requests. The label `revision` is the MCP protocol revision the client sent: `2024-11-05`, `2025-03-26`, `2025-06-18`, `2025-11-25` or `2026-07-28`. The label `method` is `initialize`, `tools/list`, `tools/call` or `subscriptions/listen`. Any other value, or a missing one, is `other`. The values come from the client, so the gateway never uses them as they are.
+
+```promql
+sum by (revision) (rate(toolgate_mcp_requests_total{method="tools/call"}[5m]))
+```
+
+`toolgate_auth_results_total{kind, result}` counts sign-ins. The label `kind` is `user`, `service_account`, `spiffe` or `connector`. A `connector` is a user on the MCP endpoint without the plugin's session header. The label `result` is `ok`, `refused` or `attested`. A user whose workspace the gateway attested counts once as `ok` and once more as `attested`.
+
+```promql
+sum by (kind) (rate(toolgate_auth_results_total{result="refused"}[5m]))
+```
+
+## Database and process
+
+`toolgate_db_pool_connections{state}` is a gauge of the database connections of the replica, where `state` is `idle`, `in_use` or `max`. `toolgate_db_pool_wait_seconds_total` is the time that requests waited for a free connection. `toolgate_db_pool_acquire_total` counts the connections taken from the pool.
+
+Suggested alert: a pool at its maximum.
+
+```promql
+max by (pod) (toolgate_db_pool_connections{state="in_use"}) >= max by (pod) (toolgate_db_pool_connections{state="max"})
+```
+
+```promql
+rate(toolgate_db_pool_wait_seconds_total[5m])
+```
+
+`toolgate_notify_reconnects_total` counts reconnects of the PostgreSQL `LISTEN` connection. After a reconnect the replica reads its state again.
+
+```promql
+increase(toolgate_notify_reconnects_total[1h])
+```
+
+`toolgate_leader` is 1 on the replica that holds the Lease. The other replicas export no series. Suggested alert: no leader.
+
+```promql
+absent(toolgate_leader == 1)
+```
+
+`toolgate_build_info{version}` is always 1. Its label is the version of the build.
+
+```promql
+count by (version) (toolgate_build_info)
+```
+
+The gateway also exports the standard process metrics (`process_*`) and a basic set of Go memory and garbage collector metrics (`go_*`).

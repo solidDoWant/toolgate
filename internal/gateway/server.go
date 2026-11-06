@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
@@ -75,6 +77,8 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 		tracerProvider: tracerProvider,
 		metrics:        newMetricsRegistry(),
 	}
+
+	server.metrics.MustRegister(opsmetrics.PoolCollector(database))
 
 	health.Register(server.mux, logger, health.Check{Name: "postgresql", Run: database.Ping})
 	server.publicRoutes = append(server.publicRoutes, "GET /healthz", "GET /readyz")
@@ -260,14 +264,17 @@ func traced(request *http.Request) bool {
 	return !strings.HasPrefix(request.URL.Path, OTLPIngestPathPrefix)
 }
 
-// newMetricsRegistry returns the registry served at /metrics, holding the Go
-// runtime and process metrics.
+// newMetricsRegistry returns the registry served at /metrics, holding the
+// process metrics, the basic Go memory and garbage collector metrics (not
+// the full runtime list), the build info and the request counters.
 func newMetricsRegistry() *prometheus.Registry {
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		opsmetrics.BuildInfo(),
 	)
+	registry.MustRegister(opsmetrics.Collectors()...)
 
 	return registry
 }

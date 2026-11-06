@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
@@ -93,6 +95,11 @@ type Metrics struct {
 	SearchHits       *prometheus.CounterVec
 	SearchResearches *prometheus.CounterVec
 	SearchNoCalls    *prometheus.CounterVec
+	// ApprovalsPending counts pending approval and access requests, by
+	// kind.
+	ApprovalsPending *prometheus.GaugeVec
+	// Leader is 1 while this replica holds the Lease.
+	Leader prometheus.Gauge
 }
 
 // Outcomes of a tool call (the `outcome` label of toolgate_tool_calls_total).
@@ -180,6 +187,14 @@ func NewMetrics() *Metrics {
 			Name: "toolgate_tool_search_no_call_total",
 			Help: "Searches with no call and no newer search when the session ended or after 30 minutes, by whether search was degraded and the embedding model. Counted by the replica holding the leader Lease.",
 		}, []string{"degraded", "embedding_model"}),
+		ApprovalsPending: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "toolgate_approval_requests_pending",
+			Help: "Approval and access requests waiting for a decision, by kind. Set by the replica holding the leader Lease.",
+		}, []string{"kind"}),
+		Leader: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "toolgate_leader",
+			Help: "1 on the replica holding the leader Lease. Other replicas export no series.",
+		}),
 	}
 }
 
@@ -187,7 +202,8 @@ func NewMetrics() *Metrics {
 func (m *Metrics) Collectors() []prometheus.Collector {
 	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions, m.ToolCalls, m.ToolCallDuration,
 		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs,
-		m.Searches, m.SearchHits, m.SearchResearches, m.SearchNoCalls}
+		m.Searches, m.SearchHits, m.SearchResearches, m.SearchNoCalls,
+		m.ApprovalsPending, m.Leader}
 }
 
 // Step takes one instance one step towards stopped. It is a Step of the
@@ -481,6 +497,29 @@ func (m *Metrics) update(ctx context.Context, queries *db.Queries, stuck int) er
 	for verified, total := range open {
 		m.Sessions.WithLabelValues(verified).Set(float64(total))
 	}
+
+	return m.updatePending(ctx, queries)
+}
+
+// updatePending sets the pending request gauge and marks this replica as
+// the leader. Every kind is always present, so an alert reads 0 rather than
+// a missing series.
+func (m *Metrics) updatePending(ctx context.Context, queries *db.Queries) error {
+	rows, err := queries.CountPendingRequestsByKind(ctx)
+	if err != nil {
+		return fmt.Errorf("count pending requests: %w", err)
+	}
+
+	pending := make(map[string]int64, len(opsmetrics.Kinds))
+	for _, row := range rows {
+		pending[row.Kind] += row.Total
+	}
+
+	for _, kind := range opsmetrics.Kinds {
+		m.ApprovalsPending.WithLabelValues(kind).Set(float64(pending[kind]))
+	}
+
+	m.Leader.Set(1)
 
 	return nil
 }

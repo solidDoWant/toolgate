@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -224,6 +226,7 @@ func (m *metaTools) waitForScopeRequest(ctx context.Context, request *mcp.CallTo
 // approval:<id>.
 func (m *metaTools) expireAccessRequest(ctx context.Context, identity auth.Identity, id string) (bool, error) {
 	won := false
+	kind := ""
 
 	err := pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
 		queries := db.New(tx)
@@ -238,6 +241,7 @@ func (m *metaTools) expireAccessRequest(ctx context.Context, identity auth.Ident
 		}
 
 		won = true
+		kind = expired.Kind
 
 		if err := audit.NewRecorder(m.auditOutput, queries).Record(ctx, accessEvent(identity, typeAccessExpire, expired)); err != nil {
 			return err
@@ -245,6 +249,9 @@ func (m *metaTools) expireAccessRequest(ctx context.Context, identity auth.Ident
 
 		return store.Notify(ctx, tx, store.KindApproval, id)
 	})
+	if err == nil && won {
+		opsmetrics.ApprovalOutcome(kind, opsmetrics.OutcomeExpired, 1)
+	}
 
 	return won, err
 }

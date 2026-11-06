@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -222,12 +224,15 @@ func TestListenerReconnectsAndReportsMissed(t *testing.T) {
 
 	ctx := t.Context()
 
+	reconnects := opsmetrics.Value("toolgate_notify_reconnects_total", nil)
+
 	var terminated int
 	require.NoError(t, pool.QueryRow(ctx,
 		"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN%' AND pid <> pg_backend_pid()) AS t").Scan(&terminated))
 	require.Equal(t, 1, terminated, "the listener's connection")
 
 	assert.Equal(t, store.Event{Missed: true}, nextEvent(t, events))
+	assert.InDelta(t, reconnects+1, opsmetrics.Value("toolgate_notify_reconnects_total", nil), 0)
 
 	require.NoError(t, store.Notify(ctx, pool, store.KindSession, "7"))
 	assert.Equal(t, store.Event{Kind: store.KindSession, ID: "7"}, nextEvent(t, events))
