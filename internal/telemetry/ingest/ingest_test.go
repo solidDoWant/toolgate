@@ -1,10 +1,13 @@
 package ingest_test
 
 import (
+	"bufio"
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -812,4 +815,47 @@ func TestIngestRefusesFifthConcurrentRequest(t *testing.T) {
 	// The slots are free again.
 	response, _ = gateway.post(t, post{signal: "logs", body: body, contentType: "application/x-protobuf", token: token})
 	assert.Equal(t, http.StatusOK, response.StatusCode)
+}
+
+func TestIngestSlowBodiesDoNotHoldSlots(t *testing.T) {
+	const slow = ingest.MaxConcurrent
+
+	fake := newBackend(t)
+	gateway := newGateway(t, ingest.Options{Endpoint: fake.server.URL, BodyTimeout: 500 * time.Millisecond})
+	token := gateway.token(t, true)
+	address := strings.TrimPrefix(gateway.server.URL, "http://")
+
+	connections := make([]net.Conn, 0, slow)
+
+	for range slow {
+		connection, err := net.Dial("tcp", address)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = connection.Close() })
+
+		_, err = fmt.Fprintf(connection, "POST /v1/logs HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer %s\r\n"+
+			"Content-Type: application/x-protobuf\r\nContent-Length: 100000\r\n\r\n\x0a", token)
+		require.NoError(t, err)
+
+		connections = append(connections, connection)
+	}
+
+	// Another export succeeds while the slow bodies are still open.
+	body := encode(t, plogotlp.NewExportRequestFromLogs(sampleLogs()), false)
+	response, _ := gateway.post(t, post{signal: "logs", body: body, contentType: "application/x-protobuf", token: token})
+	assert.Equal(t, http.StatusOK, response.StatusCode)
+
+	// Each slow request ends with 408 once the bound passes, and is not forwarded.
+	for _, connection := range connections {
+		require.NoError(t, connection.SetReadDeadline(time.Now().Add(30*time.Second)))
+
+		answer, err := http.ReadResponse(bufio.NewReader(connection), nil)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusRequestTimeout, answer.StatusCode)
+		_ = answer.Body.Close()
+	}
+
+	fake.mutex.Lock()
+	defer fake.mutex.Unlock()
+
+	assert.Len(t, fake.received["/v1/logs"], 1, "only the complete export reaches the backend")
 }

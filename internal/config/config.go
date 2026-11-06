@@ -85,8 +85,9 @@ type Config struct {
 	// after each character outside `[A-Za-z0-9]` changes to `_` and the name
 	// changes to lower case. Then the gateway sets `user.id`, `enduser.id`,
 	// `user.email` and `workspace.id` from the verified identity. A request
-	// body can be 4 MiB at most, and each replica handles 4 requests at the
-	// same time at most. When it is `false`, these paths answer 404.
+	// body can be 4 MiB at most, and it must arrive within 10 seconds, or the
+	// gateway answers 408. Each replica handles 4 requests at the same time at
+	// most. When it is `false`, these paths answer 404.
 	OTLPIngest bool `json:"otlpIngest" env:"TOOLGATE_OTLP_INGEST"`
 
 	// When it is `true`, the gateway keeps prompt and tool content in the
