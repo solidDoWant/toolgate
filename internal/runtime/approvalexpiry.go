@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -85,7 +87,9 @@ func (e *ApprovalExpirer) Run(ctx context.Context) error {
 // A 0.4 end transaction already does this; the pass catches sessions a 0.3
 // leader ended (docs/design/phase-4.md §2, "Cleanup").
 func (e *ApprovalExpirer) expireEndedSessionScopeRequests(ctx context.Context) error {
-	return pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
+	var cancelled int
+
+	err := pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
 		expired, err := queries.ExpireEndedSessionScopeRequests(ctx)
@@ -118,15 +122,24 @@ func (e *ApprovalExpirer) expireEndedSessionScopeRequests(ctx context.Context) e
 			}
 		}
 
+		cancelled = len(expired)
+
 		return nil
 	})
+	if err == nil {
+		opsmetrics.ApprovalOutcome(opsmetrics.KindScope, opsmetrics.OutcomeCancelled, cancelled)
+	}
+
+	return err
 }
 
 // expireAccessRequest compare-and-sets one access request from pending to
 // expired and, only when it wins, writes access.expire and notifies
 // approval:<id>, as expire does for an approval.
 func (e *ApprovalExpirer) expireAccessRequest(ctx context.Context, request db.ListOverdueAccessRequestsRow) error {
-	return pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
+	won := false
+
+	err := pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
 		if _, err := queries.ExpireAccessRequest(ctx, request.ID); err != nil {
@@ -136,6 +149,8 @@ func (e *ApprovalExpirer) expireAccessRequest(ctx context.Context, request db.Li
 
 			return err
 		}
+
+		won = true
 
 		output := e.AuditOutput
 		if output == nil {
@@ -162,12 +177,19 @@ func (e *ApprovalExpirer) expireAccessRequest(ctx context.Context, request db.Li
 
 		return store.Notify(ctx, tx, store.KindApproval, request.ID)
 	})
+	if err == nil && won {
+		opsmetrics.ApprovalOutcome(request.Kind, opsmetrics.OutcomeExpired, 1)
+	}
+
+	return err
 }
 
 // expire compare-and-sets one approval from pending to expired and, only
 // when it wins, writes approval.expire and notifies approval:<id>.
 func (e *ApprovalExpirer) expire(ctx context.Context, approval db.ListOverdueApprovalsRow) error {
-	return pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
+	won := false
+
+	err := pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
 		if _, err := queries.ExpireApproval(ctx, approval.ID); err != nil {
@@ -177,6 +199,8 @@ func (e *ApprovalExpirer) expire(ctx context.Context, approval db.ListOverdueApp
 
 			return err
 		}
+
+		won = true
 
 		output := e.AuditOutput
 		if output == nil {
@@ -199,4 +223,9 @@ func (e *ApprovalExpirer) expire(ctx context.Context, approval db.ListOverdueApp
 
 		return store.Notify(ctx, tx, store.KindApproval, approval.ID)
 	})
+	if err == nil && won {
+		opsmetrics.ApprovalOutcome(opsmetrics.KindTool, opsmetrics.OutcomeExpired, 1)
+	}
+
+	return err
 }

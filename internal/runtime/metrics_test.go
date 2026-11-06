@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/solidDoWant/toolgate/internal/metricsbudget"
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 )
 
@@ -63,9 +64,16 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 	metrics.ObserveCallDuration(time.Second)
 	metrics.WaitingForStart(1)
 
+	for _, kind := range opsmetrics.Kinds {
+		metrics.ApprovalsPending.WithLabelValues(kind).Set(1)
+	}
+
+	metrics.Leader.Set(1)
+
 	// Instances 30, stuck 1, sessions 2, calls 60, call duration 1, policy
-	// 12, starts 20, start duration 1, waiting 1, health 10, repairs 30.
-	assert.Equal(t, 30+1+2+60+1+12+20+1+1+10+30, metricsbudget.Check(t, registry, templates))
+	// 12, starts 20, start duration 1, waiting 1, health 10, repairs 30,
+	// pending 4, leader 1.
+	assert.Equal(t, 30+1+2+60+1+12+20+1+1+10+30+4+1, metricsbudget.Check(t, registry, templates))
 }
 
 // A label outside the allowed sets fails the check.

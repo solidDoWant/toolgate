@@ -128,3 +128,9 @@ UPDATE approvals
 SET status = 'expired'
 WHERE id = @id AND status = 'pending' AND expires_at <= now()
 RETURNING *;
+
+-- name: CountPendingRequestsByKind :many
+-- Counts pending, unexpired approvals (kind tool) and access requests, by kind, for the pending gauge.
+SELECT 'tool'::text AS kind, count(*) AS total FROM approvals WHERE status = 'pending' AND expires_at > now()
+UNION ALL
+SELECT kind, count(*) AS total FROM access_requests WHERE status = 'pending' AND expires_at > now() GROUP BY kind;

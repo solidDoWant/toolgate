@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -133,6 +135,7 @@ func (l *Listener) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 
+		opsmetrics.NotifyReconnect()
 		l.logger.WarnContext(ctx, "PostgreSQL notification listener disconnected; reconnecting", slog.String("error", err.Error()))
 
 		select {
