@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -222,6 +224,22 @@ func TestMonitorCustomCheckMarksHealthyAtSuccessThreshold(t *testing.T) {
 	row, _ := fixture.store.snapshot()
 	assert.False(t, row.UnhealthySince.Valid)
 	assert.Empty(t, row.UnhealthyReason)
+}
+
+func TestMonitorCustomCheckDoesNotClearObjectFailure(t *testing.T) {
+	const objectReason = "OCIRepository e2e-repo failed: tag 9.9.9 not found"
+
+	fixture := newCheckFixture(t, fastCheck, always(http.StatusOK), nil, func(_ *runtime.Monitor, fixture *checkFixture) {
+		fixture.store.row.UnhealthySince = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+		fixture.store.row.UnhealthyReason = objectReason
+	})
+
+	require.Eventually(t, func() bool { return len(fixture.target.requests()) >= 20 }, 10*time.Second, time.Millisecond)
+
+	row, _ := fixture.store.snapshot()
+	assert.True(t, row.UnhealthySince.Valid)
+	assert.Equal(t, objectReason, row.UnhealthyReason)
+	assert.Empty(t, fixture.writes())
 }
 
 // hangingSession is a monitoring session whose ping answers only when its
