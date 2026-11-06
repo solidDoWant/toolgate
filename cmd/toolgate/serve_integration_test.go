@@ -98,7 +98,7 @@ func TestServeStopsOnSIGTERM(t *testing.T) {
 }
 
 func TestServeAppliesTheMigrationsBeforeItListens(t *testing.T) {
-	pg := testutil.StartPostgres(t)
+	pg := testutil.StartPostgresEmpty(t)
 	pool := openPool(t, pg.ConnString())
 
 	var tables int

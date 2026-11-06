@@ -4,7 +4,9 @@ For: people who change the toolgate code.
 
 Integration tests are Go tests with the `//go:build integration` tag. Run them with `make test-integration`. They use real dependencies that the package `internal/testutil` starts for each test:
 
-- `StartPostgres` starts PostgreSQL 17 in Docker. The server accepts TCP connections only over TLS with a client certificate. The common name of the certificate must be the database user. `ConnString` returns a URL that uses the client certificate and verifies the server certificate. `IssueClientCert` makes more client certificates.
+- `StartPostgres` gives the test its own database on a PostgreSQL 17 server in Docker. All tests of one test binary share that server, which starts on the first call. Each database is a copy of a template that the binary migrates once. The database is named `t_` and a random string, and it is dropped when the test ends. The server accepts TCP connections only over TLS with a client certificate. The common name of the certificate must be the database user. `ConnString` returns a URL that uses the client certificate and verifies the server certificate. `IssueClientCert` makes more client certificates.
+- `StartPostgresEmpty` is the same, but the database has no tables. Use it to test the migrations.
+- `StartPostgresDedicated` starts a server for one test, with an empty database. Use it when the test stops or restarts the server, ends connections of other databases, changes server settings (`ALTER SYSTEM`, `pg_hba`), or depends on something that spans the whole server. Roles belong to the whole server, so a test on the shared server names each role with `pg.RoleName(...)`, which adds the prefix of the test's database. A test in `internal/testutil` fails when a test runs `ALTER SYSTEM`, `CREATE ROLE` without `RoleName`, or `pg_terminate_backend` without `current_database()`, and does not use `StartPostgresDedicated`.
 - `StartS3` starts the Versity S3 Gateway (`versity/versitygw`) in Docker and creates one empty bucket. `Client` returns an AWS SDK client for it with path-style addressing.
 - `StartOIDCProvider` starts a fake OIDC provider in the test process. It needs no Docker. The e2e harness can pass its own listener and public issuer URL.
 - `StartEnvtest` starts a real Kubernetes API server and etcd in the test process with envtest (see [envtest tests](#envtest-tests)). It needs no Docker.
@@ -54,4 +56,4 @@ If no Docker daemon answers, `StartPostgres` and `StartS3` skip the test with th
 
 ## Cleanup
 
-Each helper removes its container when the test ends, also when the test fails. If the test process is killed, the testcontainers reaper (Ryuk) removes the containers some seconds later.
+`StartPostgresDedicated` and the other helpers remove their container when the test ends, also when the test fails. The shared PostgreSQL server lives until the test binary exits; the reaper removes it then. If the test process is killed, the testcontainers reaper (Ryuk) removes the containers some seconds later.

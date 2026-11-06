@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"bytes"
+	"context"
 	"crypto/x509"
 	"fmt"
 	"net/url"
@@ -78,21 +79,74 @@ type Postgres struct {
 	// client certificates.
 	CA *x509.Certificate
 
+	// Dedicated is true when the server belongs to one test. Otherwise other
+	// tests share it and Database is this test's own database.
+	Dedicated bool
+
 	ca *certAuthority
 }
 
-// StartPostgres starts PostgreSQL in Docker and removes it when tb ends. It
-// skips tb when Docker is not available.
+// StartPostgres returns a fresh, migrated database on the PostgreSQL server
+// this test binary shares. The server starts on the first call and lives
+// until the binary exits. The database is cloned from a template the binary
+// migrates once, and it is dropped when tb ends. It skips tb when Docker is
+// not available.
+//
+// Tests that restart or stop the server, kill connections server-wide, change
+// server settings, or need a server of their own use StartPostgresDedicated.
 func StartPostgres(tb testing.TB) *Postgres {
+	tb.Helper()
+
+	return startSharedDatabase(tb, sharedMigratedTemplate)
+}
+
+// StartPostgresEmpty is like StartPostgres, but the database has no tables.
+// Use it for tests of the migrations themselves.
+func StartPostgresEmpty(tb testing.TB) *Postgres {
+	tb.Helper()
+
+	return startSharedDatabase(tb, sharedEmptyTemplate)
+}
+
+// StartPostgresDedicated starts a PostgreSQL server for tb alone, with an empty
+// database, and removes it when tb ends. It skips tb when Docker is not
+// available.
+func StartPostgresDedicated(tb testing.TB) *Postgres {
 	tb.Helper()
 	RequireDocker(tb)
 
-	ctx := tb.Context()
-	host := daemonHost(tb)
+	pg, container, err := startPostgresServer(tb.Context(), tb)
+	testcontainers.CleanupContainer(tb, container)
+	require.NoError(tb, err, "start PostgreSQL")
 
-	ca := newCertAuthority(tb)
-	server := ca.issue(tb, "localhost", x509.ExtKeyUsageServerAuth, uniqueHosts("localhost", "127.0.0.1", "::1", host)...)
-	client := ca.issue(tb, postgresUser, x509.ExtKeyUsageClientAuth)
+	pg.Dedicated = true
+
+	return pg
+}
+
+// startPostgresServer starts one container and returns a Postgres for its
+// default database. Its files live in a directory that stays until the
+// process exits when tb is nil, and until tb ends otherwise.
+func startPostgresServer(ctx context.Context, tb testing.TB) (*Postgres, testcontainers.Container, error) {
+	host, err := daemonHost(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ca, err := newCertAuthorityE()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	server, err := ca.issueE("localhost", x509.ExtKeyUsageServerAuth, uniqueHosts("localhost", "127.0.0.1", "::1", host)...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	client, err := ca.issueE(postgresUser, x509.ExtKeyUsageClientAuth)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	files := map[string][]byte{
 		"ca.crt":      ca.certPEM,
@@ -120,27 +174,50 @@ func StartPostgres(tb testing.TB) *Postgres {
 			wait.ForListeningPort("5432/tcp").WithStartupTimeout(2*time.Minute),
 		),
 	)
-	testcontainers.CleanupContainer(tb, container)
-	require.NoError(tb, err, "start PostgreSQL")
+	if err != nil {
+		return nil, container, err
+	}
 
 	port, err := container.MappedPort(ctx, "5432/tcp")
-	require.NoError(tb, err)
+	if err != nil {
+		return nil, container, err
+	}
 
-	dir := tb.TempDir()
+	var dir string
+	if tb != nil {
+		dir = tb.TempDir()
+	} else if dir, err = os.MkdirTemp("", "toolgate-postgres-"); err != nil {
+		return nil, container, err
+	}
+
 	pg := &Postgres{
 		ContainerID: container.GetContainerID(),
 		Host:        host,
 		Port:        port.Port(),
 		User:        postgresUser,
 		Database:    postgresDatabase,
-		CAFile:      writeFile(tb, dir, "ca.crt", ca.certPEM),
-		CertFile:    writeFile(tb, dir, "client.crt", client.CertPEM),
-		KeyFile:     writeFile(tb, dir, "client.key", client.KeyPEM),
 		CA:          ca.cert,
 		ca:          ca,
 	}
 
-	return pg
+	for _, file := range []struct {
+		name    string
+		content []byte
+		path    *string
+	}{
+		{"ca.crt", ca.certPEM, &pg.CAFile},
+		{"client.crt", client.CertPEM, &pg.CertFile},
+		{"client.key", client.KeyPEM, &pg.KeyFile},
+	} {
+		path := filepath.Join(dir, file.name)
+		if err := os.WriteFile(path, file.content, 0o600); err != nil {
+			return nil, container, err
+		}
+
+		*file.path = path
+	}
+
+	return pg, container, nil
 }
 
 // ConnString returns a libpq-style URL that authenticates with the client
@@ -205,18 +282,15 @@ func hostPort(host, port string) string {
 	return host + ":" + port
 }
 
-func daemonHost(tb testing.TB) string {
-	tb.Helper()
-
+func daemonHost(ctx context.Context) (string, error) {
 	provider, err := testcontainers.NewDockerProvider()
-	require.NoError(tb, err)
+	if err != nil {
+		return "", err
+	}
 
 	defer func() { _ = provider.Close() }()
 
-	host, err := provider.DaemonHost(tb.Context())
-	require.NoError(tb, err)
-
-	return host
+	return provider.DaemonHost(ctx)
 }
 
 func uniqueHosts(hosts ...string) []string {
