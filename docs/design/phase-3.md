@@ -64,7 +64,7 @@ They go on records, not on the resource, because Prometheus and most metrics bac
 - **Kept:** attributes that only name things, such as `skill_name`, `subagent_type`, `workflow.name`, `server_name`, `plugin.name`, `marketplace.name`, `agent_type`, `command_name`, `classifier_category`, `vcs.ref.head.*`, and the metric labels `agent.name`, `skill.name`, `plugin.name`, `mcp_server.name` and `mcp_tool.name`. They're names, not prompts, arguments or results.
 - **Where the list comes from:** Claude Code's monitoring page (`https://code.claude.com/docs/en/monitoring-usage`), which marks each attribute these variables add. The worker checks the page for the Claude Code version the fixture is recorded with, and compares a recording with all three variables on against one with them off. An added attribute that carries content goes in the removed list. The list is one Go table, with a comment that links the page.
 - The normalized prefix rule above removes `user_prompt` and `user_system_prompt` even when `telemetry.allowContent` is `true`.
-- **Why:** `SPEC.md` §12 keeps tool arguments and results out of logs, except the audit payload store. So content goes to a telemetry backend only when an admin chooses.
+- `SPEC.md` §12 keeps tool arguments and results out of logs, except the audit payload store. So content goes to a telemetry backend only when an admin chooses.
 
 ### Forwarding
 
