@@ -119,6 +119,10 @@ func TestValidateToolFields(t *testing.T) {
 			template.Spec.ToolFilter = &v1alpha1.ToolFilter{Deny: []string{"list_issues"}}
 			template.Spec.Tools = map[string]v1alpha1.ToolOverride{"create_issue": {Name: "list_issues"}}
 		}, want: "Tool name `list_issues` of `create_issue` is the name of a hidden tool."},
+		{name: "two overrides share a name, one tool hidden", change: func(template *v1alpha1.MCPServerTemplate) {
+			template.Spec.ToolFilter = &v1alpha1.ToolFilter{Deny: []string{"b"}}
+			template.Spec.Tools = map[string]v1alpha1.ToolOverride{"a": {Name: "x"}, "b": {Name: "x"}}
+		}, want: "Tool name `x` is the name of both `a` and `b`."},
 		{name: "override name equals an allowed name", change: func(template *v1alpha1.MCPServerTemplate) {
 			template.Spec.ToolFilter = &v1alpha1.ToolFilter{Allow: []string{"list_issues"}}
 			template.Spec.Tools = map[string]v1alpha1.ToolOverride{"create_issue": {Name: "list_issues"}}
