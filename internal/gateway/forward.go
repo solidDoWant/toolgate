@@ -208,6 +208,16 @@ func (m *metaTools) dropUnlessReady(id string) {
 // Call steps of docs/design/phase-1.md §3. Every refusal writes
 // tool.decision, and nothing is forwarded before the allow is committed.
 func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	observation := &callObservation{started: time.Now(), server: unknownServer}
+	ctx = context.WithValue(ctx, callObservationKey{}, observation)
+
+	result, err := m.proxyCall(ctx, request)
+	m.observeCall(observation, err)
+
+	return result, err
+}
+
+func (m *metaTools) proxyCall(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	current, ok := requestContextOf(request)
 	if !ok {
 		return nil, errNoIdentity
@@ -224,6 +234,10 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return nil, err
 	}
 
+	if enabled {
+		observationOf(ctx).server = template.Name
+	}
+
 	if !enabled {
 		offered, offerErr := m.catalog.Offered(server)
 		if offerErr != nil {
@@ -232,6 +246,7 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		}
 
 		template = offered
+		observationOf(ctx).server = template.Name
 	}
 
 	// The exposed name maps to the upstream name from the template alone. A
@@ -282,6 +297,8 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		}
 
 		if refusal != nil {
+			observationOf(ctx).setOutcome(runtime.CallStartFailed)
+
 			return m.refuseCall(ctx, current, server, tool, refusal.details, refusal.message)
 		}
 
@@ -294,14 +311,28 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	}
 
 	if status == StatusStarting && instance.ID != "" {
+		m.metrics.WaitingForStart(1)
+
 		instance, status, reason, err = m.waitForCall(ctx, request, current, template, instance)
+
+		m.metrics.WaitingForStart(-1)
+
 		if err != nil {
+			var timeout startTimeoutError
+			if errors.As(err, &timeout) {
+				observationOf(ctx).setOutcome(runtime.CallTimeout)
+			}
+
 			return m.refuseCall(ctx, current, server, tool,
 				map[string]any{"reason": reasonNotReady, "status": StatusStarting, "detail": err.Error()}, err.Error())
 		}
 	}
 
 	if status != statusReady {
+		if status == statusFailed {
+			observationOf(ctx).setOutcome(runtime.CallStartFailed)
+		}
+
 		message := fmt.Sprintf("Server `%s` isn't ready: it is %s.", server, status)
 		if reason != "" {
 			message = fmt.Sprintf("Server `%s` isn't ready: it is %s: %s", server, status, reason)
@@ -347,6 +378,8 @@ func (m *metaTools) decideAndRun(ctx context.Context, current requestContext, re
 	decision := m.decide(ctx, m.policyRequest(current, template, tool, state))
 
 	if !decision.Allowed {
+		m.metrics.ObservePolicyRefusal(decision.Step, metricReason(decision))
+
 		return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
 	}
 
@@ -403,6 +436,7 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 		}
 	} else {
 		result, outcome = m.forward(ctx, instance, template, tool, arguments)
+		observationOf(ctx).forwarded(outcome)
 	}
 
 	// Step 6. A result that can't be stored is still returned; the row
@@ -598,6 +632,7 @@ func (m *metaTools) waitForCall(ctx context.Context, request *mcp.CallToolReques
 func (m *metaTools) refuseCall(ctx context.Context, current requestContext, server, tool string, details map[string]any, message string) (*mcp.CallToolResult, error) {
 	details["decision"] = "refuse"
 	withExposedDetail(ctx, details)
+	observationOf(ctx).setOutcome(runtime.CallRefused)
 
 	recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
 	if err := recorder.Record(ctx, callEvent(current, "tool.decision", server, tool, details)); err != nil {

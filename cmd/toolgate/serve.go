@@ -172,7 +172,15 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return authenticator.Middleware(next, false)
 	})
 
+	metrics := runtime.NewMetrics()
+	if err := server.RegisterMetrics(metrics.Collectors()...); err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
+
 	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
+		Metrics:       metrics,
 		Database:      server.Database(),
 		Catalog:       templates,
 		Policy:        engine,
@@ -230,6 +238,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			ruleLister:      ruleView,
 			secrets:         userSecrets(broker),
 			registerMetrics: server.RegisterMetrics,
+			metrics:         metrics,
 			logger:          logger,
 			auditOutput:     stdout,
 			listener:        listener,

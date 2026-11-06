@@ -40,6 +40,8 @@ const mcpSessionHeader = "Mcp-Session-Id"
 
 // MCPOptions are the dependencies of the MCP endpoint.
 type MCPOptions struct {
+	// Metrics counts tool calls and policy refusals. Nil means none.
+	Metrics *runtime.Metrics
 	// Database holds the sessions, session_servers and instances rows.
 	Database *pgxpool.Pool
 	// Catalog is the set of server templates.
@@ -247,6 +249,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 	}
 
 	tools := &metaTools{
+		metrics:      options.Metrics,
 		upstreams:    newUpstreams(upstreamEndpoint, upstreamlimit.NewClient(upstreamHTTPClient, upstreamResponseBudget)),
 		database:     options.Database,
 		catalog:      options.Catalog,

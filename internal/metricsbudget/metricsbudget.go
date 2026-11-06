@@ -31,6 +31,15 @@ var AllowedLabels = map[string][]string{
 	"status":       {"pending", "starting", "ready", "failed", "stopping"},
 	"verified":     {"true", "false"},
 	"trust_domain": nil,
+	"server":       nil,
+	"revision":     {"2025-11-25", "2026-07-28"},
+	"outcome": {
+		"forwarded", "refused", "approval", "upstream_error", "timeout", "start_failed",
+		"ready", "failed",
+	},
+	"step":   {"access", "environment", "blocked", "rule", "temporary-block", "workspace-scope"},
+	"reason": {"denied", "refused"},
+	"action": {"replace", "reapply", "gave_up"},
 }
 
 // Check gathers the registry and fails the test when it has more series than

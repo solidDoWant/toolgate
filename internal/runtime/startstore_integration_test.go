@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -171,4 +173,57 @@ func TestPostgresStartStoreMarkReadyStoresTheRevision(t *testing.T) {
 
 	require.NoError(t, rows.Err())
 	assert.Equal(t, []string{runtime.RevisionStateless}, revisions)
+}
+
+// Finished starts and health failures raise the operational metrics.
+func TestPostgresStartStoreCountsStartsAndHealthFailures(t *testing.T) {
+	pg := testutil.StartPostgres(t)
+
+	pool, err := store.Open(t.Context(), pg.ConnString())
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	require.NoError(t, store.Migrate(t.Context(), pool))
+
+	insert := func(id, scopeKey string) db.Instance {
+		instance, err := db.New(pool).InsertInstance(t.Context(), db.InsertInstanceParams{
+			ID: id, TemplateNs: "catalog", TemplateName: "github", TemplateUid: templateUID,
+			Generation: 1, Scope: "shared", ScopeKey: scopeKey, Namespace: "tg-" + id,
+		})
+		require.NoError(t, err)
+
+		return instance
+	}
+
+	metrics := runtime.NewMetrics()
+	startStore := runtime.PostgresStartStore{Pool: pool, Metrics: metrics}
+
+	ready := insert("00000000000000000000000000000a01", "one")
+	_, err = startStore.MarkStarting(t.Context(), ready.ID, 1, nil, time.Time{})
+	require.NoError(t, err)
+	_, err = startStore.MarkReady(t.Context(), ready, []byte(`[]`), runtime.RevisionStateful)
+	require.NoError(t, err)
+
+	failing := insert("00000000000000000000000000000a02", "two")
+	_, err = startStore.MarkStarting(t.Context(), failing.ID, 1, nil, time.Time{})
+	require.NoError(t, err)
+	_, err = startStore.MarkFailed(t.Context(), failing.ID, "starting", "image pull")
+	require.NoError(t, err)
+
+	// A second ready write changes nothing and counts nothing.
+	_, err = startStore.MarkReady(t.Context(), ready, []byte(`[]`), runtime.RevisionStateful)
+	require.NoError(t, err)
+
+	_, err = startStore.SetHealth(t.Context(), ready, false, "no answer")
+	require.NoError(t, err)
+	// The same unhealthy state again is no new failure.
+	_, err = startStore.SetHealth(t.Context(), ready, false, "no answer")
+	require.NoError(t, err)
+
+	assert.InDelta(t, 1, promtestutil.ToFloat64(metrics.InstanceStarts.WithLabelValues("github", "ready")), 0)
+	assert.InDelta(t, 1, promtestutil.ToFloat64(metrics.InstanceStarts.WithLabelValues("github", "failed")), 0)
+	assert.InDelta(t, 1, promtestutil.ToFloat64(metrics.HealthFailures.WithLabelValues("github")), 0)
+
+	var written dto.Metric
+	require.NoError(t, metrics.InstanceStartDuration.Write(&written))
+	assert.EqualValues(t, 1, written.GetHistogram().GetSampleCount())
 }

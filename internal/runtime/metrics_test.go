@@ -1,7 +1,9 @@
 package runtime_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -11,27 +13,59 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 )
 
-// Every label combination the instance metrics can take stays inside the
+// Every label combination the operational metrics can take stays inside the
 // series budget and the allowed label sets.
 func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 	const templates = 10
 
 	metrics := runtime.NewMetrics()
 	registry := prometheus.NewRegistry()
-	require.NoError(t, registry.Register(metrics.Instances))
-	require.NoError(t, registry.Register(metrics.NamespacesStuck))
-	require.NoError(t, registry.Register(metrics.Sessions))
+	registry.MustRegister(metrics.Collectors()...)
+
+	revisions := []string{runtime.RevisionStateful, runtime.RevisionStateless}
 
 	for _, scope := range []string{"per-session", "per-user", "shared"} {
 		for _, status := range []string{"pending", "starting", "ready", "failed", "stopping"} {
-			metrics.Instances.WithLabelValues(scope, status).Set(1)
+			for _, revision := range revisions {
+				metrics.Instances.WithLabelValues(scope, status, revision).Set(1)
+			}
 		}
 	}
 
 	metrics.Sessions.WithLabelValues("true").Set(1)
 	metrics.Sessions.WithLabelValues("false").Set(1)
 
-	assert.Equal(t, 15+1+2, metricsbudget.Check(t, registry, templates))
+	for index := range templates {
+		server := fmt.Sprintf("server-%d", index)
+
+		for _, outcome := range []string{
+			runtime.CallForwarded, runtime.CallRefused, runtime.CallApproval,
+			runtime.CallUpstreamError, runtime.CallTimeout, runtime.CallStartFailed,
+		} {
+			metrics.ObserveCall(server, outcome)
+		}
+
+		metrics.InstanceStarts.WithLabelValues(server, runtime.StartReady).Inc()
+		metrics.InstanceStarts.WithLabelValues(server, runtime.StartFailed).Inc()
+		metrics.HealthFailures.WithLabelValues(server).Inc()
+
+		for _, action := range []string{runtime.RepairReplace, runtime.RepairReapply, runtime.RepairGaveUp} {
+			metrics.Repairs.WithLabelValues(server, action).Inc()
+		}
+	}
+
+	for _, step := range []string{"access", "environment", "blocked", "rule", "temporary-block", "workspace-scope"} {
+		for _, reason := range []string{"denied", "refused"} {
+			metrics.ObservePolicyRefusal(step, reason)
+		}
+	}
+
+	metrics.ObserveCallDuration(time.Second)
+	metrics.WaitingForStart(1)
+
+	// Instances 30, stuck 1, sessions 2, calls 60, call duration 1, policy
+	// 12, starts 20, start duration 1, waiting 1, health 10, repairs 30.
+	assert.Equal(t, 30+1+2+60+1+12+20+1+1+10+30, metricsbudget.Check(t, registry, templates))
 }
 
 // A label outside the allowed sets fails the check.

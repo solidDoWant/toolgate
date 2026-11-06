@@ -19,6 +19,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/testtime"
@@ -109,6 +110,8 @@ func (m *metaTools) callWithApproval(ctx context.Context, current requestContext
 		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonBadArguments},
 			fmt.Sprintf("The arguments of `%s` aren't valid JSON.", ProxiedToolName(server, tool)))
 	}
+
+	observationOf(ctx).setOutcome(runtime.CallApproval)
 
 	call := approvalCall{current: current, request: request, template: template, tool: tool, arguments: arguments, hash: hash}
 

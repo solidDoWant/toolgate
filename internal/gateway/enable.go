@@ -645,11 +645,18 @@ func (m *metaTools) recordRefusal(ctx context.Context, current requestContext, t
 	return recorder.Record(ctx, auditEvent(current, eventType, template.Name, refusalDetails(decision)))
 }
 
-func refusalDetails(decision policy.Decision) map[string]any {
-	details := map[string]any{"decision": "refuse", "step": decision.Step, "reason": decision.Reason}
+// refusalReason is the reason a refusal reports: a denial names the
+// denied reason, not its detail.
+func refusalReason(decision policy.Decision) string {
 	if decision.Denied != "" {
-		details["reason"] = policy.ReasonDenied
+		return policy.ReasonDenied
 	}
+
+	return decision.Reason
+}
+
+func refusalDetails(decision policy.Decision) map[string]any {
+	details := map[string]any{"decision": "refuse", "step": decision.Step, "reason": refusalReason(decision)}
 
 	if decision.Rule != "" {
 		details["rule"] = decision.Rule

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -34,10 +35,12 @@ const unhealthyReason = "GET http://db-proxy:8080/healthz answered 503, expected
 func (f *stopFixture) repairer(kube client.Client) *runtime.Repairer {
 	now := func() time.Time { return *f.now.Load() }
 	logger := slog.New(slog.DiscardHandler)
+	metrics := runtime.NewMetrics()
 
 	return &runtime.Repairer{
 		Pool:     f.pool,
-		Replacer: &runtime.Replacer{Pool: f.pool, Stops: &runtime.StopDecider{Pool: f.pool, Templates: f.catalog, Log: logger, Now: now}, Log: logger, Now: now},
+		Metrics:  metrics,
+		Replacer: &runtime.Replacer{Pool: f.pool, Stops: &runtime.StopDecider{Pool: f.pool, Templates: f.catalog, Log: logger, Now: now}, Log: logger, Now: now, Metrics: metrics},
 		Starter: &runtime.Starter{
 			Store:    runtime.PostgresStartStore{Pool: f.pool},
 			Client:   kube,
@@ -184,6 +187,8 @@ func TestRepair(t *testing.T) {
 		again, found := fixture.liveInstance(t, old)
 		require.True(t, found)
 		assert.Equal(t, replacement.ID, again.ID)
+
+		assert.InDelta(t, 1, promtestutil.ToFloat64(repairer.Metrics.Repairs.WithLabelValues(template.Name, "replace")), 0)
 	})
 
 	t.Run("[row 108] a passing check doesn't make a row under replacement healthy", func(t *testing.T) {
@@ -319,6 +324,9 @@ func TestRepair(t *testing.T) {
 		assert.Equal(t, "failed", current.Status)
 		assert.Equal(t, "Health check still failing after 3 repairs in 30 minutes: "+unhealthyReason, current.Reason)
 		assert.Equal(t, 3, fixture.auditCount(t, "instance.reapply", old.ID))
+
+		assert.InDelta(t, 3, promtestutil.ToFloat64(repairer.Metrics.Repairs.WithLabelValues(template.Name, "reapply")), 0)
+		assert.InDelta(t, 1, promtestutil.ToFloat64(repairer.Metrics.Repairs.WithLabelValues(template.Name, "gave_up")), 0)
 	})
 
 	t.Run("reapply replaces an instance of another template generation or uid, and counts the repair", func(t *testing.T) {

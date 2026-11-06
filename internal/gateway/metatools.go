@@ -17,6 +17,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -75,6 +76,8 @@ type listServersInput struct{}
 
 // metaTools implements the toolgate_* tools.
 type metaTools struct {
+	// metrics counts calls and starts. Nil means none.
+	metrics     *runtime.Metrics
 	database    *pgxpool.Pool
 	catalog     *catalog.Catalog
 	policy      *policy.Engine

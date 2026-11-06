@@ -59,6 +59,8 @@ type PostgresStartStore struct {
 	// instance runs from. Each learned list rebuilds the template's search
 	// rows from it. Nil means no rows are rebuilt here.
 	RunningTemplate func(instance db.Instance) (*v1alpha1.MCPServerTemplate, bool)
+	// Metrics counts starts and health failures. Nil means none.
+	Metrics *Metrics
 }
 
 // Session implements StartStore.
@@ -100,7 +102,7 @@ func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generat
 // MarkReady implements StartStore. It writes instance.ready, with no
 // payload, in the same transaction as the compare-and-set.
 func (s PostgresStartStore) MarkReady(ctx context.Context, instance db.Instance, tools []byte, revision string) (bool, error) {
-	return s.changeAndLearn(ctx, instance.ID, tools, func(queries *db.Queries) (int64, error) {
+	changed, err := s.changeAndLearn(ctx, instance.ID, tools, func(queries *db.Queries) (int64, error) {
 		rows, err := queries.SetInstanceReady(ctx, db.SetInstanceReadyParams{ID: instance.ID, Tools: tools, McpRevision: revision})
 		if err != nil || rows == 0 {
 			return rows, err
@@ -117,13 +119,26 @@ func (s PostgresStartStore) MarkReady(ctx context.Context, instance db.Instance,
 
 		return rows, audit.NewRecorder(output, queries).Record(ctx, event)
 	})
+	if changed && err == nil {
+		s.Metrics.observeReady(instance.TemplateName, instance.CreatedAt.Time, time.Now())
+	}
+
+	return changed, err
 }
 
 // MarkFailed implements StartStore.
 func (s PostgresStartStore) MarkFailed(ctx context.Context, id, from, reason string) (bool, error) {
-	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
+	changed, err := s.change(ctx, id, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceFailed(ctx, db.SetInstanceFailedParams{ID: id, FromStatus: from, Reason: reason})
 	})
+	// A ready instance that fails is a repair that gave up, counted there.
+	if changed && err == nil && s.Metrics != nil && from != StatusReady {
+		if instance, getErr := db.New(s.Pool).GetInstance(ctx, id); getErr == nil {
+			s.Metrics.observeStart(instance.TemplateName, StartFailed)
+		}
+	}
+
+	return changed, err
 }
 
 // Instance implements HealthStore.
@@ -189,6 +204,10 @@ func (s PostgresStartStore) SetHealth(ctx context.Context, instance db.Instance,
 
 		return store.Notify(ctx, tx, store.KindInstance, instance.ID)
 	})
+
+	if changed && err == nil && !healthy {
+		s.Metrics.observeHealthFailure(instance.TemplateName)
+	}
 
 	return changed, err
 }
