@@ -101,3 +101,10 @@ WHERE c.generation < (
     WHERE n.template_uid = c.template_uid
     ORDER BY n.generation DESC OFFSET 1 LIMIT 1
 );
+
+-- name: CountPredecessorInstances :one
+-- Counts the rows of the same template and scope key, other than id, that
+-- are not yet stopped or failed: an instance being replaced or stopped.
+SELECT count(*) FROM instances
+WHERE template_ns = @template_ns AND template_name = @template_name AND scope_key = @scope_key
+  AND id <> @id AND status NOT IN ('stopped', 'failed');

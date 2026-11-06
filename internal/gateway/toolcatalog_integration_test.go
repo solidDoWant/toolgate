@@ -175,4 +175,22 @@ func TestToolCatalogLists(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("an instance that was ready before and is pending again withdraws the tools", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		template := fixture.addEnableTemplate("github", "per-user", anyone)
+		fixture.learn(t, string(template.UID), template.Generation, "old")
+
+		client := fixture.connectObserved(t, alice())
+		results := startEnable(t, client.session, "github")
+		instance := fixture.awaitInstance(t, template, "user:alice")
+		fixture.becomeReady(t, toolruntime.PostgresStartStore{Pool: fixture.pool}, instance.ID, "old")
+		require.Empty(t, awaitEnable(t, results).err)
+		require.Contains(t, toolNames(t, client.session), "github__old")
+
+		_, err := fixture.pool.Exec(t.Context(), "UPDATE instances SET status = 'pending' WHERE id = $1", instance.ID)
+		require.NoError(t, err)
+
+		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
+	})
 }

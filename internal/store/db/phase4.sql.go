@@ -78,6 +78,33 @@ func (q *Queries) CountAllowScopeEntries(ctx context.Context, scopeID int64) (in
 	return count, err
 }
 
+const countPredecessorInstances = `-- name: CountPredecessorInstances :one
+SELECT count(*) FROM instances
+WHERE template_ns = $1 AND template_name = $2 AND scope_key = $3
+  AND id <> $4 AND status NOT IN ('stopped', 'failed')
+`
+
+type CountPredecessorInstancesParams struct {
+	TemplateNs   string
+	TemplateName string
+	ScopeKey     string
+	ID           string
+}
+
+// Counts the rows of the same template and scope key, other than id, that
+// are not yet stopped or failed: an instance being replaced or stopped.
+func (q *Queries) CountPredecessorInstances(ctx context.Context, arg CountPredecessorInstancesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPredecessorInstances,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.ScopeKey,
+		arg.ID,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSessionFoundTools = `-- name: CountSessionFoundTools :one
 SELECT count(*) FROM session_found_tools WHERE session_pk = $1
 `

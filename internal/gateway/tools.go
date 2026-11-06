@@ -200,7 +200,24 @@ func (m *metaTools) listedTools(ctx context.Context, current requestContext, tem
 
 		return upstream, true, nil
 	case err == nil:
-		// Pending or starting.
+		// Pending or starting. An instance that was ready before (it is
+		// starting again) or that replaces one still stopping withdraws
+		// the server's tools until it is ready, as a repair or a restart
+		// always did. A first start lists the catalog list.
+		if instance.ReadyAt.Valid {
+			return nil, false, nil
+		}
+
+		predecessors, err := queries.CountPredecessorInstances(ctx, db.CountPredecessorInstancesParams{
+			TemplateNs: instance.TemplateNs, TemplateName: instance.TemplateName, ScopeKey: instance.ScopeKey, ID: instance.ID,
+		})
+		if err != nil {
+			return nil, false, fmt.Errorf("read predecessor instances: %w", err)
+		}
+
+		if predecessors > 0 {
+			return nil, false, nil
+		}
 	case errors.Is(err, pgx.ErrNoRows):
 		newest, found, err := m.newestInstance(ctx, current.identity, template)
 		if err != nil {
