@@ -13,20 +13,22 @@
 //
 // Modes. The default mode serves the tools named by -tools. With
 // -mode 2026-only the server is stateless and speaks only protocol revision
-// 2026-07-28. With -tools-file the server serves the tools declared in that
+// 2026-07-28. With -mode 2025-only the server is stateful, so it speaks
+// 2025-11-25 and older revisions only. With -mode both the server is
+// stateless and speaks 2025-11-25 and 2026-07-28. With -tools-file the server serves the tools declared in that
 // file, which is a JSON array of {name, description, inputSchema} (or an
 // object with that array in "tools"); every such tool echoes its arguments.
-// In either of those two cases, PUT /tools replaces the tool list and
+// In each of those cases, PUT /tools replaces the tool list and
 // notifies the connected sessions, with a body in the file's format or
-// ?names=a,b for echo tools with no schema. A 2026-only server without
-// -tools-file serves the names of -tools as echo tools.
+// ?names=a,b for echo tools with no schema. A server in a mode other than
+// default and without -tools-file serves the names of -tools as echo tools.
 //
 // Configuration, by flag or environment variable:
 //
 //	-listen      MCPSERVER_LISTEN       listen address (default :8080)
 //	-tools       MCPSERVER_TOOLS        comma-separated tool names (default env,secrets)
 //	-secrets-dir MCPSERVER_SECRETS_DIR  directory the secrets tool reads (default /secrets)
-//	-mode        MCPSERVER_MODE        default, or 2026-only
+//	-mode        MCPSERVER_MODE        default, 2026-only, 2025-only or both
 //	-tools-file  MCPSERVER_TOOLS_FILE  file with the tool declarations
 //	-health      MCPSERVER_HEALTH       status /healthz answers at start (default 200)
 package main
@@ -42,6 +44,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strconv"
 	"sync/atomic"
 	"syscall"
@@ -71,7 +74,7 @@ func run(args []string) error {
 	listen := flags.String("listen", envOr("MCPSERVER_LISTEN", ":8080"), "listen address")
 	tools := flags.String("tools", envOr("MCPSERVER_TOOLS", envTool+","+secretsTool), "comma-separated tool names")
 	secretsDir := flags.String("secrets-dir", envOr("MCPSERVER_SECRETS_DIR", "/secrets"), "directory the secrets tool reads")
-	mode := flags.String("mode", envOr("MCPSERVER_MODE", modeDefault), "default, or 2026-only")
+	mode := flags.String("mode", envOr("MCPSERVER_MODE", modeDefault), "default, 2026-only, 2025-only or both")
 	toolsFile := flags.String("tools-file", envOr("MCPSERVER_TOOLS_FILE", ""), "file with the tool declarations")
 	health := flags.String("health", envOr("MCPSERVER_HEALTH", "200"), "status /healthz answers at start")
 
@@ -122,6 +125,11 @@ func parseStatus(text string) (int, error) {
 const (
 	modeDefault  = "default"
 	mode2026Only = "2026-only"
+	// mode2025Only is a stateful server, which speaks 2025-11-25 and older
+	// revisions, with a tool list that PUT /tools replaces.
+	mode2025Only = "2025-only"
+	// modeBoth is a stateless server that speaks 2025-11-25 and 2026-07-28.
+	modeBoth = "both"
 )
 
 // toolSpecsFor returns the tools of the file, or echo tools named names.
@@ -180,8 +188,8 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 		config.Mode = modeDefault
 	}
 
-	if config.Mode != modeDefault && config.Mode != mode2026Only {
-		return nil, fmt.Errorf("mode %q is not %s or %s", config.Mode, modeDefault, mode2026Only)
+	if !slices.Contains([]string{modeDefault, mode2026Only, mode2025Only, modeBoth}, config.Mode) {
+		return nil, fmt.Errorf("mode %q is not %s, %s, %s or %s", config.Mode, modeDefault, mode2026Only, mode2025Only, modeBoth)
 	}
 
 	calls := &callCounter{}
@@ -196,12 +204,15 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 
 	handlerOptions := &mcp.StreamableHTTPOptions{}
 
-	if config.Mode == mode2026Only {
+	switch config.Mode {
+	case mode2026Only:
 		versions = []string{onlyProtocolVersion}
+		handlerOptions.Stateless = true
+	case modeBoth:
 		handlerOptions.Stateless = true
 	}
 
-	if config.ToolsFile != "" || config.Mode == mode2026Only {
+	if config.ToolsFile != "" || config.Mode != modeDefault {
 		specs, specsErr := toolSpecsFor(config.ToolsFile, parseTools(config.Tools))
 		if specsErr != nil {
 			return nil, specsErr
