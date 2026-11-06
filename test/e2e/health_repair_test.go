@@ -93,9 +93,10 @@ func setHealth(t *testing.T, admin *kubernetes.Clientset, namespace string, stat
 }
 
 // requireWithdrawn waits, within the detection bound, until the session no
-// longer lists the server's tools, and checks that a call is refused. The
-// refusal says the instance is unhealthy, or, once a replace repair started
-// the next instance, that the server isn't ready yet.
+// longer lists the server's tools, and checks that a call isn't forwarded to
+// the unhealthy instance. The call is refused because the instance is
+// unhealthy or isn't ready. Once a replace repair started the next instance,
+// the call may instead wait for it, with progress, and be forwarded to it.
 func requireWithdrawn(t *testing.T, session *gatewaySession, name string) {
 	t.Helper()
 
@@ -106,9 +107,20 @@ func requireWithdrawn(t *testing.T, session *gatewaySession, name string) {
 		}
 	}, unhealthyBound(), 250*time.Millisecond, "the tools are withdrawn within interval × failureThreshold + timeout")
 
-	result, err := session.session.CallTool(t.Context(), &mcp.CallToolParams{Name: name + "__env", Arguments: map[string]any{}})
+	progressBefore := countEvents(session.recorded(), eventProgress)
+
+	call := &mcp.CallToolParams{Name: name + "__env", Arguments: map[string]any{}}
+	call.SetProgressToken("withdrawn-" + name)
+
+	result, err := session.session.CallTool(t.Context(), call)
 	if err == nil {
-		require.True(t, result.IsError, "the call is refused")
+		if !result.IsError {
+			assert.Greater(t, countEvents(session.recorded(), eventProgress), progressBefore,
+				"a call forwarded after the withdrawal waited for a replacement instance")
+
+			return
+		}
+
 		assert.Regexp(t, notReady, callText(result))
 	} else {
 		assert.Regexp(t, notReady, err.Error())
