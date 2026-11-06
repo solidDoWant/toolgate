@@ -450,6 +450,11 @@ func (m *metaTools) readyInTx(ctx context.Context, queries *db.Queries, call app
 		ScopeKey: scopeKey(template.Spec.Scope, call.current.identity),
 	})
 	if err == nil && instance.Status == statusReady {
+		if instance.UnhealthySince.Valid {
+			return db.Instance{}, map[string]any{"reason": reasonNotReady, "status": statusReady, "detail": instance.UnhealthyReason},
+				unhealthyMessage(server, instance), nil
+		}
+
 		return instance, nil, "", nil
 	}
 

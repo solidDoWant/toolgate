@@ -212,6 +212,12 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 			map[string]any{"reason": reasonNotReady, "status": status, "detail": reason}, message)
 	}
 
+	if instance.UnhealthySince.Valid {
+		return m.refuseCall(ctx, current, server, tool,
+			map[string]any{"reason": reasonNotReady, "status": status, "detail": instance.UnhealthyReason},
+			unhealthyMessage(server, instance))
+	}
+
 	// Step 3: policy.
 	state, err := m.policyState(ctx, current.identity)
 	if err != nil {

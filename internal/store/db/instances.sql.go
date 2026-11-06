@@ -582,6 +582,21 @@ func (q *Queries) SetInstanceFailed(ctx context.Context, arg SetInstanceFailedPa
 	return result.RowsAffected(), nil
 }
 
+const setInstanceHealthy = `-- name: SetInstanceHealthy :execrows
+UPDATE instances
+SET unhealthy_since = NULL, unhealthy_reason = '', updated_at = now()
+WHERE id = $1 AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NOT NULL
+`
+
+// Marks a ready, unhealthy instance healthy again.
+func (q *Queries) SetInstanceHealthy(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, setInstanceHealthy, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const setInstancePending = `-- name: SetInstancePending :execrows
 UPDATE instances
 SET status = 'pending', generation = $1, attempt_started_at = now(), updated_at = now()
@@ -738,6 +753,26 @@ type SetInstanceToolsParams struct {
 
 func (q *Queries) SetInstanceTools(ctx context.Context, arg SetInstanceToolsParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setInstanceTools, arg.Tools, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setInstanceUnhealthy = `-- name: SetInstanceUnhealthy :execrows
+UPDATE instances
+SET unhealthy_since = now(), unhealthy_reason = $1, updated_at = now()
+WHERE id = $2 AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NULL
+`
+
+type SetInstanceUnhealthyParams struct {
+	Reason string
+	ID     string
+}
+
+// Marks a ready, healthy instance unhealthy. The status stays ready.
+func (q *Queries) SetInstanceUnhealthy(ctx context.Context, arg SetInstanceUnhealthyParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setInstanceUnhealthy, arg.Reason, arg.ID)
 	if err != nil {
 		return 0, err
 	}

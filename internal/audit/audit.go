@@ -17,15 +17,18 @@ import (
 
 // Event types written in phase 1 (SPEC.md §12).
 const (
-	TypeSessionStart    = "session.start"
-	TypeSessionEnd      = "session.end"
-	TypeAuthRefuse      = "auth.refuse"
-	TypeServerEnable    = "server.enable"
-	TypeServerDisable   = "server.disable"
-	TypeInstanceStart   = "instance.start"
-	TypeInstanceReady   = "instance.ready"
-	TypeInstanceFail    = "instance.fail"
-	TypeInstanceStop    = "instance.stop"
+	TypeSessionStart  = "session.start"
+	TypeSessionEnd    = "session.end"
+	TypeAuthRefuse    = "auth.refuse"
+	TypeServerEnable  = "server.enable"
+	TypeServerDisable = "server.disable"
+	TypeInstanceStart = "instance.start"
+	TypeInstanceReady = "instance.ready"
+	TypeInstanceFail  = "instance.fail"
+	TypeInstanceStop  = "instance.stop"
+	// TypeInstanceHealth is a change of a ready instance's health
+	// (docs/design/phase-3.md §6).
+	TypeInstanceHealth  = "instance.health"
 	TypeToolDecision    = "tool.decision"
 	TypeToolResult      = "tool.result"
 	TypeRuleChange      = "rule.change"

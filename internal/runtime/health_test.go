@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,9 +27,16 @@ import (
 // healthStore is a HealthStore whose compare-and-set writes behave like the
 // SQL ones.
 type healthStore struct {
-	mu        sync.Mutex
-	row       db.Instance
-	toolWrite int
+	mu           sync.Mutex
+	row          db.Instance
+	toolWrite    int
+	healthWrites []healthWrite
+}
+
+// healthWrite is one change of health the monitor recorded.
+type healthWrite struct {
+	healthy bool
+	reason  string
 }
 
 func (h *healthStore) Instance(context.Context, string) (db.Instance, error) {
@@ -61,6 +69,21 @@ func (h *healthStore) SetTools(_ context.Context, _ string, tools []byte) (bool,
 
 	h.row.Tools = tools
 	h.toolWrite++
+
+	return true, nil
+}
+
+func (h *healthStore) SetHealth(_ context.Context, _ db.Instance, healthy bool, reason string) (bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.row.Status != "ready" || h.row.Desired != "running" || h.row.UnhealthySince.Valid != healthy {
+		return false, nil
+	}
+
+	h.row.UnhealthySince = pgtype.Timestamptz{Time: time.Now(), Valid: !healthy}
+	h.row.UnhealthyReason = reason
+	h.healthWrites = append(h.healthWrites, healthWrite{healthy: healthy, reason: reason})
 
 	return true, nil
 }

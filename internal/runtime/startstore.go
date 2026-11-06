@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -40,6 +42,9 @@ type StartStore interface {
 // transaction.
 type PostgresStartStore struct {
 	Pool *pgxpool.Pool
+	// AuditOutput receives the audit events the health writes record. Nil
+	// discards them; the rows are still written.
+	AuditOutput io.Writer
 }
 
 // Session implements StartStore.
@@ -107,6 +112,56 @@ func (s PostgresStartStore) SetTools(ctx context.Context, id string, tools []byt
 	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceTools(ctx, db.SetInstanceToolsParams{ID: id, Tools: tools})
 	})
+}
+
+// SetHealth implements HealthStore. It writes instance.health, with no
+// payload, in the same transaction as the compare-and-set.
+func (s PostgresStartStore) SetHealth(ctx context.Context, instance db.Instance, healthy bool, reason string) (bool, error) {
+	changed := false
+
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		queries := db.New(tx)
+
+		var (
+			rows int64
+			err  error
+		)
+
+		if healthy {
+			rows, err = queries.SetInstanceHealthy(ctx, instance.ID)
+		} else {
+			rows, err = queries.SetInstanceUnhealthy(ctx, db.SetInstanceUnhealthyParams{ID: instance.ID, Reason: reason})
+		}
+
+		if err != nil {
+			return fmt.Errorf("update health of instance %s: %w", instance.ID, err)
+		}
+
+		if rows == 0 {
+			return nil
+		}
+
+		changed = true
+
+		details := map[string]any{"instance": instance.ID, "healthy": healthy, "owner": instance.OwnerPrincipal}
+		if !healthy {
+			details["reason"] = reason
+		}
+
+		output := s.AuditOutput
+		if output == nil {
+			output = io.Discard
+		}
+
+		event := audit.Event{Type: audit.TypeInstanceHealth, Server: instance.TemplateName, Details: details}
+		if err := audit.NewRecorder(output, queries).Record(ctx, event); err != nil {
+			return err
+		}
+
+		return store.Notify(ctx, tx, store.KindInstance, instance.ID)
+	})
+
+	return changed, err
 }
 
 func (s PostgresStartStore) change(ctx context.Context, id string, update func(*db.Queries) (int64, error)) (bool, error) {
