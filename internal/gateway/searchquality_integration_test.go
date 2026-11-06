@@ -61,6 +61,7 @@ func TestAC4_18SearchQualityInUse(t *testing.T) {
 			result, _ := client.CallTool(t.Context(), &mcp.CallToolParams{Name: third, Arguments: map[string]any{"text": "x"}})
 			outcomes <- result
 		}()
+
 		<-outcomes
 
 		assert.Len(t, fixture.auditRows(t, "tool.search_hit"), 1)
