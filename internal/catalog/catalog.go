@@ -267,6 +267,32 @@ func (c *Catalog) Offered(server string) (*v1alpha1.MCPServerTemplate, error) {
 	return nil, &InvalidError{Server: server, Reason: reasons[0]}
 }
 
+// Curation returns the generation whose curation maps the named server's
+// tool names: the current one when it is valid, otherwise the last valid
+// generation, as calls use it (docs/design/phase-4.md §6). A server with no
+// valid generation, or one that counts as deleted, has none. A copy is
+// returned.
+func (c *Catalog) Curation(server string) (*v1alpha1.MCPServerTemplate, bool) {
+	if template, err := c.Offered(server); err == nil {
+		return template, true
+	}
+
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if server == ReservedServerName {
+		return nil, false
+	}
+
+	for _, key := range c.keysNamed(server) {
+		if current := c.entries[key]; current.lastValid != nil {
+			return current.lastValid.DeepCopy(), true
+		}
+	}
+
+	return nil, false
+}
+
 // List returns every template that is valid now, sorted by server name.
 // Copies are returned.
 func (c *Catalog) List() []*v1alpha1.MCPServerTemplate {
