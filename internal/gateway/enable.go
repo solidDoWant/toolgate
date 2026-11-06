@@ -136,6 +136,10 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 		return nil, EnableResult{}, fmt.Errorf("`%s` failed to start: %s", template.Name, reason)
 	}
 
+	if instance.UnhealthySince.Valid {
+		return nil, EnableResult{}, errors.New(unhealthyMessage(template.Name, instance))
+	}
+
 	// Step 6: decide again, now that the instance is ready, with fresh
 	// grants and temporary blocks.
 	state, err = m.policyState(ctx, current.identity)

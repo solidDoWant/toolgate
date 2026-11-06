@@ -174,6 +174,8 @@ With `shared`, all instances go in one configured namespace and are told apart b
 
 **Readiness.** An instance is `ready` when every object is current by kstatus (`sigs.k8s.io/cli-utils/pkg/kstatus`) and an MCP `initialize` against `endpoint` succeeds. It is `failed` when `startTimeout` passes or kstatus reports a failure, with the reason taken from the objects' conditions and events. One rule comes before kstatus: an object whose `Ready` condition has stayed `False` for 60 s at its current generation counts as failed, with the `Ready` message as the reason. This covers HelmReleases whose install keeps failing while helm-controller retries.
 
+**Health.** The leader runs each instance's `healthCheck`, apart from the MCP ping. After `failureThreshold` failures in a row, a `ready` instance becomes unhealthy and stays `ready`. Its tools leave every session's tool list, calls are refused with reason `not-ready`, and `toolgate_server_status` shows the reason. After `successThreshold` passes in a row, it becomes healthy again and its tools come back. Each change writes `instance.health`.
+
 **Template changes.** An instance keeps the template generation it was started with, and the `healthCheck` (with `http.service` rendered) in its `health_check` column. A new generation applies to instances started afterwards. `toolgate_server_status` shows when an instance is older than its template. The owner of an outdated instance (an admin, for a shared one) can restart it from the web UI. The gateway then replaces it with a new instance at the current generation, and sessions keep the server enabled.
 
 **Stopping.**
@@ -228,7 +230,8 @@ In globs, `*` matches any run of characters, including `/`. A template that does
 - `server.enable`, `server.disable`, `instance.start`, `instance.ready`, `instance.fail`, `instance.stop`;
 - `tool.decision` (allow or refuse, with the deciding rule), `tool.result` (success or error, duration, sizes);
 - `rule.change`, `secret.set`, `secret.delete`;
-- phase 2: `grant.*`, `approval.*`, `block.*`.
+- phase 2: `grant.*`, `approval.*`, `block.*`;
+- phase 3: `instance.health`, with no payload.
 
 Every event carries principal, workspace, session, attestation, server, tool, trace ID and request ID. Tool arguments and results are not logged to stdout. They are stored only when `audit.payloads` is on. Payloads over 64 KiB go to S3 (with object lock when the bucket supports it), referenced from the row. Rows are kept for `audit.retention` (default 90 days) and deleted in batches. Secrets and tokens are never logged.
 

@@ -46,7 +46,7 @@ type ServerEntry struct {
 	// Enabled says whether the server is enabled in this session.
 	Enabled bool   `json:"enabled"`
 	Status  string `json:"status"`
-	// Reason says why the server is blocked or failed.
+	// Reason says why the server is blocked, failed or unhealthy.
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -253,10 +253,20 @@ func shownStatus(instance db.Instance) (status, reason string) {
 	case "pending", "starting":
 		return StatusStarting, ""
 	case "ready":
+		if instance.UnhealthySince.Valid {
+			return StatusReady, "unhealthy: " + instance.UnhealthyReason
+		}
+
 		return StatusReady, ""
 	default:
 		return StatusStopped, ""
 	}
+}
+
+// unhealthyMessage is the refusal of a call to, or an enable of, a ready
+// instance whose custom health check failed (docs/design/phase-3.md §6).
+func unhealthyMessage(server string, instance db.Instance) string {
+	return fmt.Sprintf("`%s` is unhealthy: %s. toolgate is repairing it.", server, instance.UnhealthyReason)
 }
 
 func (m *metaTools) newestInstance(ctx context.Context, identity auth.Identity, template *v1alpha1.MCPServerTemplate) (db.Instance, bool, error) {

@@ -41,6 +41,10 @@ type HealthStore interface {
 	MarkFailed(ctx context.Context, id, from, reason string) (bool, error)
 	// SetTools replaces the tool list of a ready instance.
 	SetTools(ctx context.Context, id string, tools []byte) (bool, error)
+	// SetHealth marks a ready instance healthy, or unhealthy with reason,
+	// and records the change. It returns false, and changes nothing, when
+	// the row is not ready or already has that health.
+	SetHealth(ctx context.Context, instance db.Instance, healthy bool, reason string) (bool, error)
 }
 
 // MonitorSession is a monitoring MCP session to one instance.
@@ -69,7 +73,10 @@ type Monitor struct {
 	Connect  MonitorConnector
 	// Interval between health checks. Zero means DefaultHealthInterval.
 	Interval time.Duration
-	Logger   *slog.Logger
+	// Probe makes the requests of custom health checks. Nil means
+	// HTTPHealthProbe.
+	Probe  HealthProbe
+	Logger *slog.Logger
 
 	mu       sync.Mutex
 	base     context.Context
@@ -168,6 +175,32 @@ func (m *Monitor) watch(ctx context.Context, instance db.Instance, endpoint stri
 			_ = state.session.Close()
 		}
 	}()
+
+	// The custom health check runs in its own goroutine, so a hanging ping
+	// doesn't delay it, and ends with this monitor.
+	checkCtx, stopCheck := context.WithCancel(ctx)
+
+	var checking sync.WaitGroup
+	defer checking.Wait()
+	defer stopCheck()
+
+	check, found, err := decodeHealthCheck(instance.HealthCheck)
+	if err != nil {
+		m.logger().WarnContext(ctx, "custom health check not run", slog.String("instance", instance.ID),
+			slog.String("error", err.Error()))
+	}
+
+	if found {
+		checker := &healthChecker{monitor: m, instance: instance, check: check}
+
+		checking.Add(1)
+
+		go func() {
+			defer checking.Done()
+
+			checker.run(checkCtx)
+		}()
+	}
 
 	ticker := time.NewTicker(m.interval())
 	defer ticker.Stop()

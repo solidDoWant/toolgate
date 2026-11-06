@@ -135,3 +135,15 @@ INSERT INTO instances (
     @owner_principal, @render_session, @namespace, @trace_context, now(), @last_used_at
 )
 RETURNING *;
+
+-- name: SetInstanceUnhealthy :execrows
+-- Marks a ready, healthy instance unhealthy. The status stays ready.
+UPDATE instances
+SET unhealthy_since = now(), unhealthy_reason = @reason, updated_at = now()
+WHERE id = @id AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NULL;
+
+-- name: SetInstanceHealthy :execrows
+-- Marks a ready, unhealthy instance healthy again.
+UPDATE instances
+SET unhealthy_since = NULL, unhealthy_reason = '', updated_at = now()
+WHERE id = @id AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NOT NULL;

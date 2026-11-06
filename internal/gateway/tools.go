@@ -144,7 +144,9 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 			return nil, nil, fmt.Errorf("read live instance: %w", err)
 		}
 
-		if instance.Status != statusReady {
+		// An unhealthy instance's tools are withdrawn until it is healthy
+		// again.
+		if instance.Status != statusReady || instance.UnhealthySince.Valid {
 			continue
 		}
 

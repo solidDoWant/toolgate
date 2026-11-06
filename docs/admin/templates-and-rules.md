@@ -103,6 +103,16 @@ The values above are the defaults, except for `http`, which has no default. In a
 
 An instance keeps the check it started with. A change to `healthCheck` applies to instances that start after it.
 
+The gateway that holds the Lease runs the check. The first check runs when the instance is ready, and the next one runs every `interval`. The check does not follow redirects, does not use a proxy, and reads at most 64 KiB of the response body. The MCP ping runs apart from the check, so a ping that does not answer does not delay the check.
+
+After `failureThreshold` failures in a row, the instance is unhealthy. Its status stays `ready`, but toolgate does these things:
+
+- It removes the tools of the server from the tool list of each session that uses it.
+- It refuses each new call to the server, with a message such as "`github` is unhealthy: GET http://db-proxy:8080/healthz answered 503, expected 200. toolgate is repairing it." The audit log gets a `tool.decision` event with the reason `not-ready`.
+- It shows the reason in `toolgate_server_status` and on the Servers page of the web UI.
+
+After `successThreshold` passes in a row, the instance is healthy again and its tools come back. Each change of health writes an `instance.health` event to the audit log.
+
 ## Who can use a server
 
 A user can use a server only when both of these checks pass:
