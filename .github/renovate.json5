@@ -46,6 +46,17 @@
 
   postUpdateOptions: ["gomodTidy"],
 
+  // Images pinned in Go constants, shell scripts and the e2e manifests, which
+  // no built-in manager reads: registry/name:tag@sha256:digest.
+  customManagers: [
+    {
+      customType: "regex",
+      managerFilePatterns: ["/^internal/testutil/.+\\.go$/", "/^test/.+\\.go$/", "/^scripts/.+\\.sh$/", "/^test/e2e/manifests/.+\\.ya?ml$/"],
+      matchStrings: ["(?<depName>(?:mirror\\.gcr\\.io|ghcr\\.io|quay\\.io)/[a-z0-9._/-]+):(?<currentValue>[A-Za-z0-9._-]+)@(?<currentDigest>sha256:[a-f0-9]{64})"],
+      datasourceTemplate: "docker",
+    },
+  ],
+
   packageRules: [
     {
       description: "~90k per-module tags: GitHub's GraphQL tags query 502s on every run, and releases are daily roll-ups, not per-module notes",

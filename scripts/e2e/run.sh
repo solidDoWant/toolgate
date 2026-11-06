@@ -67,6 +67,8 @@ release_namespace=toolgate-system
 deps_namespace=toolgate-e2e
 image_tag="e2e-$suffix"
 gateway_repository=ghcr.io/soliddowant/toolgate
+# The default Kubernetes of kind v0.33, through the Docker Hub mirror, pinned by digest.
+kind_node_image=mirror.gcr.io/kindest/node:v1.33.1@sha256:050072256b9a903bd914c0b2866828150cb229cea0efe5892e2b644d5dd3b34f
 mcpserver_image="localhost/toolgate-e2e-mcpserver:$image_tag"
 work="$(mktemp -d)"
 export KUBECONFIG="$work/kubeconfig"
@@ -108,7 +110,7 @@ printf 'FROM scratch\nCOPY mcpserver /mcpserver\nUSER 65532:65532\nEXPOSE 8080\n
 docker build --quiet --tag "$mcpserver_image" "$work/mcpserver" >&2
 
 log "creating kind cluster $cluster"
-kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
+kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
 kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" >&2
 
 log "installing Flux"
