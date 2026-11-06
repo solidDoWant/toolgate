@@ -69,7 +69,7 @@ func newHealthHarness(t *testing.T) *healthHarness {
 	require.NoError(t, err)
 
 	startStore := runtime.PostgresStartStore{Pool: pool}
-	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, time.Time{})
+	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, nil, time.Time{})
 	require.NoError(t, err)
 
 	tools, err := runtime.MCPToolLister(t.Context(), harness.http.URL)

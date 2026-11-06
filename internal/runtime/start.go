@@ -208,7 +208,12 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return err
 	}
 
-	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, result.ResolvedExpiresAt); err != nil {
+	healthCheck, err := RenderHealthCheck(template, Instance{ID: instance.ID, Namespace: instance.Namespace})
+	if err != nil {
+		return s.fail(ctx, instance, StatusPending, "The health check didn't render: "+err.Error())
+	}
+
+	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, healthCheck, result.ResolvedExpiresAt); err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
 	}
 

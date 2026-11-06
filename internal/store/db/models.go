@@ -81,6 +81,10 @@ type Instance struct {
 	RestartRequestedAt pgtype.Timestamptz
 	RestartRequestedBy pgtype.Text
 	ResolvedExpiresAt  pgtype.Timestamptz
+	HealthCheck        []byte
+	UnhealthySince     pgtype.Timestamptz
+	UnhealthyReason    string
+	Repairs            []pgtype.Timestamptz
 }
 
 type Session struct {
