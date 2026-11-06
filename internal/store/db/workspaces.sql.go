@@ -765,7 +765,7 @@ func (q *Queries) LockPrincipalAccessRequests(ctx context.Context, principal str
 }
 
 const lockUserScope = `-- name: LockUserScope :one
-SELECT id, principal, verified_default, unverified_default, updated_at FROM user_scopes WHERE principal = $1 FOR UPDATE
+SELECT id, principal, verified_default, unverified_default, updated_at, unverified_list FROM user_scopes WHERE principal = $1 FOR UPDATE
 `
 
 // Locks the principal's user_scopes row for a scoping write. Run it after
@@ -779,6 +779,7 @@ func (q *Queries) LockUserScope(ctx context.Context, principal string) (UserScop
 		&i.VerifiedDefault,
 		&i.UnverifiedDefault,
 		&i.UpdatedAt,
+		&i.UnverifiedList,
 	)
 	return i, err
 }
@@ -869,7 +870,7 @@ func (q *Queries) RemoveWorkspaceSessionAdditions(ctx context.Context, arg Remov
 
 const setUserScopeDefaults = `-- name: SetUserScopeDefaults :exec
 UPDATE user_scopes
-SET verified_default = $1, unverified_default = $2, updated_at = now()
+SET verified_default = $1, unverified_default = $2, unverified_list = false, updated_at = now()
 WHERE id = $3
 `
 

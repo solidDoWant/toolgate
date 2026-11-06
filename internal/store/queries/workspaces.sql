@@ -5,7 +5,7 @@ SELECT * FROM user_scopes WHERE principal = @principal FOR UPDATE;
 
 -- name: SetUserScopeDefaults :exec
 UPDATE user_scopes
-SET verified_default = @verified_default, unverified_default = @unverified_default, updated_at = now()
+SET verified_default = @verified_default, unverified_default = @unverified_default, unverified_list = false, updated_at = now()
 WHERE id = @id;
 
 -- name: TouchUserScope :exec

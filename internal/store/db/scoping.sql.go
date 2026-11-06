@@ -31,7 +31,7 @@ func (q *Queries) EnsureUserScope(ctx context.Context, arg EnsureUserScopeParams
 }
 
 const getUserScope = `-- name: GetUserScope :one
-SELECT id, principal, verified_default, unverified_default, updated_at FROM user_scopes WHERE principal = $1
+SELECT id, principal, verified_default, unverified_default, updated_at, unverified_list FROM user_scopes WHERE principal = $1
 `
 
 // The principal's scoping defaults. No row means both defaults are none.
@@ -44,6 +44,7 @@ func (q *Queries) GetUserScope(ctx context.Context, principal string) (UserScope
 		&i.VerifiedDefault,
 		&i.UnverifiedDefault,
 		&i.UpdatedAt,
+		&i.UnverifiedList,
 	)
 	return i, err
 }

@@ -69,7 +69,7 @@ func (q *Queries) DeleteStoppedInstancesBefore(ctx context.Context, before pgtyp
 }
 
 const getInstance = `-- name: GetInstance :one
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs FROM instances WHERE id = $1
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision FROM instances WHERE id = $1
 `
 
 func (q *Queries) GetInstance(ctx context.Context, id string) (Instance, error) {
@@ -105,12 +105,13 @@ func (q *Queries) GetInstance(ctx context.Context, id string) (Instance, error) 
 		&i.UnhealthySince,
 		&i.UnhealthyReason,
 		&i.Repairs,
+		&i.McpRevision,
 	)
 	return i, err
 }
 
 const getInstanceForUpdate = `-- name: GetInstanceForUpdate :one
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs FROM instances WHERE id = $1 FOR UPDATE
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision FROM instances WHERE id = $1 FOR UPDATE
 `
 
 func (q *Queries) GetInstanceForUpdate(ctx context.Context, id string) (Instance, error) {
@@ -146,12 +147,13 @@ func (q *Queries) GetInstanceForUpdate(ctx context.Context, id string) (Instance
 		&i.UnhealthySince,
 		&i.UnhealthyReason,
 		&i.Repairs,
+		&i.McpRevision,
 	)
 	return i, err
 }
 
 const getLiveInstance = `-- name: GetLiveInstance :one
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs FROM instances
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision FROM instances
 WHERE template_ns = $1 AND template_name = $2 AND scope_key = $3
   AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
 `
@@ -195,12 +197,13 @@ func (q *Queries) GetLiveInstance(ctx context.Context, arg GetLiveInstanceParams
 		&i.UnhealthySince,
 		&i.UnhealthyReason,
 		&i.Repairs,
+		&i.McpRevision,
 	)
 	return i, err
 }
 
 const getNewestInstance = `-- name: GetNewestInstance :one
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs FROM instances
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision FROM instances
 WHERE template_ns = $1 AND template_name = $2 AND scope_key = $3
 ORDER BY created_at DESC, id DESC
 LIMIT 1
@@ -245,6 +248,7 @@ func (q *Queries) GetNewestInstance(ctx context.Context, arg GetNewestInstancePa
 		&i.UnhealthySince,
 		&i.UnhealthyReason,
 		&i.Repairs,
+		&i.McpRevision,
 	)
 	return i, err
 }
@@ -257,7 +261,7 @@ INSERT INTO instances (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, now()
 )
-RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs
+RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision
 `
 
 type InsertInstanceParams struct {
@@ -319,6 +323,7 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 		&i.UnhealthySince,
 		&i.UnhealthyReason,
 		&i.Repairs,
+		&i.McpRevision,
 	)
 	return i, err
 }
@@ -331,7 +336,7 @@ INSERT INTO instances (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10, $11, now(), $12, $13::timestamptz[]
 )
-RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs
+RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision
 `
 
 type InsertReplacementInstanceParams struct {
@@ -400,12 +405,13 @@ func (q *Queries) InsertReplacementInstance(ctx context.Context, arg InsertRepla
 		&i.UnhealthySince,
 		&i.UnhealthyReason,
 		&i.Repairs,
+		&i.McpRevision,
 	)
 	return i, err
 }
 
 const listInstancesNotStopped = `-- name: ListInstancesNotStopped :many
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs FROM instances WHERE status <> 'stopped' ORDER BY id
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision FROM instances WHERE status <> 'stopped' ORDER BY id
 `
 
 func (q *Queries) ListInstancesNotStopped(ctx context.Context) ([]Instance, error) {
@@ -447,6 +453,7 @@ func (q *Queries) ListInstancesNotStopped(ctx context.Context) ([]Instance, erro
 			&i.UnhealthySince,
 			&i.UnhealthyReason,
 			&i.Repairs,
+			&i.McpRevision,
 		); err != nil {
 			return nil, err
 		}
@@ -459,7 +466,7 @@ func (q *Queries) ListInstancesNotStopped(ctx context.Context) ([]Instance, erro
 }
 
 const listLiveInstancesForUI = `-- name: ListLiveInstancesForUI :many
-SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs FROM instances
+SELECT id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision FROM instances
 WHERE ((owner_principal = $1 AND owner_principal <> '') OR ($2::boolean AND scope = 'shared'))
   AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
 ORDER BY template_name, template_ns, created_at, id
@@ -511,6 +518,7 @@ func (q *Queries) ListLiveInstancesForUI(ctx context.Context, arg ListLiveInstan
 			&i.UnhealthySince,
 			&i.UnhealthyReason,
 			&i.Repairs,
+			&i.McpRevision,
 		); err != nil {
 			return nil, err
 		}
