@@ -18,6 +18,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 
 - [Templates and rules](templates-and-rules.md): how to write `MCPServerTemplate` and `ToolgateRule` objects.
 - [Settings profiles](settings-profiles.md): how to give Claude Code settings to your users.
+- [Telemetry](telemetry.md): how to send the OpenTelemetry data of Claude Code through the gateway, and how to read tokens and cost for each user.
 - [The security model](security-model.md): what toolgate protects against, and what a claimed workspace or session cannot protect against.
 
 ## Operate

@@ -1,0 +1,40 @@
+# The telemetry test backend: an OpenTelemetry Collector, Prometheus (OTLP
+# receiver on), Tempo and Loki in one pod. scripts/e2e/run.sh applies this in
+# the namespace toolgate-e2e and port-forwards the OTLP/HTTP port (the test
+# process forwards the gateway's exports to it) and the Prometheus port (the
+# tests run PromQL on it). mirror.gcr.io is Google's Docker Hub mirror.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-lgtm
+spec:
+  selector:
+    matchLabels: {app: otel-lgtm}
+  template:
+    metadata:
+      labels: {app: otel-lgtm}
+    spec:
+      containers:
+        - name: otel-lgtm
+          image: mirror.gcr.io/grafana/otel-lgtm@sha256:4c8056c9c05fcb3c8fd93800e85334bfd79b4d0271b47a54a121a64af41fe1fe
+          ports:
+            - {name: otlp-http, containerPort: 4318}
+            - {name: prometheus, containerPort: 9090}
+            - {name: loki, containerPort: 3100}
+            - {name: tempo, containerPort: 3200}
+          readinessProbe:
+            httpGet: {path: /-/ready, port: prometheus}
+            periodSeconds: 3
+            failureThreshold: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-lgtm
+spec:
+  selector: {app: otel-lgtm}
+  ports:
+    - {name: otlp-http, port: 4318, targetPort: otlp-http}
+    - {name: prometheus, port: 9090, targetPort: prometheus}
+    - {name: loki, port: 3100, targetPort: loki}
+    - {name: tempo, port: 3200, targetPort: tempo}

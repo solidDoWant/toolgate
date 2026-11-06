@@ -48,6 +48,7 @@ docs/admin/
   settings-profiles.md     How to give Claude Code settings to users with SettingsProfile objects.
   instances.md             When instances stop, how they are removed, and their metrics.
   templates-and-rules.md   How to write MCPServerTemplate and ToolgateRule objects.
+  telemetry.md             How to send Claude Code telemetry through the gateway, with the usage queries.
   security-model.md        What toolgate protects against, and what claimed workspaces and sessions cannot.
   operations.md            Backups, upgrades, key rotation, instance limits, the audit log, uninstall.
 
@@ -55,6 +56,7 @@ docs/dev/
   README.md                What the developer pages will cover.
   integration-tests.md     The dependencies that integration tests start: PostgreSQL, S3, fake OIDC.
   e2e-tests.md             The e2e harness on kind, the test MCP server, the acceptance scoreboard.
+  otlp-fixture.md          How the recorded Claude Code OTLP fixture was made.
   claude-code-integration.md  How toolgate gets the Claude Code session ID, with the test evidence.
 
 docs/acceptance/
