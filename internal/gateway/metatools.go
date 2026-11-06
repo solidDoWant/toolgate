@@ -100,6 +100,10 @@ type metaTools struct {
 	workspaceScoping bool
 	// waiters counts the calls waiting for an approval on this replica.
 	waiters approvalWaiters
+
+	// workspaces and sessionIdleTimeout serve the built-in server's tools.
+	workspaces         *Workspaces
+	sessionIdleTimeout time.Duration
 }
 
 func (m *metaTools) register(server *mcp.Server) {
@@ -255,6 +259,13 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 
 			entry.Reason = notInWorkspaceReason
 		}
+
+		return entry, true, nil
+	}
+
+	// The built-in server runs inside the gateway and is always ready.
+	if isBuiltin(template) {
+		entry.Status = StatusReady
 
 		return entry, true, nil
 	}
