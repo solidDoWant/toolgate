@@ -25,6 +25,7 @@ Commands:
   secret    Manage your secrets (secret set NAME | list | delete NAME)
   sessions  List your open sessions and their enabled servers
   servers   List the servers you can use
+  workspace Manage which servers each workspace can use (workspace list | allow | deny | clear | defaults)
   serve     Run the gateway (serve --config FILE)
   migrate   Apply the database migrations (migrate [--config FILE])
   admin     Admin commands (admin rewrap --config FILE)
@@ -80,6 +81,8 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return secret(args[1:], stdin, stdout, stderr)
 	case "servers":
 		return servers(args[1:], stdout, stderr)
+	case "workspace":
+		return workspace(args[1:], stdout, stderr)
 	case "sessions":
 		return sessions(args[1:], stdout, stderr)
 	case "serve":

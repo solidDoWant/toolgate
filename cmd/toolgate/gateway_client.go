@@ -131,6 +131,16 @@ func tokenCommandGateway(ctx context.Context, source tokencommand.Source) (gatew
 	return gatewayAccess{gateway: gateway, accessToken: token}, nil
 }
 
+// gatewayError is a non-2xx answer from the gateway.
+type gatewayError struct {
+	Status  int
+	Message string
+}
+
+func (e *gatewayError) Error() string {
+	return fmt.Sprintf("the gateway answered %d: %s", e.Status, e.Message)
+}
+
 // errUnauthorized marks a gateway answer of 401.
 var errUnauthorized = errors.New("the gateway refused the token")
 
@@ -211,7 +221,7 @@ func (g gatewayAccess) do(ctx context.Context, method, path string, body io.Read
 
 		message, _ := io.ReadAll(io.LimitReader(response.Body, maxErrorBody))
 
-		err := fmt.Errorf("the gateway answered %d: %s", response.StatusCode, strings.TrimSpace(string(message)))
+		err := error(&gatewayError{Status: response.StatusCode, Message: strings.TrimSpace(string(message))})
 		if response.StatusCode == http.StatusUnauthorized {
 			err = errors.Join(errUnauthorized, err)
 		}
