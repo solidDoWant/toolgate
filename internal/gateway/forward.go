@@ -297,6 +297,21 @@ func (m *metaTools) proxyCall(ctx context.Context, request *mcp.CallToolRequest)
 	// unless its newest instance failed on the current generation
 	// (docs/design/phase-4.md §4).
 	if instance.ID == "" && template.UID != "" {
+		// The call is decided with fresh state before an instance is
+		// inserted: a refused principal must not start the server. The
+		// decision that follows the start is still the one that is
+		// recorded for an allow.
+		state, err := m.policyState(ctx, current.identity)
+		if err != nil {
+			return nil, err
+		}
+
+		if decision := m.decide(ctx, m.policyRequest(current, template, tool, state)); !decision.Allowed {
+			m.metrics.ObservePolicyRefusal(decision.Step, metricReason(decision))
+
+			return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
+		}
+
 		started, refusal, err := m.startForCall(ctx, current, template)
 		if err != nil {
 			return nil, err
