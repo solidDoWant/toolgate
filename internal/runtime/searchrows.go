@@ -109,7 +109,7 @@ func insertToolSearch(ctx context.Context, queries *db.Queries, uid string, temp
 		if err := queries.InsertToolSearch(ctx, db.InsertToolSearchParams{
 			TemplateUid: uid, TemplateNs: template.Namespace, TemplateName: template.Name,
 			SourceGeneration: generation, UpstreamName: tool.UpstreamName, ExposedName: tool.ExposedName,
-			Embedding: nonNil(vectors[index]), EmbeddingModel: model, NamePart: parts.Name, DescriptionPart: parts.Description, ServerPart: parts.Server, InputPart: parts.Input,
+			Embedding: embeddings.FormatVector(vectors[index]), EmbeddingModel: model, NamePart: parts.Name, DescriptionPart: parts.Description, ServerPart: parts.Server, InputPart: parts.Input,
 		}); err != nil {
 			return fmt.Errorf("insert tool search row %s of template %s: %w", tool.UpstreamName, uid, err)
 		}
@@ -319,12 +319,4 @@ func searchFingerprint(template *v1alpha1.MCPServerTemplate) string {
 	}
 
 	return string(encoded)
-}
-
-func nonNil(vector []float32) []float32 {
-	if vector == nil {
-		return []float32{}
-	}
-
-	return vector
 }

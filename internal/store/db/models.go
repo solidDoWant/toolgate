@@ -183,7 +183,7 @@ type ToolSearch struct {
 	Document         interface{}
 	RebuiltAt        pgtype.Timestamptz
 	NameText         string
-	Embedding        []float32
+	Embedding        *string
 	EmbeddingModel   string
 }
 

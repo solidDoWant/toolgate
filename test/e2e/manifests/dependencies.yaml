@@ -15,16 +15,29 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: mirror.gcr.io/library/postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+          image: ghcr.io/cloudnative-pg/postgresql:17-standard-trixie@sha256:4d0aac315c4d8c3202252bd06fea83b16951cc57234a7b610eeaa382ff4482d0
+          # The image has no entrypoint script: create the cluster and the
+          # database on first start, then run the server.
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              export PGDATA=/tmp/pgdata PGHOST=/tmp
+              printf '%s' "$POSTGRES_PASSWORD" > /tmp/pwfile
+              initdb -D "$PGDATA" -U toolgate --pwfile=/tmp/pwfile --auth-local=trust --auth-host=scram-sha-256 >/dev/null
+              rm /tmp/pwfile
+              pg_ctl -D "$PGDATA" -w -o "-c listen_addresses='' -c unix_socket_directories=/tmp" start >/dev/null
+              createdb -U toolgate toolgate
+              pg_ctl -D "$PGDATA" -w stop >/dev/null
+              exec postgres -D "$PGDATA" -c listen_addresses='*' -c unix_socket_directories=/tmp
           env:
-            - {name: POSTGRES_USER, value: toolgate}
-            - {name: POSTGRES_DB, value: toolgate}
             - name: POSTGRES_PASSWORD
               valueFrom: {secretKeyRef: {name: dependencies, key: postgres-password}}
           ports:
             - {name: postgres, containerPort: 5432}
           readinessProbe:
-            exec: {command: [pg_isready, -U, toolgate, -d, toolgate]}
+            exec: {command: [pg_isready, -h, 127.0.0.1, -U, toolgate, -d, toolgate]}
             periodSeconds: 2
 ---
 apiVersion: v1

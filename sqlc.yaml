@@ -10,3 +10,12 @@ sql:
         sql_package: pgx/v5
         emit_json_tags: false
         emit_empty_slices: true
+        # The vector column is not read back; the model has it as text.
+        overrides:
+          - db_type: vector
+            nullable: true
+            go_type:
+              type: string
+              pointer: true
+          - db_type: vector
+            go_type: string

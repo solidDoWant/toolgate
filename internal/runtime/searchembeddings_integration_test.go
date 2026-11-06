@@ -59,7 +59,7 @@ func embeddingState(t *testing.T, pool *pgxpool.Pool, uid string) (model string,
 	var length int
 
 	require.NoError(t, pool.QueryRow(t.Context(),
-		`SELECT embedding_model, cardinality(embedding) FROM tool_search WHERE template_uid = $1`, uid).Scan(&model, &length))
+		`SELECT embedding_model, COALESCE(vector_dims(embedding), 0) FROM tool_search WHERE template_uid = $1`, uid).Scan(&model, &length))
 
 	return model, length
 }
@@ -126,6 +126,15 @@ func TestSearchRowsEmbeddings(t *testing.T) {
 
 	// The model changes: a new leader embeds the row again.
 	changed := &runtime.SearchRebuilder{Pool: pool, Templates: templates, Embedder: newClient("model-b")}
+	require.NoError(t, changed.Sync(ctx))
+
+	model, _ = embeddingState(t, pool, "uid-1")
+	assert.Equal(t, "model-b", model)
+
+	// A row written with another model (by an older leader) is embedded
+	// again on the next sync, although the template did not change.
+	_, err = pool.Exec(ctx, `UPDATE tool_search SET embedding_model = 'foreign' WHERE template_uid = 'uid-1'`)
+	require.NoError(t, err)
 	require.NoError(t, changed.Sync(ctx))
 
 	model, _ = embeddingState(t, pool, "uid-1")

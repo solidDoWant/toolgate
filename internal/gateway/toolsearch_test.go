@@ -5,8 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
 func TestQueryWords(t *testing.T) {
@@ -36,35 +34,4 @@ func TestQueryWords(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestFuseRanks(t *testing.T) {
-	row := func(name string, matched bool, score float64, model string, vector ...float32) db.SearchToolsWithVectorsRow {
-		return db.SearchToolsWithVectorsRow{ExposedName: name, UpstreamName: name, Matched: matched, Score: score, EmbeddingModel: model, Embedding: vector}
-	}
-
-	rows := []db.SearchToolsWithVectorsRow{
-		row("a_words_only", true, 1, "m"),
-		row("b_both", true, 0.5, "m", 1, 0),
-		row("c_vector_only", false, 0, "m", 0.9, 0.1),
-		row("d_other_model", false, 0, "old", 1, 0),
-		row("e_nothing", false, 0, "m", 0, 1),
-	}
-
-	names := func(fused []db.SearchToolsRow) []string {
-		out := []string{}
-		for _, item := range fused {
-			out = append(out, item.ExposedName)
-		}
-
-		return out
-	}
-
-	// b is second in words and first by vector, so it leads; a has words
-	// only; c has a vector only; d is ignored (other model); e is third by
-	// vector but not by words.
-	assert.Equal(t, []string{"b_both", "a_words_only", "c_vector_only", "e_nothing"}, names(fuseRanks(rows, []float32{1, 0}, "m")))
-
-	// A row of an old model gets no vector rank.
-	assert.NotContains(t, names(fuseRanks(rows, []float32{1, 0}, "m")), "d_other_model")
 }

@@ -137,7 +137,7 @@ config:
     # (`POST <url>/v1/embeddings`), such as `http://tei.tools.svc:80`. Empty
     # means search uses words only.
     url: ""
-    # -- Model name sent to the endpoint, such as `BAAI/bge-small-en-v1.5`.
+    # -- Model name sent to the endpoint, such as `BAAI/bge-base-en-v1.5`.
     # Required when `url` is set. Changing it embeds all tools again.
     model: ""
     # -- Path of a file that holds an API key for the endpoint, mounted from a

@@ -234,17 +234,17 @@ The catalog and rule reconcilers already run on every replica and write only whi
 
 The owner decided this on 2026-11-06 (#354). On the fixture, full-text search alone reached 61 percent, and about 75 to 82 percent with a richer document, trigram name matching and synonyms. Most of the remaining misses are paraphrases that share no word with the tool ("Catch me up on #general" for a channel history tool). So search can also rank by meaning, when the admin configures an embeddings endpoint.
 
-**Setting.** `toolSearch.embeddings` in the chart and the gateway config:
+**Setting.** `config.toolSearchEmbeddings` in the chart (`toolSearchEmbeddings` in the gateway config; `config.toolSearch` is already the on/off value):
 - `url`: an endpoint that speaks the OpenAI embeddings API (`POST <url>/v1/embeddings`). Examples are Hugging Face text-embeddings-inference and Ollama, run in the cluster.
 - `model`: the model name sent in the request.
-- `apiKeySecret` (optional): a Secret key, sent as `Authorization: Bearer`.
+- `apiKeyFile` (optional): the path of a file mounted from a Secret, its content sent as `Authorization: Bearer`.
 - `timeout`: 2 s by default.
 
 Without `url`, search is full-text only, as before. The gateway uses a maintained HTTP client and JSON. It needs no SDK and no new Go dependency beyond the standard library.
 
-**Vectors.** The leader embeds each search row's document text when it rebuilds the row (§ "Keeping the search rows current"). It stores the vector in `tool_search.embedding` (`real[]`), with `embedding_model` (text). A row whose model differs from the setting is embedded again on the next rebuild. No `pgvector` is needed: a deployment has at most a few thousand tools, so a replica loads the candidate rows' vectors with the full-text query and computes cosine similarity in Go. If embedding a row fails, the row keeps an empty vector and is retried on the next rebuild, with a warning log and a metric. A failure never blocks a `ready` write.
+**Vectors.** The leader embeds each search row's document text when it rebuilds the row (§ "Keeping the search rows current"). It stores the vector in `tool_search.embedding` (pgvector `vector`, with no fixed dimension, NULL when not embedded), with `embedding_model` (text). The migration creates the `vector` extension. A row whose model differs from the setting is embedded again on the next rebuild. The owner decided that pgvector is required: the cosine distance and the fusion run in one SQL query. The test and e2e PostgreSQL use `ghcr.io/cloudnative-pg/postgresql:17-standard-trixie`, pinned by digest. If embedding a row fails, the row keeps an empty vector and is retried on the next rebuild, with a warning log and a metric. A failure never blocks a `ready` write.
 
-**Query.** `toolgate_find_tools` embeds the query with the same model, with the timeout. The candidates are every search row the session's policy allows (as before), not only the full-text matches. Ranking uses reciprocal rank fusion (k = 60) of the full-text rank and the cosine rank. If the embeddings call fails or times out, the search uses full-text only, writes a metric, and still answers. The query text is never logged.
+**Query.** `toolgate_find_tools` embeds the query with the same model, with the timeout. The candidates are every search row the session's policy allows (as before), not only the full-text matches. Ranking uses reciprocal rank fusion (k = 60) of the full-text rank and the cosine-distance rank, computed in SQL. If the embeddings call fails or times out, the search uses full-text only, writes a metric, and still answers. The query text is never logged.
 
 **Data and egress.** The query and the tool documents are sent to the endpoint. The admin docs say to run the endpoint in the cluster, and the chart's network policy allows egress only to the configured host and port.
 
@@ -258,7 +258,7 @@ AC-4-03. The fixture is `test/fixtures/toolsearch/`:
 
 One agent writes the fixture and opens it in its own PR before any ranking code merges. The search worker may not change it. So the fixture isn't fitted to the ranking.
 
-The AC-4-03 test is an integration test. It loads the fixture through the real rebuild code into PostgreSQL and runs every task through the real search, **with embeddings configured**. In CI, the embeddings endpoint is Hugging Face text-embeddings-inference (CPU image from `ghcr.io/huggingface/text-embeddings-inference`, pinned by digest) with `BAAI/bge-small-en-v1.5`, cached between runs. The test passes when the expected tool is in the top 5 for at least 90 percent of the tasks. It also prints the full-text-only score for information, which doesn't gate. If hybrid search misses the bar, the worker hands back with the per-task misses and doesn't add words or change the fixture.
+The AC-4-03 test is an integration test. It loads the fixture through the real rebuild code into PostgreSQL and runs every task through the real search, **with embeddings configured**. In CI, the embeddings endpoint is Hugging Face text-embeddings-inference (CPU image from `ghcr.io/huggingface/text-embeddings-inference`, pinned by digest) with `BAAI/bge-base-en-v1.5`, cached between runs. The test passes when the expected tool is in the top 5 for at least 90 percent of the tasks. It also prints the full-text-only score for information, which doesn't gate. If hybrid search misses the bar, the worker hands back with the per-task misses and doesn't add words or change the fixture.
 
 ### Search quality in use
 
@@ -769,7 +769,7 @@ Every scenario's test carries its tag. The e2e harness gains:
 
 ## 14. Won't do
 
-- A search backend other than PostgreSQL: no embeddings, no vector database, no external service.
+- A search backend other than PostgreSQL (with pgvector): no vector database. The only external service is the optional embeddings endpoint.
 - An OAuth server, dynamic client registration, client metadata documents, token exchange, or passing a client's token to upstream servers.
 - Exposing the UI, the API or the OTLP routes to the internet.
 - A tool catalog for each user. The catalog is for each template generation, as the checklist says.

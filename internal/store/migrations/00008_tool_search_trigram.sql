@@ -7,8 +7,14 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- search ranking. The leader rebuilds every row when it takes the Lease.
 ALTER TABLE tool_search ADD COLUMN name_text text NOT NULL DEFAULT '';
 
+-- pgvector holds the embeddings. It is a trusted extension in the standard
+-- PostgreSQL images, so the database owner can create it.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- embedding is the vector of the document from the embeddings endpoint, and
--- embedding_model the model that made it. An empty vector means the row is
--- not embedded (embeddings are off, or the endpoint failed).
-ALTER TABLE tool_search ADD COLUMN embedding real[] NOT NULL DEFAULT '{}';
+-- embedding_model the model that made it. NULL means the row is not embedded
+-- (embeddings are off, or the endpoint failed). The column has no fixed
+-- dimension, because it depends on the model; a search compares only rows of
+-- the configured model.
+ALTER TABLE tool_search ADD COLUMN embedding vector;
 ALTER TABLE tool_search ADD COLUMN embedding_model text NOT NULL DEFAULT '';

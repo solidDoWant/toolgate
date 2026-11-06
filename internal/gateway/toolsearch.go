@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -285,14 +286,18 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 		}
 
 		if queryVector != nil {
-			vectorRows, err := queries.SearchToolsWithVectors(ctx, db.SearchToolsWithVectorsParams{
+			hybrid, err := queries.SearchToolsHybrid(ctx, db.SearchToolsHybridParams{
 				Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids,
+				QueryVector: embeddings.FormatVector(queryVector), Model: m.embedder.Model(),
 			})
 			if err != nil {
 				return fmt.Errorf("search the tools: %w", err)
 			}
 
-			rows = fuseRanks(vectorRows, queryVector, m.embedder.Model())
+			rows = make([]db.SearchToolsRow, len(hybrid))
+			for index, row := range hybrid {
+				rows[index] = db.SearchToolsRow(row)
+			}
 
 			return nil
 		}

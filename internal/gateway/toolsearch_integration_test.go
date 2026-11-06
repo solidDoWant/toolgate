@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -524,6 +525,7 @@ func TestToolSearchEmbeddingsEndpointDown(t *testing.T) {
 	require.NoError(t, err)
 
 	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Embedder = embedder })
+	fixture.embedder = embedder
 	template := fixture.addEnableTemplate("github", "per-user", anyone)
 	fixture.declareTools(t, template, declared("echo", "Echo text back to the caller"))
 
@@ -531,4 +533,73 @@ func TestToolSearchEmbeddingsEndpointDown(t *testing.T) {
 	require.NotEmpty(t, found.Tools)
 	assert.Equal(t, "github__echo", found.Tools[0].Name)
 	assert.Positive(t, calls.Load(), "the endpoint was called")
+}
+
+// TestToolSearchRanksByMeaning checks the fusion of the word rank and the
+// vector rank: a tool that shares no word with the query is found by its
+// vector, a tool that matches by words only still comes back, and the vector
+// order decides between tools that share no word.
+func TestToolSearchRanksByMeaning(t *testing.T) {
+	vectorOf := func(text string) []float32 {
+		switch {
+		case strings.Contains(text, "marine"), strings.Contains(text, "waves"):
+			return []float32{1, 0}
+		case strings.Contains(text, "leaves"):
+			return []float32{0, 1}
+		default:
+			return []float32{-1, 0}
+		}
+	}
+
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Input []string `json:"input"`
+		}
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&in))
+
+		data := make([]map[string]any, len(in.Input))
+		for index, text := range in.Input {
+			data[index] = map[string]any{"index": index, "embedding": vectorOf(text)}
+		}
+
+		assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"data": data}))
+	}))
+	t.Cleanup(endpoint.Close)
+
+	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: "m"})
+	require.NoError(t, err)
+
+	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Embedder = embedder })
+	fixture.embedder = embedder
+	template := fixture.addEnableTemplate("srv", "per-user", anyone)
+	fixture.declareTools(t, template,
+		declared("b_tide", "waves and salt water"),
+		declared("a_tree", "leaves and bark"),
+		declared("z_marine", "marine"),
+	)
+
+	found, _ := findTools(t, fixture.connect(t, searching(alice())), "marine", 0)
+
+	names := make([]string, len(found.Tools))
+	for index, tool := range found.Tools {
+		names[index] = tool.Name
+	}
+
+	// z_marine matches the word and the vector, so it leads; b_tide is next
+	// by vector alone; a_tree has no word and the farthest vector, so it
+	// comes last although its name sorts first.
+	assert.Equal(t, []string{"srv__z_marine", "srv__b_tide", "srv__a_tree"}, names)
+
+	// A row embedded with another model takes no part in the vector rank.
+	_, err = fixture.pool.Exec(t.Context(), `UPDATE tool_search SET embedding_model = 'other' WHERE upstream_name = 'b_tide'`)
+	require.NoError(t, err)
+
+	found, _ = findTools(t, fixture.connect(t, searching(alice())), "marine", 0)
+
+	names = names[:0]
+	for _, tool := range found.Tools {
+		names = append(names, tool.Name)
+	}
+
+	assert.Equal(t, []string{"srv__z_marine", "srv__a_tree"}, names)
 }

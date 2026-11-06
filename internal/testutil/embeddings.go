@@ -17,7 +17,7 @@ import (
 const EmbeddingsImage = "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"
 
 // EmbeddingsModel is the model the embeddings server loads.
-const EmbeddingsModel = "BAAI/bge-small-en-v1.5"
+const EmbeddingsModel = "BAAI/bge-base-en-v1.5"
 
 const embeddingsPort = "80/tcp"
 

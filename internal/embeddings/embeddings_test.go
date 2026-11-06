@@ -92,10 +92,7 @@ func TestNewValidates(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestCosine(t *testing.T) {
-	assert.InDelta(t, 1, embeddings.Cosine([]float32{1, 2}, []float32{2, 4}), 1e-9)
-	assert.InDelta(t, 0, embeddings.Cosine([]float32{1, 0}, []float32{0, 1}), 1e-9)
-	assert.Zero(t, embeddings.Cosine([]float32{1}, []float32{1, 2}))
-	assert.Zero(t, embeddings.Cosine(nil, nil))
-	assert.Zero(t, embeddings.Cosine([]float32{0, 0}, []float32{1, 1}))
+func TestFormatVector(t *testing.T) {
+	assert.Equal(t, "[0.5,1,-2.25]", embeddings.FormatVector([]float32{0.5, 1, -2.25}))
+	assert.Equal(t, "", embeddings.FormatVector(nil))
 }

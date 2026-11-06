@@ -290,7 +290,7 @@ type Config struct {
 	ToolSearchEmbeddingsURL string `json:"toolSearchEmbeddingsURL" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_URL"`
 
 	// The model name sent to the embeddings endpoint, such as
-	// `BAAI/bge-small-en-v1.5`. Changing it makes the gateway embed all tools
+	// `BAAI/bge-base-en-v1.5`. Changing it makes the gateway embed all tools
 	// again.
 	ToolSearchEmbeddingsModel string `json:"toolSearchEmbeddingsModel" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_MODEL"`
 

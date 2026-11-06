@@ -1,6 +1,6 @@
 // Package embeddings calls an endpoint that speaks the OpenAI embeddings API
-// (POST <url>/v1/embeddings) and ranks vectors by cosine similarity. It uses
-// the standard library only (docs/design/phase-4.md §5).
+// (POST <url>/v1/embeddings) and formats vectors for pgvector, which ranks them.
+// It uses the standard library only (docs/design/phase-4.md §5).
 package embeddings
 
 import (
@@ -10,9 +10,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,24 +184,26 @@ func (c *Client) embedBatch(ctx context.Context, texts []string) ([][]float32, e
 	return vectors, nil
 }
 
-// Cosine returns the cosine similarity of two vectors, or 0 when their
-// lengths differ or either is empty or all zeros.
-func Cosine(a, b []float32) float64 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0
+// FormatVector returns the text form of a vector that pgvector reads, for
+// example `[0.5,1]`. An empty vector gives the empty string.
+func FormatVector(vector []float32) string {
+	if len(vector) == 0 {
+		return ""
 	}
 
-	var dot, normA, normB float64
+	var builder strings.Builder
 
-	for index := range a {
-		dot += float64(a[index]) * float64(b[index])
-		normA += float64(a[index]) * float64(a[index])
-		normB += float64(b[index]) * float64(b[index])
+	builder.WriteByte('[')
+
+	for index, value := range vector {
+		if index > 0 {
+			builder.WriteByte(',')
+		}
+
+		builder.WriteString(strconv.FormatFloat(float64(value), 'g', -1, 32))
 	}
 
-	if normA == 0 || normB == 0 {
-		return 0
-	}
+	builder.WriteByte(']')
 
-	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	return builder.String()
 }
