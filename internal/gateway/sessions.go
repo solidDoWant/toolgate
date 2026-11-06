@@ -9,10 +9,12 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -145,6 +147,13 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 			return fmt.Errorf("restart session: %w", err)
 		}
 
+		// A 0.3 leader ends a session without clearing its allow entries,
+		// found tools or pending requests. Nothing of the old session may
+		// apply to the restarted one; deny entries stay.
+		if err := s.clearEndedState(ctx, tx, locked); err != nil {
+			return err
+		}
+
 		if locked.Workspace == identity.Workspace && locked.Attestation == identity.Attestation {
 			kept, err = queries.ListSessionServers(ctx, id)
 			if err != nil {
@@ -182,6 +191,55 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 	})
 
 	return session, err
+}
+
+// clearEndedState deletes the allow entries and found tools of an ended
+// session that is restarting, and expires its pending server and scope
+// requests, writing access.expire for each. Ending in 0.4 already did this, so
+// it only changes sessions a 0.3 leader ended.
+func (s *sessionStore) clearEndedState(ctx context.Context, tx pgx.Tx, ended db.Session) error {
+	queries := db.New(tx)
+	sessionPK := pgtype.Int8{Int64: ended.ID, Valid: true}
+
+	if err := queries.DeleteSessionScopeEntries(ctx, db.DeleteSessionScopeEntriesParams{SessionPk: sessionPK, Effect: "allow"}); err != nil {
+		return fmt.Errorf("delete allow entries: %w", err)
+	}
+
+	if err := queries.DeleteSessionFoundTools(ctx, ended.ID); err != nil {
+		return fmt.Errorf("delete found tools: %w", err)
+	}
+
+	expired, err := queries.ExpireSessionServerRequests(ctx, sessionPK)
+	if err != nil {
+		return fmt.Errorf("expire session requests: %w", err)
+	}
+
+	recorder := audit.NewRecorder(s.auditOutput, queries)
+
+	for _, request := range expired {
+		attestation := "user"
+		if request.Verified {
+			attestation = "attested"
+		}
+
+		if err := recorder.Record(ctx, audit.Event{
+			Type:        "access.expire",
+			Principal:   request.Principal,
+			Workspace:   request.Workspace,
+			Session:     ended.SessionID,
+			Attestation: attestation,
+			Server:      request.Server.String,
+			Details:     map[string]any{"request": request.ID, "kind": request.Kind},
+		}); err != nil {
+			return err
+		}
+
+		if err := store.Notify(ctx, tx, store.KindApproval, request.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // refresh writes the identity snapshot when it changed, and otherwise moves
