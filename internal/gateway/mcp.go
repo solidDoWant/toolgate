@@ -483,6 +483,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			if connector {
 				created.connectorSession = session.ID
 			}
+
 			createdID = id
 			e.bind(id, created)
 		}}

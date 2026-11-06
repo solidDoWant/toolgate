@@ -154,6 +154,7 @@ func TestConnectorSessions(t *testing.T) {
 
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
+
 		_ = response.Body.Close()
 
 		assert.Equal(t, http.StatusNotFound, response.StatusCode, "another replica doesn't know the MCP session")

@@ -190,6 +190,7 @@ func TestAC4_10SessionsWithoutHelper(t *testing.T) {
 
 		response, err := http.DefaultClient.Do(request)
 		require.NoError(t, err)
+
 		_, _ = io.Copy(io.Discard, response.Body)
 		_ = response.Body.Close()
 		require.Equal(t, http.StatusNoContent, response.StatusCode)
