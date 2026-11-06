@@ -16,6 +16,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // WaitingCallLimit is the most calls of one principal that wait for an
@@ -23,8 +24,9 @@ import (
 const WaitingCallLimit = 32
 
 // approvalWaitInterval is the longest a waiting call goes without
-// re-reading its approval and sending a progress notification.
-var approvalWaitInterval = progressInterval
+// re-reading its approval and sending a progress notification. An e2e
+// build scales it with the approval timeout.
+var approvalWaitInterval = testtime.Scale(progressInterval)
 
 // Approval statuses a waiting call ends on.
 const approvalDenied = "denied"

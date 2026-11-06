@@ -476,7 +476,7 @@ const listOverdueApprovals = `-- name: ListOverdueApprovals :many
 SELECT a.id, a.principal, a.workspace, a.template_name, a.tool, s.session_id, s.attestation
 FROM approvals a
 JOIN sessions s ON s.id = a.session_pk
-WHERE a.status = 'pending' AND a.expires_at < now() - interval '1 minute'
+WHERE a.status = 'pending' AND a.expires_at < now() - $1::interval
 ORDER BY a.expires_at
 LIMIT 1000
 `
@@ -491,10 +491,10 @@ type ListOverdueApprovalsRow struct {
 	Attestation  string
 }
 
-// Lists pending approvals whose expires_at is more than 1 minute past, with
+// Lists pending approvals whose expires_at is more than grace past, with
 // their session's client session ID, for the leader's pass.
-func (q *Queries) ListOverdueApprovals(ctx context.Context) ([]ListOverdueApprovalsRow, error) {
-	rows, err := q.db.Query(ctx, listOverdueApprovals)
+func (q *Queries) ListOverdueApprovals(ctx context.Context, grace pgtype.Interval) ([]ListOverdueApprovalsRow, error) {
+	rows, err := q.db.Query(ctx, listOverdueApprovals, grace)
 	if err != nil {
 		return nil, err
 	}

@@ -73,12 +73,12 @@ ORDER BY created_at, id
 LIMIT 1;
 
 -- name: ListOverdueApprovals :many
--- Lists pending approvals whose expires_at is more than 1 minute past, with
+-- Lists pending approvals whose expires_at is more than grace past, with
 -- their session's client session ID, for the leader's pass.
 SELECT a.id, a.principal, a.workspace, a.template_name, a.tool, s.session_id, s.attestation
 FROM approvals a
 JOIN sessions s ON s.id = a.session_pk
-WHERE a.status = 'pending' AND a.expires_at < now() - interval '1 minute'
+WHERE a.status = 'pending' AND a.expires_at < now() - @grace::interval
 ORDER BY a.expires_at
 LIMIT 1000;
 

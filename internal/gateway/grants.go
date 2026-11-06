@@ -21,6 +21,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // Grant bounds (docs/design/phase-2.md §2 and §5, "Grant form").
@@ -235,7 +236,7 @@ func (g *Grants) Create(ctx context.Context, identity auth.Identity, request Gra
 		TemplateName: template.Name,
 		Tool:         request.Tool,
 		SessionID:    session,
-		Lifetime:     pgtype.Interval{Microseconds: request.Lifetime.Microseconds(), Valid: true},
+		Lifetime:     pgtype.Interval{Microseconds: testtime.Scale(request.Lifetime).Microseconds(), Valid: true},
 	}, func(tx pgx.Tx, grant db.Grant) error {
 		return g.recordAndNotify(ctx, tx, TypeGrantCreate, identity.Principal, grant)
 	})

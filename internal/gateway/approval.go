@@ -22,6 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // PendingApprovalLimit is the most pending approvals one principal may
@@ -262,7 +263,7 @@ func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (fou
 			ID: id, Principal: call.current.identity.Principal, SessionPk: call.current.session.ID,
 			Workspace: call.current.identity.Workspace, TemplateNs: call.template.Namespace, TemplateName: call.template.Name,
 			Tool: call.tool, ArgumentsSha256: call.hash,
-			ApprovalTimeout: pgtype.Interval{Microseconds: m.approvalTimeout.Microseconds(), Valid: true},
+			ApprovalTimeout: pgtype.Interval{Microseconds: testtime.Scale(m.approvalTimeout).Microseconds(), Valid: true},
 			PendingLimit:    PendingApprovalLimit,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
