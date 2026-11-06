@@ -6,7 +6,8 @@ session that re-derives every cycle what is ready and dispatches subagents,
 this loop polls GitHub every minute, builds a priority-ordered job list in
 code, and keeps up to `slots` independent `claude -p` processes running:
 
-  1. armed PR (auto-merge set) whose CI failed -> re-run once, then a worker;
+  1. armed PR (auto-merge set) whose CI failed -> re-run once, then a worker
+     (no re-run when the job log shows test assertion failures);
      armed PR that now conflicts -> merge-fixer (resolves or hands back)
   2. PR whose CI finished: green and unarmed -> armed here; red -> its worker;
      conflicting -> merge-fixer. (With `reviews` on, a reviewer instead, and
@@ -140,7 +141,8 @@ DEFAULT_CONFIG = {
     },
     "ci_auto_rerun": True,
     # Jobs whose failures are almost always real: they go straight to the worker
-    # instead of costing a full CI re-run first (the e2e job is still re-run once).
+    # instead of costing a full CI re-run first. Other jobs (e2e) are re-run once unless
+    # their log shows a test assertion failure (is_assertion_failure).
     "no_rerun_jobs": ["lint", "unit", "integration", "docs", "test-guard"],
     "failure_backoff_s": 120,
     "failure_backoff_max_s": 1800,
@@ -256,7 +258,8 @@ class PR:
     files: list
     reviews: list  # [Review], oldest first
     check: str  # missing | pending | success | failure
-    failed_runs: list = field(default_factory=list)  # [{name, url, run_id}]
+    # [{name, url, run_id, conclusion}]; the scheduler adds "assertion" from the job log (classify_failures).
+    failed_runs: list = field(default_factory=list)
 
     def verdicts(self) -> list:
         return [r for r in self.reviews if r.verdict]
@@ -366,6 +369,36 @@ def parse_issue(node: dict) -> Issue:
 
 FAILED_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "CANCELLED", "STARTUP_FAILURE", "ACTION_REQUIRED"}
 
+# Signs in a failed job's log that the failure came from the environment, not the code: a re-run may pass.
+INFRA_FAILURE_MARKERS = (
+    "test timed out after", "deadline exceeded", "connection refused", "connection reset", "i/o timeout",
+    "tls handshake timeout", "no such host", "toomanyrequests", "rate limit", "no space left on device",
+    "the runner has received a shutdown signal", "lost communication with the server", "oomkilled",
+    "signal: killed", "unexpected eof",
+)
+
+
+def job_id_from_url(url: str | None) -> int | None:
+    match = re.search(r"/job/(\d+)", url or "")
+    return int(match.group(1)) if match else None
+
+
+def is_assertion_failure(log: str) -> bool:
+    """True when a failed job's log shows a Go test assertion failure and no
+    sign of an environment problem. Re-running such a job costs a full CI run
+    and fails again, so the scheduler sends it straight to the worker.
+
+    Only the failure reports are searched for environment markers (the lines
+    after each `Error Trace:` and `--- FAIL:`), because e2e logs print
+    connection errors while waiting for things to start."""
+    lines = log.splitlines()
+    fails = [i for i, line in enumerate(lines) if "--- FAIL:" in line]
+    if not fails or "panic: test timed out" in log:
+        return False
+    starts = [i for i, line in enumerate(lines) if "Error Trace:" in line] or fails
+    report = "\n".join("\n".join(lines[i:i + 15]) for i in starts).lower()
+    return not any(marker in report for marker in INFRA_FAILURE_MARKERS)
+
 
 def parse_pr(node: dict, cfg: dict) -> PR:
     contexts = []
@@ -386,6 +419,7 @@ def parse_pr(node: dict, cfg: dict) -> PR:
             "name": c["name"],
             "url": c.get("detailsUrl"),
             "run_id": ((c.get("checkSuite") or {}).get("workflowRun") or {}).get("databaseId"),
+            "conclusion": c["conclusion"],
         }
         for c in contexts
         if c["status"] == "COMPLETED" and c["conclusion"] in FAILED_CONCLUSIONS and c["name"] != cfg["required_check"]
@@ -501,6 +535,9 @@ class GitHub:
             self.log("dry_write", what=what)
             return
         self._gh(*args)
+
+    def failed_job_log(self, job_id: int) -> str:
+        return self._gh("run", "view", "--job", str(job_id), "--log-failed", "-R", self.cfg["repo"], timeout=180)
 
     def rerun_failed(self, run_id: int) -> None:
         self._write(f"gh run rerun {run_id} --failed", "run", "rerun", str(run_id), "--failed", "-R", self.cfg["repo"])
@@ -750,14 +787,16 @@ def build_plan(snap: Snapshot, state: dict, cfg: dict, holds: dict, now: dt.date
             elif pr.check == "failure":
                 reruns = state.get("ci_reruns", {}).get(str(pr.number), {})
                 failed = ", ".join(f"{f['name']} ({f['url']})" for f in pr.failed_runs) or "see the checks tab"
-                deterministic = any(f["name"] in cfg["no_rerun_jobs"] for f in pr.failed_runs)
+                deterministic = any(f["name"] in cfg["no_rerun_jobs"] or f.get("assertion") for f in pr.failed_runs)
                 if cfg["ci_auto_rerun"] and reruns.get("sha") != pr.head_sha and pr.failed_runs and not deterministic:
                     plan.reruns.append((pr.number, sorted({f["run_id"] for f in pr.failed_runs if f["run_id"]}),
                                         [f["name"] for f in pr.failed_runs]))
                 else:
+                    why = (" and a re-run" if reruns.get("sha") == pr.head_sha
+                           else " (the log shows test assertion failures, so it was not re-run)" if deterministic else "")
                     add(Job(worker_key, "issue-worker", 1, sort, "armed PR: CI failed after re-run",
                             f"CI failed on PR #{pr.number} at {pr.head_sha[:10]} after auto-merge was armed"
-                            f"{' and a re-run' if reruns.get('sha') == pr.head_sha else ''}. Failed jobs: {failed}. "
+                            f"{why}. Failed jobs: {failed}. "
                             "If it is a flake, file it as a `bug` issue with the evidence and re-run the job; otherwise "
                             "reproduce the failing tests locally (only those), fix them, and push once they pass (auto-merge is disarmed by your push rules).",
                             issue, pr.number, claims))
@@ -1244,7 +1283,7 @@ class Scheduler:
     # State and logging -------------------------------------------------
 
     def load_state(self) -> dict:
-        base = {"running": {}, "sessions": {}, "failures": {}, "gave_up": {}, "ci_reruns": {}, "specials": {},
+        base = {"running": {}, "sessions": {}, "failures": {}, "gave_up": {}, "ci_reruns": {}, "ci_logs": {}, "specials": {},
                 "limit_until": None, "planner": {}, "housekeeping": {}, "queue": [], "notes": [],
                 "maintenance": None}
         if self.state_path.exists():
@@ -1735,6 +1774,34 @@ class Scheduler:
             if int(pr_s) not in snap.prs and self.state["ci_reruns"][pr_s].get("reported"):
                 self.state["ci_reruns"].pop(pr_s)
 
+    def classify_failures(self, snap: Snapshot) -> None:
+        """Mark failed jobs of armed PRs whose log shows test assertion failures,
+        so build_plan skips the automatic re-run for them. Only jobs that would
+        otherwise be re-run are read, once per job (cached in state). If the log
+        can't be read, the job is re-run as before."""
+        cache = self.state.setdefault("ci_logs", {})
+        seen = set()
+        for pr in snap.prs.values():
+            if not (pr.auto_merge and pr.check == "failure"):
+                continue
+            if self.state["ci_reruns"].get(str(pr.number), {}).get("sha") == pr.head_sha:
+                continue
+            for f in pr.failed_runs:
+                job = job_id_from_url(f.get("url"))
+                if job is None or f["name"] in self.cfg["no_rerun_jobs"] or f.get("conclusion", "FAILURE") != "FAILURE":
+                    continue
+                seen.add(str(job))
+                if str(job) not in cache:
+                    try:
+                        cache[str(job)] = is_assertion_failure(self.github.failed_job_log(job))
+                    except Exception as err:  # noqa: BLE001 - unreadable log: fall back to a re-run
+                        self.event("github_error", op="job_log", pr=pr.number, job=job, error=str(err)[:300])
+                        continue
+                    self.event("ci_log_classified", pr=pr.number, job=job, name=f["name"], assertion=cache[str(job)])
+                f["assertion"] = cache[str(job)]
+        for job in set(cache) - seen:
+            cache.pop(job)
+
     # Housekeeping ------------------------------------------------------
 
     def due(self, name: str, every_s: int) -> bool:
@@ -1861,6 +1928,7 @@ class Scheduler:
         prev_open = set(self.state["planner"].get("open_issues", [])) or None
         self.planner_triggers(snap, prev_open)
         self.cleanup_closed(snap)
+        self.classify_failures(snap)
         holds = self.holds()
         plan = build_plan(snap, self.state, self.cfg, holds, now)
         self.heads = {n: pr.head_sha for n, pr in snap.prs.items()}

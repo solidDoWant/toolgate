@@ -144,6 +144,15 @@ class PlanTest(unittest.TestCase):
         plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)]))
         self.assertEqual((plan.reruns, keys(plan)), ([], ["worker:2"]))
 
+    def test_armed_assertion_failure_goes_to_the_worker_without_a_rerun(self):
+        failed = [{"name": "e2e (2)", "url": "https://x/job/7", "run_id": 99, "assertion": True}]
+        plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)]))
+        self.assertEqual((plan.reruns, keys(plan)), ([], ["worker:2"]))
+        self.assertIn("assertion failures, so it was not re-run", plan.jobs[0].trigger)
+        failed[0]["assertion"] = False
+        plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)]))
+        self.assertEqual((plan.reruns, keys(plan)), ([(10, [99], ["e2e (2)"])], []))
+
     def test_red_unarmed_pr_goes_to_reviewer(self):
         plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure")]), cfg=REVIEWED)
         self.assertEqual(keys(plan), ["reviewer:pr-10"])
@@ -528,12 +537,50 @@ FAKE_CLAUDE = textwrap.dedent("""\
 """)
 
 
+ASSERTION_LOG = """e2e	Run tests	2026-11-06T01:00:00Z === RUN   TestAC3_16
+e2e	Run tests	2026-11-06T01:00:01Z     waiting for gateway: dial tcp 10.0.0.1:443: connect: connection refused
+e2e	Run tests	2026-11-06T01:00:09Z     ac3_16_test.go:88:
+e2e	Run tests	2026-11-06T01:00:09Z         	Error Trace:	ac3_16_test.go:88
+e2e	Run tests	2026-11-06T01:00:09Z         	Error:      	Not equal:
+e2e	Run tests	2026-11-06T01:00:09Z         	            	expected: 200
+e2e	Run tests	2026-11-06T01:00:09Z         	            	actual  : 404
+e2e	Run tests	2026-11-06T01:00:09Z --- FAIL: TestAC3_16 (9.00s)
+e2e	Run tests	2026-11-06T01:00:09Z FAIL
+"""
+
+
+class LogClassifierTest(unittest.TestCase):
+    def test_assertion_failure(self):
+        # The connection error before the report is ordinary startup noise.
+        self.assertTrue(s.is_assertion_failure(ASSERTION_LOG))
+        self.assertTrue(s.is_assertion_failure("    x_test.go:3: want 1, got 2\n--- FAIL: TestX (0.00s)\nFAIL\n"))
+
+    def test_environment_failures_are_not_assertions(self):
+        for log in (
+            "",
+            "##[error]The runner has received a shutdown signal.\n",
+            "panic: test timed out after 10m0s\n--- FAIL: TestX (600.00s)\n",
+            "\tError Trace:\tx_test.go:9\n\tError:\tReceived unexpected error:\n\t\tdial tcp: i/o timeout\n--- FAIL: TestX\n",
+            "\tError Trace:\tx_test.go:9\n\tError:\tpull ghcr.io/x: toomanyrequests\n--- FAIL: TestX\n",
+            "--- FAIL: TestX (1.00s)\n    x_test.go:3: context deadline exceeded\n",
+        ):
+            with self.subTest(log=log[:40]):
+                self.assertFalse(s.is_assertion_failure(log))
+
+    def test_job_id_from_url(self):
+        self.assertEqual(s.job_id_from_url("https://github.com/o/r/actions/runs/5/job/77"), 77)
+        self.assertIsNone(s.job_id_from_url("https://github.com/o/r/runs/5"))
+        self.assertIsNone(s.job_id_from_url(None))
+
+
 class FakeGitHub:
     def __init__(self, snapshot):
         self.snap = snapshot
         self.writes = []
         self.comments = []  # what GitHub.pm_comments returns: /pm comments by the human
         self.comment_queries = []
+        self.logs = {}  # job id -> what GitHub.failed_job_log returns
+        self.log_reads = []
 
     def snapshot(self):
         return self.snap
@@ -544,6 +591,12 @@ class FakeGitHub:
 
     def rerun_failed(self, run_id):
         self.writes.append(("rerun", run_id))
+
+    def failed_job_log(self, job_id):
+        self.log_reads.append(job_id)
+        if job_id not in self.logs:
+            raise RuntimeError("gh run view: HTTP 404")
+        return self.logs[job_id]
 
     def set_status(self, issue, status, remove):
         self.writes.append(("status", issue, status))
@@ -588,6 +641,25 @@ class SchedulerTest(unittest.TestCase):
         self.sched = s.Scheduler(self.repo, github=self.gh, claude_bin=str(fake), log_dir=root / "logs",
                                  out=io.StringIO())
         self.sched.housekeeping = lambda: None
+
+    def test_assertion_failure_skips_the_rerun(self):
+        failed = [{"name": "e2e (1)", "url": "https://x/runs/99/job/7", "run_id": 99, "conclusion": "FAILURE"},
+                  {"name": "e2e (2)", "url": "https://x/runs/99/job/8", "run_id": 99, "conclusion": "FAILURE"}]
+        self.gh.snap = snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)])
+        self.gh.logs = {7: ASSERTION_LOG, 8: "##[error]The runner has received a shutdown signal.\n"}
+        self.sched.poll()
+        self.assertNotIn(("rerun", 99), self.gh.writes)
+        self.assertEqual(self.sched.state["ci_logs"], {"7": True, "8": False})
+        self.sched.poll()
+        self.assertEqual(sorted(self.gh.log_reads), [7, 8])  # read once, then cached
+
+    def test_unreadable_or_infra_log_keeps_the_rerun(self):
+        failed = [{"name": "e2e (1)", "url": "https://x/runs/99/job/7", "run_id": 99, "conclusion": "FAILURE"},
+                  {"name": "e2e (2)", "url": "https://x/runs/99/job/9", "run_id": 99, "conclusion": "TIMED_OUT"}]
+        self.gh.snap = snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)])
+        self.sched.poll()  # job 7's log is missing (404); job 9 timed out, so its log is not read
+        self.assertIn(("rerun", 99), self.gh.writes)
+        self.assertEqual(self.gh.log_reads, [7])
 
     def tearDown(self):
         for k, v in self.old_env.items():
