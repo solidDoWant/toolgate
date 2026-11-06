@@ -151,6 +151,8 @@ Claude can call a tool of a server that the rules allow without `toolgate_enable
 
 The name of each tool of a server starts with the name of the server and two underscores, for example `github__list_issues`. One session can have 32 servers turned on at most.
 
+If the gateway has a web UI, the catalog also has a server named `toolgate`. It runs inside the gateway and is always ready. Its tool `toolgate_list_scopes` shows your own workspace scope: your defaults, the servers and tools that each workspace allows or denies, and the servers that each open session allows or denies. It shows at most 200 workspaces and 200 sessions. You can use it only in a session where you allow the `toolgate` server, in the same way as any other server.
+
 A server has one of three scopes. Your admin sets the scope:
 
 - `per-session`: the server is only for this session. It stops when you turn it off or when the session ends.

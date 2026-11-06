@@ -213,7 +213,7 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		return nil, errNoIdentity
 	}
 
-	server, exposed, _ := strings.Cut(request.Params.Name, toolSeparator)
+	server, exposed, _ := splitProxiedName(request.Params.Name)
 	tool := exposed
 
 	// Step 1: find the server and the tool. A server that isn't enabled in
@@ -256,6 +256,12 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 		if result != nil || err != nil {
 			return result, err
 		}
+	}
+
+	// The built-in server has no instance: its calls skip the instance
+	// steps and go on to policy (docs/design/phase-4.md §7).
+	if isBuiltin(template) {
+		return m.decideAndRun(ctx, current, request, template, db.Instance{}, tool)
 	}
 
 	// Step 2: its live instance must be ready. A call to an instance that is
@@ -322,6 +328,16 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 			fmt.Sprintf("Server `%s` doesn't offer `%s` any more.", server, exposed))
 	}
 
+	return m.decideAndRun(ctx, current, request, template, instance, tool)
+}
+
+// decideAndRun is the policy step of a call and what follows it: a refusal,
+// an approval, or the committed allow, the forward and tool.result.
+func (m *metaTools) decideAndRun(ctx context.Context, current requestContext, request *mcp.CallToolRequest,
+	template *v1alpha1.MCPServerTemplate, instance db.Instance, tool string,
+) (*mcp.CallToolResult, error) {
+	server := template.Name
+
 	// Step 3: policy.
 	state, err := m.policyState(ctx, current.identity)
 	if err != nil {
@@ -341,7 +357,11 @@ func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) 
 	// Step 4: the allow is committed before anything is forwarded. With
 	// payloads on, the arguments are stored first; a call whose arguments
 	// can't be stored is refused.
-	allowDetails := map[string]any{"decision": "allow", "instance": instance.ID}
+	allowDetails := map[string]any{"decision": "allow"}
+	if instance.ID != "" {
+		allowDetails["instance"] = instance.ID
+	}
+
 	if decision.Grant != "" {
 		allowDetails["grant"] = decision.Grant
 	}
@@ -366,15 +386,28 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 	server := template.Name
 	recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
 
-	// Step 5.
+	// Step 5. A built-in tool runs here instead of being forwarded.
 	started := time.Now()
-	result, outcome := m.forward(ctx, instance, template, tool, arguments)
+
+	var (
+		result  *mcp.CallToolResult
+		outcome string
+	)
+
+	if isBuiltin(template) {
+		result, outcome = m.callBuiltin(ctx, current, tool)
+	} else {
+		result, outcome = m.forward(ctx, instance, template, tool, arguments)
+	}
 
 	// Step 6. A result that can't be stored is still returned; the row
 	// records why its payload is missing.
-	resultEvent := callEvent(current, "tool.result", server, tool, withExposedDetail(ctx, map[string]any{
-		"outcome": outcome, "instance": instance.ID, "duration_ms": time.Since(started).Milliseconds(),
-	}))
+	resultDetails := map[string]any{"outcome": outcome, "duration_ms": time.Since(started).Milliseconds()}
+	if instance.ID != "" {
+		resultDetails["instance"] = instance.ID
+	}
+
+	resultEvent := callEvent(current, "tool.result", server, tool, withExposedDetail(ctx, resultDetails))
 	if err := m.payloads.Attach(ctx, &resultEvent, result); err != nil {
 		resultEvent.Details["payload_error"] = err.Error()
 	}
@@ -383,7 +416,7 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 		return nil, err
 	}
 
-	if !instance.LastUsedAt.Valid || time.Since(instance.LastUsedAt.Time) >= lastUsedInterval {
+	if instance.ID != "" && (!instance.LastUsedAt.Valid || time.Since(instance.LastUsedAt.Time) >= lastUsedInterval) {
 		if err := db.New(m.database).TouchInstance(ctx, instance.ID); err != nil {
 			return nil, fmt.Errorf("update instance last_used_at: %w", err)
 		}

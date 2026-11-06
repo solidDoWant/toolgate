@@ -118,3 +118,9 @@ WHERE c.generation < (
 SELECT count(*) FROM instances
 WHERE template_ns = @template_ns AND template_name = @template_name AND scope_key = @scope_key
   AND id <> @id AND status NOT IN ('stopped', 'failed');
+
+-- name: ListSessionAdditionsOfSessions :many
+-- The session additions of the given sessions.
+SELECT session_pk, server FROM session_additions
+WHERE session_pk = ANY(@session_pks::bigint[])
+ORDER BY session_pk, server;

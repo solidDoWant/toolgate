@@ -90,7 +90,18 @@ type MCPOptions struct {
 	// users (docs/design/phase-3.md §10). Set it only on a gateway with the
 	// web UI: without it the step is off.
 	WorkspaceScoping bool
+	// Workspaces serves the built-in server's tools with the same methods
+	// as the workspaces API. Nil means a service over Database and Catalog.
+	Workspaces *Workspaces
+	// SessionIdleTimeout is the toolgate session idle timeout: the built-in
+	// server lists the open sessions seen within it, as GET
+	// /api/v1/sessions does. Zero means defaultSessionIdleTimeout.
+	SessionIdleTimeout time.Duration
 }
+
+// defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
+// none. It matches the configuration's default.
+const defaultSessionIdleTimeout = 2 * time.Hour
 
 // defaultMCPSessionIdleTimeout is the MCPSessionIdleTimeout when MCPOptions
 // sets none. A client of a released MCP session gets 404 and initializes
@@ -251,6 +262,12 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		approvalURL:          options.ApprovalURL,
 		approvalTimeout:      valueOr(options.ApprovalTimeout, DefaultApprovalTimeout),
 		workspaceScoping:     options.WorkspaceScoping,
+		workspaces:           options.Workspaces,
+		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
+	}
+
+	if tools.workspaces == nil {
+		tools.workspaces = NewWorkspaces(options.Database, options.Catalog, auditOutput, options.ApprovalTimeout)
 	}
 
 	endpoint.callTool = tools.callTool

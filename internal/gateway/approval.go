@@ -342,13 +342,16 @@ func (m *metaTools) useApproval(ctx context.Context, call approvalCall, approval
 
 		var err error
 
-		instance, refusal, message, err = m.readyInTx(ctx, queries, call, template)
-		if err != nil {
-			return err
-		}
+		// The built-in server has no instance to be ready.
+		if !isBuiltin(template) {
+			instance, refusal, message, err = m.readyInTx(ctx, queries, call, template)
+			if err != nil {
+				return err
+			}
 
-		if refusal != nil {
-			return errRefusedInUse
+			if refusal != nil {
+				return errRefusedInUse
+			}
 		}
 
 		if _, err := queries.UseApproval(ctx, approval.ID); err != nil {
@@ -373,7 +376,10 @@ func (m *metaTools) useApproval(ctx context.Context, call approvalCall, approval
 			return errRefusedInUse
 		}
 
-		allow.Details["instance"] = instance.ID
+		if instance.ID != "" {
+			allow.Details["instance"] = instance.ID
+		}
+
 		if decision.Grant != "" {
 			allow.Details["grant"] = decision.Grant
 		}

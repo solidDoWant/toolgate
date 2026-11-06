@@ -53,6 +53,9 @@ type Catalog struct {
 	loadedOnce sync.Once
 
 	changes changes.Feed
+
+	// builtin is the in-memory template of the built-in server, or nil.
+	builtin *v1alpha1.MCPServerTemplate
 }
 
 type entry struct {
@@ -133,6 +136,28 @@ func (c *Catalog) Delete(key types.NamespacedName) []types.NamespacedName {
 	delete(c.entries, key)
 
 	return c.refresh(key.Name)
+}
+
+// SetBuiltin adds the in-memory template of the built-in server, whose name
+// is ReservedServerName (docs/design/phase-4.md §7). It is offered, listed
+// and running under its own key like any valid template. A real template
+// with that name stays invalid and is never served. nil removes it.
+func (c *Catalog) SetBuiltin(template *v1alpha1.MCPServerTemplate) {
+	defer c.changes.Notify()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.builtin = nil
+	if template != nil {
+		c.builtin = template.DeepCopy()
+	}
+}
+
+// isBuiltin reports whether key is the built-in server's key. c.mu must be
+// held.
+func (c *Catalog) isBuiltin(key types.NamespacedName) bool {
+	return c.builtin != nil && key.Namespace == c.builtin.Namespace && key.Name == c.builtin.Name
 }
 
 // Subscribe returns a channel that receives after a template is set or
@@ -217,6 +242,10 @@ func (c *Catalog) Offered(server string) (*v1alpha1.MCPServerTemplate, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
+	if c.builtin != nil && server == c.builtin.Name {
+		return c.builtin.DeepCopy(), nil
+	}
+
 	keys := c.keysNamed(server)
 	if len(keys) == 0 {
 		return nil, ErrNotFound
@@ -252,6 +281,10 @@ func (c *Catalog) List() []*v1alpha1.MCPServerTemplate {
 		}
 	}
 
+	if c.builtin != nil {
+		templates = append(templates, c.builtin.DeepCopy())
+	}
+
 	slices.SortFunc(templates, func(a, b *v1alpha1.MCPServerTemplate) int {
 		return strings.Compare(a.Name, b.Name)
 	})
@@ -259,7 +292,8 @@ func (c *Catalog) List() []*v1alpha1.MCPServerTemplate {
 	return templates
 }
 
-// UIDs returns the UID of every template read, valid or not.
+// UIDs returns the UID of every template read, valid or not, and of the
+// built-in server's.
 func (c *Catalog) UIDs() map[string]bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -267,6 +301,10 @@ func (c *Catalog) UIDs() map[string]bool {
 	uids := make(map[string]bool, len(c.entries))
 	for _, current := range c.entries {
 		uids[string(current.current.UID)] = true
+	}
+
+	if c.builtin != nil {
+		uids[string(c.builtin.UID)] = true
 	}
 
 	return uids
@@ -278,6 +316,10 @@ func (c *Catalog) UIDs() map[string]bool {
 func (c *Catalog) Running(key types.NamespacedName) (*v1alpha1.MCPServerTemplate, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	if c.isBuiltin(key) {
+		return c.builtin.DeepCopy(), true
+	}
 
 	current, found := c.entries[key]
 	if !found || current.lastValid == nil || key.Name == ReservedServerName {
@@ -299,6 +341,10 @@ func (c *Catalog) LastValidByUID() map[string]*v1alpha1.MCPServerTemplate {
 		if current.lastValid != nil && key.Name != ReservedServerName {
 			valid[string(current.lastValid.UID)] = current.lastValid.DeepCopy()
 		}
+	}
+
+	if c.builtin != nil {
+		valid[string(c.builtin.UID)] = c.builtin.DeepCopy()
 	}
 
 	return valid

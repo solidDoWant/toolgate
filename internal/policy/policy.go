@@ -282,7 +282,7 @@ func HasAccess(identity auth.Identity, access v1alpha1.Access) bool {
 	case auth.KindServiceAccount:
 		return slices.Contains(access.ServiceAccounts, identity.Principal)
 	case auth.KindUser:
-		if slices.Contains(access.Users, identity.Principal) {
+		if access.AllUsers || slices.Contains(access.Users, identity.Principal) {
 			return true
 		}
 
