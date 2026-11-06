@@ -21,6 +21,7 @@ Commands:
   secret    Manage your secrets (secret set NAME | list | delete NAME)
   servers   List the servers you can use
   serve     Run the gateway (serve --config FILE)
+  migrate   Apply the database migrations (migrate [--config FILE])
   admin     Admin commands (admin rewrap --config FILE)
   status    Show the gateway and who is signed in
   version   Print the version
@@ -65,6 +66,8 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return servers(args[1:], stdout, stderr)
 	case "serve":
 		return serve(args[1:], stdout, stderr)
+	case "migrate":
+		return migrate(args[1:], stdout, stderr)
 	case "admin":
 		return admin(args[1:], stdout, stderr)
 	case "help", "-h", "--help":

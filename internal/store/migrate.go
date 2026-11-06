@@ -62,6 +62,62 @@ func SchemaVersions(ctx context.Context, pool *pgxpool.Pool) (database, binary i
 	return database, binary, nil
 }
 
+// CheckSchemaVersion fails when the database schema is older than this
+// binary needs. It never changes the database: goose's GetVersions creates
+// goose_db_version when it is missing, which a role with data rights only
+// can't do, so the table's existence is checked first and a missing table
+// counts as version 0. A database newer than the binary is returned for the
+// caller to log.
+func CheckSchemaVersion(ctx context.Context, pool *pgxpool.Pool) (database, binary int64, err error) {
+	var exists bool
+	if err := pool.QueryRow(ctx, "SELECT to_regclass('goose_db_version') IS NOT NULL").Scan(&exists); err != nil {
+		return 0, 0, fmt.Errorf("check for the schema version table: %w", err)
+	}
+
+	if exists {
+		database, binary, err = SchemaVersions(ctx, pool)
+	} else {
+		binary, err = embeddedVersion(pool)
+	}
+
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if database < binary {
+		return database, binary, &SchemaOlderError{Database: database, Binary: binary}
+	}
+
+	return database, binary, nil
+}
+
+// embeddedVersion returns the highest migration version in this binary,
+// without touching the database.
+func embeddedVersion(pool *pgxpool.Pool) (int64, error) {
+	provider, closeDB, err := newProvider(pool)
+	if err != nil {
+		return 0, err
+	}
+	defer closeDB()
+
+	var highest int64
+	for _, source := range provider.ListSources() {
+		highest = max(highest, source.Version)
+	}
+
+	return highest, nil
+}
+
+// SchemaOlderError reports a database schema older than the binary needs.
+type SchemaOlderError struct {
+	Database, Binary int64
+}
+
+func (e *SchemaOlderError) Error() string {
+	return fmt.Sprintf("The database schema is at version %d. This gateway needs version %d. "+
+		"Run `toolgate migrate`, or let the chart's migration Job run.", e.Database, e.Binary)
+}
+
 // newProvider returns a goose provider for the embedded migrations on pool,
 // and a function that releases its database handle.
 func newProvider(pool *pgxpool.Pool, options ...goose.ProviderOption) (*goose.Provider, func(), error) {

@@ -71,7 +71,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := migrateDatabase(ctx, server.Database(), logger); err != nil {
+	if err := migrateDatabase(ctx, server.Database(), cfg.MigrateOnStart, logger); err != nil {
 		logger.Error("gateway failed to start", "error", err)
 
 		return 1
@@ -229,12 +229,27 @@ func serve(args []string, stdout, stderr io.Writer) int {
 // starting together take turns behind goose's PostgreSQL session lock. A
 // database newer than this binary (a rollback) is only logged: migrations
 // never run down.
-func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error {
-	if err := store.Migrate(ctx, pool); err != nil {
-		return fmt.Errorf("database migrations: %w", err)
+func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, migrateOnStart bool, logger *slog.Logger) error {
+	var (
+		database, binary int64
+		err              error
+	)
+
+	if migrateOnStart {
+		if err := store.Migrate(ctx, pool); err != nil {
+			return fmt.Errorf("database migrations: %w", err)
+		}
+
+		database, binary, err = store.SchemaVersions(ctx, pool)
+	} else {
+		// With migrateOnStart false the gateway never changes the schema:
+		// it refuses to start on an older one (docs/design/phase-3.md §7).
+		database, binary, err = store.CheckSchemaVersion(ctx, pool)
+		if err == nil {
+			err = store.EnsureAuditPartitions(ctx, pool)
+		}
 	}
 
-	database, binary, err := store.SchemaVersions(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("database migrations: %w", err)
 	}

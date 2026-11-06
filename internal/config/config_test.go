@@ -53,6 +53,7 @@ logLevel: debug
 		ListenAddress:            ":8443",
 		MetricsListenAddress:     ":9090",
 		DatabaseURL:              validDatabaseURL,
+		MigrateOnStart:           true,
 		ShutdownTimeout:          config.Duration(45 * time.Second),
 		LogLevel:                 "debug",
 		OTLPEndpoint:             "http://collector:4318",
@@ -404,4 +405,29 @@ func TestApprovalTimeoutBounds(t *testing.T) {
 			assert.Equal(t, config.Duration(parsed), cfg.ApprovalTimeout)
 		})
 	}
+}
+
+func TestLoadDatabaseURLReadsOnlyTheDatabaseURL(t *testing.T) {
+	path := writeFile(t, "databaseURL: "+validDatabaseURL+"\nlistenAddress: nonsense\nunknownKey: 1\n")
+
+	got, err := config.LoadDatabaseURL(path, func(string) string { return "" })
+	require.NoError(t, err)
+	assert.Equal(t, validDatabaseURL, got)
+
+	got, err = config.LoadDatabaseURL("", func(name string) string {
+		if name == "TOOLGATE_DATABASE_URL" {
+			return "postgres://other@db:5432/x"
+		}
+
+		return ""
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "postgres://other@db:5432/x", got)
+
+	_, err = config.LoadDatabaseURL("", func(string) string { return "" })
+	require.Error(t, err)
+}
+
+func TestMigrateOnStartDefaultsToTrue(t *testing.T) {
+	assert.True(t, config.Default().MigrateOnStart)
 }
