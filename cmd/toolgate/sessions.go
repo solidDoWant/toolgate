@@ -42,11 +42,10 @@ func sessions(args []string, stdout, stderr io.Writer) int {
 }
 
 func listSessions(ctx context.Context, stdout io.Writer) error {
-	access, err := signedInGateway(ctx)
-	if err != nil {
-		return err
-	}
+	return withAccess(ctx, func(access gatewayAccess) error { return listSessionsWith(ctx, access, stdout) })
+}
 
+func listSessionsWith(ctx context.Context, access gatewayAccess, stdout io.Writer) error {
 	response, err := access.do(ctx, http.MethodGet, sessionsapi.Path, nil)
 	if err != nil {
 		return err

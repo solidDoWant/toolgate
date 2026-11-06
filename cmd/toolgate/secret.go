@@ -129,17 +129,19 @@ func setSecret(ctx context.Context, name string, stdin io.Reader, prompt, stdout
 		return err
 	}
 
-	access, err := signedInGateway(ctx)
+	err = withAccess(ctx, func(access gatewayAccess) error {
+		response, err := access.do(ctx, http.MethodPut, secretsPath+"/"+url.PathEscape(name), bytes.NewReader(value))
+		if err != nil {
+			return err
+		}
+
+		_ = response.Body.Close()
+
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-
-	response, err := access.do(ctx, http.MethodPut, secretsPath+"/"+url.PathEscape(name), bytes.NewReader(value))
-	if err != nil {
-		return err
-	}
-
-	_ = response.Body.Close()
 
 	_, _ = fmt.Fprintf(stdout, "Secret %s is set.\n", name)
 
@@ -147,17 +149,19 @@ func setSecret(ctx context.Context, name string, stdin io.Reader, prompt, stdout
 }
 
 func deleteSecret(ctx context.Context, name string, stdout io.Writer) error {
-	access, err := signedInGateway(ctx)
+	err := withAccess(ctx, func(access gatewayAccess) error {
+		response, err := access.do(ctx, http.MethodDelete, secretsPath+"/"+url.PathEscape(name), nil)
+		if err != nil {
+			return err
+		}
+
+		_ = response.Body.Close()
+
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-
-	response, err := access.do(ctx, http.MethodDelete, secretsPath+"/"+url.PathEscape(name), nil)
-	if err != nil {
-		return err
-	}
-
-	_ = response.Body.Close()
 
 	_, _ = fmt.Fprintf(stdout, "Secret %s is deleted.\n", name)
 
@@ -169,11 +173,10 @@ func deleteSecret(ctx context.Context, name string, stdout io.Writer) error {
 const maxSecretListBody = 4 << 20
 
 func listSecrets(ctx context.Context, stdout io.Writer) error {
-	access, err := signedInGateway(ctx)
-	if err != nil {
-		return err
-	}
+	return withAccess(ctx, func(access gatewayAccess) error { return listSecretsWith(ctx, access, stdout) })
+}
 
+func listSecretsWith(ctx context.Context, access gatewayAccess, stdout io.Writer) error {
 	response, err := access.do(ctx, http.MethodGet, secretsPath, nil)
 	if err != nil {
 		return err

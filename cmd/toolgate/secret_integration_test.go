@@ -52,6 +52,14 @@ type servedGateway struct {
 // ${secret:github-token} in a Secret.
 func startServeWithSecrets(t *testing.T) servedGateway {
 	t.Helper()
+
+	return startServeWithAudiences(t)
+}
+
+// startServeWithAudiences is startServeWithSecrets with extra accepted
+// audiences next to the fake IdP's own.
+func startServeWithAudiences(t *testing.T, extraAudiences ...string) servedGateway {
+	t.Helper()
 	clearConfigEnv(t)
 
 	pg := testutil.StartPostgres(t)
@@ -88,6 +96,11 @@ func startServeWithSecrets(t *testing.T) servedGateway {
 	require.NoError(t, os.WriteFile(keysetPath, buffer.Bytes(), 0o600))
 
 	t.Setenv("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
+
+	if len(extraAudiences) > 0 {
+		t.Setenv("TOOLGATE_OIDC_AUDIENCE", strings.Join(append([]string{provider.Audience}, extraAudiences...), ","))
+	}
+
 	t.Setenv("TOOLGATE_OIDC_CLI_CLIENT_ID", provider.ClientID)
 	t.Setenv("TOOLGATE_LEASE_NAMESPACE", serveLeaseNamespace)
 	t.Setenv("TOOLGATE_CATALOG_NAMESPACES", serveCatalogNamespace)

@@ -90,6 +90,8 @@ Every authenticated request has an **identity**:
 
 **Users and groups** come from the OIDC ID token or access token claims (`email`, `groups`). The claim names are configurable. `email` is used only when the `email_verified` claim is `true`, because an unverified email is a claim the user chose. Service accounts have no groups, but templates and rules can name them directly.
 
+**Sign-in through another service:** when `TOOLGATE_TOKEN_COMMAND` is set, the CLI runs it (`/bin/sh -c`, empty stdin, 5 s limit, 16 KiB of output, one `token68` line) and uses its output as the user token instead of the stored sign-in. The token is cached in the runtime directory while its `exp` is more than 60 s away. Setting `TOOLGATE_SPIFFE_SOCKET` as well is an error. The gateway must list the token's audience in `oidcAudience` (phase 3 design §10).
+
 **Client sign-in (users):** the CLI runs the OAuth 2.0 device authorization grant against the IdP with PKCE, using `golang.org/x/oauth2`. It stores the refresh token in the OS keychain (`github.com/zalando/go-keyring`), with a 0600 file fallback when no keychain exists. `toolgate headers` prints a fresh access token. The gateway accepts the IdP's access tokens directly, checked against the IdP's JWKS with `github.com/coreos/go-oidc/v3`, one of the configured audiences, and expiry. `oidcAudience` is a list of 1 to 8 audiences (a single string is a one-item list), all at the one issuer: each is a client whose access tokens the gateway accepts, so each must be a client made for toolgate, and every client must give a person the same `sub`. A token for none of them gets 401 and `auth.refuse` with "audience not allowed". toolgate issues no tokens of its own in phase 1.
 
 ## 7. MCP surface
@@ -253,6 +255,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 | `toolgate hook session-start` | 1 | SessionStart hook: check sign-in, fetch the settings profile, merge it, print context |
 | `toolgate secret set/list/delete` | 1 | §11 |
 | `toolgate servers` | 1 | List the catalog as the CLI user sees it |
+| `TOOLGATE_TOKEN_COMMAND` (variable) | 3 | Every command that needs a user token runs it instead of reading the stored sign-in (§6) |
 | `toolgate otel-headers` | 3 | `otelHeadersHelper` output |
 | `toolgate admin rewrap` | 1 | §11 |
 | `toolgate sessions` | 3 | List the caller's open sessions and their enabled servers (`GET /api/v1/sessions`) |

@@ -39,7 +39,10 @@ func startServeWith(t *testing.T, databaseURL string, provider *testutil.OIDCPro
 	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
 	t.Setenv("TOOLGATE_DATABASE_URL", databaseURL)
 	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
-	t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
+
+	if os.Getenv("TOOLGATE_OIDC_AUDIENCE") == "" {
+		t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
+	}
 
 	stdout := &lockedBuffer{}
 	stderr := &lockedBuffer{}

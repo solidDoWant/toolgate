@@ -231,6 +231,24 @@ Then these commands do not use your stored sign-in: `headers`, `otel-headers`, `
 
 If you have not signed in with `toolgate login`, set `TOOLGATE_GATEWAY` to the gateway URL. `toolgate headers` and `toolgate otel-headers` do not need it, because they do not call the gateway. toolgate does not read `SPIFFE_ENDPOINT_SOCKET`, because other tools may set it.
 
+### Sign in through another service (token command)
+
+Use this when another service already holds your consent and can print your access token. An example is Coder's external auth. Set the variable `TOOLGATE_TOKEN_COMMAND` to the command, for example `coder external-auth access-token toolgate`, and `TOOLGATE_GATEWAY` to the gateway URL. You do not run `toolgate login`.
+
+Every command that needs your token runs the command with `/bin/sh -c` (`cmd.exe /d /c` on Windows) and uses its output instead of your stored sign-in. The command gets no standard input and has 5 seconds to finish. It must print one line with the token and at most 16 KiB. The command's own standard error reaches you, cut at 4 KiB.
+
+toolgate keeps the token in its runtime directory while it has more than 60 seconds to live. A token that has no `exp` claim is not kept. If the gateway answers 401 to `servers`, `secret`, `sessions`, `audit tail` or `hook session-start`, toolgate deletes the kept token, runs the command again and tries once more.
+
+These errors name the cause and never show the output of the command:
+
+- `TOOLGATE_TOKEN_COMMAND exited with status 1.`
+- `TOOLGATE_TOKEN_COMMAND didn't finish within 5 s.`
+- `TOOLGATE_TOKEN_COMMAND printed more than 16 KiB.`
+- `TOOLGATE_TOKEN_COMMAND printed no token.`
+- `TOOLGATE_TOKEN_COMMAND printed something that isn't a token.`
+
+Do not set `TOOLGATE_SPIFFE_SOCKET` as well. Every command then exits with `Set only one of TOOLGATE_SPIFFE_SOCKET and TOOLGATE_TOKEN_COMMAND.` Your admin sets up the gateway first: see [Coder workspaces](../admin/coder.md).
+
 ## Settings from your admin
 
 Your admin can give you Claude Code settings, for example permissions or environment variables. When a Claude Code session starts, the plugin runs `toolgate hook session-start`. This command gets the settings for you from the gateway and writes them into `~/.claude/settings.json`.

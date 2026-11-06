@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/solidDoWant/toolgate/internal/client/spiffe"
+	"github.com/solidDoWant/toolgate/internal/client/tokencommand"
 	"github.com/solidDoWant/toolgate/internal/version"
 )
 
@@ -46,6 +48,14 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		_, _ = fmt.Fprint(stderr, usage)
 
 		return 2
+	}
+
+	if args[0] != "version" && args[0] != "help" && args[0] != "-h" && args[0] != "--help" {
+		if err := checkCredentialChoice(); err != nil {
+			_, _ = fmt.Fprintln(stderr, err)
+
+			return 1
+		}
 	}
 
 	switch args[0] {
@@ -88,4 +98,14 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 
 		return 2
 	}
+}
+
+// checkCredentialChoice refuses a setup that names two sources for the user
+// token.
+func checkCredentialChoice() error {
+	if spiffe.Socket() != "" && tokencommand.Command() != "" {
+		return fmt.Errorf("Set only one of %s and %s.", spiffe.SocketEnv, tokencommand.Env) //nolint:staticcheck // user-facing sentence
+	}
+
+	return nil
 }
