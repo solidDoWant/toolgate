@@ -349,7 +349,7 @@ Concurrency: instance creation for a template and scope key is serialized with a
 - Proxying model API traffic, or anything touching Claude subscription sign-in.
 - Multi-cluster, and more than one IdP at a time.
 - A public MCP registry or marketplace integration.
-- toolgate issuing its own access tokens (phase 1–3).
+- toolgate issuing its own access tokens (phases 1–4). In phase 4, connectors sign in at the configured IdP and toolgate only validates its tokens.
 - Hand-written cryptography or protocol implementations (MCP, OAuth, OIDC, OTLP, JWT, YAML).
 - Formal verification, or simulation that defines done.
 - High availability beyond stateless replicas on one PostgreSQL.
