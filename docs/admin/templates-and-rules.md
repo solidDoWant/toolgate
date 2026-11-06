@@ -107,10 +107,10 @@ An instance keeps the check it started with. A change to `healthCheck` applies t
 
 A user can use a server only when both of these checks pass:
 
-1. The user matches the access lists. `access.users` lists OIDC subjects or email addresses. `access.groups` lists groups. `access.serviceAccounts` lists service accounts as `system:serviceaccount:NAMESPACE:NAME`. A template with no access lists is available to no one.
+1. The user matches the access lists. `access.users` lists OIDC subjects or email addresses. `access.groups` lists groups. `access.serviceAccounts` lists service accounts as `system:serviceaccount:NAMESPACE:NAME`. `access.spiffeIDs` lists glob patterns of SPIFFE IDs. See [SPIFFE sign-in](spiffe-sign-in.md). A template with no access lists is available to no one.
 2. The environment of the request matches `access.environments`:
    - `any`: every signed-in user and every pod.
-   - `attested`: only pods that sign in with a service-account token. See [Pod sign-in](pod-sign-in.md).
+   - `attested`: only pods that sign in with a service-account token, and workloads that sign in with a SPIFFE JWT-SVID. See [Pod sign-in](pod-sign-in.md) and [SPIFFE sign-in](spiffe-sign-in.md).
    - `opt-in`: the default. In this version it works like `attested`.
 
 toolgate matches an email address only when the identity provider verified it. Because `opt-in` is the default, users on their own computers cannot use a server until you set `environments: any`.

@@ -91,10 +91,11 @@ settings from `config`.
 {{- $_ := set $gateway "env" (concat $env ($gateway.env | default list) ($config.extraEnv | default list)) -}}
 
 {{- /*
-Resolvers are set in the configuration file only. The file is a ConfigMap
-mounted at /etc/toolgate/config.yaml, and each resolver gets its own
-projected service-account token with its audience.
+Resolvers and SPIFFE trust domains are set in the configuration file only.
+The file is a ConfigMap mounted at /etc/toolgate/config.yaml, and each
+resolver gets its own projected service-account token with its audience.
 */ -}}
+{{- $file := dict }}
 {{- with $config.resolvers }}
 {{- range $resolver := . }}
 {{- if not (regexMatch "^[a-z][a-z0-9-]{0,62}$" (toString $resolver.name)) }}
@@ -104,12 +105,22 @@ projected service-account token with its audience.
 {{- fail (printf "config.resolvers: resolver %q needs an audience" $resolver.name) }}
 {{- end }}
 {{- end }}
+{{- $_ := set $file "resolvers" . }}
+{{- end }}
+{{- with (($config.spiffe | default dict).trustDomains) }}
+{{- range $domain := . }}
+{{- if eq (empty $domain.bundleEndpointURL) (empty $domain.jwksURL) }}
+{{- fail (printf "config.spiffe.trustDomains: trust domain %q needs exactly one of bundleEndpointURL and jwksURL" (toString $domain.name)) }}
+{{- end }}
+{{- end }}
+{{- $_ := set $file "spiffeTrustDomains" . }}
+{{- end }}
+{{- if $file }}
 {{- $_ := set $gateway "args" (concat ($gateway.args | default list) (list "--config" "/etc/toolgate/config.yaml")) }}
-{{- $file := toYaml (dict "resolvers" .) }}
-{{- $_ := set $resources "configMaps" (merge ($resources.configMaps | default dict) (dict "config" (dict "data" (dict "config.yaml" $file)))) }}
+{{- $_ := set $resources "configMaps" (merge ($resources.configMaps | default dict) (dict "config" (dict "data" (dict "config.yaml" (toYaml $file))))) }}
 {{- $persistence := $resources.persistence | default dict }}
 {{- $_ := set $persistence "config" (dict "type" "configMap" "identifier" "config" "globalMounts" (list (dict "path" "/etc/toolgate/config.yaml" "subPath" "config.yaml" "readOnly" true))) }}
-{{- range $resolver := . }}
+{{- range $resolver := ($config.resolvers | default list) }}
 {{- $token := dict "serviceAccountToken" (dict "audience" $resolver.audience "expirationSeconds" 600 "path" "token") }}
 {{- $_ := set $persistence (printf "resolver-%s" $resolver.name) (dict "type" "custom" "volumeSpec" (dict "projected" (dict "sources" (list $token))) "globalMounts" (list (dict "path" (printf "/var/run/secrets/toolgate/resolvers/%s" $resolver.name) "readOnly" true))) }}
 {{- end }}
