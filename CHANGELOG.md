@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased (0.4.0)
+
+> [!WARNING]
+> Read this before you upgrade. The fields `toolFilter`, `name`, `description` and `inputDescriptions` of a template take effect only after every gateway pod runs 0.4. During a rolling upgrade, an older pod ignores them: it lists hidden tools, forwards calls to them and does not rename tools. Each call still gets a recorded decision. To hide a tool as a security control, use `tools.<name>.blocked`. It works on both versions. See `docs/admin/templates-and-rules.md`.
+
+### Changes
+
+- Claude can call a tool of an allowed server without `toolgate_enable_server` first. The call turns on the server. A server with `start: onCall` can start on its first call, so that call can take longer. See `docs/user/README.md`.
+- Templates get `start`, `declaredTools`, `toolFilter` and override fields for tool names and descriptions. The server name `toolgate` is now reserved. See `docs/admin/templates-and-rules.md`.
+- The gateway speaks MCP 2026-07-28 and 2025-11-25. See `docs/admin/mcp-revisions.md`.
+- Users can connect from a claude.ai custom connector. See `docs/admin/connectors.md`.
+
 ## 0.3.0
 
 > [!WARNING]
