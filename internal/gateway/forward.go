@@ -737,10 +737,12 @@ type callRefusal struct {
 // instance. For an `onCall` server with a catalog list it refuses when the
 // newest instance failed on the template's current generation, and
 // otherwise returns the live instance, inserting a pending one within the
-// limits. Other servers return the zero instance and are handled as before.
+// limits. Other servers (`onEnable`, or no catalog list) insert one only
+// when the newest instance failed on an older generation, and otherwise
+// return the zero instance and are handled as before.
 func (m *metaTools) startForCall(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, *callRefusal, error) {
 	lazy, err := m.startsOnCall(ctx, template)
-	if err != nil || !lazy {
+	if err != nil {
 		return db.Instance{}, nil, err
 	}
 
@@ -764,6 +766,10 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 			}
 
 			if !enabled {
+				if !lazy {
+					return nil
+				}
+
 				refusal = &callRefusal{
 					details: map[string]any{"reason": reasonNotEnabled},
 					message: fmt.Sprintf("Server `%s` isn't enabled in this session. Call `%s` first.", template.Name, ToolEnableServer),
@@ -797,6 +803,11 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 			})
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return fmt.Errorf("read newest instance: %w", err)
+			}
+
+			olderFailure := err == nil && newest.FailedAt.Valid && newest.Generation != template.Generation
+			if !lazy && !olderFailure {
+				return nil
 			}
 
 			if err == nil && newest.FailedAt.Valid && newest.Generation == template.Generation {
