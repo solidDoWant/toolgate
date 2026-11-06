@@ -2,7 +2,7 @@
 
 For: people who change the toolgate code.
 
-toolgate is in early development, and these pages are not written yet. They will describe:
+toolgate is in early development. The pages on the architecture are not written yet. They will describe:
 
 - the architecture and the packages under `internal/`;
 - how to build and test: `make help` lists the commands, and the test tiers are unit, integration (PostgreSQL and S3 in Docker) and e2e (kind);

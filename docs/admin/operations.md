@@ -18,7 +18,7 @@ To restore, restore the database first. Then start the gateway with the same key
 
 ## Upgrade
 
-Upgrade the chart with `helm upgrade`, or change the chart version in your Flux `HelmRelease`. Each gateway pod updates the database tables when it starts, before it becomes ready. You do not run a separate command.
+Upgrade the chart with `helm upgrade`, or change the chart version in your Flux `HelmRelease`. By default, each gateway pod updates the database tables when it starts, before it becomes ready. You do not run a separate command. If you use split database roles, a migration Job updates the tables before the new pods start. [The migration Job](chart.md#database-rights-and-the-migration-job) tells you how it works and how it can fail.
 
 During a rolling upgrade, the old pods and the new pods use the same database. A new version only adds tables, columns and indexes, so the old pods continue to work. If you roll back to an older version, the gateway writes a warning to its log and starts. It never changes the tables back.
 
