@@ -36,7 +36,7 @@ type auditRow struct {
 func (e *uiEnv) insertAudit(t *testing.T, row auditRow) string {
 	t.Helper()
 
-	require.NoError(t, store.EnsureAuditPartitions(t.Context(), e.pool, row.at))
+	require.NoError(t, store.CreateAuditPartitions(t.Context(), e.pool, row.at))
 
 	var id int64
 

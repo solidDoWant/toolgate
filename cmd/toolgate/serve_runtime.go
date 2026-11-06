@@ -154,6 +154,18 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, err
 	}
 
+	// The Lease holder creates the audit partitions when it gets the Lease
+	// and every 24 h, so a long-running gateway never reaches a month
+	// without one.
+	partitions := store.NewAuditPartitionKeeper(pool, logger)
+	if err := options.registerMetrics(partitions.Errors()); err != nil {
+		return nil, err
+	}
+
+	if err := mgr.Add(partitions); err != nil {
+		return nil, fmt.Errorf("kubernetes manager: %w", err)
+	}
+
 	teardown := &runtime.Teardown{
 		Pool:    pool,
 		Reader:  mgr.GetClient(),

@@ -106,7 +106,7 @@ func TestRetentionDeletesExpiredRowsFromPostgres(t *testing.T) {
 
 	// Partitions for the months that hold the old rows.
 	for month := cutoff.AddDate(0, -2, 0); month.Before(now); month = month.AddDate(0, 1, 0) {
-		require.NoError(t, store.EnsureAuditPartitions(ctx, pool, month))
+		require.NoError(t, store.CreateAuditPartitions(ctx, pool, month))
 	}
 
 	insert := func(occurredAt time.Time, eventType string) {
