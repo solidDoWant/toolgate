@@ -236,7 +236,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.image.pullPolicy=Never \
 	--set config.database.existingSecret=toolgate-database \
 	--set config.oidc.issuerURL="$TOOLGATE_E2E_OIDC_ISSUER" \
-	--set config.oidc.audience=toolgate \
+	--set 'config.oidc.audience={toolgate,toolgate-connector}' \
 	--set config.ui.clientID=toolgate-ui \
 	--set config.ui.adminGroup=toolgate-admins \
 	--set config.ui.publicURL="https://$TOOLGATE_E2E_UI_LISTEN" \

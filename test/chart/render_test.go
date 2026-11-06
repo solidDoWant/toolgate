@@ -485,6 +485,33 @@ func TestWebUISettings(t *testing.T) {
 	})
 }
 
+func TestMCPPublicURLSetting(t *testing.T) {
+	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
+		t.Helper()
+
+		manifests, err := render(t, append(append([]string{}, quickStartValues...), set...))
+		require.NoError(t, err)
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		values := map[string]string{}
+
+		for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+			values[variable.Name] = variable.Value
+		}
+
+		return values
+	}
+
+	t.Run("unset by default", func(t *testing.T) {
+		assert.NotContains(t, gatewayEnv(t), "TOOLGATE_MCP_PUBLIC_URL")
+	})
+
+	t.Run("set from config.mcpPublicURL", func(t *testing.T) {
+		values := gatewayEnv(t, "config.mcpPublicURL=https://mcp.example.com/mcp")
+		assert.Equal(t, "https://mcp.example.com/mcp", values["TOOLGATE_MCP_PUBLIC_URL"])
+	})
+}
+
 func TestAuditPayloadSettings(t *testing.T) {
 	gatewayEnv := func(t *testing.T, set ...string) map[string]corev1.EnvVar {
 		t.Helper()

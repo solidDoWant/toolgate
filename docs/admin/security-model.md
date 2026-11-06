@@ -71,6 +71,19 @@ Users set their secrets with `toolgate secret set`. The gateway encrypts each va
 
 A person who can read Secrets in the instance namespaces can read the values of running instances. Give this permission only to people who must have it.
 
+## Connectors on the internet
+
+A claude.ai custom connector reaches the MCP endpoint from the internet. See [claude.ai connectors](connectors.md). The same checks apply to its requests as to every request. The gateway checks the access token against the IdP, and it decides about each tool call and records the decision. The gateway issues no tokens and runs no OAuth server. It sends no client token to an MCP server.
+
+When you expose the endpoint, these things change:
+
+- Anybody on the internet can send requests to `/mcp`. Each request without a valid token gets 401. The gateway records at most 10 `auth.refuse` events a minute from one address, and counts the rest in the `toolgate_auth_refusals_dropped_total` metric.
+- The protected resource metadata is public. It holds only the URL of the endpoint, the issuer of the IdP and the scopes. It holds no secrets.
+- Each client in `oidcAudience` can sign users in. Add the connector's client only if you want users to connect from claude.ai.
+- The workspace of a connector session is a claimed workspace, as for every user session without an attestation. So the unverified defaults of the user decide which servers it sees.
+
+Route only `/mcp` and the two metadata paths from the internet. Keep the web UI, the API, the OTLP routes and the metrics port internal.
+
 ## What toolgate does not protect against
 
 - A server that does something bad with the access that it has. toolgate controls which tools the model can call, not what the server does inside a call.

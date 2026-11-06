@@ -154,6 +154,10 @@ type Options struct {
 	// Attestation enables attested user sessions. Nil ignores the
 	// attestation header.
 	Attestation *AttestationOptions
+	// ResourceMetadataURL is the URL of the MCP endpoint's OAuth protected
+	// resource metadata. When it is set, a refused MCP request's
+	// WWW-Authenticate header names it. Empty sends a plain challenge.
+	ResourceMetadataURL string
 }
 
 // Authenticator checks user access tokens and the identity headers.
@@ -167,6 +171,8 @@ type Authenticator struct {
 	recorder  RefusalRecorder
 	limiter   *RateLimiter
 	dropped   prometheus.Counter
+	// metadata is Options.ResourceMetadataURL.
+	metadata string
 }
 
 // audienceVerifier verifies user access tokens for one audience.
@@ -255,6 +261,7 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		claims:    claims,
 		recorder:  options.Recorder,
 		limiter:   NewRateLimiter(),
+		metadata:  options.ResourceMetadataURL,
 		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "toolgate_auth_refusals_dropped_total",
 			Help: "Failed sign-ins not written to the audit log because their remote address passed 10 a minute.",
@@ -288,14 +295,16 @@ func (a *Authenticator) Collectors() []prometheus.Collector {
 // Middleware authenticates every request before next runs. A request without
 // a valid token gets 401. Then the identity headers are checked: a value not
 // matching `^[A-Za-z0-9._-]{1,128}$` gets 400, and so does a missing session
-// header when requireSession is set (MCP requests). next finds the identity
-// with IdentityFrom.
+// header when requireSession is set (MCP requests). The 401 of an MCP request
+// names the protected resource metadata, if it is set, so a standard MCP
+// client can find the IdP (docs/design/phase-4.md §9). next finds the
+// identity with IdentityFrom.
 func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		identity, claims, refusal := a.authenticate(request)
 		if refusal != nil {
 			a.refuse(request, *refusal)
-			writer.Header().Set("WWW-Authenticate", "Bearer")
+			writer.Header().Set("WWW-Authenticate", a.challenge(requireSession, refusal.Reason != reasonMissingToken))
 			http.Error(writer, "Sign in again: run `toolgate login`.", http.StatusUnauthorized)
 
 			return
@@ -360,6 +369,26 @@ func sessionOptional(request *http.Request) bool {
 	return mcprequest.Stateless(request) || mcprequest.IsDiscover(request)
 }
 
+// reasonMissingToken is the refusal reason of a request that sent no bearer
+// token.
+const reasonMissingToken = "missing token"
+
+// challenge is the WWW-Authenticate value of a refused request. An MCP
+// request's names the resource metadata when it is set, with
+// error="invalid_token" when a token was sent (RFC 6750 §3, RFC 9728 §5.1).
+func (a *Authenticator) challenge(mcp, tokenSent bool) string {
+	if !mcp || a.metadata == "" {
+		return "Bearer"
+	}
+
+	value := `Bearer resource_metadata="` + a.metadata + `"`
+	if tokenSent {
+		value += `, error="invalid_token"`
+	}
+
+	return value
+}
+
 // headerValue returns the header's value, whether it was sent with a value,
 // and whether that value is valid. An absent or empty header is valid and not
 // set. A header sent more than once is invalid.
@@ -382,7 +411,7 @@ func headerValue(request *http.Request, name string) (value string, set, valid b
 func (a *Authenticator) authenticate(request *http.Request) (Identity, map[string]json.RawMessage, *Refusal) {
 	header := request.Header.Values("Authorization")
 	if len(header) != 1 {
-		return Identity{}, nil, &Refusal{Reason: "missing token"}
+		return Identity{}, nil, &Refusal{Reason: reasonMissingToken}
 	}
 
 	if len(header[0]) > MaxAuthorizationBytes {
@@ -393,7 +422,7 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 	token = strings.TrimSpace(token)
 
 	if !found || !strings.EqualFold(scheme, "Bearer") || token == "" {
-		return Identity{}, nil, &Refusal{Reason: "missing token"}
+		return Identity{}, nil, &Refusal{Reason: reasonMissingToken}
 	}
 
 	// The unverified claims only pick the verifier; each verifies fully,
