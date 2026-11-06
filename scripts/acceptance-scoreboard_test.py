@@ -62,7 +62,7 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(list(statuses), SCENARIOS)
         self.assertEqual({scenario for scenario, value in statuses.items() if value == "manual"}, MANUAL)
         self.assertTrue(all(value == "no test" for scenario, value in statuses.items() if scenario not in MANUAL))
-        self.assertIn("passing 0/31", output)
+        self.assertIn("passing 0/29 (2 manual, not counted)", output)
 
     def test_subtest_and_function_results(self):
         self.write_go(
@@ -79,7 +79,7 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(statuses["AC-1-08"], "fail")
         self.assertEqual(statuses["AC-1-25"], "pass")
         self.assertEqual(statuses["AC-1-26"], "not run")
-        self.assertIn("passing 2/31", self.scoreboard())
+        self.assertIn("passing 2/29 (2 manual, not counted)", self.scoreboard())
 
     def test_one_test_in_several_result_files_counts_once(self):
         self.write_go(("TestAC1_25Block", "skip"), ("TestAC1_26Block", "pass"), ("TestAC1_27Block", "pass"), file="go-unit.json")

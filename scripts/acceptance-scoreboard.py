@@ -4,8 +4,8 @@ of a checklist (docs/acceptance/phase-N.md) with the result of its tests, then
 the number passing.
 
 The checklist lists its scenarios as `- **AC-N-nn Title.** ...` items; an
-item whose bold title says `(manual)` is checked by the owner in a real
-Claude Code session. A test belongs to a scenario by its name: a Go subtest
+item whose bold title says `(manual)` is a manual check that no
+one runs. A test belongs to a scenario by its name: a Go subtest
 (`t.Run`) titled `[AC-N-nn] ...`, or a top-level Go test `TestACN_nn...` (Go
 function names cannot hold brackets). The results directory holds
 `go test -json` output in `go-*.json` files.
@@ -13,8 +13,8 @@ function names cannot hold brackets). The results directory holds
 A scenario is `fail` if any of its tests failed, `pass` if its tests ran and
 all passed, `not run` if it has tagged tests (in the sources or skipped in the
 results) of which none failed and not all passed, `no test` otherwise, and
-`manual` when the checklist marks it so: it counts in the total but never as
-passing here.
+`manual` when the checklist marks it so. Manual scenarios are still printed,
+but nobody runs them and they are left out of the total.
 
 With `--go-run-pattern`, it prints instead the `go test -run` pattern that
 selects the acceptance tests: the `TestACN_nn...` tests and every top-level
@@ -155,11 +155,15 @@ def main():
     tagged = tagged_in_sources(arguments.sources)
 
     passing = 0
+    automated = 0
     for scenario, manual in listed:
         line_status = "manual" if manual else status(outcomes[scenario], scenario in tagged)
         passing += line_status == "pass"
+        automated += not manual
         print(f"{scenario}  {line_status}")
-    print(f"passing {passing}/{len(listed)}")
+    left_out = len(listed) - automated
+    suffix = f" ({left_out} manual, not counted)" if left_out else ""
+    print(f"passing {passing}/{automated}{suffix}")
     return 0
 
 

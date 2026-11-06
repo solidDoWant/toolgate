@@ -3,7 +3,7 @@
 # a `[AC-N-nn] ...` subtest or a `TestACN_nn...` function) with the
 # integration and e2e build tags, and prints the scoreboard for the phase's
 # checklist, docs/acceptance/phase-$PHASE.md (default 1): one line per
-# scenario (pass, fail, not run, no test, manual) and the number passing.
+# scenario (pass, fail, not run, no test, manual) and the number passing out of the automated scenarios.
 #
 # The scoreboard is also written to build/acceptance/scoreboard.txt, with the
 # test output in build/acceptance/go.log. A failing test does not stop the

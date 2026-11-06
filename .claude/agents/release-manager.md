@@ -45,12 +45,12 @@ A release is public, and admins deploy it straight from the registries, so every
    - **One entry per user-visible change, in plain words,** ending with links to every PR tied to it.
    - **Internal work in one closing line:** CI, tests, agent instructions and refactors.
    - **Nothing for code that no longer exists.**
-   - **Known issues:** deferred items and open bugs.
+   - **Known issues:** deferred items and open bugs (not manual scenarios).
 
    Open the PR (`chore(release): <version>`), arm auto-merge on its head after a self-check like any other PR, and hand back with `HANDOFF: wait-pr #<PR>`: the scheduler resumes you once it has merged (or closed: then find out why before going on). Then continue on the merge commit.
 4. **Gates on the exact merge commit** (detached checkout of it in your worktree; background each long run and poll with `scripts/agents/wait-for.sh`):
    - CI's `checks` is green for that commit on `master` (`gh run list --branch master --commit <sha>`).
-   - `make acceptance` shows every automated scenario of the phase passing; the owner has checked the manual ones (look for their confirmation on the phase epic or the `pm:status` issue; if it is missing, label a `needs-human` request and hand back `blocked`).
+   - `make acceptance` shows every automated scenario of the phase passing. Manual scenarios do not gate the release; don't list them as open items or known issues.
    - `govulncheck ./...` is clean, or every finding is listed under Known issues with a reason it is not reachable.
    - `make release VERSION=<version>` (dry run) succeeds; keep its log.
 5. **Publish** with the repository's release target from the clean detached checkout of the merge commit, as `docs/dev/` describes it (`make release VERSION=<version>` with its publish switch). It tags, pushes the tag and creates the GitHub release with the CHANGELOG section as notes and the CLI binaries attached; the tag's release workflow builds and pushes the image and chart with its own `GITHUB_TOKEN`. Never push the image or chart yourself.
