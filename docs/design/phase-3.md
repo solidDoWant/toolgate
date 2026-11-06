@@ -483,6 +483,7 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 170 | Resume | instance limit reached | That server is dropped with `server.disable`, reason `limit`. The others are restored. | unit |
 | 171 | Call to a restored or replaced server | instance `pending` or `starting` | The call waits, with progress, up to `startTimeout`, then is decided and forwarded. A failure or timeout fails the call with the reason. | AC-3-22 |
 | 172 | Session disabled or ended | call waiting for a start | The wait ends with "`<server>` was disabled while starting" (phase 1 row 3), and nothing is forwarded. | integration |
+| 173 | Session ends | enable or call waiting for a start | Phase 1 row 25 changes: the `session_servers` row now stays (§11), so every waiter also re-reads the session's `ended_at` on each wake. When it's set, the wait ends with "This session ended while waiting for `<server>`.", as in row 157, and nothing is forwarded. The server stays in the remembered set, so a resume within `sessionResumeWindow` restores it. | integration |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
