@@ -249,8 +249,8 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
 	--set "config.extraEnv[0].value=$workload_namespace" \
-	--set 'config.extraEnv[2].name=TOOLGATE_TEST_TIME_SCALE' \
-	--set-string "config.extraEnv[2].value=$TOOLGATE_TEST_TIME_SCALE" \
+	--set 'config.extraEnv[3].name=TOOLGATE_TEST_TIME_SCALE' \
+	--set-string "config.extraEnv[3].value=$TOOLGATE_TEST_TIME_SCALE" \
 	--set-json "config.resolvers=[{\"name\":\"test\",\"url\":\"https://$TOOLGATE_E2E_RESOLVER_LISTEN/resolve\",\"audience\":\"toolgate-resolver-test\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json "config.workspaceAttestation={\"namespaces\":[\"$workload_namespace\"],\"match\":{\"by\":\"claim\",\"claim\":\"sub\",\"key\":\"username\"},\"workspaceID\":\"coder/{username}/{workspace}\",\"spiffeIDPattern\":\"spiffe://allowed.test/coder/{username}/{workspace}\"}" \
 	--set-json "config.spiffe.trustDomains=[{\"name\":\"allowed.test\",\"bundleEndpointURL\":\"https://$TOOLGATE_E2E_SPIFFE_LISTEN\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \

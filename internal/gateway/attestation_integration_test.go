@@ -18,10 +18,15 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 )
 
-const workloadToken = "workload-token"
+const (
+	workloadToken = "workload-token"
+	// rotatedWorkloadToken is a later token bound to the same pod, as the
+	// kubelet issues when it rotates a projected token.
+	rotatedWorkloadToken = "rotated-workload-token"
+)
 
 // newAttestationClient is a fake API server knowing one workspace pod of
-// alice's and one token bound to it.
+// alice's and two tokens bound to it.
 func newAttestationClient() *fake.Clientset {
 	client := fake.NewClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{
 		Namespace: "coder", Name: "coder-alice-dev", UID: "pod-uid",
@@ -34,7 +39,7 @@ func newAttestationClient() *fake.Clientset {
 
 	client.PrependReactor("create", "tokenreviews", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		review := action.(clienttesting.CreateAction).GetObject().(*authenticationv1.TokenReview).DeepCopy()
-		if review.Spec.Token != workloadToken {
+		if review.Spec.Token != workloadToken && review.Spec.Token != rotatedWorkloadToken {
 			return true, review, nil
 		}
 
@@ -74,6 +79,44 @@ func TestAttestedMCPSessionBinding(t *testing.T) {
 		row := fixture.sessionRow(t, "alice", "attested")
 		assert.Equal(t, "coder/alice/dev", row.Workspace)
 		assert.Equal(t, auth.AttestationAttested, row.Attestation)
+	})
+
+	t.Run("an attested session keeps working when its attestation token rotates", func(t *testing.T) {
+		client := alice()
+		client.session = "rotated"
+		client.attestation = workloadToken
+
+		response := fixture.post(t, client, "", initializeMessage())
+		require.Equal(t, http.StatusOK, response.StatusCode)
+
+		mcpSessionID := response.Header.Get("Mcp-Session-Id")
+		require.NotEmpty(t, mcpSessionID)
+
+		client.attestation = rotatedWorkloadToken
+		ping := map[string]any{"jsonrpc": "2.0", "id": 2, "method": "ping"}
+		assert.Equal(t, http.StatusOK, fixture.post(t, client, mcpSessionID, ping).StatusCode)
+	})
+
+	t.Run("another principal or session on an attested MCP session gets 404", func(t *testing.T) {
+		client := alice()
+		client.session = "attested-owner"
+		client.attestation = workloadToken
+
+		response := fixture.post(t, client, "", initializeMessage())
+		require.Equal(t, http.StatusOK, response.StatusCode)
+
+		mcpSessionID := response.Header.Get("Mcp-Session-Id")
+		require.NotEmpty(t, mcpSessionID)
+
+		ping := map[string]any{"jsonrpc": "2.0", "id": 2, "method": "ping"}
+
+		other := bob()
+		other.session = client.session
+		assert.Equal(t, http.StatusNotFound, fixture.post(t, other, mcpSessionID, ping).StatusCode, "another principal")
+
+		otherSession := client
+		otherSession.session = "attested-other"
+		assert.Equal(t, http.StatusNotFound, fixture.post(t, otherSession, mcpSessionID, ping).StatusCode, "another session")
 	})
 
 	t.Run("a session started without an attestation that later sends one gets 404, then 400", func(t *testing.T) {
