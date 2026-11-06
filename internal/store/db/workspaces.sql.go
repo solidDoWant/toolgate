@@ -226,13 +226,77 @@ func (q *Queries) ExpireDueAccessRequest(ctx context.Context, id string) (Access
 	return i, err
 }
 
+const expireEndedSessionScopeRequests = `-- name: ExpireEndedSessionScopeRequests :many
+UPDATE access_requests r SET status = 'expired'
+FROM sessions s
+WHERE r.kind = 'scope' AND r.status = 'pending' AND r.session_pk = s.id
+  AND s.ended_at IS NOT NULL AND s.ended_at > r.created_at
+RETURNING r.id, r.principal, r.kind, r.session_pk, r.workspace, r.verified, r.server, r.change, r.status, r.created_at, r.expires_at, r.decided_at, r.decided_by, r.decided_scope, s.session_id
+`
+
+type ExpireEndedSessionScopeRequestsRow struct {
+	ID           string
+	Principal    string
+	Kind         string
+	SessionPk    pgtype.Int8
+	Workspace    string
+	Verified     bool
+	Server       pgtype.Text
+	Change       []byte
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	DecidedAt    pgtype.Timestamptz
+	DecidedBy    pgtype.Text
+	DecidedScope pgtype.Text
+	SessionID    string
+}
+
+// Marks the pending scope requests whose target session ended after the
+// request was created expired, and returns them with the session ID.
+func (q *Queries) ExpireEndedSessionScopeRequests(ctx context.Context) ([]ExpireEndedSessionScopeRequestsRow, error) {
+	rows, err := q.db.Query(ctx, expireEndedSessionScopeRequests)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExpireEndedSessionScopeRequestsRow{}
+	for rows.Next() {
+		var i ExpireEndedSessionScopeRequestsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.Kind,
+			&i.SessionPk,
+			&i.Workspace,
+			&i.Verified,
+			&i.Server,
+			&i.Change,
+			&i.Status,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.DecidedAt,
+			&i.DecidedBy,
+			&i.DecidedScope,
+			&i.SessionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const expireSessionServerRequests = `-- name: ExpireSessionServerRequests :many
 UPDATE access_requests SET status = 'expired'
-WHERE session_pk = $1 AND kind = 'server' AND status = 'pending'
+WHERE session_pk = $1 AND kind IN ('server', 'scope') AND status = 'pending'
 RETURNING id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope
 `
 
-// Marks the pending server requests of an ending session expired and
+// Marks the pending server and scope requests of an ending session expired and
 // returns them.
 func (q *Queries) ExpireSessionServerRequests(ctx context.Context, sessionPk pgtype.Int8) ([]AccessRequest, error) {
 	rows, err := q.db.Query(ctx, expireSessionServerRequests, sessionPk)
@@ -267,6 +331,52 @@ func (q *Queries) ExpireSessionServerRequests(ctx context.Context, sessionPk pgt
 		return nil, err
 	}
 	return items, nil
+}
+
+const findPendingScopeRequest = `-- name: FindPendingScopeRequest :one
+SELECT id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope FROM access_requests
+WHERE principal = $1 AND kind = 'scope' AND workspace = $2
+  AND session_pk IS NOT DISTINCT FROM $3
+  AND change->'items' = $4::jsonb
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1
+`
+
+type FindPendingScopeRequestParams struct {
+	Principal string
+	Workspace string
+	SessionPk pgtype.Int8
+	Items     []byte
+}
+
+// Returns the oldest pending scope request of the principal with the
+// target and items that hasn't expired.
+func (q *Queries) FindPendingScopeRequest(ctx context.Context, arg FindPendingScopeRequestParams) (AccessRequest, error) {
+	row := q.db.QueryRow(ctx, findPendingScopeRequest,
+		arg.Principal,
+		arg.Workspace,
+		arg.SessionPk,
+		arg.Items,
+	)
+	var i AccessRequest
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.Kind,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.Verified,
+		&i.Server,
+		&i.Change,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.DecidedScope,
+	)
+	return i, err
 }
 
 const findPendingServerRequest = `-- name: FindPendingServerRequest :one
@@ -500,6 +610,58 @@ func (q *Queries) InsertChangeRequestWithinLimit(ctx context.Context, arg Insert
 		arg.Principal,
 		arg.Workspace,
 		arg.Verified,
+		arg.Change,
+		arg.ApprovalTimeout,
+		arg.PendingLimit,
+	)
+	var i AccessRequest
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.Kind,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.Verified,
+		&i.Server,
+		&i.Change,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.DecidedScope,
+	)
+	return i, err
+}
+
+const insertScopeRequestWithinLimit = `-- name: InsertScopeRequestWithinLimit :one
+INSERT INTO access_requests (id, principal, kind, session_pk, workspace, verified, change, expires_at)
+SELECT $1, $2, 'scope', $3, $4, true, $5, now() + $6::interval
+WHERE (
+    SELECT count(*) FROM access_requests WHERE principal = $2 AND status = 'pending'
+) < $7::bigint
+RETURNING id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope
+`
+
+type InsertScopeRequestWithinLimitParams struct {
+	ID              string
+	Principal       string
+	SessionPk       pgtype.Int8
+	Workspace       string
+	Change          []byte
+	ApprovalTimeout pgtype.Interval
+	PendingLimit    int64
+}
+
+// Inserts a pending scope request unless the principal already has
+// pending_limit pending access requests; then it returns no row. Run it
+// after LockPrincipalAccessRequests in the same transaction.
+func (q *Queries) InsertScopeRequestWithinLimit(ctx context.Context, arg InsertScopeRequestWithinLimitParams) (AccessRequest, error) {
+	row := q.db.QueryRow(ctx, insertScopeRequestWithinLimit,
+		arg.ID,
+		arg.Principal,
+		arg.SessionPk,
+		arg.Workspace,
 		arg.Change,
 		arg.ApprovalTimeout,
 		arg.PendingLimit,

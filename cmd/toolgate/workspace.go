@@ -30,7 +30,8 @@ const workspaceUsage = `Usage: toolgate workspace <command>
 
 Commands:
   list                                   Show your defaults and workspace lists
-  allow [--workspace ID] SERVER...       Add servers to a workspace's list
+  allow [--workspace ID | --session ID] SERVER|SERVER__TOOL...
+                                         Allow servers or tools in a workspace, or in one session
   deny [--workspace ID | --session ID] SERVER|SERVER__TOOL...
                                          Deny servers or tools in a workspace, or in one session
   clear [--workspace ID]                 Delete a workspace's list
@@ -147,11 +148,11 @@ func parseWorkspaceArgs(command string, args []string, stderr io.Writer) (worksp
 	flags.SetOutput(stderr)
 
 	switch command {
-	case "allow", "clear":
+	case "clear":
 		flags.StringVar(&options.workspace, "workspace", "", "workspace `ID` (default: this machine's verified workspace)")
-	case "deny":
+	case "allow", "deny":
 		flags.StringVar(&options.workspace, "workspace", "", "workspace `ID` (default: this machine's verified workspace)")
-		flags.StringVar(&options.session, "session", "", "deny in this open session `ID` of yours only")
+		flags.StringVar(&options.session, "session", "", command+" in this open session `ID` of yours only")
 	case "defaults":
 		flags.StringVar(&options.verified, "verified", "", "default for verified workspaces: none or all")
 		flags.StringVar(&options.unverified, "unverified", "", "default for unverified sessions: none or all")

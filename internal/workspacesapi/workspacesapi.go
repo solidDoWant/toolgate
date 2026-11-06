@@ -77,11 +77,13 @@ type Change struct {
 	Action string `json:"action" enum:"allow,deny,clear,defaults"`
 	// Workspace defaults to the request's verified workspace.
 	Workspace string `json:"workspace,omitempty"`
-	// Session is one of the caller's open sessions that a deny applies to,
-	// in place of workspace.
+	// Session is one of the caller's open sessions that an allow or a deny
+	// applies to, in place of workspace. An allow needs the session's
+	// workspace to be verified.
 	Session string `json:"session,omitempty"`
-	// Servers are server names. A deny also takes `<server>__<tool>` with
-	// the tool's exposed name.
+	// Servers are server names, or `<server>__<tool>` with the tool's
+	// exposed name. An allow for a session or of a tool answers 202 with a
+	// scope access request.
 	Servers    []string `json:"servers,omitempty"`
 	Verified   string   `json:"verified,omitempty" enum:"none,all"`
 	Unverified string   `json:"unverified,omitempty" enum:"none,all"`

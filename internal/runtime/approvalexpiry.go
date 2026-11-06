@@ -73,7 +73,53 @@ func (e *ApprovalExpirer) Run(ctx context.Context) error {
 		}
 	}
 
+	if err := e.expireEndedSessionScopeRequests(ctx); err != nil {
+		problems = append(problems, err)
+	}
+
 	return errors.Join(problems...)
+}
+
+// expireEndedSessionScopeRequests expires, with access.expire, the pending
+// scope requests whose target session ended after the request was created.
+// A 0.4 end transaction already does this; the pass catches sessions a 0.3
+// leader ended (docs/design/phase-4.md §2, "Cleanup").
+func (e *ApprovalExpirer) expireEndedSessionScopeRequests(ctx context.Context) error {
+	return pgx.BeginFunc(ctx, e.Pool, func(tx pgx.Tx) error {
+		queries := db.New(tx)
+
+		expired, err := queries.ExpireEndedSessionScopeRequests(ctx)
+		if err != nil {
+			return fmt.Errorf("expire scope requests of ended sessions: %w", err)
+		}
+
+		output := e.AuditOutput
+		if output == nil {
+			output = io.Discard
+		}
+
+		recorder := audit.NewRecorder(output, queries)
+
+		for _, request := range expired {
+			err := recorder.Record(ctx, audit.Event{
+				Type:        "access.expire",
+				Principal:   request.Principal,
+				Workspace:   request.Workspace,
+				Session:     request.SessionID,
+				Attestation: "attested",
+				Details:     map[string]any{"request": request.ID, "kind": request.Kind},
+			})
+			if err != nil {
+				return err
+			}
+
+			if err := store.Notify(ctx, tx, store.KindApproval, request.ID); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
 }
 
 // expireAccessRequest compare-and-sets one access request from pending to

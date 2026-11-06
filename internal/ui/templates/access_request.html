@@ -26,10 +26,25 @@
 </tr></tbody>
 </table>
 {{end}}{{end}}
+{{with .Scope}}<h2>Change</h2>
+<dl id="scope-target">
+{{if .Session}}<dt>Target session</dt><dd>{{.Session}}</dd>
+<dt>In workspace</dt><dd>{{.Workspace}}</dd>
+{{else}}<dt>Target workspace</dt><dd>{{.Workspace}}</dd>
+{{end}}<dt>Asked by session</dt><dd>{{if .AskedBy}}{{.AskedBy}}{{else}}none (the CLI){{end}}</dd>
+</dl>
+<table id="change">
+<thead><tr><th>Before</th><th>After</th></tr></thead>
+<tbody><tr>
+<td id="change-before">{{template "scope_state" .Before}}</td>
+<td id="change-after">{{template "scope_state" .After}}</td>
+</tr></tbody>
+</table>
+{{end}}
 {{with .Error}}<p class="error">{{.}}</p>
 {{end}}{{if .Message}}<p class="status">{{.Message}}</p>
 {{else}}
-{{if .Change}}{{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>
+{{if or .Change .Scope}}{{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>
 <a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
 {{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
@@ -55,3 +70,5 @@
 {{end}}
 {{end}}
 {{define "list_state"}}{{if .HasList}}{{if .Servers}}<ul>{{range .Servers}}<li>{{.}}</li>{{end}}</ul>{{else}}an empty list: no servers{{end}}{{else}}no list: the default applies ({{if eq .Default "all"}}all your servers{{else}}nothing{{end}}){{end}}{{end}}
+{{define "scope_state"}}<p>Allowed: {{if .Allowed}}</p><ul class="allowed">{{range .Allowed}}<li>{{.}}</li>{{end}}</ul>{{else}}nothing by name</p>{{end}}
+{{if .Denied}}<p>Denied:</p><ul class="denied">{{range .Denied}}<li>{{.}}</li>{{end}}</ul>{{end}}{{end}}

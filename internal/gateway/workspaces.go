@@ -362,6 +362,18 @@ func (w *Workspaces) Request(ctx context.Context, identity auth.Identity, change
 		return WorkspaceResult{}, workspaceError(http.StatusForbidden, "Only users have workspace lists.")
 	}
 
+	if needsScopeRequest(change) {
+		target := ScopeTarget{Workspace: change.Workspace, Session: change.Session}
+		if target.Workspace == "" && target.Session == "" {
+			target.Workspace = VerifiedWorkspace(identity)
+			if target.Workspace == "" {
+				return WorkspaceResult{}, workspaceError(http.StatusBadRequest, "This request has no verified workspace. Pass `workspace`.")
+			}
+		}
+
+		return w.RequestScope(ctx, identity, target, change.Servers, "")
+	}
+
 	change, err := w.validate(identity, change)
 	if err != nil {
 		return WorkspaceResult{}, err
@@ -378,6 +390,21 @@ func (w *Workspaces) Request(ctx context.Context, identity auth.Identity, change
 	})
 
 	return result, err
+}
+
+// needsScopeRequest reports whether a change is an allow that phase 3's
+// change request can't hold: one for a session, or naming a tool. It becomes
+// a scope request (docs/design/phase-4.md §12).
+func needsScopeRequest(change WorkspaceChange) bool {
+	if change.Action != WorkspaceAllow {
+		return false
+	}
+
+	if change.Session != "" {
+		return true
+	}
+
+	return slices.ContainsFunc(change.Servers, func(item string) bool { return strings.Contains(item, toolSeparator) })
 }
 
 // AccessRequest returns the principal's access request with the ID, or
