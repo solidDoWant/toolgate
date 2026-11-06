@@ -17,6 +17,8 @@ The gateway replica that holds the leader Lease checks every instance every 30 s
 
 An ended session keeps its list of enabled servers for `sessionResumeWindow` (24 hours by default, from 1 hour to 7 days, chart value `config.sessionResumeWindow`). Its `per-session` instances stop and do not run during that time. After that time, the gateway deletes the list and records a `session.forget` audit event. A later request with the same session ID starts the session again with no servers enabled.
 
+A request for an ended session within that time resumes it. If the request has the same workspace and attestation as the session, the session gets its servers back and the gateway writes a `session.resume` audit event with the list. The gateway decides policy again for each server and starts its instance, but it does not wait for the instance. If policy now refuses a server, or an instance limit is reached, the gateway removes the server and writes a `server.disable` audit event with the reason (`limit` for a limit). If the workspace or the attestation is different, the gateway deletes the list and writes `session.start`.
+
 An invalid template does not stop its instances. They continue on the last valid generation.
 
 ## How toolgate removes an instance

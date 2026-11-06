@@ -220,6 +220,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 	}
 
 	endpoint.callTool = tools.callTool
+	endpoint.sessions.restore = tools.restoreServers
 
 	var (
 		events  <-chan store.Event

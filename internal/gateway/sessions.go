@@ -31,6 +31,9 @@ type sessionStore struct {
 	pool        *pgxpool.Pool
 	auditOutput io.Writer
 	now         func() time.Time
+	// restore decides again and starts the servers a resumed session kept
+	// (docs/design/phase-3.md §11); nil restores nothing.
+	restore func(ctx context.Context, current requestContext, servers []db.SessionServer) error
 }
 
 // resolve returns the live session row for identity, creating it or
@@ -59,9 +62,17 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity) (db.
 	}
 
 	if session.EndedAt.Valid {
-		session, err = s.restart(ctx, session.ID, identity)
+		var kept []db.SessionServer
+
+		session, kept, err = s.restart(ctx, session.ID, identity)
 		if err != nil {
 			return db.Session{}, err
+		}
+
+		if len(kept) > 0 && s.restore != nil {
+			if err := s.restore(ctx, requestContext{identity: identity, session: session}, kept); err != nil {
+				return db.Session{}, err
+			}
 		}
 	}
 
@@ -106,13 +117,15 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity) (sess
 }
 
 // restart clears ended_at and takes this request's workspace and
-// attestation, in one transaction holding the row lock, deletes the enabled
-// set the ended session kept, and writes session.start.
-func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Identity) (db.Session, error) {
-	var session db.Session
-
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+// attestation, in one transaction holding the row lock. It keeps the enabled
+// set the ended session kept only when the request's workspace and
+// attestation equal the stored ones, and writes session.resume listing it.
+// Otherwise it deletes the set and writes session.start. kept is the set to
+// restore.
+func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Identity) (session db.Session, kept []db.SessionServer, err error) {
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
+		kept = nil
 
 		locked, err := queries.LockSession(ctx, id)
 		if err != nil {
@@ -136,14 +149,35 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 			return fmt.Errorf("restart session: %w", err)
 		}
 
-		if err := queries.DeleteSessionServers(ctx, id); err != nil {
+		if locked.Workspace == identity.Workspace && locked.Attestation == identity.Attestation {
+			kept, err = queries.ListSessionServers(ctx, id)
+			if err != nil {
+				return fmt.Errorf("read enabled servers: %w", err)
+			}
+		} else if err := queries.DeleteSessionServers(ctx, id); err != nil {
 			return fmt.Errorf("delete enabled servers: %w", err)
 		}
 
-		return s.recordStart(ctx, tx, identity)
+		if len(kept) == 0 {
+			return s.recordStart(ctx, tx, identity)
+		}
+
+		servers := make([]string, 0, len(kept))
+		for _, row := range kept {
+			servers = append(servers, row.TemplateName)
+		}
+
+		return audit.NewRecorder(s.auditOutput, queries).Record(ctx, audit.Event{
+			Type:        "session.resume",
+			Principal:   identity.Principal,
+			Workspace:   identity.Workspace,
+			Session:     identity.Session,
+			Attestation: identity.Attestation,
+			Details:     map[string]any{"servers": servers},
+		})
 	})
 
-	return session, err
+	return session, kept, err
 }
 
 // refresh writes the identity snapshot when it changed, and otherwise moves
