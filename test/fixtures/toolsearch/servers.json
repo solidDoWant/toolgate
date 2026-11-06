@@ -1,0 +1,1457 @@
+{
+  "description": "Frozen tool search fixture. Do not edit.",
+  "servers": [
+    {
+      "name": "github",
+      "source": {
+        "repository": "https://github.com/github/github-mcp-server",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "create_issue",
+          "description": "Create a new issue in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "title": {
+                "type": "string",
+                "description": "Issue title"
+              },
+              "body": {
+                "type": "string",
+                "description": "Issue body"
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "title"
+            ]
+          }
+        },
+        {
+          "name": "get_issue",
+          "description": "Get details of a specific issue in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "issue_number": {
+                "type": "number",
+                "description": "The number of the issue"
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "issue_number"
+            ]
+          }
+        },
+        {
+          "name": "add_issue_comment",
+          "description": "Add a comment to a specific issue in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "issue_number": {
+                "type": "number",
+                "description": "Issue number"
+              },
+              "body": {
+                "type": "string",
+                "description": "Comment content"
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "issue_number",
+              "body"
+            ]
+          }
+        },
+        {
+          "name": "list_issues",
+          "description": "List issues in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "state": {
+                "type": "string",
+                "description": "Filter by state, open or closed"
+              }
+            },
+            "required": [
+              "owner",
+              "repo"
+            ]
+          }
+        },
+        {
+          "name": "create_pull_request",
+          "description": "Create a new pull request in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "title": {
+                "type": "string",
+                "description": "PR title"
+              },
+              "head": {
+                "type": "string",
+                "description": "Branch containing changes"
+              },
+              "base": {
+                "type": "string",
+                "description": "Branch to merge into"
+              },
+              "body": {
+                "type": "string",
+                "description": "PR description"
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "title",
+              "head",
+              "base"
+            ]
+          }
+        },
+        {
+          "name": "merge_pull_request",
+          "description": "Merge a pull request in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "pullNumber": {
+                "type": "number",
+                "description": "Pull request number"
+              },
+              "merge_method": {
+                "type": "string",
+                "description": "Merge method"
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "pullNumber"
+            ]
+          }
+        },
+        {
+          "name": "search_code",
+          "description": "Search for code across GitHub repositories.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Search query using GitHub code search syntax"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        },
+        {
+          "name": "create_branch",
+          "description": "Create a new branch in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "branch": {
+                "type": "string",
+                "description": "Name for new branch"
+              },
+              "from_branch": {
+                "type": "string",
+                "description": "Source branch"
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "branch"
+            ]
+          }
+        },
+        {
+          "name": "get_file_contents",
+          "description": "Get the contents of a file or directory from a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "path": {
+                "type": "string",
+                "description": "Path to file or directory"
+              },
+              "ref": {
+                "type": "string",
+                "description": "Branch, tag or commit"
+              }
+            },
+            "required": [
+              "owner",
+              "repo",
+              "path"
+            ]
+          }
+        },
+        {
+          "name": "list_commits",
+          "description": "Get list of commits of a branch in a GitHub repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              },
+              "sha": {
+                "type": "string",
+                "description": "Branch name or commit SHA"
+              }
+            },
+            "required": [
+              "owner",
+              "repo"
+            ]
+          }
+        },
+        {
+          "name": "fork_repository",
+          "description": "Fork a GitHub repository to your account or specified organization.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "owner": {
+                "type": "string",
+                "description": "Repository owner"
+              },
+              "repo": {
+                "type": "string",
+                "description": "Repository name"
+              }
+            },
+            "required": [
+              "owner",
+              "repo"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "kubernetes",
+      "source": {
+        "repository": "https://github.com/containers/kubernetes-mcp-server",
+        "licence": "Apache-2.0"
+      },
+      "tools": [
+        {
+          "name": "pods_list",
+          "description": "List all the Kubernetes pods in the current cluster from all namespaces.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "labelSelector": {
+                "type": "string",
+                "description": "Kubernetes label selector"
+              }
+            },
+            "required": []
+          }
+        },
+        {
+          "name": "pods_list_in_namespace",
+          "description": "List all the Kubernetes pods in the specified namespace in the current cluster.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace to list pods from"
+              }
+            },
+            "required": [
+              "namespace"
+            ]
+          }
+        },
+        {
+          "name": "pods_get",
+          "description": "Get a Kubernetes Pod in the current or provided namespace with the provided name.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name of the Pod"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        },
+        {
+          "name": "pods_delete",
+          "description": "Delete a Kubernetes Pod in the current or provided namespace with the provided name.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name of the Pod"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        },
+        {
+          "name": "pods_log",
+          "description": "Get the logs of a Kubernetes Pod in the current or provided namespace with the provided name.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name of the Pod"
+              },
+              "container": {
+                "type": "string",
+                "description": "Container name"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        },
+        {
+          "name": "pods_exec",
+          "description": "Execute a command in a Kubernetes Pod in the current or provided namespace with the provided name and command.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name of the Pod"
+              },
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "name",
+              "command"
+            ]
+          }
+        },
+        {
+          "name": "namespaces_list",
+          "description": "List all the Kubernetes namespaces in the current cluster.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        },
+        {
+          "name": "events_list",
+          "description": "List all the Kubernetes events in the current cluster from all namespaces.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "namespace": {
+                "type": "string",
+                "description": "Namespace"
+              }
+            },
+            "required": []
+          }
+        },
+        {
+          "name": "resources_get",
+          "description": "Get a Kubernetes resource in the current cluster by providing its apiVersion, kind, optionally the namespace, and its name.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "apiVersion": {
+                "type": "string",
+                "description": "apiVersion of the resource"
+              },
+              "kind": {
+                "type": "string",
+                "description": "Kind of the resource"
+              },
+              "namespace": {
+                "type": "string",
+                "description": "Namespace"
+              },
+              "name": {
+                "type": "string",
+                "description": "Name"
+              }
+            },
+            "required": [
+              "apiVersion",
+              "kind",
+              "name"
+            ]
+          }
+        },
+        {
+          "name": "resources_create_or_update",
+          "description": "Create or update a Kubernetes resource in the current cluster by providing a YAML or JSON representation of the resource.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "resource": {
+                "type": "string",
+                "description": "A JSON or YAML containing the resource"
+              }
+            },
+            "required": [
+              "resource"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "filesystem",
+      "source": {
+        "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "read_file",
+          "description": "Read the complete contents of a file from the file system.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          }
+        },
+        {
+          "name": "write_file",
+          "description": "Create a new file or completely overwrite an existing file with new content.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path"
+              },
+              "content": {
+                "type": "string",
+                "description": "File content"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ]
+          }
+        },
+        {
+          "name": "edit_file",
+          "description": "Make line-based edits to a text file. Each edit replaces exact line sequences with new content.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "File path"
+              },
+              "edits": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            },
+            "required": [
+              "path",
+              "edits"
+            ]
+          }
+        },
+        {
+          "name": "create_directory",
+          "description": "Create a new directory or ensure a directory exists.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Directory path"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          }
+        },
+        {
+          "name": "list_directory",
+          "description": "Get a detailed listing of all files and directories in a specified path.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Directory path"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          }
+        },
+        {
+          "name": "move_file",
+          "description": "Move or rename files and directories.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "source": {
+                "type": "string",
+                "description": "Source path"
+              },
+              "destination": {
+                "type": "string",
+                "description": "Destination path"
+              }
+            },
+            "required": [
+              "source",
+              "destination"
+            ]
+          }
+        },
+        {
+          "name": "search_files",
+          "description": "Recursively search for files and directories matching a pattern.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Starting directory"
+              },
+              "pattern": {
+                "type": "string",
+                "description": "Search pattern"
+              }
+            },
+            "required": [
+              "path",
+              "pattern"
+            ]
+          }
+        },
+        {
+          "name": "get_file_info",
+          "description": "Retrieve detailed metadata about a file or directory, including size, creation time and permissions.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "Path"
+              }
+            },
+            "required": [
+              "path"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "postgres",
+      "source": {
+        "repository": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/postgres",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "query",
+          "description": "Run a read-only SQL query.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "sql": {
+                "type": "string",
+                "description": "SQL statement"
+              }
+            },
+            "required": [
+              "sql"
+            ]
+          }
+        },
+        {
+          "name": "list_tables",
+          "description": "List all tables in the public schema of the database.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        },
+        {
+          "name": "describe_table",
+          "description": "Show the column names and data types of a table.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "table": {
+                "type": "string",
+                "description": "Table name"
+              }
+            },
+            "required": [
+              "table"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "sqlite",
+      "source": {
+        "repository": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/sqlite",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "read_query",
+          "description": "Execute a SELECT query on the SQLite database.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "SELECT SQL query to execute"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        },
+        {
+          "name": "write_query",
+          "description": "Execute an INSERT, UPDATE, or DELETE query on the SQLite database.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "SQL query to execute"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        },
+        {
+          "name": "create_table",
+          "description": "Create a new table in the SQLite database.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "CREATE TABLE SQL statement"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        },
+        {
+          "name": "append_insight",
+          "description": "Add a business insight to the memo.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "insight": {
+                "type": "string",
+                "description": "Business insight discovered from data analysis"
+              }
+            },
+            "required": [
+              "insight"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "git",
+      "source": {
+        "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/git",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "git_status",
+          "description": "Shows the working tree status.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "repo_path": {
+                "type": "string",
+                "description": "Path to Git repository"
+              }
+            },
+            "required": [
+              "repo_path"
+            ]
+          }
+        },
+        {
+          "name": "git_diff_unstaged",
+          "description": "Shows changes in the working directory that are not yet staged.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "repo_path": {
+                "type": "string",
+                "description": "Path to Git repository"
+              }
+            },
+            "required": [
+              "repo_path"
+            ]
+          }
+        },
+        {
+          "name": "git_commit",
+          "description": "Records changes to the repository.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "repo_path": {
+                "type": "string",
+                "description": "Path to Git repository"
+              },
+              "message": {
+                "type": "string",
+                "description": "Commit message"
+              }
+            },
+            "required": [
+              "repo_path",
+              "message"
+            ]
+          }
+        },
+        {
+          "name": "git_log",
+          "description": "Shows the commit logs.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "repo_path": {
+                "type": "string",
+                "description": "Path to Git repository"
+              },
+              "max_count": {
+                "type": "number",
+                "description": "Maximum number of commits"
+              }
+            },
+            "required": [
+              "repo_path"
+            ]
+          }
+        },
+        {
+          "name": "git_create_branch",
+          "description": "Creates a new branch from an optional base branch.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "repo_path": {
+                "type": "string",
+                "description": "Path to Git repository"
+              },
+              "branch_name": {
+                "type": "string",
+                "description": "Name of the new branch"
+              }
+            },
+            "required": [
+              "repo_path",
+              "branch_name"
+            ]
+          }
+        },
+        {
+          "name": "git_checkout",
+          "description": "Switches branches.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "repo_path": {
+                "type": "string",
+                "description": "Path to Git repository"
+              },
+              "branch_name": {
+                "type": "string",
+                "description": "Branch to switch to"
+              }
+            },
+            "required": [
+              "repo_path",
+              "branch_name"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "slack",
+      "source": {
+        "repository": "https://github.com/modelcontextprotocol/servers-archived/tree/main/src/slack",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "slack_list_channels",
+          "description": "List public or pre-defined channels in the workspace with pagination.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "number",
+                "description": "Maximum number of channels"
+              }
+            },
+            "required": []
+          }
+        },
+        {
+          "name": "slack_post_message",
+          "description": "Post a new message to a Slack channel.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "channel_id": {
+                "type": "string",
+                "description": "The ID of the channel"
+              },
+              "text": {
+                "type": "string",
+                "description": "The message text"
+              }
+            },
+            "required": [
+              "channel_id",
+              "text"
+            ]
+          }
+        },
+        {
+          "name": "slack_reply_to_thread",
+          "description": "Reply to a specific message thread in Slack.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "channel_id": {
+                "type": "string",
+                "description": "Channel ID"
+              },
+              "thread_ts": {
+                "type": "string",
+                "description": "Timestamp of the parent message"
+              },
+              "text": {
+                "type": "string",
+                "description": "Reply text"
+              }
+            },
+            "required": [
+              "channel_id",
+              "thread_ts",
+              "text"
+            ]
+          }
+        },
+        {
+          "name": "slack_add_reaction",
+          "description": "Add a reaction emoji to a message.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "channel_id": {
+                "type": "string",
+                "description": "Channel ID"
+              },
+              "timestamp": {
+                "type": "string",
+                "description": "Message timestamp"
+              },
+              "reaction": {
+                "type": "string",
+                "description": "Emoji name without colons"
+              }
+            },
+            "required": [
+              "channel_id",
+              "timestamp",
+              "reaction"
+            ]
+          }
+        },
+        {
+          "name": "slack_get_channel_history",
+          "description": "Get recent messages from a channel.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "channel_id": {
+                "type": "string",
+                "description": "Channel ID"
+              },
+              "limit": {
+                "type": "number",
+                "description": "Number of messages"
+              }
+            },
+            "required": [
+              "channel_id"
+            ]
+          }
+        },
+        {
+          "name": "slack_get_users",
+          "description": "Get a list of all users in the workspace with their basic profile information.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "limit": {
+                "type": "number",
+                "description": "Maximum number of users"
+              }
+            },
+            "required": []
+          }
+        }
+      ]
+    },
+    {
+      "name": "google-calendar",
+      "source": {
+        "repository": "https://github.com/nspady/google-calendar-mcp",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "list-calendars",
+          "description": "List all available calendars.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        },
+        {
+          "name": "list-events",
+          "description": "List events from one or more calendars.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "calendarId": {
+                "type": "string",
+                "description": "Calendar ID"
+              },
+              "timeMin": {
+                "type": "string",
+                "description": "Start of range, ISO 8601"
+              },
+              "timeMax": {
+                "type": "string",
+                "description": "End of range, ISO 8601"
+              }
+            },
+            "required": [
+              "calendarId"
+            ]
+          }
+        },
+        {
+          "name": "create-event",
+          "description": "Create a new calendar event.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "calendarId": {
+                "type": "string",
+                "description": "Calendar ID"
+              },
+              "summary": {
+                "type": "string",
+                "description": "Event title"
+              },
+              "start": {
+                "type": "string",
+                "description": "Start time"
+              },
+              "end": {
+                "type": "string",
+                "description": "End time"
+              },
+              "attendees": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "calendarId",
+              "summary",
+              "start",
+              "end"
+            ]
+          }
+        },
+        {
+          "name": "update-event",
+          "description": "Update an existing calendar event.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "calendarId": {
+                "type": "string",
+                "description": "Calendar ID"
+              },
+              "eventId": {
+                "type": "string",
+                "description": "Event ID"
+              },
+              "summary": {
+                "type": "string",
+                "description": "New title"
+              }
+            },
+            "required": [
+              "calendarId",
+              "eventId"
+            ]
+          }
+        },
+        {
+          "name": "delete-event",
+          "description": "Delete a calendar event.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "calendarId": {
+                "type": "string",
+                "description": "Calendar ID"
+              },
+              "eventId": {
+                "type": "string",
+                "description": "Event ID"
+              }
+            },
+            "required": [
+              "calendarId",
+              "eventId"
+            ]
+          }
+        },
+        {
+          "name": "get-freebusy",
+          "description": "Check availability across calendars for a time range.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "calendars": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timeMin": {
+                "type": "string",
+                "description": "Start"
+              },
+              "timeMax": {
+                "type": "string",
+                "description": "End"
+              }
+            },
+            "required": [
+              "calendars",
+              "timeMin",
+              "timeMax"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "gmail",
+      "source": {
+        "repository": "https://github.com/GongRzhe/Gmail-MCP-Server",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "send_email",
+          "description": "Sends a new email.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "subject": {
+                "type": "string",
+                "description": "Email subject"
+              },
+              "body": {
+                "type": "string",
+                "description": "Email body content"
+              }
+            },
+            "required": [
+              "to",
+              "subject",
+              "body"
+            ]
+          }
+        },
+        {
+          "name": "draft_email",
+          "description": "Draft a new email.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "to": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "subject": {
+                "type": "string",
+                "description": "Email subject"
+              },
+              "body": {
+                "type": "string",
+                "description": "Email body content"
+              }
+            },
+            "required": [
+              "to",
+              "subject",
+              "body"
+            ]
+          }
+        },
+        {
+          "name": "read_email",
+          "description": "Retrieves the content of a specific email.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "messageId": {
+                "type": "string",
+                "description": "ID of the email message"
+              }
+            },
+            "required": [
+              "messageId"
+            ]
+          }
+        },
+        {
+          "name": "search_emails",
+          "description": "Searches for emails using Gmail search syntax.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Gmail search query"
+              },
+              "maxResults": {
+                "type": "number",
+                "description": "Maximum results"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        },
+        {
+          "name": "delete_email",
+          "description": "Permanently deletes an email.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "messageId": {
+                "type": "string",
+                "description": "ID of the email message"
+              }
+            },
+            "required": [
+              "messageId"
+            ]
+          }
+        },
+        {
+          "name": "list_email_labels",
+          "description": "Retrieves all available Gmail labels.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        },
+        {
+          "name": "create_label",
+          "description": "Creates a new Gmail label.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Label name"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "fetch",
+      "source": {
+        "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/fetch",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "fetch",
+          "description": "Fetches a URL from the internet and optionally extracts its contents as markdown.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "description": "URL to fetch"
+              },
+              "max_length": {
+                "type": "number",
+                "description": "Maximum number of characters to return"
+              },
+              "raw": {
+                "type": "boolean",
+                "description": "Get the actual HTML content"
+              }
+            },
+            "required": [
+              "url"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "memory",
+      "source": {
+        "repository": "https://github.com/modelcontextprotocol/servers/tree/main/src/memory",
+        "licence": "MIT"
+      },
+      "tools": [
+        {
+          "name": "create_entities",
+          "description": "Create multiple new entities in the knowledge graph.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "entities": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            },
+            "required": [
+              "entities"
+            ]
+          }
+        },
+        {
+          "name": "create_relations",
+          "description": "Create multiple new relations between entities in the knowledge graph.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "relations": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              }
+            },
+            "required": [
+              "relations"
+            ]
+          }
+        },
+        {
+          "name": "search_nodes",
+          "description": "Search for nodes in the knowledge graph based on a query.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "Search query"
+              }
+            },
+            "required": [
+              "query"
+            ]
+          }
+        },
+        {
+          "name": "read_graph",
+          "description": "Read the entire knowledge graph.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "required": []
+          }
+        }
+      ]
+    }
+  ]
+}
