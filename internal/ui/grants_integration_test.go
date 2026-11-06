@@ -316,7 +316,7 @@ func TestAC2_09GrantNeedsAFreshSignIn(t *testing.T) {
 	user := toolgatetest.OIDCUser{Subject: "grace", Email: "grace@example.com", EmailVerified: true, Groups: []string{"dev"}}
 	createButton := chromedp.CSS(`#grant-form button[type="submit"]`)
 
-	require.NoError(t, chromedp.Do(ctx, chromedp.Navigate(env.server.URL+ui.NewGrantPath+"?server=optin-server")))
+	require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+ui.NewGrantPath+"?server=optin-server")))
 	require.NoError(t, chromedp.Do(ctx, toolgatetest.SignInToOIDC(user), chromedp.WaitVisible(createButton)))
 
 	_, err := env.pool.Exec(t.Context(), "UPDATE ui_sessions SET auth_time = now() - interval '6 minutes' WHERE principal = $1", user.Subject)

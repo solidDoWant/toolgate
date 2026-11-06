@@ -124,7 +124,7 @@ func auditEventLinks(t *testing.T, browser context.Context, publicURL, server st
 
 	query := url.Values{"server": {server}}
 
-	_, err := chromedp.Run(browser, chromedp.Navigate(publicURL+"/ui/audit?"+query.Encode()))
+	_, err := chromedp.Run(browser, testutil.Navigate(publicURL+"/ui/audit?"+query.Encode()))
 	require.NoError(t, err)
 
 	rows, err := chromedp.Run(browser, chromedp.Evaluate[[]map[string]string](
@@ -226,7 +226,7 @@ func TestAC2_19AuditPayloads(t *testing.T) {
 	view := func(t *testing.T, href string) string {
 		t.Helper()
 
-		_, err := chromedp.Run(browser, chromedp.Navigate(publicURL+href))
+		_, err := chromedp.Run(browser, testutil.Navigate(publicURL+href))
 		require.NoError(t, err)
 
 		text, err := chromedp.Run(browser, chromedp.Evaluate[string](`document.querySelector('main').innerText`))

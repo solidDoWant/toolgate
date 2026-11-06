@@ -31,7 +31,7 @@ var (
 
 // pageText returns the visible text of the page at path.
 func pageText(browser context.Context, publicURL, path string) (string, error) {
-	if err := chromedp.Do(browser, chromedp.Navigate(publicURL+path)); err != nil {
+	if err := chromedp.Do(browser, testutil.Navigate(publicURL+path)); err != nil {
 		return "", err
 	}
 
@@ -121,7 +121,7 @@ func TestAC2_14TemporaryBlock(t *testing.T) {
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
 
 		browser := signInToUI(t, publicURL, e2eAdmin)
-		require.NoError(t, chromedp.Do(browser, chromedp.Navigate(publicURL+blocksPath)))
+		require.NoError(t, chromedp.Do(browser, testutil.Navigate(publicURL+blocksPath)))
 
 		listChangedBefore := countEvents(session.recorded(), eventListChanged)
 		submitted := time.Now()
