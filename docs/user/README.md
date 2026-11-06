@@ -190,6 +190,23 @@ If your computer has no keychain, toolgate writes the token to the file `toolgat
 
 To remove the token from the keychain and from the file, run `toolgate logout`.
 
+### Choose the store
+
+Run `toolgate login --token-store auto|keychain|file` to choose where toolgate keeps the token. You can also set the `TOOLGATE_TOKEN_STORE` environment variable. The default is `auto`: toolgate tries the keychain and uses the file if the keychain does not work.
+
+toolgate writes the store it used to `config.json` as `tokenStore`. Every later run reads and writes only that store. It never switches to the other one. If the store is `keychain` and the keychain stops working, toolgate asks you to sign in again with `--token-store file`. A `config.json` from before this setting has no `tokenStore`, and toolgate keeps trying the keychain first and then the file.
+
+### Sign in from a workspace
+
+A workspace (for example a Coder workspace) has no browser. `toolgate login` prints a link and a code. Open the link on any device, check the code, and approve. The command prints how long the code is valid. If nobody approves in time, it shows "The sign-in code expired. Run `toolgate login` again." and exits with code 1.
+
+The interactive shell of a workspace can have a keychain session that the processes of the agent do not have. Then a token saved in the keychain is invisible to those processes. To avoid this, follow these rules:
+
+1. Run `toolgate login --token-store file` in the workspace.
+2. Keep the home directory on a persistent volume. If the volume is lost when the workspace restarts, the sign-in is lost too.
+
+The sign-in lasts until your identity provider ends it. For Authentik, this is the "Refresh token validity" setting of the OAuth2 provider. When the refresh token stops working, `toolgate headers` shows "Sign in again: run `toolgate login`.", prints no headers and exits with a non-zero code.
+
 ## The headers that Claude Code sends
 
 The toolgate plugin tells Claude Code to run `toolgate headers` before it connects to the gateway. This command prints three request headers as JSON:

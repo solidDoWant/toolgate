@@ -34,6 +34,12 @@ func printHeaders(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	if errors.Is(err, headers.ErrSignInAgain) {
+		_, _ = fmt.Fprintln(stderr, headers.SignInAgainMessage)
+
+		return 1
+	}
+
 	if errors.Is(err, login.ErrNotSignedIn) || errors.Is(err, tokenstore.ErrNotFound) {
 		_, _ = fmt.Fprintln(stderr, "toolgate headers: not signed in. Run toolgate login.")
 
@@ -115,7 +121,7 @@ func bearerToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 
-	return headers.AccessToken(ctx, nil, settings, tokenstore.New(dir))
+	return headers.AccessToken(ctx, nil, settings, tokenStoreFor(dir, settings))
 }
 
 // printOtelHeaders runs `toolgate otel-headers`: it prints the headers for
@@ -129,6 +135,12 @@ func printOtelHeaders(args []string, stdout, stderr io.Writer) int {
 	}
 
 	values, err := credentialHeaders(context.Background())
+	if errors.Is(err, headers.ErrSignInAgain) {
+		_, _ = fmt.Fprintln(stderr, headers.SignInAgainMessage)
+
+		return 1
+	}
+
 	if errors.Is(err, login.ErrNotSignedIn) || errors.Is(err, tokenstore.ErrNotFound) {
 		_, _ = fmt.Fprintln(stderr, "toolgate otel-headers: not signed in. Run toolgate login.")
 

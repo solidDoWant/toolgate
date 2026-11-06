@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -43,6 +44,10 @@ const (
 // ErrNotSignedIn is returned by LoadSettings when nobody has signed in.
 var ErrNotSignedIn = errors.New("not signed in")
 
+// ErrCodeExpired is returned by Run when nobody approved the device code
+// before it expired.
+var ErrCodeExpired = errors.New("The sign-in code expired. Run `toolgate login` again.") //nolint:staticcheck // The message is shown to the user as a sentence.
+
 // Settings is the content of config.json.
 type Settings struct {
 	// Gateway is the gateway's base URL.
@@ -58,6 +63,11 @@ type Settings struct {
 	Subject       string `json:"subject"`
 	Email         string `json:"email,omitempty"`
 	EmailVerified bool   `json:"emailVerified"`
+	// TokenStore is where the refresh token is kept: "keychain" or "file".
+	// Every later load and save uses only this store. A config.json from
+	// before this field existed has none, and keeps the keychain-then-file
+	// behaviour.
+	TokenStore string `json:"tokenStore,omitempty"`
 }
 
 // Options configures Run.
@@ -150,8 +160,15 @@ func Run(ctx context.Context, options Options) (Settings, error) {
 			authorization.VerificationURI, authorization.UserCode)
 	}
 
+	_, _ = fmt.Fprintf(options.Prompt, "The code expires in %s. You can open the link on any device.\n",
+		DurationInWords(time.Until(authorization.Expiry)))
+
 	token, err := config.DeviceAccessToken(ctx, authorization, oauth2.VerifierOption(verifier))
 	if err != nil {
+		if codeExpired(err) {
+			return Settings{}, ErrCodeExpired
+		}
+
 		return Settings{}, fmt.Errorf("finish the device sign-in: %w", err)
 	}
 
@@ -167,7 +184,47 @@ func Run(ctx context.Context, options Options) (Settings, error) {
 		return Settings{}, fmt.Errorf("store the refresh token: %w", err)
 	}
 
+	settings.TokenStore = string(options.Tokens.Used())
+
 	return settings, nil
+}
+
+// codeExpired reports whether err says the device code ran out.
+func codeExpired(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var retrieveErr *oauth2.RetrieveError
+
+	return errors.As(err, &retrieveErr) && retrieveErr.ErrorCode == "expired_token"
+}
+
+// DurationInWords writes d as whole minutes, or seconds when it is under a
+// minute, for example "10 minutes" or "45 seconds".
+func DurationInWords(d time.Duration) string {
+	seconds := int(d.Round(time.Second) / time.Second)
+	if seconds < 1 {
+		seconds = 1
+	}
+
+	unit := func(count int, name string) string {
+		if count == 1 {
+			return "1 " + name
+		}
+
+		return fmt.Sprintf("%d %ss", count, name)
+	}
+
+	if seconds < 60 {
+		return unit(seconds, "second")
+	}
+
+	if seconds%60 == 0 {
+		return unit(seconds/60, "minute")
+	}
+
+	return unit(seconds/60, "minute") + " and " + unit(seconds%60, "second")
 }
 
 // readIdentity verifies the token response's ID token for the client and

@@ -170,3 +170,73 @@ func TestDefaultUsesUserConfigDir(t *testing.T) {
 
 	assert.FileExists(t, filepath.Join(userConfigDir, "toolgate", tokenstore.FileName))
 }
+
+func TestFileModeNeverTouchesTheKeychain(t *testing.T) {
+	keyring.MockInit()
+
+	dir := t.TempDir()
+	store := tokenstore.NewWithMode(dir, tokenstore.ModeFile)
+
+	require.NoError(t, keyring.Set(tokenstore.KeychainService, tokenstore.KeychainUser, "in-keychain"))
+	require.NoError(t, store.Save("in-file"))
+	assert.Equal(t, tokenstore.ModeFile, store.Used())
+
+	stored, err := keyring.Get(tokenstore.KeychainService, tokenstore.KeychainUser)
+	require.NoError(t, err)
+	assert.Equal(t, "in-keychain", stored, "the keychain token stays")
+
+	loaded, err := store.Load()
+	require.NoError(t, err)
+	assert.Equal(t, "in-file", loaded)
+
+	require.NoError(t, os.Remove(filepath.Join(dir, tokenstore.FileName)))
+
+	_, err = store.Load()
+	require.ErrorIs(t, err, tokenstore.ErrNotFound, "no fallback to the keychain")
+}
+
+func TestKeychainModeNeverUsesTheFile(t *testing.T) {
+	keyring.MockInit()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, tokenstore.FileName), []byte("in-file"), 0o600))
+
+	store := tokenstore.NewWithMode(dir, tokenstore.ModeKeychain)
+	_, err := store.Load()
+	require.ErrorIs(t, err, tokenstore.ErrNotFound, "no fallback to the file")
+
+	require.NoError(t, store.Save("in-keychain"))
+	assert.Equal(t, tokenstore.ModeKeychain, store.Used())
+
+	loaded, err := store.Load()
+	require.NoError(t, err)
+	assert.Equal(t, "in-keychain", loaded)
+
+	keyring.MockInitWithError(assert.AnError)
+
+	err = store.Save("new")
+	require.ErrorIs(t, err, tokenstore.ErrKeychainUnusable)
+	assert.Contains(t, err.Error(), "--token-store file")
+
+	_, err = store.Load()
+	require.ErrorIs(t, err, tokenstore.ErrKeychainUnusable)
+}
+
+func TestAutoModeUsedReportsTheFallback(t *testing.T) {
+	keyring.MockInitWithError(assert.AnError)
+
+	store := tokenstore.NewWithMode(t.TempDir(), tokenstore.ModeAuto)
+	require.NoError(t, store.Save("token"))
+	assert.Equal(t, tokenstore.ModeFile, store.Used())
+}
+
+func TestParseMode(t *testing.T) {
+	for value, want := range map[string]tokenstore.Mode{"": tokenstore.ModeAuto, "auto": tokenstore.ModeAuto, "keychain": tokenstore.ModeKeychain, "file": tokenstore.ModeFile} {
+		got, err := tokenstore.ParseMode(value)
+		require.NoError(t, err)
+		assert.Equal(t, want, got)
+	}
+
+	_, err := tokenstore.ParseMode("vault")
+	require.Error(t, err)
+}

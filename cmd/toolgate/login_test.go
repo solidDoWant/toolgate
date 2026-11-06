@@ -22,7 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testutil"
 )
 
-var userCodePattern = regexp.MustCompile(`code (\S+)`)
+var userCodePattern = regexp.MustCompile(`the code (\S+)$`)
 
 // isolateUserConfig points os.UserConfigDir at a new directory and the
 // keychain at an in-memory mock, and returns toolgate's directory in it.
@@ -125,7 +125,7 @@ func TestAC1_02LoginThenStatusShowsEmail(t *testing.T) {
 
 		code, output, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
 		require.Equal(t, 0, code, "stderr: %s", stderr)
-		assert.Contains(t, output, "Signed in as alice@example.com.")
+		assert.Contains(t, output, "Signed in as alice@example.com (sub alice).")
 
 		refreshToken, err := tokenstore.New(dir).Load()
 		require.NoError(t, err)
