@@ -21,10 +21,10 @@ const (
 	statusFailed = "failed"
 )
 
-// waitForInstance runs Enable step 5. It re-reads the instance and the
-// session's session_servers row on every notification about either and on
-// every progress tick, and returns once the instance is ready or no longer
-// starting. A progress notification goes out on every status change and at
+// waitForInstance runs Enable step 5. It re-reads the instance, the
+// session's ended_at and its session_servers row on every notification about
+// the instance or the session and on every progress tick, and returns once
+// the instance is ready or no longer starting, or the session ended. A progress notification goes out on every status change and at
 // least every progressInterval.
 func (m *metaTools) waitForInstance(ctx context.Context, request *mcp.CallToolRequest, current requestContext,
 	template *v1alpha1.MCPServerTemplate, instance db.Instance,
@@ -102,6 +102,17 @@ func awaitWake(ctx context.Context, events <-chan store.Event, tick <-chan time.
 // waiting is over: the instance is ready, or it can no longer become ready.
 func (m *metaTools) readWait(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, id string) (db.Instance, bool, error) {
 	queries := db.New(m.database)
+
+	// An ended session keeps its enabled set for a resume
+	// (docs/design/phase-3.md §11), so the wait checks ended_at itself.
+	session, err := queries.GetSessionByID(ctx, current.session.ID)
+	if err != nil {
+		return db.Instance{}, false, fmt.Errorf("read session: %w", err)
+	}
+
+	if session.EndedAt.Valid {
+		return db.Instance{}, false, fmt.Errorf("This session ended while waiting for `%s`.", template.Name) //nolint:staticcheck // A sentence for the model.
+	}
 
 	enabled, err := m.isEnabled(ctx, queries, current.session.ID, template)
 	if err != nil {

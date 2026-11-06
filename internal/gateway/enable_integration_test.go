@@ -5,6 +5,7 @@ package gateway_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"testing"
@@ -561,6 +562,53 @@ func TestEnableInteractions(t *testing.T) {
 		assert.Equal(t, enableResult{err: "`github` was disabled while starting."}, awaitEnable(t, results))
 		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"))
 	})
+
+	for _, test := range []struct {
+		scope    string
+		scopeKey string
+		// other is a live session that enables the same server and shares
+		// the instance; none for per-session.
+		other *user
+	}{
+		{scope: "per-session", scopeKey: "session:alice:session-1"},
+		{scope: "per-user", scopeKey: "user:alice", other: &user{claims: alice().claims, session: "session-2"}},
+		{scope: "shared", scopeKey: "shared", other: new(bob())},
+	} {
+		t.Run("row 25, row 173: a session that ends while an enable waits ends the wait and keeps the server, "+test.scope, func(t *testing.T) {
+			fixture := newMCPFixture(t)
+			template := fixture.addEnableTemplate("github", test.scope, anyone)
+
+			client := fixture.connectObserved(t, alice())
+			results := startEnable(t, client.session, "github")
+
+			var otherResults <-chan enableResult
+			if test.other != nil {
+				otherResults = startEnable(t, fixture.connectObserved(t, *test.other).session, "github")
+			}
+
+			instance := fixture.awaitInstance(t, template, test.scopeKey)
+
+			ended := fixture.sessionRow(t, "alice", "session-1")
+			require.NoError(t, pgx.BeginFunc(t.Context(), fixture.pool, func(tx pgx.Tx) error {
+				if _, err := tx.Exec(t.Context(), "UPDATE sessions SET ended_at = now() WHERE id = $1", ended.ID); err != nil {
+					return err
+				}
+
+				return store.Notify(t.Context(), tx, store.KindSession, fmt.Sprint(ended.ID))
+			}))
+
+			assert.Equal(t, enableResult{err: "This session ended while waiting for `github`."}, awaitEnable(t, results))
+			assert.Equal(t, []string{"github"}, fixture.enabledServers(t, "alice", "session-1"),
+				"the ended session keeps the server in its enabled set")
+			assert.True(t, fixture.sessionRow(t, "alice", "session-1").EndedAt.Valid, "the wait doesn't restart the session")
+
+			if otherResults != nil {
+				// The other live session keeps the instance and its wait.
+				fixture.markReady(t, instance.ID, "search")
+				assert.Equal(t, enableResult{tools: []string{"github__search"}}, awaitEnable(t, otherResults))
+			}
+		})
+	}
 
 	t.Run("row 5: a rule added while an enable waits refuses it when the instance is ready", func(t *testing.T) {
 		fixture := newMCPFixture(t)
