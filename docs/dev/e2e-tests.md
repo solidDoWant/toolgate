@@ -28,7 +28,9 @@ If you set `E2E_CLUSTER`, the script uses that cluster name. If you set `E2E_KEE
 
 A shard is one part of the tests. If you set `E2E_SHARD=i/n`, `make test-e2e` and `make acceptance` run only shard `i` of `n` shards. For example, `E2E_SHARD=2/3 make test-e2e` runs the second of three shards. If you do not set `E2E_SHARD`, the targets run all the tests on one cluster.
 
-`scripts/e2e/shard.py` selects the tests of a shard. It gets the names of the top-level tests from `go test -list`. It puts each test in the shard that the SHA-256 hash of the test name gives, modulo `n`. Thus each test is in exactly one shard, and a new test goes into a shard automatically. You do not update a list.
+`scripts/e2e/shard.py` selects the tests of a shard. It gets the names of the top-level tests from `go test -list`. It reads the recorded test durations in `test/e2e/durations.json` (test name to seconds). It puts the tests with a recorded duration into shards with greedy bin packing: longest test first, each into the shard with the least total time so far. So the shards take about the same time. A test with no recorded duration goes into the shard that the SHA-256 hash of the test name gives, modulo `n`. Thus each test is in exactly one shard, and a new test goes into a shard automatically. You do not update a list.
+
+To refresh the durations, download the `acceptance-results-*` artifacts of a recent `master` CI run, for example with `gh run download <run-id> -p 'acceptance-results-*'`. Then run `scripts/e2e/refresh-durations.py` with the `go-e2e-shard-*.json` files from the artifacts as arguments, and commit the new `test/e2e/durations.json`. The script reads the `go test -json` events and records the elapsed time of each top-level test.
 
 With `E2E_SHARD`, `make acceptance` writes the results to `build/acceptance/results/go-acceptance-shard-i.json`, and its scoreboard shows only the tests of that shard.
 
