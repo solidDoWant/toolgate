@@ -321,6 +321,39 @@ func TestRepair(t *testing.T) {
 		assert.Equal(t, 3, fixture.auditCount(t, "instance.reapply", old.ID))
 	})
 
+	t.Run("reapply replaces an instance of another template generation or uid, and counts the repair", func(t *testing.T) {
+		for _, change := range []struct {
+			name   string
+			change func(*v1alpha1.MCPServerTemplate)
+		}{
+			{name: "generation", change: func(template *v1alpha1.MCPServerTemplate) { template.Generation++ }},
+			{name: "uid", change: func(template *v1alpha1.MCPServerTemplate) { template.UID += "-new" }},
+		} {
+			t.Run(change.name, func(t *testing.T) {
+				template, old := readyUnhealthy(t, "repair-reapply-"+change.name, healthCheck("reapply", 3))
+				kube := repairKube(t)
+
+				updated := template.DeepCopy()
+				change.change(updated)
+				fixture.catalog.Set(updated, nil)
+
+				require.NoError(t, fixture.repairer(kube).Step(t.Context(), old))
+
+				assert.Equal(t, "stopped", fixture.get(t, old.ID).Desired)
+				assert.Zero(t, fixture.auditCount(t, "instance.reapply", old.ID))
+
+				if change.name == "generation" {
+					assert.Equal(t, 1, fixture.healthStops(t, old.ID))
+
+					replacement, found := fixture.liveInstance(t, old)
+					require.True(t, found, "a replacement at the current generation")
+					assert.Equal(t, updated.Generation, replacement.Generation)
+					assert.Len(t, replacement.Repairs, 1, "the replacement counts as a repair")
+				}
+			})
+		}
+	})
+
 	t.Run("a template without a health check is replaced", func(t *testing.T) {
 		_, old := readyUnhealthy(t, "repair-default", v1alpha1.HealthCheck{})
 		_, err := fixture.pool.Exec(t.Context(), "UPDATE instances SET health_check = NULL WHERE id = $1", old.ID)

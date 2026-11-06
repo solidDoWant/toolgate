@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -199,23 +200,27 @@ func (r *Repairer) giveUp(ctx context.Context, instance db.Instance, repairs int
 }
 
 // reapply records the repair and writes instance.reapply, then renders the
-// instance again and server-side applies its objects. The repair is
+// instance again and server-side applies its objects. An instance of another
+// template generation or uid is replaced instead. The repair is
 // recorded first, so an apply that keeps failing still uses up the bound.
 func (r *Repairer) reapply(ctx context.Context, instance db.Instance, now time.Time) error {
-	template, found := r.Starter.template(instance)
+	template, found := r.Starter.Template(types.NamespacedName{Namespace: instance.TemplateNs, Name: instance.TemplateName})
 	if !found {
-		// The stop path handles a deleted or re-created template.
+		// The stop path handles a deleted template.
 		return nil
 	}
 
-	if template.Generation != instance.Generation {
+	if template.Generation != instance.Generation || string(template.UID) != instance.TemplateUid {
 		// The catalog holds only the template's current generation, so
-		// the instance can't be rendered at its own.
-		r.Log.InfoContext(ctx, "not reapplying an instance of an older template generation",
+		// the instance can't be rendered at its own: it is replaced
+		// instead, and that counts as the repair.
+		r.Log.InfoContext(ctx, "replacing an unhealthy instance of another template generation instead of reapplying",
 			slog.String("instance", instance.ID), slog.Int64("generation", instance.Generation),
 			slog.Int64("template generation", template.Generation))
 
-		return nil
+		_, err := r.Replacer.replace(ctx, instance, ReplaceReasonHealthCheck, "", true)
+
+		return err
 	}
 
 	recorded := false

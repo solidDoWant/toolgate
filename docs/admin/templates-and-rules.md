@@ -121,7 +121,7 @@ When an instance becomes unhealthy, toolgate repairs it as `onFailure` says:
 
 `maxRepairs` limits the repairs in 30 minutes. The count continues across the new instances that `replace` starts. When one more repair would go over the limit, toolgate makes no repair. Instead the instance fails with a reason such as "Health check still failing after 3 repairs in 30 minutes: GET http://db-proxy:8080/healthz answered 503, expected 200", and the audit log gets an `instance.fail` event. Sessions keep the server enabled with no tools. The next time a user enables the server, a new instance starts with a count of zero.
 
-With `reapply`, toolgate can only render the template version that the instance started from. If the template changed since then, toolgate makes no `reapply` repair for that instance.
+With `reapply`, toolgate can only render the current version of the template. If the template changed after the instance started, toolgate replaces the instance instead, as with `replace`. This counts as one repair.
 
 ## Who can use a server
 
