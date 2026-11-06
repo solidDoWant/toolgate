@@ -145,6 +145,23 @@ func TestLazyStart(t *testing.T) {
 		assert.Len(t, fixture.instancesOf(t, template), 1)
 	})
 
+	t.Run("a call refused by a rule after the enable inserts no instance", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		template := fixture.lazyTemplate(t, "per-session", "echo")
+		client := fixture.connectObserved(t, alice())
+		require.Empty(t, awaitEnable(t, startEnable(t, client.session, "github")).err)
+
+		require.NoError(t, fixture.rules.Set(blockServer("github")))
+
+		result := callTool(t, client.session, "github__echo", map[string]any{"text": "x"})
+		require.True(t, result.IsError)
+
+		assert.Empty(t, fixture.instancesOf(t, template))
+		decisions := fixture.auditRows(t, "tool.decision")
+		require.Len(t, decisions, 1)
+		assert.Equal(t, "refuse", decisions[0].Details["decision"])
+	})
+
 	t.Run("row 182: two sessions of one user calling a per-user server get one instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-user", "echo")
