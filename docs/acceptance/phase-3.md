@@ -19,7 +19,7 @@ Same rules as phase 1. The tag is `[AC-3-nn]`. This checklist is at feature leve
 
 ## Instance health
 
-- **AC-3-13 Custom health check.** A template declares a health check (an HTTP probe or a cheap MCP tool call) for its server. When the check starts failing after the instance is `ready`, the instance leaves `ready` within the check's interval times its threshold, with the check's reason. Open sessions get `list_changed`. A template without a custom check behaves as before.
+- **AC-3-13 Custom health check.** A template declares a health check (an HTTP probe or a cheap MCP tool call) for its server. When the check starts failing after the instance is `ready`, the instance leaves `ready` within the check's interval times its threshold, plus one check timeout, with the check's reason. Open sessions get `list_changed`. A template without a custom check behaves as before.
 - **AC-3-14 Object health after ready.** When an object of a `ready` instance later reports failure (for example a HelmRelease going `Ready=False` for 60 s), the instance leaves `ready` with that object's reason.
 
 ## Migrations

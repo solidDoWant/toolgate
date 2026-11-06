@@ -46,7 +46,8 @@ AC-3-05, AC-3-06 and AC-3-07.
 
 The ingest walks every resource, scope and record of the request.
 
-**Removed everywhere** (resource, scope, span, span event, span link, metric data point, exemplar filtered attributes, log record): every attribute whose key is `enduser.*`, `user.*` or `workspace.*`. This includes Claude Code's `user.id`, `user.email`, `user.account_uuid` and any `OTEL_RESOURCE_ATTRIBUTES` the user set.
+**Removed everywhere** (resource, scope, span, span event, span link, metric data point, exemplar filtered attributes, log record): every attribute whose normalized key starts with `user_`, `enduser_` or `workspace_`. To normalize a key, replace every character outside `[A-Za-z0-9]` with `_`, then lower the case. So `user.id`, `user_id`, `User-Id` and `workspace-id` are all removed. This includes Claude Code's `user.id`, `user.email`, `user.account_uuid` and any `OTEL_RESOURCE_ATTRIBUTES` the user set.
+- **Why normalize:** Prometheus' OTLP receiver turns every character outside `[A-Za-z0-9_]` into `_`, and joins the values of attributes that map to the same label with `;`. Without the normalized test, a client could send `user_id="carol"`, and Prometheus would store `user_id="bob;carol"` next to the verified `user.id`.
 
 **Set on every span, metric data point and log record:**
 - `user.id` and `enduser.id`: the principal (`sub`, `system:serviceaccount:…`, or the SPIFFE ID);
@@ -55,7 +56,15 @@ The ingest walks every resource, scope and record of the request.
 
 They go on records, not on the resource, because Prometheus and most metrics backends turn data-point attributes into labels and keep resource attributes in `target_info`. So the AC-3-06 query needs no join.
 
-**`session.id` is kept as Claude Code sends it.** Both it and `X-Toolgate-Session` are claimed (`SPEC.md` §6), so replacing one with the other verifies nothing. Claude Code's value changes at once on `/clear` and `--resume`, while the headers helper's output can lag by its refresh interval. In normal use it equals the audit log's session, because the SessionStart hook writes that same ID. Every other attribute passes through unchanged.
+**`session.id` is kept as Claude Code sends it.** Both it and `X-Toolgate-Session` are claimed (`SPEC.md` §6), so replacing one with the other verifies nothing. Claude Code's value changes at once on `/clear` and `--resume`, while the headers helper's output can lag by its refresh interval. In normal use it equals the audit log's session, because the SessionStart hook writes that same ID. Every other attribute passes through unchanged, except the content attributes below.
+
+**Content attributes are removed by default.** Users can set `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` or `OTEL_LOG_TOOL_CONTENT` in their own settings or shell. So the ingest removes what those variables add, unless the setting `telemetry.allowContent` is `true` (default `false`).
+- **Removed span events and log records:** `tool.output` span events, and `claude_code.system_prompt` log records.
+- **Removed attributes**, on every span, span event and log record: `prompt`, `prompt_text`, `user_prompt`, `response`, `response.model_output`, `new_context`, `system_reminders`, `system_prompt_preview`, `user_system_prompt`, `tool_parameters`, `tool_input`, `full_command`, `file_path`, `bash_command`, `diff`, `content`, `output`, `hook_definitions` and `hook_matcher`. Also `error`, but only on `claude_code.tool_result` log records, `claude_code.tool.execution` spans and MCP server connection log records: with `OTEL_LOG_TOOL_DETAILS` it holds the full error message there, which can quote tool content. Elsewhere, such as on `claude_code.api_error`, `error` is kept.
+- **Kept:** attributes that only name things, such as `skill_name`, `subagent_type`, `workflow.name`, `server_name`, `plugin.name`, `marketplace.name`, `agent_type`, `command_name`, `classifier_category`, `vcs.ref.head.*`, and the metric labels `agent.name`, `skill.name`, `plugin.name`, `mcp_server.name` and `mcp_tool.name`. They're names, not prompts, arguments or results.
+- **Where the list comes from:** Claude Code's monitoring page (`https://code.claude.com/docs/en/monitoring-usage`), which marks each attribute these variables add. The worker checks the page for the Claude Code version the fixture is recorded with, and compares a recording with all three variables on against one with them off. An added attribute that carries content goes in the removed list. The list is one Go table, with a comment that links the page.
+- The normalized prefix rule above removes `user_prompt` and `user_system_prompt` even when `telemetry.allowContent` is `true`.
+- **Why:** `SPEC.md` §12 keeps tool arguments and results out of logs, except the audit payload store. So content goes to a telemetry backend only when an admin chooses.
 
 ### Forwarding
 
@@ -110,7 +119,9 @@ spec:
 
 The e2e cluster runs `mirror.gcr.io/grafana/otel-lgtm` (Google's Docker Hub mirror, so CI isn't subject to Docker Hub's pull limits), pinned by digest like the other e2e images: one pod with an OpenTelemetry Collector, Prometheus (OTLP receiver on), Tempo and Loki. The gateway's `otlpEndpoint` points at its collector. Tests read the backends through their own query APIs: PromQL, Tempo's trace API and LogQL. One image gives all three signals real query languages, and the documented query runs on real Prometheus.
 
-**Test input.** CI can't make model calls, so a developer records Claude Code's OTLP exports once, with the profile above and a real session that calls a toolgate tool, and the recording is stored in `test/fixtures/otlp/`. `docs/dev/` records how, like the session-ID evidence. The AC-3-05 test replays it through the gateway with the headers `toolgate otel-headers` prints, including client-set `user.*`, `enduser.id` and `workspace.id` values. It checks that a metric, a log event and a span reach the backend with the verified principal and workspace, and none of the client's values.
+**Test input.** CI can't make model calls, so a developer records Claude Code's OTLP exports once, with the profile above and a real session that calls a toolgate tool, and the recording is stored in `test/fixtures/otlp/`. `docs/dev/` records how, like the session-ID evidence. The AC-3-05 test replays it through the gateway with the headers `toolgate otel-headers` prints, including client-set `user.*`, `user_id`, `enduser.id`, `workspace.id` and `workspace-id` values. It checks that a metric, a log event and a span reach the backend with the verified principal and workspace, and none of the client's values.
+
+**Content test.** The fixture is recorded with `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` and `OTEL_LOG_TOOL_CONTENT` on. The AC-3-05 test checks that none of the removed span events, log records or attributes reach the backend. A unit test replays the same fixture with `telemetry.allowContent: true` and checks that they pass through, apart from the two the prefix rule removes.
 
 **AC-3-06 query.** Prometheus' default OTLP translation names the metrics `claude_code_token_usage_tokens_total` and `claude_code_cost_usage_USD_total` and the labels `user_id`, `user_email`, `workspace_id` and `session_id`. `docs/admin/telemetry.md` shows:
 
@@ -145,8 +156,8 @@ spiffeTrustDomains:
 
 ### Bundles
 
-- Each replica fetches every trust domain's bundle at start, and then every 5 minutes, or at the bundle's `spiffe_refresh_hint` if that is shorter, but never more often than every 30 s. Bundles go in one `jwtbundle.Set`, which is safe for concurrent use. Responses are read up to 1 MiB.
-- **A token whose key ID the bundle lacks** triggers one fetch of that trust domain, at most once every 30 s, and is then verified once more.
+- Each replica fetches every trust domain's bundle at start, and then every 5 minutes, or at the bundle's `spiffe_refresh_hint` if that is shorter, but never more often than every 30 s. Bundles go in one `jwtbundle.Set`, which is safe for concurrent use. Responses are read up to 1 MiB. Each fetch, with `federation.FetchBundle` or of a JWKS, has a 10 s timeout, the same as the resolvers'.
+- **A token whose key ID the bundle lacks** triggers one fetch of that trust domain, at most once every 30 s, and is then verified once more. If the trust domain was fetched less than 30 s ago, the token gets 401 at once, and `auth.refuse` records the reason "unknown SPIFFE key ID".
 - **Fetch failures** are retried with backoff from 1 s to 30 s and logged. The last good bundle keeps working for 24 h after its last successful fetch, then it's dropped, so a stale key can't be trusted for long. Until a trust domain's first fetch succeeds, its SVIDs get 401. Readiness doesn't wait for bundles, so one broken SPIRE server can't take the gateway down.
 - Metric: `toolgate_spiffe_bundle_age_seconds{trust_domain}`.
 
@@ -206,12 +217,12 @@ AC-3-10 and AC-3-11. Phase 2 added no `/api/v1/` endpoints (phase 2 §9). Phase 
 - **Format:** `Content-Type: application/x-ndjson`, one JSON object per line, flushed after each batch. The CLI reads it with `encoding/json`'s `Decoder`. Not SSE: Go has no SSE parser in the standard library or in the tech stack, and NDJSON needs none.
 - **Event shape:** `{"key", "occurredAt", "type", "principal", "workspace", "session", "attestation", "server", "tool", "traceId", "requestId", "details"}`. `key` is phase 2's audit key, `<occurred_at in Unix microseconds>-<id>`. Payloads are never streamed.
 - **Scope:** a non-admin gets only rows with their own principal. An admin gets all rows. There are no other filters.
-- **Start:** without `after`, the last 20 matching events of the past 24 h, then new ones. With `after`, the events after that key, at most 31 days back, like the UI's range. A key older than retention starts at the oldest row.
+- **Start:** without `after`, the last 20 matching events of the past 24 h, then new ones. With `after`, the events after that key, at most 31 days back, like the UI's range. An older key starts 31 days back. A key older than retention starts at the oldest row.
 - **Following:** the handler polls every 2 s for rows after its cursor, ordered by `(occurred_at, id)`, at most 500 per query, querying again at once while a query returns 500.
-- **Commit order:** `occurred_at` is the writing transaction's start time, so a row can commit after a newer one. The query reads only rows with `occurred_at <= now() - interval '5 seconds'`. Audit-writing transactions are short, so the 5 s window covers them. A row from a transaction longer than that can be missed by the stream, never by the table. `docs/user/` says the tail is a view and the audit log is the record.
+- **Commit order:** `InsertAuditEvent` writes `occurred_at` as `clock_timestamp()`, an explicit value, not a schema change. A row can still commit after a newer one, but the window only has to cover the time from its insert to its commit. The query reads only rows with `occurred_at <= now() - interval '5 seconds'`. No S3 call or other network wait runs inside an audit-writing transaction after the insert, so 5 s covers that time. A row that commits later than that can be missed by the stream, never by the table. `docs/user/` says the tail is a view and the audit log is the record.
 - **Keepalive:** a lone `\n` after 15 s without events. JSON decoders skip whitespace.
-- **End:** the server ends the response cleanly when the token expires or after 1 h, whichever is first. The handler extends its write deadline with `http.ResponseController` before each write.
-- **Limits:** at most 4 open tails per principal and 64 in total on each replica. More get 429 with "Too many audit tails are open. Close one first."
+- **End:** the server ends the response cleanly when the token expires or after 1 h, whichever is first. It also ends cleanly when the server starts to shut down: `http.Server.RegisterOnShutdown` cancels a context that the handler watches. So open tails don't hold up a rolling update until `shutdownTimeout`. The handler extends its write deadline with `http.ResponseController` before each write.
+- **Limits:** at most 4 open tails per principal on each replica, and 64 in total on each replica. Replicas share no memory, so the per-principal limit is counted on each replica. More get 429 with "Too many audit tails are open. Close one first."
 
 **`toolgate audit tail [--after KEY] [--json]`** prints one line per event (time, type, principal, workspace, session, server, tool, and the decision or result), or the raw lines with `--json`.
 - After a clean end it reconnects at once with a fresh token and the last key. After an error it reconnects with backoff from 1 s to 30 s. So a replica restart or the 1 h limit loses nothing beyond the window above.
@@ -243,17 +254,19 @@ spec:
       arguments: {}            # a JSON object, at most 4 KiB, not rendered
 ```
 
-- The CRD checks these with CEL. The catalog checks them again, and also checks the shared-namespace rule for `http.service` (phase 1 §7: it must contain `${instance.id}`). A bad check makes the template invalid, with the reason in `Valid`.
+- The CRD checks these with CEL. The catalog checks them again, and also checks the shared-namespace rule for `http.service` (phase 1 §7: it must contain `${instance.id}`). A bad check makes the template invalid, with the reason in `Valid`. The catalog also marks the template invalid when `healthCheck.tool.name` names a tool whose `tools` override has `blocked: true` or `approval: required`. The `Valid` message names the tool, such as "Health check tool `purge_cache` is blocked or needs approval in `tools`."
 - **HTTP check:** `GET http://<service>.<instance namespace>.svc:<port><path>` with a client that doesn't follow redirects, uses no proxy and reads at most 64 KiB of the body before discarding it. It passes when the status equals `expectedStatus`. The instance namespace already admits the gateway's pods on every port (phase 1 §6).
-- **Tool check:** a `tools/call` on the reconciler's monitoring session (phase 1 §3, "Upstream tool changes"), with the response bounded to 1 MiB through `upstreamlimit`. It passes when the call returns a result with `isError` false. The tool must be in the instance's tool list. This is checked with the tool list checks at `starting` → `ready` and on every list change (phase 1 §3), so a missing tool fails the instance with "Health check tool `ping_database` isn't in the server's tool list."
-- **Not a client call.** A tool check comes from the admin's template, not from a client. It runs no policy decision and writes no audit event per call. Its result is discarded and never logged. So principle 1, which covers paths from clients, isn't touched. Only the failure it causes is audited (`instance.fail`).
+- **Tool check:** a `tools/call` on the reconciler's monitoring session (phase 1 §3, "Upstream tool changes"), with the response bounded to 1 MiB through `upstreamlimit`. It passes when the call returns a result with `isError` false. When the monitoring session is closed (`watcher.ping` closes it after a failed ping), the tool check opens it the same way `ping` does. A failure to connect counts as a check failure, with the reason "didn't answer within `<timeout>`". The tool must be in the instance's tool list. This is checked with the tool list checks at `starting` → `ready` and on every list change (phase 1 §3), so a missing tool fails the instance with "Health check tool `ping_database` isn't in the server's tool list."
+- **Not a client call.** A tool check comes from the admin's template, not from a client. It runs no policy decision and writes no audit event per call. Its result is discarded and never logged.
+  - **Principle 1 covers tool calls that come from clients.** That's its reason for existing: no path from a client to an MCP server skips policy or audit. A health-check call is defined by the admin's template and carries no client data. `SPEC.md` §2, principle 1, says so. This is the operator's interpretation, and the owner reviews it on return.
+  - **Health changes are audited.** Every change in an instance's health-check state, from passing to failing and back, writes an `instance.health` audit event, with no payload. The state starts as passing when monitoring starts. So a failing check writes one event at its first failure, not one per call. The failure it causes is also audited (`instance.fail`).
 
-**Running.** The leader's `Monitor` runs the check in the same goroutine that runs phase 1's `ping`, each on its own ticker and with its own failure counter.
+**Running.** The leader's `Monitor` runs the check in its own goroutine, next to phase 1's `ping`, with its own ticker and its own failure counter. A `ping` that hangs for its 30 s timeout doesn't delay the check. Both goroutines fail the row with phase 1's compare-and-set (row 94).
 - The first check runs when monitoring starts, then every `interval`. Each check gets a context with `timeout`.
 - A pass resets the counter. At `failureThreshold` failures in a row, the monitor marks the row `ready` → `failed` (phase 1's compare-and-set), with the reason, and stops.
 - The check doesn't gate `starting` → `ready`. AC-3-13 is about failures after `ready`, and phase 1's readiness rules stay as they are.
 
-**Bound.** A target that turns unhealthy is seen by a check that starts within one `interval`. So the `failureThreshold`-th failing check starts within `interval × failureThreshold` and ends at most `timeout` later. The AC-3-13 test uses a target that fails fast (HTTP 503), and allows a few seconds for the write and the fan-out.
+**Bound.** A target that turns unhealthy is seen by a check that starts within one `interval`. So the `failureThreshold`-th failing check starts within `interval × failureThreshold` and ends at most `timeout` later. So AC-3-13's bound is `interval × failureThreshold` plus one `timeout`, plus the write and the fan-out. The AC-3-13 test uses a target that fails fast (HTTP 503), and allows a few seconds for the write and the fan-out. A unit test covers the bound while `ping` hangs (row 103).
 
 **Reasons** name the check and never a tool result:
 - "Health check failed 3 times in a row: GET http://db-proxy:8080/healthz answered 503, expected 200."
@@ -285,6 +298,7 @@ AC-3-15.
 - **`migrateOnStart`** (`TOOLGATE_MIGRATE_ON_START`, default `true`):
   - With `true`, `serve` works as in phase 1.
   - With `false`, `serve` doesn't migrate. Before it opens its listeners, it reads `store.SchemaVersions`. If the database is older than the binary, it logs "The database schema is at version 3. This gateway needs version 4. Run `toolgate migrate`, or let the chart's migration Job run." and exits 1.
+  - It first checks whether `goose_db_version` exists, because goose's `GetVersions` creates the table when it's missing, and the app role gets "permission denied" for that. A missing table counts as version 0, with the same message.
   - Kubernetes then restarts it with backoff, so the pod stays unready, and the message shows in its logs and in `kubectl describe` (the chart sets `terminationMessagePolicy: FallbackToLogsOnError`).
   - Exiting matches phase 1's failed-migration behaviour, and nothing waits in a half-started state.
   - A newer database (a rollback) is only logged, as in phase 1.
@@ -295,9 +309,11 @@ AC-3-15.
 
 **The fix,** in this phase's migration: `toolgate_ensure_audit_partitions()`.
 - It's a PL/pgSQL function, `SECURITY DEFINER` and owned by the migrating role, which owns `audit_events`. It takes no arguments and creates the partitions for the month of `now()` and the next one, under the existing `partitionLockKey` advisory lock.
-- Its `search_path` is pinned to the migration's schema and `pg_temp`, set with `ALTER FUNCTION … SET search_path` in a `DO` block, because the schema is known only at run time. Partition names are built with `format('%I', …)` from dates alone.
+- Its `search_path` is pinned with `SET search_path = <schema>, pg_temp`, in that order, with `pg_temp` last, as PostgreSQL's documentation for `SECURITY DEFINER` recommends. It's set with `ALTER FUNCTION … SET search_path` in a `DO` block, because the schema is known only at run time. The function also schema-qualifies `audit_events`. Partition names are built with `format('%I', …)` from dates alone.
+- Its `TimeZone` is pinned to UTC with `ALTER FUNCTION … SET TimeZone = 'UTC'`, next to the `search_path` setting. Otherwise `date_trunc('month', now())` uses the session's time zone, and the month bounds would overlap the partitions the Go code created in UTC.
 - `EXECUTE` is revoked from `PUBLIC`.
 - `serve` calls it at start, in both modes, and the leader calls it when it gets the Lease and every 24 h. `store.EnsureAuditPartitions` becomes that call.
+- When the leader's call fails, it retries with backoff until it succeeds, and logs an error each time. The metric `toolgate_audit_partition_errors_total` counts the failures, and `docs/admin/` gives an alert example for it.
 - This is PostgreSQL's standard way to give a role one narrow privilege. It isn't new cryptography or protocol code.
 
 ### Database rights
@@ -319,7 +335,7 @@ ALTER DEFAULT PRIVILEGES FOR ROLE toolgate_migrator IN SCHEMA toolgate
   GRANT EXECUTE ON FUNCTIONS TO toolgate_app;
 ```
 
-- For an existing database, it adds the matching `GRANT … ON ALL TABLES` / `ALL SEQUENCES` / `FUNCTION` statements, plus `REASSIGN OWNED` from the old single role to the migrator.
+- For an existing database, it adds the matching `GRANT … ON ALL TABLES` / `ALL SEQUENCES` statements, plus `REASSIGN OWNED` from the old single role to the migrator. It has no `GRANT EXECUTE ON FUNCTION` statement: the function doesn't exist until the Job runs, and the `ALTER DEFAULT PRIVILEGES … ON FUNCTIONS` statement, run before the Job, covers it.
 - The app role reads `goose_db_version` for the version check, which the table grant covers.
 - `LISTEN`, `NOTIFY` and advisory locks need no grant.
 
@@ -345,6 +361,7 @@ With `migrateOnStart: false` and no `migrationSecret`, nothing runs migrations. 
 | Job `<fullname>-migrate` | `0` | `toolgate migrate`. `restartPolicy: Never`, `backoffLimit: 2`, `activeDeadlineSeconds: 240`, `automountServiceAccountToken: false`, the gateway's pod and container security context, `TOOLGATE_DATABASE_URL` from `migrationSecret` |
 
 - The Job is a bjw-s `common` controller named `migrate` (`type: job`), enabled by the condition above, so admins override it under `resources.controllers.migrate` and mount client certificates (CloudNativePG) with `resources.persistence.<name>.advancedMounts.migrate`.
+- **The Job mounts nothing from the release.** The release's ConfigMap and Secrets don't exist yet at pre-install, and at pre-upgrade they're the old release's. In bjw-s `common`, `globalMounts` mounts a volume into every controller, so the chart moves its own mounts (the configuration ConfigMap, each resolver token and each `caFile`) from `globalMounts` to `advancedMounts.gateway.gateway`.
 - The ServiceAccount and NetworkPolicy use `common`'s own types where they take annotations, and `rawResources` otherwise. The worker checks the pinned `common` 5.3.0.
 - Helm and Flux's helm-controller run pre-install and pre-upgrade hooks before they apply the release's other objects, and wait for the Job. So the new gateway pods start only after the migrations. A failed Job fails the install or upgrade, and the old pods keep serving.
 - The 240 s deadline fits inside helm-controller's default 5 minute timeout, and the docs say a longer `spec.timeout` needs a longer deadline.
@@ -358,7 +375,7 @@ With `migrateOnStart: false` and no `migrationSecret`, nothing runs migrations. 
 3. checks that `CREATE TABLE` as the app role fails with "permission denied", and that an enable and a call work, which writes audit rows;
 4. runs `helm upgrade` and checks that the hook ran again before the new pods started.
 
-The default values stay covered by the existing e2e tests, and a chart test checks that they render no hook objects. An integration test covers the version check against an older database.
+The default values stay covered by the existing e2e tests, and a chart test checks that they render no hook objects. A second chart test sets resolvers and trust domains, and checks that the `migrate` Job has no volumes except the ones the admin adds under `advancedMounts.migrate`. An integration test covers the version check against an older database. Another runs the partition function with the session `TimeZone` set to a zone other than UTC, against partitions that the Go code created.
 
 ## 8. Interaction table
 
@@ -369,16 +386,16 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 74 | Access token expires between `otelHeadersHelper` runs | exports | Exports get 401 and Claude Code drops them until the helper runs again. A 4 min refresh and a token of at least 5 min prevent it (§3). | unit |
 | 75 | Backend slow or down | ingest requests | 503 with `Retry-After` after at most 10 s. Nothing is buffered; the client retries. | integration |
 | 76 | Fifth concurrent ingest request on a replica | 4 decoding | 503 with `Retry-After: 2` at once. | unit |
-| 77 | Client sends `user.*`, `enduser.*` or `workspace.*` at any level | ingest | Removed everywhere; the verified values are set on each record. `session.id` passes through. | AC-3-05 |
+| 77 | Client sends an attribute whose normalized key starts with `user_`, `enduser_` or `workspace_` (such as `user.id`, `user_id` or `workspace-id`), at any level | ingest | Removed everywhere; the verified values are set on each record. `session.id` passes through. | AC-3-05 |
 | 78 | Replica dies after forwarding, before answering | ingest request | The client retries, so the backend may get the batch twice. OTLP delivery is at least once. | unit |
 | 79 | Bundle fetch fails | SVID sign-ins | The last good bundle verifies for 24 h after its last successful fetch, then that trust domain's SVIDs get 401. | unit |
-| 80 | SPIRE rotates its key | SVID signed with the new key | Unknown key ID: one fetch (at most every 30 s per trust domain), then verify again. | unit |
+| 80 | SPIRE rotates its key | SVID signed with the new key | Unknown key ID: one fetch (at most every 30 s per trust domain, 10 s timeout), then verify again. Within 30 s of the last fetch, 401 at once with "unknown SPIFFE key ID". | unit |
 | 81 | SVID from a trust domain that isn't configured | — | No bundle, so 401 and `auth.refuse`. | AC-3-09 |
 | 82 | Token with a `spiffe://` subject issued by the IdP | — | Routed to the SPIFFE verifier and refused with 401. A wrong route never lets a token through. | unit |
 | 83 | A different SVID on an existing MCP session | open stream | The session's binding doesn't match, so 404 (phase 1 row 33). | unit |
 | 84 | Trust domain removed from the configuration | open sessions | Settings are read at start. After the restart, its SVIDs get 401. | unit |
-| 85 | Audit row commits after a newer row | tail streaming | The 5 s window lets it in, in key order. A transaction longer than that can be missed by the stream only. | integration |
-| 86 | Replica restart, or the 1 h or token end | tail streaming | The CLI reconnects with the last key and gets the next rows, with no duplicates. | integration |
+| 85 | Audit row commits after a newer row | tail streaming | `occurred_at` is `clock_timestamp()` at the insert, and no network wait follows the insert, so the 5 s window lets it in, in key order. A row that commits later than that can be missed by the stream only. | integration |
+| 86 | Replica restart or shutdown, or the 1 h or token end | tail streaming | The CLI reconnects with the last key and gets the next rows, with no duplicates. | integration |
 | 87 | Admin leaves the admin group | admin's tail open | The stream ends when the token expires, at most 1 h. The new token's groups decide the next stream. | unit |
 | 88 | Retention deletes rows | tail with an old `after` | Starts at the oldest remaining row. | unit |
 | 89 | Session ends | `toolgate sessions` | One query is one snapshot. A session idle past `sessionIdleTimeout` is left out even before the 30 s pass ends it. | unit |
@@ -394,7 +411,10 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 99 | Hook Job fails | `helm upgrade` or Flux upgrade | The upgrade fails before the new objects apply, and the old pods keep serving. | e2e |
 | 100 | Gateway with `migrateOnStart: false` starts on an older schema | — | Exits 1 naming both versions. It stays unready until the migrations run. | integration |
 | 101 | Migration Job, and running gateways creating partitions | each other | The function takes `partitionLockKey`. `CREATE TABLE IF NOT EXISTS` makes the loser a no-op. | integration |
-| 102 | Month boundary | long-running gateway | The leader's 24 h call has already created next month's partition. | integration |
+| 102 | Month boundary | long-running gateway | The leader's 24 h call has already created next month's partition. A failed call retries with backoff, logs an error and counts in `toolgate_audit_partition_errors_total`. | integration |
+| 103 | `ping` hangs for its timeout | custom check failing | The check runs in its own goroutine, so it reaches its threshold within `interval × failureThreshold + timeout`. | unit |
+| 104 | A 0.2 leader starts an instance of a template with `healthCheck` | rolling upgrade from 0.2 | `health_check` stays null, and only `ping` runs. The next instance gets the check. | unit |
+| 105 | Client sends prompt or tool content attributes (`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`) | ingest | Removed, unless `telemetry.allowContent` is `true` (§3). | AC-3-05 |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
@@ -402,15 +422,16 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
 
 - **Settings** (flat, in the generated reference):
   - `otlpIngest` (default `false`; needs `otlpEndpoint`);
+  - `telemetry.allowContent` (default `false`; passes prompt and tool content through the ingest, §3);
   - `spiffeTrustDomains` (YAML only);
   - `migrateOnStart` (default `true`).
 
-  The chart sets them from `config.otlpIngest`, `config.spiffe.trustDomains` and `config.database.migrateOnStart`, and mounts each `caFile` through `resources.persistence`.
+  The chart sets them from `config.otlpIngest`, `config.spiffe.trustDomains` and `config.database.migrateOnStart`, and mounts each `caFile` through `resources.persistence`, with `advancedMounts.gateway.gateway` (§7).
 - **Client environment:** `TOOLGATE_SPIFFE_SOCKET` and `TOOLGATE_GATEWAY` (§4).
 - **CRD fields:** `access.spiffeIDs` (§4) and `healthCheck` (§6) on `MCPServerTemplate`.
 - **Time bounds:**
   - OTLP forward 10 s;
-  - bundle refresh 5 min (from 30 s with a refresh hint); a stale bundle trusted for 24 h; a Workload API fetch 5 s;
+  - bundle and JWKS fetch 10 s; bundle refresh 5 min (from 30 s with a refresh hint); a stale bundle trusted for 24 h; a Workload API fetch 5 s;
   - tail poll 2 s, commit window 5 s, keepalive 15 s, stream at most 1 h or the token's expiry; CLI reconnect backoff 1 to 30 s;
   - health check interval 10 s to 10 min (default 30 s), timeout 1 s to 60 s (default 5 s), threshold 1 to 10 (default 3);
   - partitions created at start, at Lease acquisition and every 24 h;
@@ -420,9 +441,9 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - bundle and JWKS responses 1 MiB;
   - SPIFFE ID 2048 bytes; `spiffeIDs` 64 items;
   - sessions list 200;
-  - tail backlog 20 events from the past 24 h, `after` at most 31 days back, 500 rows a query; 4 tails per principal and 64 per replica;
+  - tail backlog 20 events from the past 24 h, `after` at most 31 days back, 500 rows a query; 4 tails per principal on each replica, and 64 on each replica;
   - health check: HTTP body 64 KiB read, tool response 1 MiB, arguments 4 KiB, path 1024 characters.
-- **Audit events:** none are new. Health failures are `instance.fail` with the check's reason.
+- **Audit events:** `instance.health`, written on every change in an instance's health-check state, with no payload (§6). Health failures are `instance.fail` with the check's reason.
 - **Libraries:**
   - `go.opentelemetry.io/collector/pdata` (the `ptraceotlp`, `pmetricotlp` and `plogotlp` packages);
   - `github.com/spiffe/go-spiffe/v2` (`jwtsvid`, `jwtbundle`, `federation`, `spiffeid`, `workloadapi`, and `proto/spiffe/workload` in tests);
@@ -432,10 +453,13 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
 
   No new cryptography: signatures are checked by go-spiffe, and test SVIDs are signed by go-jose.
 - **Test backend:** `mirror.gcr.io/grafana/otel-lgtm`, pinned by digest (§3).
-- **Token refresh is serialized.** `toolgate headers` and `toolgate otel-headers` both refresh the IdP token. The token store takes an exclusive file lock (`github.com/gofrs/flock`) on a lock file next to the token file before it reads, refreshes and writes. A process that waits for the lock re-reads the token afterwards and uses it if it's still valid. So two helpers never send the same refresh token, and an IdP that rotates refresh tokens and detects reuse doesn't sign the user out. A unit test runs two refreshes at once and expects one IdP call.
+- **Token refresh is serialized.** `toolgate headers` and `toolgate otel-headers` both refresh the IdP token. The token store takes an exclusive file lock (`github.com/gofrs/flock`) on `os.UserConfigDir()/toolgate/token.lock` before it reads, refreshes and writes, wherever the token is stored. There's no access-token cache. A process that waits for the lock re-reads the refresh token after it gets the lock, and refreshes with it. So two helpers never send the same refresh token, and an IdP that rotates refresh tokens and detects reuse doesn't sign the user out. A unit test runs two refreshes at once and expects two IdP calls, with two different refresh tokens, and no reuse.
 - **`SPEC.md` updates** in the first implementing PRs:
+  - §4: SPIFFE in the Auth row;
+  - §6: SPIFFE as a principal and workspace source, in the identity table;
   - §9: `access.spiffeIDs` and `healthCheck`;
-  - §12: ingest stamping, and that `session.id` is kept;
+  - §10: `spiffeIDs` in step 1, next to `access.users`, `groups` and `serviceAccounts`;
+  - §12: ingest stamping, that `session.id` is kept, content removal and `telemetry.allowContent`, and the `instance.health` event;
   - §13: `toolgate migrate`, `toolgate otel-headers`' output and `TOOLGATE_SPIFFE_SOCKET`;
   - §15: the `instances` column and the partition function;
   - §21 question 2: answered by SPIFFE.
@@ -445,5 +469,5 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
 
 The operator decided these on the owner's behalf. The owner is away for phase 3, and the decisions are logged on the decision issue.
 
-1. **Prompt and tool content in telemetry:** the ingest passes through what the client sends. Whether Claude Code sends prompts and tool content is the admin's choice, through the `SettingsProfile` that sets `OTEL_LOG_*`. The example profile leaves them off, and `docs/admin/` warns that turning them on sends user content to the backend.
+1. **Prompt and tool content in telemetry:** the ingest removes prompt and tool content attributes by default: whatever `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` and `OTEL_LOG_TOOL_CONTENT` add (§3, "Content attributes are removed by default"). Users can set those variables themselves, so the client's settings can't decide this. The gateway setting `telemetry.allowContent` (default `false`) lets an admin pass them through. Why: `SPEC.md` §12 keeps tool arguments and results out of logs, except the audit payload store, so content goes to a telemetry backend only when an admin chooses. The example profile leaves the variables off, and `docs/admin/` warns that `telemetry.allowContent` sends user content to the backend.
 2. **SPIFFE identity is the workload:** accepted. An SVID sign-in is attested as the workload. Whether a workspace uses it is the admin's choice, through `TOOLGATE_SPIFFE_SOCKET`. Rules and templates name SPIFFE IDs (`access.spiffeIDs`). Usage per person is read from the ID's path.
