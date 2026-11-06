@@ -74,6 +74,7 @@ settings from `config`.
 {{- with $config.ui.approvalTimeout }}
 {{- $env = append $env (dict "name" "TOOLGATE_APPROVAL_TIMEOUT" "value" .) }}
 {{- end }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH" "value" (toString (default false $config.toolSearch))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

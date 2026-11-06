@@ -34,6 +34,7 @@ docs/README.md             This page.
 
 docs/user/
   README.md                Install the plugin, sign in, use servers, set secrets, read a refusal.
+  tool-search.md           Find tools by describing a task, and turn search mode on.
 
 docs/admin/
   README.md                The list of admin pages.

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/client/attestation"
@@ -77,6 +78,10 @@ func buildHeaders(ctx context.Context) (map[string]string, error) {
 	}
 
 	values[auth.SessionHeader] = session
+
+	if mode := toolSearchMode(os.Getenv(headers.ToolSearchEnv)); mode != "" {
+		values[auth.ToolSearchHeader] = mode
+	}
 
 	return values, nil
 }
@@ -177,4 +182,18 @@ func printOtelHeaders(args []string, stdout, stderr io.Writer) int {
 	}
 
 	return 0
+}
+
+// toolSearchMode maps the value of TOOLGATE_TOOL_SEARCH to the header
+// value: "on" or "off", or empty when the variable is unset or not a
+// boolean, so the gateway's setting decides.
+func toolSearchMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "on", "true", "1", "yes":
+		return "on"
+	case "off", "false", "0", "no":
+		return "off"
+	default:
+		return ""
+	}
 }

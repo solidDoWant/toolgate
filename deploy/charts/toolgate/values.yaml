@@ -123,6 +123,11 @@ config:
     # same time, for all users and shared instances together. At least 1.
     instances: 200
 
+  # -- Turn on tool search mode for sessions whose client sends no
+  # `X-Toolgate-Tool-Search` header. A client can still turn it on or off
+  # with that header. It only changes which tools a session lists.
+  toolSearch: false
+
   audit:
     # -- Store audit payloads: the arguments of each tool call and approval
     # request, and each tool result. Payloads under 64 KiB go in PostgreSQL,

@@ -272,6 +272,13 @@ type Config struct {
 	// required. The chart sets it from `config.audit.payloads`.
 	AuditPayloads bool `json:"auditPayloads" env:"TOOLGATE_AUDIT_PAYLOADS"`
 
+	// Whether tool search mode is on for sessions whose client sends no
+	// `X-Toolgate-Tool-Search` header. In search mode, a session lists the
+	// meta tools, `toolgate_find_tools`, the tools of its enabled servers and
+	// the tools it found by search. The header only changes what is listed,
+	// never what is allowed. The chart sets it from `config.toolSearch`.
+	ToolSearch bool `json:"toolSearch" env:"TOOLGATE_TOOL_SEARCH"`
+
 	// The URL of the S3 API that stores large audit payloads, such as
 	// `https://s3.example.com`. If it is empty, the gateway uses the AWS S3
 	// endpoint of `auditS3Region`. The gateway gets its S3 credentials from

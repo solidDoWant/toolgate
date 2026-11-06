@@ -163,3 +163,37 @@ WHERE s.id = f.session_pk AND s.ended_at IS NOT NULL;
 SELECT session_pk, server FROM session_additions
 WHERE session_pk = ANY(@session_pks::bigint[])
 ORDER BY session_pk, server;
+
+-- name: SearchTools :many
+-- Ranks the search rows of the candidate templates against a tsquery text.
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name
+FROM tool_search, to_tsquery('english', @query::text) AS q
+WHERE tool_search.template_uid = ANY(@template_uids::text[]) AND tool_search.document @@ q
+ORDER BY ts_rank(tool_search.document, q, 1) DESC, tool_search.exposed_name
+LIMIT 100;
+
+-- name: QueryIsEmpty :one
+SELECT numnode(to_tsquery('english', @query::text)) = 0;
+
+-- name: TouchSessionFoundTool :exec
+INSERT INTO session_found_tools (session_pk, template_ns, template_name, upstream_name, found_at)
+VALUES (@session_pk, @template_ns, @template_name, @upstream_name, clock_timestamp())
+ON CONFLICT (session_pk, template_ns, template_name, upstream_name) DO UPDATE SET found_at = clock_timestamp();
+
+-- name: TrimSessionFoundTools :exec
+-- Keeps the newest @keep found tools of a session.
+DELETE FROM session_found_tools AS t
+WHERE t.session_pk = @session_pk
+  AND (t.template_ns, t.template_name, t.upstream_name) NOT IN (
+    SELECT f.template_ns, f.template_name, f.upstream_name FROM session_found_tools f
+    WHERE f.session_pk = @session_pk
+    ORDER BY f.found_at DESC, f.template_name, f.upstream_name
+    LIMIT @keep::int);
+
+-- name: DeleteSessionFoundTool :exec
+DELETE FROM session_found_tools
+WHERE session_pk = @session_pk AND template_ns = @template_ns AND template_name = @template_name AND upstream_name = @upstream_name;
+
+-- name: ListFoundToolSessions :many
+SELECT DISTINCT session_pk FROM session_found_tools WHERE template_ns = @template_ns AND template_name = @template_name;

@@ -126,6 +126,11 @@ func (m *metaTools) register(server *mcp.Server) {
 	}, m.disableServer)
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        ToolFindTools,
+		Description: "Search the tools of the servers you can use by what you want to do. The tools it returns are added to your tool list.",
+	}, m.findTools)
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        ToolServerStatus,
 		Description: "Show a server's status, the reason for its last failure, and when its instance became ready.",
 	}, m.serverStatus)

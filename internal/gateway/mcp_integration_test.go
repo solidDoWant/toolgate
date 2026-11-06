@@ -157,6 +157,8 @@ type user struct {
 	workspace string
 	// attestation, if set, is sent in the attestation header.
 	attestation string
+	// search, if set, is sent as the tool search header.
+	search string
 }
 
 func (f *mcpFixture) headers(t *testing.T, client user) http.Header {
@@ -177,6 +179,10 @@ func (f *mcpFixture) headers(t *testing.T, client user) http.Header {
 
 	if client.attestation != "" {
 		header.Set(auth.AttestationHeader, client.attestation)
+	}
+
+	if client.search != "" {
+		header.Set(auth.ToolSearchHeader, client.search)
 	}
 
 	return header

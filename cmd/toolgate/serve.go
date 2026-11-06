@@ -197,6 +197,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		WorkspaceScoping:     cfg.UIEnabled(),
 		Workspaces:           workspaces,
 		SessionIdleTimeout:   testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
+		ToolSearch:           cfg.ToolSearch,
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {

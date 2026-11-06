@@ -186,6 +186,28 @@ func (q *Queries) DeleteScopeEntry(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteSessionFoundTool = `-- name: DeleteSessionFoundTool :exec
+DELETE FROM session_found_tools
+WHERE session_pk = $1 AND template_ns = $2 AND template_name = $3 AND upstream_name = $4
+`
+
+type DeleteSessionFoundToolParams struct {
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+}
+
+func (q *Queries) DeleteSessionFoundTool(ctx context.Context, arg DeleteSessionFoundToolParams) error {
+	_, err := q.db.Exec(ctx, deleteSessionFoundTool,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.UpstreamName,
+	)
+	return err
+}
+
 const deleteSessionFoundTools = `-- name: DeleteSessionFoundTools :exec
 DELETE FROM session_found_tools WHERE session_pk = $1
 `
@@ -482,6 +504,35 @@ func (q *Queries) InsertToolSearch(ctx context.Context, arg InsertToolSearchPara
 		arg.InputPart,
 	)
 	return err
+}
+
+const listFoundToolSessions = `-- name: ListFoundToolSessions :many
+SELECT DISTINCT session_pk FROM session_found_tools WHERE template_ns = $1 AND template_name = $2
+`
+
+type ListFoundToolSessionsParams struct {
+	TemplateNs   string
+	TemplateName string
+}
+
+func (q *Queries) ListFoundToolSessions(ctx context.Context, arg ListFoundToolSessionsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listFoundToolSessions, arg.TemplateNs, arg.TemplateName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var session_pk int64
+		if err := rows.Scan(&session_pk); err != nil {
+			return nil, err
+		}
+		items = append(items, session_pk)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listScopeEntries = `-- name: ListScopeEntries :many
@@ -805,6 +856,66 @@ func (q *Queries) LockToolSearch(ctx context.Context, templateUid string) error 
 	return err
 }
 
+const queryIsEmpty = `-- name: QueryIsEmpty :one
+SELECT numnode(to_tsquery('english', $1::text)) = 0
+`
+
+func (q *Queries) QueryIsEmpty(ctx context.Context, query string) (bool, error) {
+	row := q.db.QueryRow(ctx, queryIsEmpty, query)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const searchTools = `-- name: SearchTools :many
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name
+FROM tool_search, to_tsquery('english', $1::text) AS q
+WHERE tool_search.template_uid = ANY($2::text[]) AND tool_search.document @@ q
+ORDER BY ts_rank(tool_search.document, q, 1) DESC, tool_search.exposed_name
+LIMIT 100
+`
+
+type SearchToolsParams struct {
+	Query        string
+	TemplateUids []string
+}
+
+type SearchToolsRow struct {
+	TemplateUid  string
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+	ExposedName  string
+}
+
+// Ranks the search rows of the candidate templates against a tsquery text.
+func (q *Queries) SearchTools(ctx context.Context, arg SearchToolsParams) ([]SearchToolsRow, error) {
+	rows, err := q.db.Query(ctx, searchTools, arg.Query, arg.TemplateUids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchToolsRow{}
+	for rows.Next() {
+		var i SearchToolsRow
+		if err := rows.Scan(
+			&i.TemplateUid,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.UpstreamName,
+			&i.ExposedName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setUserScopeUnverifiedList = `-- name: SetUserScopeUnverifiedList :exec
 UPDATE user_scopes SET unverified_list = $1, updated_at = now() WHERE id = $2
 `
@@ -816,6 +927,50 @@ type SetUserScopeUnverifiedListParams struct {
 
 func (q *Queries) SetUserScopeUnverifiedList(ctx context.Context, arg SetUserScopeUnverifiedListParams) error {
 	_, err := q.db.Exec(ctx, setUserScopeUnverifiedList, arg.UnverifiedList, arg.ID)
+	return err
+}
+
+const touchSessionFoundTool = `-- name: TouchSessionFoundTool :exec
+INSERT INTO session_found_tools (session_pk, template_ns, template_name, upstream_name, found_at)
+VALUES ($1, $2, $3, $4, clock_timestamp())
+ON CONFLICT (session_pk, template_ns, template_name, upstream_name) DO UPDATE SET found_at = clock_timestamp()
+`
+
+type TouchSessionFoundToolParams struct {
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+}
+
+func (q *Queries) TouchSessionFoundTool(ctx context.Context, arg TouchSessionFoundToolParams) error {
+	_, err := q.db.Exec(ctx, touchSessionFoundTool,
+		arg.SessionPk,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.UpstreamName,
+	)
+	return err
+}
+
+const trimSessionFoundTools = `-- name: TrimSessionFoundTools :exec
+DELETE FROM session_found_tools AS t
+WHERE t.session_pk = $1
+  AND (t.template_ns, t.template_name, t.upstream_name) NOT IN (
+    SELECT f.template_ns, f.template_name, f.upstream_name FROM session_found_tools f
+    WHERE f.session_pk = $1
+    ORDER BY f.found_at DESC, f.template_name, f.upstream_name
+    LIMIT $2::int)
+`
+
+type TrimSessionFoundToolsParams struct {
+	SessionPk int64
+	Keep      int32
+}
+
+// Keeps the newest @keep found tools of a session.
+func (q *Queries) TrimSessionFoundTools(ctx context.Context, arg TrimSessionFoundToolsParams) error {
+	_, err := q.db.Exec(ctx, trimSessionFoundTools, arg.SessionPk, arg.Keep)
 	return err
 }
 
