@@ -132,6 +132,10 @@ func (e *SessionEnder) end(ctx context.Context, id int64, timeout pgtype.Interva
 			return err
 		}
 
+		if err := e.endSessionAdditions(ctx, tx, ended); err != nil {
+			return err
+		}
+
 		if err := store.Notify(ctx, tx, store.KindSession, fmt.Sprint(id)); err != nil {
 			return err
 		}
@@ -142,6 +146,52 @@ func (e *SessionEnder) end(ctx context.Context, id int64, timeout pgtype.Interva
 	})
 	if err != nil {
 		return fmt.Errorf("end idle session %d: %w", id, err)
+	}
+
+	return nil
+}
+
+// endSessionAdditions deletes the session additions of a session that is
+// ending and expires its pending server requests, writing access.expire and
+// notifying approval:<id> for each, in the ending transaction
+// (docs/design/phase-3.md §10, "State"). A restart reuses the sessions row,
+// so nothing of the old session may apply to it.
+func (e *SessionEnder) endSessionAdditions(ctx context.Context, tx pgx.Tx, ended db.Session) error {
+	queries := db.New(tx)
+
+	if err := queries.DeleteAllSessionAdditions(ctx, ended.ID); err != nil {
+		return fmt.Errorf("delete session additions: %w", err)
+	}
+
+	expired, err := queries.ExpireSessionServerRequests(ctx, pgtype.Int8{Int64: ended.ID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("expire server requests: %w", err)
+	}
+
+	recorder := audit.NewRecorder(e.output(), queries)
+
+	for _, request := range expired {
+		attestation := "user"
+		if request.Verified {
+			attestation = "attested"
+		}
+
+		err := recorder.Record(ctx, audit.Event{
+			Type:        "access.expire",
+			Principal:   request.Principal,
+			Workspace:   request.Workspace,
+			Session:     ended.SessionID,
+			Attestation: attestation,
+			Server:      request.Server.String,
+			Details:     map[string]any{"request": request.ID, "kind": request.Kind},
+		})
+		if err != nil {
+			return err
+		}
+
+		if err := store.Notify(ctx, tx, store.KindApproval, request.ID); err != nil {
+			return err
+		}
 	}
 
 	return nil

@@ -42,6 +42,9 @@ type WorkspaceSource interface {
 	// ApproveChangeRequest approves a pending change request and applies
 	// its change in tx.
 	ApproveChangeRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error
+	// ApproveServerRequest approves a pending server request for this
+	// session or this workspace and writes its effect in tx.
+	ApproveServerRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id, choice string) error
 	// DenyAccessRequest denies a pending access request in tx.
 	DenyAccessRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error
 }
@@ -206,7 +209,9 @@ type changePreview struct {
 
 type accessRequestPage struct {
 	ID, Kind, Workspace, Server string
-	CreatedAt, ExpiresAt        time.Time
+	// Session is the client session ID of a server request.
+	Session              string
+	CreatedAt, ExpiresAt time.Time
 	// Message is the request's status when it can't be decided any more.
 	Message string
 	// Error says why the last approval didn't apply.
@@ -269,6 +274,18 @@ func (u *UI) renderAccessRequest(writer http.ResponseWriter, request *http.Reque
 		ExpiresAt: accessRequest.ExpiresAt.Time,
 		Message:   accessRequestStatusMessage(accessRequest, time.Now()),
 		Error:     message,
+	}
+
+	if accessRequest.SessionPk.Valid {
+		sessionRow, err := u.queries.GetSessionByID(ctx, accessRequest.SessionPk.Int64)
+		if err != nil {
+			u.logger.ErrorContext(ctx, "cannot read the session of an access request", "request", accessRequest.ID, "error", err)
+			http.Error(writer, "The gateway can't read this request. Try again later.", http.StatusInternalServerError)
+
+			return
+		}
+
+		data.Session = sessionRow.SessionID
 	}
 
 	if accessRequest.Kind == "change" {
@@ -379,9 +396,21 @@ func previewChange(scopes gateway.WorkspaceScopes, change gateway.WorkspaceChang
 }
 
 // approveAccessRequest approves a pending change request and applies its
-// change in the compare-and-set's transaction. The route's RequireStepUp
+// change, or a server request with the chosen scope and its effect, in the
+// compare-and-set's transaction. The route's RequireStepUp
 // has checked the fresh sign-in.
 func (u *UI) approveAccessRequest(writer http.ResponseWriter, request *http.Request, accessRequest db.AccessRequest) {
+	if accessRequest.Kind == "server" {
+		// "Allow for this session" or "Always allow in this workspace".
+		choice := request.PostFormValue("scope")
+
+		u.decideAccessRequest(writer, request, accessRequest, func(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error {
+			return u.options.Workspaces.ApproveServerRequest(ctx, tx, identity, id, choice)
+		})
+
+		return
+	}
+
 	u.decideAccessRequest(writer, request, accessRequest, u.options.Workspaces.ApproveChangeRequest)
 }
 

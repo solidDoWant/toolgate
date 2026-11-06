@@ -78,6 +78,20 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, State: state})
+
+	// In a verified workspace, a refusal by the workspace-scope step alone
+	// asks the user for a session addition (docs/design/phase-3.md §10).
+	requestID := ""
+
+	if m.asksForAddition(current, decision) {
+		id, result, err := m.requestSessionAddition(ctx, additionEnable{current: current, request: request, template: template})
+		if result != nil || err != nil {
+			return result, EnableResult{}, err
+		}
+
+		requestID, decision = id, policy.Decision{Allowed: true}
+	}
+
 	if !decision.Allowed {
 		if decision.Step == policy.StepAccess {
 			return nil, EnableResult{}, notInCatalog(input.Name)
@@ -96,7 +110,7 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	}
 
 	// Steps 3 and 4.
-	instance, err := m.enableInTransaction(ctx, current, template)
+	instance, err := m.enableInTransaction(ctx, current, template, requestID)
 
 	var limitErr *instanceLimitError
 	if errors.As(err, &limitErr) {
@@ -245,16 +259,17 @@ func (m *metaTools) checkSecrets(ctx context.Context, current requestContext, te
 
 // enableInTransaction runs Enable steps 3 and 4: it adds the server to the
 // session's enabled set and returns the live instance, inserting a pending
-// one when there is none. A serialization failure or unique violation is
-// retried once.
-func (m *metaTools) enableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, error) {
+// one when there is none. requestID, when set, is the session addition's
+// access request, recorded with the allow. A serialization failure or
+// unique violation is retried once.
+func (m *metaTools) enableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string) (db.Instance, error) {
 	var instance db.Instance
 
 	attempt := func() error {
 		return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
 			var err error
 
-			instance, err = m.enableTx(ctx, tx, current, template)
+			instance, err = m.enableTx(ctx, tx, current, template, requestID)
 
 			return err
 		})
@@ -268,7 +283,7 @@ func (m *metaTools) enableInTransaction(ctx context.Context, current requestCont
 	return instance, err
 }
 
-func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, error) {
+func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate, requestID string) (db.Instance, error) {
 	queries := db.New(tx)
 
 	if err := m.lockSession(ctx, tx, current); err != nil {
@@ -302,7 +317,12 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 		return db.Instance{}, err
 	}
 
-	return instance, m.recordEnable(ctx, tx, current, template, instance, map[string]any{"decision": "allow", "instance": instance.ID})
+	details := map[string]any{"decision": "allow", "instance": instance.ID}
+	if requestID != "" {
+		details[sessionAdditionRequest] = requestID
+	}
+
+	return instance, m.recordEnable(ctx, tx, current, template, instance, details)
 }
 
 // liveOrNewInstance runs the insert part of Enable step 4: under the
