@@ -252,7 +252,7 @@ A request matches when it matches every field in `match`. A field that you leave
 - `sessions`: Claude Code session IDs.
 - `attestation`: `user` or `attested`.
 - `servers`: server names.
-- `tools`: tool names in the form `SERVER__TOOL`.
+- `tools`: tool names in the form `SERVER__TOOL`. A tool of the built-in `toolgate` server also matches by its exact name. For example, `toolgate_allow` and `toolgate__allow` both match the tool `toolgate_allow`.
 
 In each pattern, `*` matches any characters, including `/`. The `reason` is shown to the user and the model in the refusal, after the namespace and name of the rule. After `expires`, the rule no longer applies.
 

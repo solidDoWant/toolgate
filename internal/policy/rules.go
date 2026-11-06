@@ -176,6 +176,9 @@ type target struct {
 	// exposedTool is the proxied name with the exposed tool name, when it
 	// differs from tool. A rule's tools glob matches either name.
 	exposedTool string
+	// sessionTool is the exact name a session sees, when it isn't one of
+	// the two above (the built-in server's tools).
+	sessionTool string
 }
 
 // match returns the first rule, by namespace and name, that matches the
@@ -221,11 +224,16 @@ func (c *compiledRule) applies(request target, now time.Time) bool {
 
 // toolNames returns the proxied names a tools glob is matched against.
 func (t target) toolNames() []string {
+	names := []string{t.tool}
 	if t.exposedTool != "" {
-		return []string{t.tool, t.exposedTool}
+		names = append(names, t.exposedTool)
 	}
 
-	return []string{t.tool}
+	if t.sessionTool != "" {
+		names = append(names, t.sessionTool)
+	}
+
+	return names
 }
 
 // matchesAny reports whether any value matches any pattern. No patterns

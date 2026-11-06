@@ -46,16 +46,17 @@ func validateScopeItem(item string) error {
 }
 
 // scopeItems parses validated items. A tool's exposed name is mapped to its
-// upstream name by the server's current curation (docs/design/phase-4.md
-// §6). A server the catalog doesn't offer keeps the name as given: a deny
-// only narrows, so it needs no access check.
+// upstream name by the server's curation, from its last valid generation
+// while the current one is invalid (docs/design/phase-4.md §6). A server
+// with no valid generation keeps the name as given: a deny only narrows, so
+// it needs no access check.
 func (w *Workspaces) scopeItems(items []string) []scopeItem {
 	parsed := make([]scopeItem, 0, len(items))
 
 	for _, item := range items {
 		server, tool, isTool := strings.Cut(item, toolSeparator)
 		if isTool {
-			if template, err := w.catalog.Offered(server); err == nil {
+			if template, found := w.catalog.Curation(server); found {
 				tool, _ = toolcatalog.Upstream(template, tool)
 			}
 		}

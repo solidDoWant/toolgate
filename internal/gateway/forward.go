@@ -684,10 +684,22 @@ func withExposedDetail(ctx context.Context, details map[string]any) map[string]a
 // policyRequest builds the policy request of a call of the upstream tool
 // name tool. Rules match the exposed name too.
 func (m *metaTools) policyRequest(current requestContext, template *v1alpha1.MCPServerTemplate, tool string, state policy.State) policy.Request {
-	return policy.Request{
-		Identity: current.identity, Template: template, Tool: tool,
-		ExposedTool: toolcatalog.ExposedName(template, tool), State: state,
+	return toolPolicyRequest(current, template, tool, toolcatalog.ExposedName(template, tool), state)
+}
+
+// toolPolicyRequest builds the policy request about one tool, by its
+// upstream and exposed names. For a built-in tool it adds the exact name a
+// session sees, such as toolgate_allow, so rules naming it match.
+func toolPolicyRequest(current requestContext, template *v1alpha1.MCPServerTemplate, upstream, exposed string, state policy.State) policy.Request {
+	request := policy.Request{
+		Identity: current.identity, Template: template, Tool: upstream,
+		ExposedTool: exposed, State: state,
 	}
+	if proxied, ok := builtinProxiedName(template.Name, upstream); ok {
+		request.ProxiedTool = proxied
+	}
+
+	return request
 }
 
 func callEvent(current requestContext, eventType, server, tool string, details map[string]any) audit.Event {
@@ -725,10 +737,12 @@ type callRefusal struct {
 // instance. For an `onCall` server with a catalog list it refuses when the
 // newest instance failed on the template's current generation, and
 // otherwise returns the live instance, inserting a pending one within the
-// limits. Other servers return the zero instance and are handled as before.
+// limits. Other servers (`onEnable`, or no catalog list) insert one only
+// when the newest instance failed on an older generation, and otherwise
+// return the zero instance and are handled as before.
 func (m *metaTools) startForCall(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, *callRefusal, error) {
 	lazy, err := m.startsOnCall(ctx, template)
-	if err != nil || !lazy {
+	if err != nil {
 		return db.Instance{}, nil, err
 	}
 
@@ -752,6 +766,10 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 			}
 
 			if !enabled {
+				if !lazy {
+					return nil
+				}
+
 				refusal = &callRefusal{
 					details: map[string]any{"reason": reasonNotEnabled},
 					message: fmt.Sprintf("Server `%s` isn't enabled in this session. Call `%s` first.", template.Name, ToolEnableServer),
@@ -785,6 +803,11 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 			})
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return fmt.Errorf("read newest instance: %w", err)
+			}
+
+			olderFailure := err == nil && newest.FailedAt.Valid && newest.Generation != template.Generation
+			if !lazy && !olderFailure {
+				return nil
 			}
 
 			if err == nil && newest.FailedAt.Valid && newest.Generation == template.Generation && newest.TemplateUid == string(template.UID) {

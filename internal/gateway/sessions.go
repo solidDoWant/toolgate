@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -23,6 +26,11 @@ const lastSeenInterval = time.Minute
 // errWorkspaceChanged means a request named a different workspace than its
 // live session started with (design row 22).
 var errWorkspaceChanged = errors.New("this session started in a different workspace; start a new session to use another one")
+
+// errSessionEnded means a request named a session tied to an MCP session
+// (auth.MCPSessionPrefix) that has ended. Such a session ends with its MCP
+// session and is never resumed (docs/design/phase-4.md §9).
+var errSessionEnded = errors.New("this session ended with its MCP session")
 
 // sessionStore keeps the sessions rows (docs/design/phase-1.md §2). toolgate's
 // session state is keyed by (principal, X-Toolgate-Session), never by the MCP
@@ -39,7 +47,9 @@ type sessionStore struct {
 
 // resolve returns the live session row for identity, creating it or
 // restarting it when it ended. A live session whose stored workspace differs
-// from the request's gets errWorkspaceChanged.
+// from the request's gets errWorkspaceChanged. An ended session tied to an
+// MCP session gets errSessionEnded: a request that raced the end of its MCP
+// session must not resume it.
 func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, searchMode bool) (db.Session, error) {
 	queries := db.New(s.pool)
 
@@ -63,6 +73,10 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, sear
 	}
 
 	if session.EndedAt.Valid {
+		if strings.HasPrefix(identity.Session, auth.MCPSessionPrefix) {
+			return db.Session{}, errSessionEnded
+		}
+
 		session, err = s.restart(ctx, session.ID, identity)
 		if err != nil {
 			return db.Session{}, err
@@ -145,6 +159,13 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 			return fmt.Errorf("restart session: %w", err)
 		}
 
+		// A 0.3 leader ends a session without clearing its allow entries,
+		// found tools or pending requests. Nothing of the old session may
+		// apply to the restarted one; deny entries stay.
+		if err := s.clearEndedState(ctx, tx, locked); err != nil {
+			return err
+		}
+
 		if locked.Workspace == identity.Workspace && locked.Attestation == identity.Attestation {
 			kept, err = queries.ListSessionServers(ctx, id)
 			if err != nil {
@@ -182,6 +203,55 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 	})
 
 	return session, err
+}
+
+// clearEndedState deletes the allow entries and found tools of an ended
+// session that is restarting, and expires its pending server and scope
+// requests, writing access.expire for each. Ending in 0.4 already did this, so
+// it only changes sessions a 0.3 leader ended.
+func (s *sessionStore) clearEndedState(ctx context.Context, tx pgx.Tx, ended db.Session) error {
+	queries := db.New(tx)
+	sessionPK := pgtype.Int8{Int64: ended.ID, Valid: true}
+
+	if err := queries.DeleteSessionScopeEntries(ctx, db.DeleteSessionScopeEntriesParams{SessionPk: sessionPK, Effect: "allow"}); err != nil {
+		return fmt.Errorf("delete allow entries: %w", err)
+	}
+
+	if err := queries.DeleteSessionFoundTools(ctx, ended.ID); err != nil {
+		return fmt.Errorf("delete found tools: %w", err)
+	}
+
+	expired, err := queries.ExpireSessionServerRequests(ctx, sessionPK)
+	if err != nil {
+		return fmt.Errorf("expire session requests: %w", err)
+	}
+
+	recorder := audit.NewRecorder(s.auditOutput, queries)
+
+	for _, request := range expired {
+		attestation := "user"
+		if request.Verified {
+			attestation = "attested"
+		}
+
+		if err := recorder.Record(ctx, audit.Event{
+			Type:        "access.expire",
+			Principal:   request.Principal,
+			Workspace:   request.Workspace,
+			Session:     ended.SessionID,
+			Attestation: attestation,
+			Server:      request.Server.String,
+			Details:     map[string]any{"request": request.ID, "kind": request.Kind},
+		}); err != nil {
+			return err
+		}
+
+		if err := store.Notify(ctx, tx, store.KindApproval, request.ID); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // refresh writes the identity snapshot when it changed, and otherwise moves

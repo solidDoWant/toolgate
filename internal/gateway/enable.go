@@ -350,6 +350,10 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 
 	switch {
 	case isBuiltin(template):
+	case options.lazy && options.reason == reasonFirstCall:
+		// A call's implicit enable never retries a failed start: the call
+		// itself refuses or starts the instance. Only an explicit enable
+		// retries.
 	case options.lazy:
 		instance, err = m.retryInstance(ctx, queries, current, template)
 	default:

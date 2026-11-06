@@ -287,14 +287,14 @@ func (w *Workspaces) SessionEntries(ctx context.Context, sessionPKs []int64) (ma
 }
 
 // addEntry adds entry to entries by its exposed name: a tool's upstream name
-// is mapped by the server's current curation, or kept when the catalog
-// doesn't offer the server.
+// is mapped by the server's curation (Catalog.Curation), or kept when the
+// server has no valid generation.
 func (w *Workspaces) addEntry(entries ScopeEntries, entry db.ScopeEntry) ScopeEntries {
 	name := entry.Server
 
 	if entry.Tool != "" {
 		tool := entry.Tool
-		if template, err := w.catalog.Offered(entry.Server); err == nil {
+		if template, found := w.catalog.Curation(entry.Server); found {
 			tool = toolcatalog.ExposedName(template, entry.Tool)
 		}
 

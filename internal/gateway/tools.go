@@ -154,10 +154,7 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 		}
 
 		for _, curated := range toolcatalog.Curate(template, upstream) {
-			request := policy.Request{
-				Identity: current.identity, Template: template, Tool: curated.UpstreamName,
-				ExposedTool: curated.ExposedName, State: state,
-			}
+			request := toolPolicyRequest(current, template, curated.UpstreamName, curated.ExposedName, state)
 			if !m.policy.Decide(request).Allowed {
 				continue
 			}

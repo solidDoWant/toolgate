@@ -263,7 +263,7 @@ func (w *Workspaces) entryName(entry db.ScopeEntry) string {
 	}
 
 	exposed := entry.Tool
-	if template, err := w.catalog.Offered(entry.Server); err == nil {
+	if template, found := w.catalog.Curation(entry.Server); found {
 		exposed = toolcatalog.ExposedName(template, entry.Tool)
 	}
 
