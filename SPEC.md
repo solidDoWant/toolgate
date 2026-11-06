@@ -79,12 +79,13 @@ Every authenticated request has an **identity**:
 | Field | Source | Verified? |
 |---|---|---|
 | `principal` | User: the OIDC `sub`, with `email` and `groups`. Pod: `system:serviceaccount:<ns>:<name>`. SPIFFE workload: the SPIFFE ID. | Always |
-| `workspace` | Pod: `k8s/<namespace>/<owner kind>/<owner name>`, read from the token's pod claims. SPIFFE workload: the SPIFFE ID's path, such as `/owner/alice/workspace/dev`. User: the claimed header, prefixed `claimed/`. | Workload only |
+| `workspace` | Pod: `k8s/<namespace>/<owner kind>/<owner name>`, read from the token's pod claims. SPIFFE workload: the SPIFFE ID's path, such as `/owner/alice/workspace/dev`. Attested user: the gateway's `workspaceAttestation.workspaceID`, rendered from the bound workload, such as `coder/alice/dev`. User: the claimed header, prefixed `claimed/`. | Workload and attested user |
 | `session` | The `X-Toolgate-Session` header | Never |
 | `attestation` | `attested` or `user` | Computed |
 
 **Attestation levels:**
 - **`attested`:** the token was issued by a platform that vouches for the environment. Phase 1: a Kubernetes projected service-account token with audience `toolgate`, checked with TokenReview, from a namespace listed in the gateway's configuration. Phase 3 adds SPIFFE JWT-SVIDs from allowed trust domains (the SPIFFE ID's path becomes the workspace), which covers Coder workspaces and other workloads running a SPIRE agent.
+- **Attested user session (phase 3):** a user token in `Authorization` plus a workload token in `X-Toolgate-Attestation` (raw, at most 16 KiB): a projected service-account token from a namespace in `workspaceAttestation.namespaces`, bound to a pod, or a JWT-SVID matching `workspaceAttestation.spiffeIDPattern`. The gateway reads the owner from the pod's labels (or annotations) or the SPIFFE ID and compares it with the user token on every request. If they match, the identity stays the user's (principal, groups, secrets, grants), with `attested` attestation and the verified workspace. The attestation never authenticates: a bad user token gets 401. A failed attestation is served as `user` with the claimed workspace and writes `auth.refuse` with the reason and the user's principal. If TokenReview or the pod lookup is unavailable, the gateway answers 503 with `Retry-After: 1`. Workload bearer tokens ignore the header.
 - **`user`:** a person signed in to the IdP, and the machine only describes itself.
 - Anything else is refused with 401.
 

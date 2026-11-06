@@ -113,11 +113,13 @@ type requestContext struct {
 const requestContextKey = "toolgate"
 
 // mcpBinding is what an MCP session is bound to at initialize. Every later
-// request on it must authenticate to the same values.
+// request on it must authenticate to the same values: the identity's final
+// workspace and attestation, not the headers as sent.
 type mcpBinding struct {
-	principal string
-	session   string
-	workspace string
+	principal   string
+	session     string
+	workspace   string
+	attestation string
 }
 
 // mcpSession is one MCP session this replica holds: its binding and its own
@@ -277,6 +279,21 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 	request.Body = io.NopCloser(bytes.NewReader(body))
 
+	binding := mcpBinding{
+		principal: identity.Principal, session: identity.Session,
+		workspace: identity.Workspace, attestation: identity.Attestation,
+	}
+
+	// A request on an MCP session bound to another workspace or
+	// attestation gets 404 before the session lookup's 400, so the client
+	// initializes again and then learns the workspace changed.
+	mcpSessionID := request.Header.Get(mcpSessionHeader)
+	if mcpSessionID != "" && !e.boundTo(mcpSessionID, binding) {
+		http.Error(writer, "session not found", http.StatusNotFound)
+
+		return
+	}
+
 	session, err := e.sessions.resolve(request.Context(), identity)
 	if errors.Is(err, errWorkspaceChanged) {
 		http.Error(writer, "This session started in a different workspace. Start a new Claude Code session to use another workspace.", http.StatusBadRequest)
@@ -291,12 +308,9 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	binding := mcpBinding{principal: identity.Principal, session: identity.Session, workspace: identity.Workspace}
-
 	current := requestContext{identity: identity, session: session}
 	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
 
-	mcpSessionID := request.Header.Get(mcpSessionHeader)
 	if mcpSessionID != "" {
 		// A session this replica doesn't know, or one bound to another
 		// identity, gets 404 so the client initializes again.
@@ -411,6 +425,17 @@ func (e *mcpEndpoint) bind(id string, session *mcpSession) {
 	}
 
 	e.bindings[id] = session
+}
+
+// boundTo reports whether this replica holds the MCP session id bound to
+// binding.
+func (e *mcpEndpoint) boundTo(id string, binding mcpBinding) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	session, found := e.bindings[id]
+
+	return found && session.binding == binding
 }
 
 // acquire marks a request on the MCP session id as in progress. It returns

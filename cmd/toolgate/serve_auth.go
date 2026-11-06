@@ -103,8 +103,9 @@ type refusalRecorder struct {
 	logger   *slog.Logger
 }
 
-// RecordAuthRefusal writes refusal with no principal. A failed write is
-// logged: the request is refused either way.
+// RecordAuthRefusal writes refusal. Only a failed attestation carries a
+// principal: the verified user's. A failed write is logged: the request is
+// refused (or, for an attestation, served as the user) either way.
 func (r refusalRecorder) RecordAuthRefusal(ctx context.Context, refusal auth.Refusal) {
 	audience := refusal.Audience
 	if audience == nil {
@@ -112,7 +113,8 @@ func (r refusalRecorder) RecordAuthRefusal(ctx context.Context, refusal auth.Ref
 	}
 
 	event := audit.Event{
-		Type: audit.TypeAuthRefuse,
+		Type:      audit.TypeAuthRefuse,
+		Principal: refusal.Principal,
 		Details: map[string]any{
 			"reason":        refusal.Reason,
 			"issuer":        refusal.Issuer,

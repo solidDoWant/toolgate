@@ -8,6 +8,8 @@ package config
 import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 
+	"github.com/solidDoWant/toolgate/internal/auth"
+
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -304,6 +306,102 @@ type Config struct {
 	// only gateway-level allow-list for SPIFFE IDs. The chart sets it from
 	// `config.spiffe.trustDomains`.
 	SPIFFETrustDomains []SPIFFETrustDomain `json:"spiffeTrustDomains"`
+
+	// Attested user sessions: a user's token plus a workload token from a
+	// workspace pod or a SPIFFE workload, bound to that user, so the
+	// session's workspace is verified. Set it in the YAML file only; the
+	// chart sets it from `config.workspaceAttestation`. Off when absent: the
+	// `X-Toolgate-Attestation` header is then ignored. `namespaces`
+	// (required) lists the namespaces whose service-account tokens may
+	// attest a user; it is separate from `serviceAccountNamespaces`. `keys`
+	// names the pod label keys (annotations are read when a label is
+	// missing) of `userID`, `email`, `username` and `workspace`; they
+	// default to Coder's `com.coder.user.id`, `com.coder.user.email`,
+	// `com.coder.user.username` and `com.coder.workspace.name`. `match.by`
+	// is `email` (the pod's email must equal the user's verified email,
+	// ignoring case) or `claim` (the user token's `match.claim` must be a
+	// string equal to the pod's `match.key`, `userID` or `username`).
+	// `workspaceID` (required) is the verified workspace, such as
+	// `coder/{username}/{workspace}`; it may use `{userID}`, `{username}`
+	// and `{workspace}`, must start with a literal segment that isn't
+	// `claimed`, `k8s` or empty, and is at most 256 characters once
+	// rendered. `spiffeIDPattern`, if set, also accepts JWT-SVIDs whose ID
+	// matches it, such as
+	// `spiffe://coder.example.com/coder/{username}/{workspace}`: its trust
+	// domain must be in `spiffeTrustDomains`, each placeholder is one whole
+	// path segment, `match.by` must be `claim`, and it must contain
+	// `{<match.key>}` and every placeholder `workspaceID` uses.
+	WorkspaceAttestation *WorkspaceAttestation `json:"workspaceAttestation"`
+}
+
+// WorkspaceAttestation is the workspaceAttestation setting.
+type WorkspaceAttestation struct {
+	Namespaces      []string                  `json:"namespaces"`
+	Keys            WorkspaceAttestationKeys  `json:"keys"`
+	Match           WorkspaceAttestationMatch `json:"match"`
+	WorkspaceID     string                    `json:"workspaceID"`
+	SPIFFEIDPattern string                    `json:"spiffeIDPattern"`
+}
+
+// WorkspaceAttestationKeys are the pod label keys of workspaceAttestation.
+type WorkspaceAttestationKeys struct {
+	UserID    string `json:"userID"`
+	Email     string `json:"email"`
+	Username  string `json:"username"`
+	Workspace string `json:"workspace"`
+}
+
+// WorkspaceAttestationMatch is how workspaceAttestation compares the
+// workload's owner with the user.
+type WorkspaceAttestationMatch struct {
+	By    string `json:"by"`
+	Claim string `json:"claim"`
+	Key   string `json:"key"`
+}
+
+// AttestationOptions returns the authenticator's options for
+// workspaceAttestation, without a Kubernetes client, or nil when it is off.
+func (c Config) AttestationOptions() *auth.AttestationOptions {
+	if c.WorkspaceAttestation == nil {
+		return nil
+	}
+
+	attestation := c.WorkspaceAttestation
+
+	trustDomains := make([]string, 0, len(c.SPIFFETrustDomains))
+	for _, domain := range c.SPIFFETrustDomains {
+		trustDomains = append(trustDomains, domain.Name)
+	}
+
+	return &auth.AttestationOptions{
+		Namespaces: attestation.Namespaces,
+		Keys: auth.AttestationKeys{
+			UserID:    attestation.Keys.UserID,
+			Email:     attestation.Keys.Email,
+			Username:  attestation.Keys.Username,
+			Workspace: attestation.Keys.Workspace,
+		},
+		MatchBy:            attestation.Match.By,
+		MatchClaim:         attestation.Match.Claim,
+		MatchKey:           attestation.Match.Key,
+		WorkspaceID:        attestation.WorkspaceID,
+		SPIFFEIDPattern:    attestation.SPIFFEIDPattern,
+		SPIFFETrustDomains: trustDomains,
+	}
+}
+
+func (c Config) validateWorkspaceAttestation() []error {
+	options := c.AttestationOptions()
+	if options == nil {
+		return nil
+	}
+
+	problems := auth.ValidateAttestation(*options)
+	for index, problem := range problems {
+		problems[index] = fmt.Errorf("workspaceAttestation.%w", problem)
+	}
+
+	return problems
 }
 
 // SPIFFETrustDomain is one entry of the spiffeTrustDomains setting.
@@ -836,6 +934,7 @@ func (c Config) Validate() []error {
 	problems = append(problems, c.validateUI()...)
 	problems = append(problems, c.validateResolvers()...)
 	problems = append(problems, c.validateSPIFFETrustDomains()...)
+	problems = append(problems, c.validateWorkspaceAttestation()...)
 
 	if c.AuditPayloads && c.AuditS3Bucket == "" {
 		problems = append(problems, errors.New("auditS3Bucket: required when auditPayloads is true"))

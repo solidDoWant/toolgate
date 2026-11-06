@@ -103,9 +103,12 @@ func IdentityFrom(ctx context.Context) (Identity, bool) {
 	return identity, ok
 }
 
-// Refusal describes a failed sign-in for the `auth.refuse` audit event. It
-// never holds the token or a principal.
+// Refusal describes a failed sign-in, or a failed attestation, for the
+// `auth.refuse` audit event. It never holds a token.
 type Refusal struct {
+	// Principal is the verified user of a failed attestation, whose own
+	// token passed. It is empty for every failed sign-in.
+	Principal string
 	// Reason is a short, fixed description of why the request was refused.
 	Reason string
 	// Issuer and Audience are the token's own claims, read without
@@ -146,6 +149,9 @@ type Options struct {
 	// SPIFFE enables sign-in with SPIFFE JWT-SVIDs. Nil, or no trust
 	// domains, accepts none.
 	SPIFFE *SPIFFEOptions
+	// Attestation enables attested user sessions. Nil ignores the
+	// attestation header.
+	Attestation *AttestationOptions
 }
 
 // Authenticator checks user access tokens and the identity headers.
@@ -154,6 +160,7 @@ type Authenticator struct {
 	issuer    string
 	accounts  *serviceAccountVerifier
 	spiffe    *spiffeVerifier
+	attest    *attestationVerifier
 	claims    claimNames
 	recorder  RefusalRecorder
 	limiter   *RateLimiter
@@ -219,6 +226,14 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		spiffe.run(context.WithoutCancel(ctx))
 	}
 
+	var attest *attestationVerifier
+	if options.Attestation != nil {
+		attest, err = newAttestationVerifier(*options.Attestation, spiffe)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// One provider, so every audience's verifier shares the discovery
 	// document and the cached key set.
 	verifiers := make([]audienceVerifier, 0, len(options.Audiences))
@@ -230,6 +245,7 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 	}
 
 	return &Authenticator{
+		attest:    attest,
 		verifiers: verifiers,
 		issuer:    options.IssuerURL,
 		accounts:  accounts,
@@ -274,7 +290,7 @@ func (a *Authenticator) Collectors() []prometheus.Collector {
 // with IdentityFrom.
 func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		identity, refusal := a.authenticate(request)
+		identity, claims, refusal := a.authenticate(request)
 		if refusal != nil {
 			a.refuse(request, *refusal)
 			writer.Header().Set("WWW-Authenticate", "Bearer")
@@ -303,6 +319,26 @@ func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.
 
 		identity.Session = session
 
+		// The attestation never authenticates: it runs only for a signed-in
+		// user, and a workload is already attested as itself.
+		if a.attest != nil && identity.Kind == KindUser {
+			attested, refusal, err := a.attest.attest(request.Context(), request, identity, claims)
+			if err != nil {
+				writer.Header().Set("Retry-After", "1")
+				http.Error(writer, "The gateway can't check the workspace attestation right now. Try again.", http.StatusServiceUnavailable)
+
+				return
+			}
+
+			if refusal != nil {
+				// A failed attestation is served as the user alone.
+				refusal.Principal = identity.Principal
+				a.refuse(request, *refusal)
+			}
+
+			identity = attested
+		}
+
 		// An attested identity's workspace was verified, so the header
 		// can't replace it.
 		if identity.Attestation != AttestationAttested {
@@ -330,22 +366,23 @@ func headerValue(request *http.Request, name string) (value string, set, valid b
 }
 
 // authenticate verifies the bearer token. It returns the identity without the
-// header fields, or the refusal to record.
-func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal) {
+// header fields and, for a user, the token's claims; or the refusal to
+// record.
+func (a *Authenticator) authenticate(request *http.Request) (Identity, map[string]json.RawMessage, *Refusal) {
 	header := request.Header.Values("Authorization")
 	if len(header) != 1 {
-		return Identity{}, &Refusal{Reason: "missing token"}
+		return Identity{}, nil, &Refusal{Reason: "missing token"}
 	}
 
 	if len(header[0]) > MaxAuthorizationBytes {
-		return Identity{}, &Refusal{Reason: "token too large"}
+		return Identity{}, nil, &Refusal{Reason: "token too large"}
 	}
 
 	scheme, token, found := strings.Cut(header[0], " ")
 	token = strings.TrimSpace(token)
 
 	if !found || !strings.EqualFold(scheme, "Bearer") || token == "" {
-		return Identity{}, &Refusal{Reason: "missing token"}
+		return Identity{}, nil, &Refusal{Reason: "missing token"}
 	}
 
 	// The unverified claims only pick the verifier; each verifies fully,
@@ -353,7 +390,9 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 	issuer, subject := unverifiedIssuerAndSubject(token)
 
 	if a.spiffe != nil && isSPIFFESubject(subject) {
-		return a.spiffe.verify(request.Context(), token, subject)
+		identity, refusal := a.spiffe.verify(request.Context(), token, subject)
+
+		return identity, nil, refusal
 	}
 
 	if a.accounts != nil && issuer != a.issuer {
@@ -364,7 +403,7 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 			identity.Expiry = unverifiedExpiry(token)
 		}
 
-		return identity, refusal
+		return identity, nil, refusal
 	}
 
 	verifier := a.verifierFor(token)
@@ -376,7 +415,7 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 			refusal.Reason = "audience not allowed"
 		}
 
-		return Identity{}, &refusal
+		return Identity{}, nil, &refusal
 	}
 
 	verified, err := verifier.Verify(request.Context(), token)
@@ -384,22 +423,22 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 		refusal := unverifiedRefusal(token)
 		refusal.Reason = "invalid token"
 
-		return Identity{}, &refusal
+		return Identity{}, nil, &refusal
 	}
 
 	var claims map[string]json.RawMessage
 	if err := verified.Claims(&claims); err != nil {
-		return Identity{}, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}
+		return Identity{}, nil, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}
 	}
 
 	identity, err := a.identityFromClaims(verified.Subject, claims)
 	if err != nil {
-		return Identity{}, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}
+		return Identity{}, nil, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}
 	}
 
 	identity.Expiry = verified.Expiry
 
-	return identity, nil
+	return identity, claims, nil
 }
 
 // verifierFor returns the verifier of the first configured audience in the
