@@ -163,6 +163,12 @@ func (c *Client) CountError(use string, err error) {
 		return
 	}
 
+	if errors.Is(err, ErrDimensionMismatch) {
+		c.metrics.count(use, "dimension_mismatch")
+
+		return
+	}
+
 	c.metrics.count(use, "error")
 }
 

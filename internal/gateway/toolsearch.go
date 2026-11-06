@@ -316,9 +316,23 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 		}
 
 		if queryVector != nil {
+			mismatched, err := queries.CountToolSearchDimensionMismatches(ctx, db.CountToolSearchDimensionMismatchesParams{
+				TemplateUids: uids, Model: m.embedder.Model(), Dimensions: int32(len(queryVector)),
+			})
+			if err != nil {
+				return fmt.Errorf("count the vectors of another length: %w", err)
+			}
+
+			if mismatched > 0 {
+				// Those rows rank by words only until the leader re-embeds them.
+				m.embedder.CountError("query", embeddings.ErrDimensionMismatch)
+
+				degraded = true
+			}
+
 			hybrid, err := queries.SearchToolsHybrid(ctx, db.SearchToolsHybridParams{
 				Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids,
-				QueryVector: embeddings.FormatVector(queryVector), Model: m.embedder.Model(),
+				QueryVector: embeddings.FormatVector(queryVector), Model: m.embedder.Model(), Dimensions: int32(len(queryVector)),
 			})
 			if err != nil {
 				return fmt.Errorf("search the tools: %w", err)

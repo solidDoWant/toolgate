@@ -12,6 +12,10 @@ const CircuitOpenFor = 30 * time.Second
 // ErrCircuitOpen means the endpoint failed lately and the call was skipped.
 var ErrCircuitOpen = errors.New("the endpoint failed lately and is skipped for a while")
 
+// ErrDimensionMismatch means stored vectors have another length than the
+// vectors the endpoint returns now.
+var ErrDimensionMismatch = errors.New("stored vectors differ in length from the query vector")
+
 // breaker skips an endpoint for CircuitOpenFor after a call fails, so a
 // single outage does not add the timeout to every search.
 type breaker struct {

@@ -116,6 +116,27 @@ func (q *Queries) CountSessionFoundTools(ctx context.Context, sessionPk int64) (
 	return count, err
 }
 
+const countToolSearchDimensionMismatches = `-- name: CountToolSearchDimensionMismatches :one
+SELECT count(*) FROM tool_search
+WHERE template_uid = ANY($1::text[]) AND embedding_model = $2::text
+  AND embedding IS NOT NULL AND vector_dims(embedding) <> $3::int
+`
+
+type CountToolSearchDimensionMismatchesParams struct {
+	TemplateUids []string
+	Model        string
+	Dimensions   int32
+}
+
+// The rows of the templates embedded with the given model whose vector has a
+// different length than the given one.
+func (q *Queries) CountToolSearchDimensionMismatches(ctx context.Context, arg CountToolSearchDimensionMismatchesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countToolSearchDimensionMismatches, arg.TemplateUids, arg.Model, arg.Dimensions)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countUnverifiedServers = `-- name: CountUnverifiedServers :one
 SELECT count(*) FROM unverified_servers WHERE scope_id = $1
 `
@@ -855,12 +876,20 @@ func (q *Queries) ListToolSearchUIDs(ctx context.Context) ([]string, error) {
 }
 
 const listToolSearchUIDsNeedingEmbedding = `-- name: ListToolSearchUIDsNeedingEmbedding :many
-SELECT DISTINCT template_uid FROM tool_search WHERE embedding_model <> $1::text OR embedding IS NULL
+SELECT DISTINCT template_uid FROM tool_search
+WHERE embedding_model <> $1::text OR embedding IS NULL
+   OR ($2::int > 0 AND vector_dims(embedding) <> $2::int)
 `
 
-// The templates that have a row not embedded with the given model.
-func (q *Queries) ListToolSearchUIDsNeedingEmbedding(ctx context.Context, model string) ([]string, error) {
-	rows, err := q.db.Query(ctx, listToolSearchUIDsNeedingEmbedding, model)
+type ListToolSearchUIDsNeedingEmbeddingParams struct {
+	Model      string
+	Dimensions int32
+}
+
+// The templates that have a row not embedded with the given model, or whose
+// vector has a different length than the given one.
+func (q *Queries) ListToolSearchUIDsNeedingEmbedding(ctx context.Context, arg ListToolSearchUIDsNeedingEmbeddingParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listToolSearchUIDsNeedingEmbedding, arg.Model, arg.Dimensions)
 	if err != nil {
 		return nil, err
 	}
@@ -994,6 +1023,7 @@ WITH words AS (
     FROM tool_search
     WHERE tool_search.template_uid = ANY($1::text[])
       AND tool_search.embedding_model = $6::text AND tool_search.embedding IS NOT NULL
+      AND vector_dims(tool_search.embedding) = $7::int
 )
 SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
        tool_search.upstream_name, tool_search.exposed_name
@@ -1012,6 +1042,7 @@ type SearchToolsHybridParams struct {
 	Query        string
 	QueryVector  string
 	Model        string
+	Dimensions   int32
 }
 
 type SearchToolsHybridRow struct {
@@ -1033,6 +1064,7 @@ func (q *Queries) SearchToolsHybrid(ctx context.Context, arg SearchToolsHybridPa
 		arg.Query,
 		arg.QueryVector,
 		arg.Model,
+		arg.Dimensions,
 	)
 	if err != nil {
 		return nil, err

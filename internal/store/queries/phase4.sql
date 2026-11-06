@@ -192,6 +192,7 @@ WITH words AS (
     FROM tool_search
     WHERE tool_search.template_uid = ANY(@template_uids::text[])
       AND tool_search.embedding_model = @model::text AND tool_search.embedding IS NOT NULL
+      AND vector_dims(tool_search.embedding) = @dimensions::int
 )
 SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
        tool_search.upstream_name, tool_search.exposed_name
@@ -203,8 +204,18 @@ ORDER BY (COALESCE(1.0 / (60 + words.rank), 0) + COALESCE(1.0 / (60 + vectors.ra
 LIMIT 100;
 
 -- name: ListToolSearchUIDsNeedingEmbedding :many
--- The templates that have a row not embedded with the given model.
-SELECT DISTINCT template_uid FROM tool_search WHERE embedding_model <> @model::text OR embedding IS NULL;
+-- The templates that have a row not embedded with the given model, or whose
+-- vector has a different length than the given one.
+SELECT DISTINCT template_uid FROM tool_search
+WHERE embedding_model <> @model::text OR embedding IS NULL
+   OR (@dimensions::int > 0 AND vector_dims(embedding) <> @dimensions::int);
+
+-- name: CountToolSearchDimensionMismatches :one
+-- The rows of the templates embedded with the given model whose vector has a
+-- different length than the given one.
+SELECT count(*) FROM tool_search
+WHERE template_uid = ANY(@template_uids::text[]) AND embedding_model = @model::text
+  AND embedding IS NOT NULL AND vector_dims(embedding) <> @dimensions::int;
 
 -- name: QueryIsEmpty :one
 SELECT numnode(to_tsquery('english', @query::text)) = 0;
