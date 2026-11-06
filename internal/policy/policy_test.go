@@ -106,6 +106,68 @@ func TestAC1_06CatalogAccess(t *testing.T) {
 	}
 }
 
+func spiffeWorkload() auth.Identity {
+	return auth.Identity{
+		Principal:   "spiffe://coder.example.com/owner/alice/workspace/dev",
+		Workspace:   "/owner/alice/workspace/dev",
+		Session:     "session-3",
+		Attestation: auth.AttestationAttested,
+	}
+}
+
+func TestSPIFFECatalogAccess(t *testing.T) {
+	spiffeUser := laptopUser()
+	spiffeUser.Principal = "spiffe://coder.example.com/owner/alice/workspace/dev"
+
+	tests := []struct {
+		name     string
+		identity auth.Identity
+		access   v1alpha1.Access
+		allowed  bool
+	}{
+		{name: "exact ID", identity: spiffeWorkload(), access: v1alpha1.Access{SPIFFEIDs: []string{"spiffe://coder.example.com/owner/alice/workspace/dev"}}, allowed: true},
+		{name: "glob", identity: spiffeWorkload(), access: v1alpha1.Access{SPIFFEIDs: []string{"spiffe://coder.example.com/owner/*/workspace/*"}}, allowed: true},
+		{name: "glob of another trust domain", identity: spiffeWorkload(), access: v1alpha1.Access{SPIFFEIDs: []string{"spiffe://other.test/*"}}},
+		{name: "invalid pattern matches nothing", identity: spiffeWorkload(), access: v1alpha1.Access{SPIFFEIDs: []string{"spiffe://coder.example.com/[*"}}},
+		{name: "SPIFFE ID listed as user", identity: spiffeWorkload(), access: v1alpha1.Access{Users: []string{"spiffe://coder.example.com/owner/alice/workspace/dev"}}},
+		{name: "SPIFFE ID listed as service account", identity: spiffeWorkload(), access: v1alpha1.Access{ServiceAccounts: []string{"spiffe://coder.example.com/owner/alice/workspace/dev"}}},
+		{name: "SPIFFE ID with a group list", identity: spiffeWorkload(), access: v1alpha1.Access{Groups: []string{""}, Users: []string{"*"}}},
+		{name: "user subject named like a SPIFFE ID", identity: spiffeUser, access: v1alpha1.Access{SPIFFEIDs: []string{"spiffe://*"}, Environments: "any"}},
+		{name: "service account doesn't match spiffeIDs", identity: pod("ci"), access: v1alpha1.Access{SPIFFEIDs: []string{"*"}}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			decision := engine(t).Decide(policy.Request{Identity: test.identity, Template: template("github", test.access, nil)})
+
+			assert.Equal(t, test.allowed, decision.Allowed, decision.Reason)
+
+			if !test.allowed {
+				assert.Equal(t, policy.StepAccess, decision.Step)
+				assert.Contains(t, decision.Reason, `"github"`)
+			}
+		})
+	}
+}
+
+func TestRuleMatchesSPIFFEWorkspace(t *testing.T) {
+	scratch := spiffeWorkload()
+	scratch.Principal = "spiffe://coder.example.com/owner/alice/workspace/scratch-1"
+	scratch.Workspace = "/owner/alice/workspace/scratch-1"
+
+	rules := engine(t, rule("no-scratch", v1alpha1.RuleMatch{
+		Workspaces: []string{"/owner/*/workspace/scratch-*"}, Attestation: "attested",
+	}, nil))
+	access := v1alpha1.Access{SPIFFEIDs: []string{"spiffe://coder.example.com/*"}}
+
+	decision := rules.Decide(policy.Request{Identity: scratch, Template: template("github", access, nil)})
+	assert.False(t, decision.Allowed)
+	assert.Equal(t, policy.StepRule, decision.Step)
+
+	decision = rules.Decide(policy.Request{Identity: spiffeWorkload(), Template: template("github", access, nil)})
+	assert.True(t, decision.Allowed, decision.Reason)
+}
+
 func TestAC1_27Attestation(t *testing.T) {
 	access := func(environments string) v1alpha1.Access {
 		return v1alpha1.Access{Users: []string{"alice-sub"}, ServiceAccounts: []string{"system:serviceaccount:ci:runner"}, Environments: environments}

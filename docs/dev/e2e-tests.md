@@ -101,5 +101,6 @@ The chart is in the registry of the cluster at `TOOLGATE_E2E_CHART_REPOSITORY`, 
 - `TOOLGATE_E2E_UI_LISTEN`: a loopback address. The chart's `config.ui.publicURL` is `https://` and this address, and `config.ui.clientID` is `toolgate-ui`. A browser test calls `webUI(t, endpoint)`, which serves a TLS proxy to a gateway pod at this address. The fake identity provider allows the callback on `https://127.0.0.1:*`. The e2e install sets `config.ui.approvalTimeout` to `1m`, the smallest value, so that a test of an approval timeout runs for about 1 minute.
 - `TOOLGATE_E2E_WORKLOAD_NAMESPACE`: a namespace for test pods. The gateway accepts the service account tokens of pods in this namespace, so a test can connect as an attested workload.
 - `TOOLGATE_E2E_CHART_REPOSITORY`: the OCI repository of the test chart, as Flux in the cluster reaches it.
+- `TOOLGATE_E2E_SPIFFE_LISTEN`: the listen address of the SPIFFE bundle endpoint of the trust domain `allowed.test`. The test process serves it over HTTPS with the certificate of the test resolver. The chart's `config.spiffe.trustDomains` points to it.
 
 If a variable is not set, the tests that need it skip.

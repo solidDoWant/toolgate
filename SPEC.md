@@ -51,7 +51,7 @@ Gateway components (packages under `internal/`):
 
 | Component | Job |
 |---|---|
-| Auth | Verifies the bearer token (user OIDC token, toolgate session token, or Kubernetes service-account token). Produces the request's identity (§6). |
+| Auth | Verifies the bearer token (user OIDC token, toolgate session token, Kubernetes service-account token, or SPIFFE JWT-SVID). Produces the request's identity (§6). |
 | MCP endpoint | Streamable HTTP MCP server. Serves the meta tools (§7) and every enabled server's tools, renamed. Forwards calls. |
 | Session manager | The enabled-server set per session, in PostgreSQL. Idle timeouts. |
 | Policy engine | Decides every enable, list and call (§10). |
@@ -78,8 +78,8 @@ Every authenticated request has an **identity**:
 
 | Field | Source | Verified? |
 |---|---|---|
-| `principal` | User: the OIDC `sub`, with `email` and `groups`. Workload: `system:serviceaccount:<ns>:<name>`. | Always |
-| `workspace` | Workload: `k8s/<namespace>/<owner kind>/<owner name>`, read from the token's pod claims. User: the claimed header, prefixed `claimed/`. | Workload only |
+| `principal` | User: the OIDC `sub`, with `email` and `groups`. Pod: `system:serviceaccount:<ns>:<name>`. SPIFFE workload: the SPIFFE ID. | Always |
+| `workspace` | Pod: `k8s/<namespace>/<owner kind>/<owner name>`, read from the token's pod claims. SPIFFE workload: the SPIFFE ID's path, such as `/owner/alice/workspace/dev`. User: the claimed header, prefixed `claimed/`. | Workload only |
 | `session` | The `X-Toolgate-Session` header | Never |
 | `attestation` | `attested` or `user` | Computed |
 
@@ -132,6 +132,7 @@ spec:
     users: []                   # OIDC subjects or emails
     groups: [dev]
     serviceAccounts: []         # system:serviceaccount:ns:name
+    spiffeIDs: []               # globs, such as spiffe://td/owner/*/workspace/*
     environments: opt-in        # any | opt-in (default) | attested
   tools:                        # optional per-tool overrides
     delete_repository: {environments: attested, approval: required}
@@ -186,7 +187,7 @@ With `shared`, all instances go in one configured namespace and are told apart b
 ## 10. Policy
 
 **Order of evaluation**, the same for enable, list and call:
-1. **Catalog access:** the identity must match `access.users`, `groups` or `serviceAccounts`. A template with no access lists is available to no one.
+1. **Catalog access:** the identity must match `access.users`, `groups`, `serviceAccounts` or `spiffeIDs`. A SPIFFE identity matches only `spiffeIDs`, and `spiffeIDs` matches nothing else. A template with no access lists is available to no one.
 2. **Environment:** the server's `environments`, or the tool's override.
    - `any` passes.
    - `attested` needs `attested`.

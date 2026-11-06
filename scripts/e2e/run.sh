@@ -41,6 +41,10 @@
 #                                     resolver `test` points at it
 #       TOOLGATE_E2E_RESOLVER_CERT    its certificate, which the gateway trusts
 #       TOOLGATE_E2E_RESOLVER_KEY     its key
+#       TOOLGATE_E2E_SPIFFE_LISTEN    address the test process serves the
+#                                     SPIFFE bundle endpoint of allowed.test
+#                                     on over HTTPS, with the resolver's
+#                                     certificate
 #  6. deletes the cluster, also when a step fails. E2E_KEEP_CLUSTER=true
 #     keeps it for debugging.
 #
@@ -165,6 +169,11 @@ export TOOLGATE_E2E_RESOLVER_LISTEN="$host_address:$resolver_port"
 export TOOLGATE_E2E_RESOLVER_CERT="$work/resolver/cert.pem"
 export TOOLGATE_E2E_RESOLVER_KEY="$work/resolver/key.pem"
 
+# The test SPIFFE bundle endpoint for the trust domain allowed.test runs in
+# the test process too, with the resolver's certificate.
+spiffe_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
+export TOOLGATE_E2E_SPIFFE_LISTEN="$host_address:$spiffe_port"
+
 log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 workload_namespace=toolgate-workloads
@@ -190,6 +199,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
 	--set "config.extraEnv[0].value=$workload_namespace" \
 	--set-json "config.resolvers=[{\"name\":\"test\",\"url\":\"https://$TOOLGATE_E2E_RESOLVER_LISTEN/resolve\",\"audience\":\"toolgate-resolver-test\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
+	--set-json "config.spiffe.trustDomains=[{\"name\":\"allowed.test\",\"bundleEndpointURL\":\"https://$TOOLGATE_E2E_SPIFFE_LISTEN\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","globalMounts":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}' \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--wait --timeout 5m >&2

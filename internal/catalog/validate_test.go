@@ -475,3 +475,13 @@ func TestReasonIsBounded(t *testing.T) {
 	assert.Equal(t, "...", reason[len(reason)-3:])
 	assert.Equal(t, "a; b", catalog.Reason([]string{"a", "b"}))
 }
+
+func TestValidateSPIFFEIDPatterns(t *testing.T) {
+	valid := newTemplate("github", catalog.ScopePerSession, serviceResource)
+	valid.Spec.Access.SPIFFEIDs = []string{"spiffe://coder.example.com/owner/*/workspace/*"}
+	assert.Empty(t, catalog.Validator{Mapper: testRESTMapper()}.Validate(valid))
+
+	invalid := newTemplate("github", catalog.ScopePerSession, serviceResource)
+	invalid.Spec.Access.SPIFFEIDs = []string{"spiffe://coder.example.com/[*"}
+	assert.Contains(t, catalog.Reason(catalog.Validator{Mapper: testRESTMapper()}.Validate(invalid)), "access.spiffeIDs[0]")
+}

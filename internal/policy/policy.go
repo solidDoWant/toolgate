@@ -6,6 +6,8 @@
 package policy
 
 import (
+	"github.com/gobwas/glob"
+
 	"fmt"
 	"slices"
 	"strings"
@@ -220,6 +222,14 @@ func proxiedName(server, tool string) string {
 // groups, so an IdP subject that looks like a service account name can't
 // pass as one.
 func HasAccess(identity auth.Identity, access v1alpha1.Access) bool {
+	if isSPIFFE(identity) {
+		return slices.ContainsFunc(access.SPIFFEIDs, func(pattern string) bool {
+			compiled, err := glob.Compile(pattern)
+
+			return err == nil && compiled.Match(identity.Principal)
+		})
+	}
+
 	if isServiceAccount(identity) {
 		return slices.Contains(access.ServiceAccounts, identity.Principal)
 	}
@@ -235,6 +245,13 @@ func HasAccess(identity auth.Identity, access v1alpha1.Access) bool {
 	return slices.ContainsFunc(identity.Groups, func(group string) bool {
 		return slices.Contains(access.Groups, group)
 	})
+}
+
+// isSPIFFE reports whether the identity is a verified SPIFFE workload. Only
+// JWT-SVIDs are attested with a spiffe:// principal; a user's subject that
+// starts with spiffe:// stays a user.
+func isSPIFFE(identity auth.Identity) bool {
+	return identity.Attestation == attestationAttested && strings.HasPrefix(identity.Principal, "spiffe://")
 }
 
 // isServiceAccount reports whether the identity is a Kubernetes service

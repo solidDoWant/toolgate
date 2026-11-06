@@ -6,6 +6,8 @@
 package config
 
 import (
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
+
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -251,6 +253,60 @@ type Config struct {
 	// `/var/run/secrets/toolgate/resolvers/<name>/token` for each request.
 	// The chart sets it from `config.resolvers` and mounts each token.
 	Resolvers []Resolver `json:"resolvers"`
+
+	// The SPIFFE trust domains whose JWT-SVIDs may sign in. Set it in the
+	// YAML file only. Each item has a `name` (the trust domain, such as
+	// `coder.example.com`), exactly one of `bundleEndpointURL` (a SPIFFE
+	// bundle endpoint with the `https_web` profile) and `jwksURL` (a JWKS
+	// document, such as that of SPIRE's OIDC discovery provider), both
+	// `https://`, and an optional `caFile`, a PEM file of private
+	// certificate authorities added to the system ones. This list is the
+	// only gateway-level allow-list for SPIFFE IDs. The chart sets it from
+	// `config.spiffe.trustDomains`.
+	SPIFFETrustDomains []SPIFFETrustDomain `json:"spiffeTrustDomains"`
+}
+
+// SPIFFETrustDomain is one entry of the spiffeTrustDomains setting.
+type SPIFFETrustDomain struct {
+	Name              string `json:"name"`
+	BundleEndpointURL string `json:"bundleEndpointURL"`
+	JWKSURL           string `json:"jwksURL"`
+	CAFile            string `json:"caFile"`
+}
+
+func (c Config) validateSPIFFETrustDomains() []error {
+	var problems []error
+
+	seen := map[string]bool{}
+
+	for index, domain := range c.SPIFFETrustDomains {
+		where := fmt.Sprintf("spiffeTrustDomains[%d]", index)
+
+		if trustDomain, err := spiffeid.TrustDomainFromString(domain.Name); err != nil {
+			problems = append(problems, fmt.Errorf("%s.name: %q is not a SPIFFE trust domain: %w", where, domain.Name, err))
+		} else if seen[trustDomain.Name()] {
+			problems = append(problems, fmt.Errorf("%s.name: %q is listed twice", where, domain.Name))
+		} else {
+			seen[trustDomain.Name()] = true
+		}
+
+		switch {
+		case (domain.BundleEndpointURL == "") == (domain.JWKSURL == ""):
+			problems = append(problems, fmt.Errorf("%s: set exactly one of bundleEndpointURL and jwksURL", where))
+		case domain.BundleEndpointURL != "" && !isHTTPSURL(domain.BundleEndpointURL):
+			problems = append(problems, fmt.Errorf("%s.bundleEndpointURL: %q must be an https:// URL", where, domain.BundleEndpointURL))
+		case domain.JWKSURL != "" && !isHTTPSURL(domain.JWKSURL):
+			problems = append(problems, fmt.Errorf("%s.jwksURL: %q must be an https:// URL", where, domain.JWKSURL))
+		}
+	}
+
+	return problems
+}
+
+func isHTTPSURL(value string) bool {
+	target, err := url.Parse(value)
+
+	return err == nil && target.Scheme == "https" && target.Host != ""
 }
 
 // Resolver is one entry of the resolvers setting.
@@ -623,6 +679,7 @@ func (c Config) Validate() []error {
 
 	problems = append(problems, c.validateUI()...)
 	problems = append(problems, c.validateResolvers()...)
+	problems = append(problems, c.validateSPIFFETrustDomains()...)
 
 	if c.AuditPayloads && c.AuditS3Bucket == "" {
 		problems = append(problems, errors.New("auditS3Bucket: required when auditPayloads is true"))

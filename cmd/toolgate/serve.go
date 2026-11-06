@@ -294,6 +294,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 				logger:   logger,
 			},
 			ServiceAccounts: serviceAccounts,
+			SPIFFE:          spiffeOptions(cfg, logger),
 		},
 		logger:          logger,
 		registerMetrics: server.RegisterMetrics,
@@ -469,4 +470,24 @@ func (l *ruleLister) Rules(ctx context.Context) ([]v1alpha1.ToolgateRule, error)
 	}
 
 	return rules, nil
+}
+
+// spiffeOptions turns the spiffeTrustDomains setting into the
+// authenticator's SPIFFE options, or nil when it is empty.
+func spiffeOptions(cfg config.Config, logger *slog.Logger) *auth.SPIFFEOptions {
+	if len(cfg.SPIFFETrustDomains) == 0 {
+		return nil
+	}
+
+	domains := make([]auth.SPIFFETrustDomain, 0, len(cfg.SPIFFETrustDomains))
+	for _, domain := range cfg.SPIFFETrustDomains {
+		domains = append(domains, auth.SPIFFETrustDomain{
+			Name:              domain.Name,
+			BundleEndpointURL: domain.BundleEndpointURL,
+			JWKSURL:           domain.JWKSURL,
+			CAFile:            domain.CAFile,
+		})
+	}
+
+	return &auth.SPIFFEOptions{TrustDomains: domains, Logger: logger}
 }
