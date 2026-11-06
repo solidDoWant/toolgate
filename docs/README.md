@@ -56,6 +56,7 @@ docs/admin/
   telemetry.md             How to send Claude Code telemetry through the gateway, with the usage queries.
   security-model.md        What toolgate protects against, and what claimed workspaces and sessions cannot.
   operations.md            Backups, upgrades, key rotation, instance limits, the audit log, uninstall.
+  tool-search.md           Run tool search: the embeddings endpoint, the chart model server, notes and limits.
   mcp-revisions.md         Which MCP revisions clients and upstream servers use, and how the gateway picks one.
 
 docs/dev/

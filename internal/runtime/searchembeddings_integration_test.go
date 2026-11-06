@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -92,8 +93,13 @@ func TestSearchRowsEmbeddings(t *testing.T) {
 
 	server := fakeEmbeddings(t, &healthy, &calls)
 
+	// The clock lets the test move past the circuit that a failed call opens.
+	var offset atomic.Int64
+
+	now := func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
+
 	newClient := func(model string) *embeddings.Client {
-		client, err := embeddings.New(embeddings.Options{URL: server.URL, Model: model})
+		client, err := embeddings.New(embeddings.Options{URL: server.URL, Model: model, Now: now})
 		require.NoError(t, err)
 
 		return client
@@ -118,6 +124,7 @@ func TestSearchRowsEmbeddings(t *testing.T) {
 
 	// The endpoint is back: the next sync embeds the row without a template change.
 	healthy.Store(true)
+	offset.Store(int64(2 * embeddings.CircuitOpenFor))
 	require.NoError(t, failing.Sync(ctx))
 
 	model, length = embeddingState(t, pool, "uid-1")
