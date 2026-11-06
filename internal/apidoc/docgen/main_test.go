@@ -14,6 +14,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/sessionsapi"
 	"github.com/solidDoWant/toolgate/internal/settings"
+	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
 
 // recordingMux records the patterns registered on it.
@@ -31,6 +32,7 @@ func TestOperationsAreExactlyTheRegisteredAPIRoutes(t *testing.T) {
 	(&settings.Handler{}).Register(mux, passThrough)
 	(&sessionsapi.Handler{}).Register(mux, passThrough)
 	audittail.New(audittail.Options{}).Register(mux, passThrough)
+	(&workspacesapi.Handler{}).Register(mux, passThrough)
 
 	var routes []string
 
@@ -56,7 +58,7 @@ func TestBuildDocumentsEveryOperation(t *testing.T) {
 	require.NoError(t, err)
 
 	text := string(document)
-	for _, path := range []string{"/api/v1/secrets/{name}:", "/api/v1/secrets:", "/api/v1/settings:", "/api/v1/sessions:", "/api/v1/audit/tail:"} {
+	for _, path := range []string{"/api/v1/secrets/{name}:", "/api/v1/secrets:", "/api/v1/settings:", "/api/v1/sessions:", "/api/v1/audit/tail:", "/api/v1/workspaces:", "/api/v1/workspaces/changes:", "/api/v1/access-requests/{id}:"} {
 		assert.Contains(t, text, path)
 	}
 }
