@@ -448,6 +448,7 @@ func (m *metaTools) lockSession(ctx context.Context, tx pgx.Tx, current requestC
 		ID:          current.session.ID,
 		Workspace:   current.identity.Workspace,
 		Attestation: current.identity.Attestation,
+		Kind:        current.identity.Kind,
 	}); err != nil {
 		return fmt.Errorf("restart session: %w", err)
 	}

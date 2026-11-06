@@ -34,6 +34,7 @@ GO_TEST = re.compile(r"^TestAC(\d+)_(\d+)")
 GO_DECLARATION = re.compile(r"^func TestAC(\d+)_(\d+)\w*\(", re.MULTILINE)
 GO_FUNCTION = re.compile(r"^func (Test\w+)\(", re.MULTILINE)
 GO_SUBTEST = re.compile(r"""\b\w+\.Run\(\s*["`]\[(AC-\d+-\d+)\]""")
+PRECEDENCE = ["skip", "pass", "fail"]
 SKIPPED_DIRECTORIES = {".git", ".claude", "node_modules", "build", "bin"}
 
 
@@ -67,8 +68,14 @@ def go_id(name):
 
 
 def results(directory):
-    """(scenario id, outcome) pairs, outcome one of pass, fail, skip."""
-    found = []
+    """(scenario id, outcome) pairs, outcome one of pass, fail, skip.
+
+    The same test can appear in several files, since the unit, integration and
+    e2e runs each include the tests without build tags. Each (package, test)
+    counts once: fail if it failed anywhere, else pass if it passed anywhere
+    (a run that skipped it, for lack of a cluster, say, does not undo that),
+    else skip."""
+    merged = {}
     for path in sorted(directory.glob("go-*.json")):
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.startswith("{"):
@@ -79,8 +86,9 @@ def results(directory):
                 continue
             scenario = go_id(event.get("Test", ""))
             if scenario:
-                found.append((scenario, action))
-    return found
+                key = (scenario, event.get("Package"), event.get("Test"))
+                merged[key] = max(merged.get(key, action), action, key=PRECEDENCE.index)
+    return [(key[0], action) for key, action in merged.items()]
 
 
 def go_sources(root):

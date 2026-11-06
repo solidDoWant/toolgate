@@ -53,6 +53,9 @@ type Identity struct {
 	// PrincipalGroups are the principal's groups, sent to resolvers.
 	PrincipalGroups []string
 	WorkspaceID     string
+	// Kind is the identity's kind (auth.KindUser, auth.KindServiceAccount
+	// or auth.KindSPIFFE), as recorded on the session.
+	Kind string
 	// Attested is true when the workspace was verified by the platform.
 	// Otherwise WorkspaceID is a claimed value.
 	Attested  bool

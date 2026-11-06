@@ -489,7 +489,9 @@ func TestSessions(t *testing.T) {
 		fixture.connect(t, first)
 
 		row := fixture.sessionRow(t, "alice", "session-1")
-		_, err := fixture.pool.Exec(t.Context(), "UPDATE sessions SET ended_at = now() WHERE id = $1", row.ID)
+		assert.Equal(t, auth.KindUser, row.Kind, "a new session records the identity's kind")
+		// The kind written earlier is replaced by the restarting identity's.
+		_, err := fixture.pool.Exec(t.Context(), "UPDATE sessions SET ended_at = now(), kind = 'spiffe' WHERE id = $1", row.ID)
 		require.NoError(t, err)
 
 		second := alice()
@@ -500,6 +502,7 @@ func TestSessions(t *testing.T) {
 		assert.Equal(t, row.ID, restarted.ID)
 		assert.False(t, restarted.EndedAt.Valid)
 		assert.Equal(t, "claimed/repo-b", restarted.Workspace)
+		assert.Equal(t, auth.KindUser, restarted.Kind, "a restart records the restarting identity's kind")
 
 		var starts int
 		require.NoError(t, fixture.pool.QueryRow(context.WithoutCancel(t.Context()),

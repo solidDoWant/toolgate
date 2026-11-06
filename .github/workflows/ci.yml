@@ -32,9 +32,10 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     outputs:
+      code: ${{ steps.filter.outputs.code }}
       # The scoreboard's tests read the real checklist, so a checklist edit
-      # runs the test jobs too.
-      code: ${{ steps.filter.outputs.code == 'true' || steps.filter.outputs.acceptance == 'true' }}
+      # runs just those tests (the scoreboard-tests job) and the docs checks.
+      acceptance: ${{ steps.filter.outputs.acceptance }}
       docs: ${{ steps.filter.outputs.docs }}
       plugin: ${{ steps.filter.outputs.plugin }}
     steps:
@@ -89,9 +90,19 @@ jobs:
           fetch-depth: 0
       - uses: ./.github/actions/nix-dev-shell
       - name: Unit tests
+        env:
+          GO_TEST_JSON: build/acceptance/results/go-unit.json
         run: nix develop -c make test
       - name: Build
         run: nix develop -c make build
+      - name: Upload the acceptance results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-results-unit
+          path: build/acceptance/results/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Save Go caches
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: ./.github/actions/go-cache-save
@@ -105,15 +116,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/nix-dev-shell
       - name: Integration tests
+        env:
+          GO_TEST_JSON: build/acceptance/results/go-integration.json
         run: nix develop -c make test-integration
+      - name: Upload the acceptance results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: acceptance-results-integration
+          path: build/acceptance/results/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Save Go caches
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: ./.github/actions/go-cache-save
 
   # kind on the runner's Docker (kind, kubectl, helm and flux come from the
-  # dev shell). Each shard runs its share of the e2e tests and then of the
-  # acceptance tests on its own cluster (scripts/e2e/shard.py picks the
-  # tests); e2e-scoreboard scores the results of every shard together.
+  # dev shell). Each shard runs its share of the e2e tests, acceptance tests
+  # included, on its own cluster (scripts/e2e/shard.py picks the tests);
+  # e2e-scoreboard scores the results of the unit, integration and e2e jobs
+  # together.
   e2e:
     needs: changes
     if: needs.changes.outputs.code == 'true'
@@ -128,7 +150,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/nix-dev-shell
-      - name: e2e and acceptance tests (shard ${{ matrix.shard }} of 3)
+      - name: e2e tests (shard ${{ matrix.shard }} of 3)
         run: nix develop -c ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
       - name: Upload the acceptance results
         if: always()
@@ -142,10 +164,11 @@ jobs:
         if: matrix.shard == 1 && github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: ./.github/actions/go-cache-save
 
-  # The acceptance scoreboard of every e2e shard's results, as `make
-  # acceptance` prints it, in the job summary. Plain runner Python, no Nix.
+  # The acceptance scoreboard of the unit, integration and e2e jobs' results
+  # (no test runs twice), as `make acceptance` prints it, in the job summary.
+  # Plain runner Python, no Nix.
   e2e-scoreboard:
-    needs: e2e
+    needs: [unit, integration, e2e]
     if: ${{ !cancelled() && needs.e2e.result != 'skipped' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -158,6 +181,17 @@ jobs:
           path: build/acceptance/results
       - name: Acceptance scoreboard
         run: ./scripts/ci/e2e-scoreboard.sh build/acceptance/results
+
+  # A checklist edit alone: only the scoreboard's tests read the checklist.
+  scoreboard-tests:
+    needs: changes
+    if: needs.changes.outputs.acceptance == 'true' && needs.changes.outputs.code != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Scoreboard tests
+        run: ./scripts/acceptance-scoreboard_test.py
 
   # The human-facing Markdown: links and anchors, agent-prose tells and the
   # page index fail the job; the style report is advisory and only goes to
@@ -227,7 +261,7 @@ jobs:
   # still produce a passing `checks`; it fails if any job failed or was
   # cancelled, and passes when each succeeded or was skipped.
   checks:
-    needs: [changes, lint, unit, integration, e2e, e2e-scoreboard, docs, plugin, test-guard]
+    needs: [changes, lint, unit, integration, e2e, e2e-scoreboard, scoreboard-tests, docs, plugin, test-guard]
     if: always()
     runs-on: ubuntu-latest
     steps:

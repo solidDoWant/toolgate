@@ -48,10 +48,10 @@ class Scoreboard(unittest.TestCase):
                 lines[match.group(1)] = match.group(2)
         return lines
 
-    def write_go(self, *events):
-        with open(self.results / "go-e2e.json", "w", encoding="utf-8") as file:
+    def write_go(self, *events, file="go-e2e.json", package="p"):
+        with open(self.results / file, "w", encoding="utf-8") as handle:
             for name, action in events:
-                file.write(json.dumps({"Action": action, "Test": name}) + "\n")
+                handle.write(json.dumps({"Action": action, "Package": package, "Test": name}) + "\n")
 
     def write_source(self, name, text):
         (self.sources / "test" / "e2e" / name).write_text(text, encoding="utf-8")
@@ -80,6 +80,19 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(statuses["AC-1-25"], "pass")
         self.assertEqual(statuses["AC-1-26"], "not run")
         self.assertIn("passing 2/31", self.scoreboard())
+
+    def test_one_test_in_several_result_files_counts_once(self):
+        self.write_go(("TestAC1_25Block", "skip"), ("TestAC1_26Block", "pass"), ("TestAC1_27Block", "pass"), file="go-unit.json")
+        self.write_go(("TestAC1_25Block", "pass"), ("TestAC1_26Block", "fail"), ("TestAC1_27Block", "skip"), file="go-e2e.json")
+        statuses = self.statuses(self.scoreboard())
+        self.assertEqual(statuses["AC-1-25"], "pass")  # skipped in one run, passed in the other
+        self.assertEqual(statuses["AC-1-26"], "fail")
+        self.assertEqual(statuses["AC-1-27"], "pass")
+
+    def test_the_same_test_name_in_two_packages_must_pass_in_both(self):
+        self.write_go(("TestAC1_25Block", "pass"), file="go-a.json", package="a")
+        self.write_go(("TestAC1_25Block", "skip"), file="go-b.json", package="b")
+        self.assertEqual(self.statuses(self.scoreboard())["AC-1-25"], "not run")
 
     def test_a_tagged_test_that_did_not_run_is_not_run(self):
         self.write_source("x_test.go", 'package e2e\n\nfunc TestX(t *testing.T) {\n\tt.Run("[AC-1-09] variables", nil)\n}\n\nfunc TestAC1_10NoInjection(t *testing.T) {}\n')

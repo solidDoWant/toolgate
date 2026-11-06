@@ -54,7 +54,7 @@ func (e *uiEnv) openSession(t *testing.T, principal, session string) {
 	t.Helper()
 
 	_, err := db.New(e.pool).CreateSession(t.Context(), db.CreateSessionParams{
-		Principal: principal, SessionID: session, Workspace: "w", Attestation: auth.AttestationUser, Groups: []string{},
+		Principal: principal, SessionID: session, Workspace: "w", Attestation: auth.AttestationUser, Kind: auth.KindUser, Groups: []string{},
 	})
 	require.NoError(t, err)
 }
