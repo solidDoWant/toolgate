@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 	"testing"
 	"time"
@@ -28,6 +29,9 @@ const (
 	// (docs/design/phase-3.md §6), plus time for the write and the fan-out.
 	unhealthyBound = healthInterval + healthTimeout + 10*time.Second
 )
+
+// notReady matches the refusal of a call to an unhealthy or starting server.
+var notReady = regexp.MustCompile("is unhealthy|isn't ready")
 
 // createHealthTemplate creates a per-user test server template with a
 // health check on the mcp Service's /healthz, failing after one failure.
@@ -78,8 +82,9 @@ func setHealth(t *testing.T, admin *kubernetes.Clientset, namespace string, stat
 }
 
 // requireWithdrawn waits, within the detection bound, until the session no
-// longer lists the server's tools, and checks that a call is refused as
-// unhealthy.
+// longer lists the server's tools, and checks that a call is refused. The
+// refusal says the instance is unhealthy, or, once a replace repair started
+// the next instance, that the server isn't ready yet.
 func requireWithdrawn(t *testing.T, session *gatewaySession, name string) {
 	t.Helper()
 
@@ -93,9 +98,9 @@ func requireWithdrawn(t *testing.T, session *gatewaySession, name string) {
 	result, err := session.session.CallTool(t.Context(), &mcp.CallToolParams{Name: name + "__env", Arguments: map[string]any{}})
 	if err == nil {
 		require.True(t, result.IsError, "the call is refused")
-		assert.Contains(t, callText(result), "is unhealthy")
+		assert.Regexp(t, notReady, callText(result))
 	} else {
-		assert.Contains(t, err.Error(), "unhealthy")
+		assert.Regexp(t, notReady, err.Error())
 	}
 }
 
@@ -182,7 +187,7 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 		// The first check runs as the instance becomes ready, so the enable
 		// may return the tools or be refused as unhealthy.
 		if result := awaitEnable(t, startEnable(t, session, name)); result.err != "" {
-			require.Contains(t, result.err, "unhealthy")
+			require.Regexp(t, notReady, result.err)
 		}
 
 		first := requireOneInstance(t, admin, name)
