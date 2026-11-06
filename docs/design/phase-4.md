@@ -250,6 +250,16 @@ Without `url`, search is full-text only, as before. The gateway uses a maintaine
 
 **Synonyms.** The synonym list keeps only general computing vocabulary chosen before the fixture's misses were known: folder/directory, file/document, message/post/chat, mail/email, remove/delete, show/list/get/read, fetch/download, search/find/look up, remember/memory/note, history/recent/past. Groups added after looking at the misses are removed.
 
+**Degraded search (owner decision).** The `toolgate_find_tools` result has an optional `note` field.
+- Embeddings endpoint unavailable (error, timeout or open circuit): search by full-text only. The note is: "Search by meaning is unavailable right now, so these are keyword matches only. If none fits, reword the request with the action and the object (for example "list Slack channels"), or try again later."
+- No results, degraded or not: `{"tools": []}` with a note that asks for a specific action and object, and, when degraded, to try again later. This is a normal result, never a tool error.
+- Reranker unavailable: the fused order, with no note.
+- Circuit breaker: after a call to an endpoint fails, the gateway skips that endpoint for 30 s, then tries it again. Each endpoint has its own circuit. Skips and failures count in `toolgate_tool_search_embedding_errors_total` with labels `use` (`query`, `document`, `rerank`) and `reason` (`error`, `circuit_open`).
+
+**Optional reranker (owner decision).** `config.toolSearchRerank{url, model, apiKeyFile, timeout}`, with the same shape as the embeddings setting. Without a URL there is no reranking. The pgvector and full-text query returns the fused top 20 (`rerankPool`); the gateway sends one `POST <url>/rerank` with the query and the embedded text of those tools, under the timeout, reorders them by the reranker's score and returns the first `limit`. If the reranker fails, the gateway returns the first `limit` of the fused order, with no note. The model is `BAAI/bge-reranker-base`, served by a second text-embeddings-inference instance. With no embeddings endpoint, the reranker reorders the full-text top 20. The embeddings model is `BAAI/bge-small-en-v1.5`.
+
+**Model servers in the chart (owner decision).** `embeddings.server` and `embeddings.reranker` (both off by default) deploy text-embeddings-inference. A `pre-install,pre-upgrade` hook Job downloads the model at a pinned `modelRevision` (the `hf download` command, from a pinned `uv` image) into a cache volume; the server runs from that directory with `HF_HUB_OFFLINE=1`, so only the Job needs internet egress. The chart wires `config.toolSearchEmbeddings` and `config.toolSearchRerank` when a server is on, and adds no NetworkPolicy.
+
 ### Search quality
 
 AC-4-03. The fixture is `test/fixtures/toolsearch/`:
@@ -258,7 +268,7 @@ AC-4-03. The fixture is `test/fixtures/toolsearch/`:
 
 One agent writes the fixture and opens it in its own PR before any ranking code merges. The search worker may not change it. So the fixture isn't fitted to the ranking.
 
-The AC-4-03 test is an integration test. It loads the fixture through the real rebuild code into PostgreSQL and runs every task through the real search, **with embeddings configured**. In CI, the embeddings endpoint is Hugging Face text-embeddings-inference (CPU image from `ghcr.io/huggingface/text-embeddings-inference`, pinned by digest) with `BAAI/bge-base-en-v1.5`, cached between runs. The test passes when the expected tool is in the top 5 for at least 90 percent of the tasks. It also prints the full-text-only score for information, which doesn't gate. If hybrid search misses the bar, the worker hands back with the per-task misses and doesn't add words or change the fixture.
+The AC-4-03 test is an integration test. It loads the fixture through the real rebuild code into PostgreSQL and runs every task through the real search, **with embeddings configured**. In CI, the embeddings endpoint is Hugging Face text-embeddings-inference (CPU image from `ghcr.io/huggingface/text-embeddings-inference`, pinned by digest) with `BAAI/bge-small-en-v1.5`, cached between runs. The test passes when the expected tool is in the top 5 for at least 90 percent of the tasks. It also prints the full-text-only score for information, which doesn't gate. If hybrid search misses the bar, the worker hands back with the per-task misses and doesn't add words or change the fixture.
 
 ### Search quality in use
 
@@ -646,6 +656,9 @@ Phase 1's rows (phase 1 §4), phase 2's rows (phase 2 §10) and phase 3's rows (
 | 258 | Session calls a tool from its latest search | latest search, no hit yet | `tool.search_hit` with its rank, once per search, written before forwarding | integration |
 | 259 | Session searches again before calling a returned tool | latest search, no hit | The previous search counts as a re-search, and the pointer moves to the new search | integration |
 | 260 | Search with no hit, session ends or 30 min pass | — | The leader counts it as "no call", once | integration |
+| 261 | Embeddings down, results found | — | Keyword results with the degraded note. | integration |
+| 262 | Embeddings down, nothing found | — | `{"tools": []}` with the reword-and-retry note; not a tool error. | integration |
+| 263 | Endpoint call failed | — | The endpoint is skipped for 30 s, then tried again; the skip counts with `reason=circuit_open`. | unit |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 

@@ -93,7 +93,7 @@ func insertToolSearch(ctx context.Context, queries *db.Queries, uid string, temp
 
 		embedded, err := embedder.Embed(ctx, texts)
 		if err != nil {
-			embedder.CountError("document")
+			embedder.CountError("document", err)
 
 			if log != nil {
 				log.WarnContext(ctx, "embedding the tool search rows failed", slog.String("template", uid), slog.Any("error", err))

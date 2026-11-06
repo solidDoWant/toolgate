@@ -79,3 +79,17 @@ fields can follow `config`.
   {{- end -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The model cache claim: the existing claim of the embeddings server, or of the
+reranker when only that is on, or the one the chart creates.
+*/}}
+{{- define "toolgate.modelClaim" -}}
+{{- if .Values.embeddings.server.cache.existingClaim -}}
+{{- .Values.embeddings.server.cache.existingClaim -}}
+{{- else if and .Values.embeddings.reranker.enabled (not .Values.embeddings.server.enabled) .Values.embeddings.reranker.cache.existingClaim -}}
+{{- .Values.embeddings.reranker.cache.existingClaim -}}
+{{- else -}}
+{{- printf "%s-models" (include "toolgate.fullname" .) -}}
+{{- end -}}
+{{- end -}}

@@ -69,6 +69,32 @@ type FoundTool struct {
 // FindToolsResult is the toolgate_find_tools result.
 type FindToolsResult struct {
 	Tools []FoundTool `json:"tools"`
+	// Note tells the model what to do when search is degraded or found
+	// nothing. It is left out otherwise.
+	Note string `json:"note,omitempty"`
+}
+
+const (
+	// rerankPool is the number of best tools a reranker orders.
+	rerankPool = 20
+
+	noteDegraded         = "Search by meaning is unavailable right now, so these are keyword matches only. If none fits, reword the request with the action and the object (for example \"list Slack channels\"), or try again later."
+	noteNoResult         = "No tool matched. Reword the request with a specific action and object (for example \"list Slack channels\")."
+	noteNoResultDegraded = "No tool matched, and search by meaning is unavailable right now. Reword the request with a specific action and object (for example \"list Slack channels\"), or try again later."
+)
+
+// findToolsNote returns the note of a result with count tools.
+func findToolsNote(count int, degraded bool) string {
+	switch {
+	case count == 0 && degraded:
+		return noteNoResultDegraded
+	case count == 0:
+		return noteNoResult
+	case degraded:
+		return noteDegraded
+	}
+
+	return ""
 }
 
 var queryWordPattern = regexp.MustCompile(`[a-z0-9]+`)
@@ -175,7 +201,7 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 		}
 	}
 
-	rows, stopWordsOnly, err := m.searchRows(ctx, uids, input.Query, tsQuery(words), tsQuery(expandWords(words)), strings.Join(words, " "))
+	rows, stopWordsOnly, degraded, err := m.searchRows(ctx, uids, input.Query, tsQuery(words), tsQuery(expandWords(words)), strings.Join(words, " "))
 	if err != nil {
 		return nil, FindToolsResult{}, err
 	}
@@ -188,8 +214,17 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 	result := FindToolsResult{Tools: []FoundTool{}}
 	kept := []db.SearchToolsRow{}
 
+	// With a reranker, the loop collects the best rerankPool tools and the
+	// reranker picks the first limit of them.
+	pool := limit
+	if m.reranker != nil {
+		pool = max(limit, rerankPool)
+	}
+
+	texts := []string{}
+
 	for _, row := range rows {
-		if len(result.Tools) >= limit {
+		if len(result.Tools) >= pool {
 			break
 		}
 
@@ -237,7 +272,27 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 		})
 
 		kept = append(kept, row)
+		texts = append(texts, toolcatalog.SearchPartsOf(template, curated).EmbeddingText())
 	}
+
+	if m.reranker != nil && len(result.Tools) > 1 {
+		if order, rerankErr := m.reranker.Rerank(ctx, input.Query, texts); rerankErr == nil {
+			ranked := FindToolsResult{Tools: make([]FoundTool, len(order))}
+			rankedRows := make([]db.SearchToolsRow, len(order))
+
+			for position, index := range order {
+				ranked.Tools[position], rankedRows[position] = result.Tools[index], kept[index]
+			}
+
+			result, kept = ranked, rankedRows
+		}
+	}
+
+	if len(result.Tools) > limit {
+		result.Tools, kept = result.Tools[:limit], kept[:limit]
+	}
+
+	result.Note = findToolsNote(len(result.Tools), degraded)
 
 	if err := m.recordFound(ctx, request, current, kept); err != nil {
 		return nil, FindToolsResult{}, err
@@ -247,9 +302,10 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 }
 
 // searchRows runs the ranking query in a read-only transaction with a
-// statement timeout. stopWordsOnly is true when every word of the query is a
+// statement timeout. degraded is true when an embeddings endpoint is set but
+// its call failed or was skipped. stopWordsOnly is true when every word of the query is a
 // stop word, so the query is empty and matches nothing.
-func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, query, expanded, plain string) (rows []db.SearchToolsRow, stopWordsOnly bool, err error) {
+func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, query, expanded, plain string) (rows []db.SearchToolsRow, stopWordsOnly, degraded bool, err error) {
 	// The query vector is fetched before the transaction. A failure means
 	// words only; the query text is never logged.
 	var queryVector []float32
@@ -257,7 +313,9 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 	if m.embedder != nil && len(uids) > 0 {
 		vectors, embedErr := m.embedder.Embed(ctx, []string{rawQuery})
 		if embedErr != nil {
-			m.embedder.CountError("query")
+			m.embedder.CountError("query", embedErr)
+
+			degraded = true
 		} else {
 			queryVector = vectors[0]
 		}
@@ -310,7 +368,7 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 		return nil
 	})
 
-	return rows, stopWordsOnly, err
+	return rows, stopWordsOnly, degraded, err
 }
 
 // recordFound writes the found tools in one transaction that locks the

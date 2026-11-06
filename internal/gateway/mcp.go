@@ -106,6 +106,8 @@ type MCPOptions struct {
 	ToolSearch bool
 	// Embedder embeds search queries for tool search; nil means words only.
 	Embedder *embeddings.Client
+	// Reranker reorders the best search results; nil means no reranking.
+	Reranker *embeddings.Reranker
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -282,6 +284,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
 		embedder:             options.Embedder,
+		reranker:             options.Reranker,
 	}
 
 	if tools.workspaces == nil {

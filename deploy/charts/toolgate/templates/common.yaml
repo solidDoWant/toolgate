@@ -82,6 +82,22 @@ settings from `config`.
 {{- end }}
 {{- end }}
 {{- end }}
+{{- /* A server the chart runs sets the URL and model, unless config sets a URL. */ -}}
+{{- if and .Values.embeddings.server.enabled (not $config.toolSearchEmbeddings.url) }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_URL" "value" (printf "http://%s-embeddings.%s.svc:80" (include "toolgate.fullname" .) .Release.Namespace)) }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_MODEL" "value" .Values.embeddings.server.model) }}
+{{- end }}
+{{- with $config.toolSearchRerank }}
+{{- range $setting, $name := dict "url" "TOOLGATE_TOOL_SEARCH_RERANK_URL" "model" "TOOLGATE_TOOL_SEARCH_RERANK_MODEL" "apiKeyFile" "TOOLGATE_TOOL_SEARCH_RERANK_API_KEY_FILE" "timeout" "TOOLGATE_TOOL_SEARCH_RERANK_TIMEOUT" }}
+{{- with index $.Values.config.toolSearchRerank $setting }}
+{{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and .Values.embeddings.reranker.enabled (not $config.toolSearchRerank.url) }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_RERANK_URL" "value" (printf "http://%s-reranker.%s.svc:80" (include "toolgate.fullname" .) .Release.Namespace)) }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_RERANK_MODEL" "value" .Values.embeddings.reranker.model) }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

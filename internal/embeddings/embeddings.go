@@ -42,6 +42,9 @@ type Options struct {
 	Timeout time.Duration
 	// HTTPClient overrides the HTTP client; nil means a plain client.
 	HTTPClient *http.Client
+	// Now returns the current time for the circuit breaker; nil means
+	// time.Now.
+	Now func() time.Time
 }
 
 // Client calls the embeddings endpoint.
@@ -51,12 +54,39 @@ type Client struct {
 	apiKey   string
 	timeout  time.Duration
 	http     *http.Client
-	errors   *prometheus.CounterVec
+	breaker  breaker
+	metrics  *Metrics
 }
+
+// Metrics counts failed and skipped calls of the model endpoints. One value
+// is shared by the embeddings client and the reranker.
+type Metrics struct {
+	errors *prometheus.CounterVec
+}
+
+// NewMetrics returns the counter `toolgate_tool_search_embedding_errors_total`,
+// labelled by use (`query`, `document` or `rerank`) and reason (`error`, or
+// `circuit_open` for a call skipped while the circuit is open).
+func NewMetrics() *Metrics {
+	return &Metrics{errors: prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "toolgate_tool_search_embedding_errors_total",
+		Help: "Failed or skipped calls of the tool search model endpoints, by use (query, document or rerank) and reason (error or circuit_open).",
+	}, []string{"use", "reason"})}
+}
+
+// Counter returns the counter of a use and reason, for tests.
+func (m *Metrics) Counter(use, reason string) prometheus.Counter {
+	return m.errors.WithLabelValues(use, reason)
+}
+
+func (m *Metrics) count(use, reason string) { m.errors.WithLabelValues(use, reason).Inc() }
+
+// Collectors returns the metrics.
+func (m *Metrics) Collectors() []prometheus.Collector { return []prometheus.Collector{m.errors} }
 
 // New returns a client, or an error when the URL is not an http(s) URL or the
 // model is empty.
-func New(options Options) (*Client, error) {
+func New(options Options, metrics ...*Metrics) (*Client, error) {
 	parsed, err := url.Parse(options.URL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return nil, fmt.Errorf("the embeddings URL must be an http or https URL")
@@ -76,16 +106,19 @@ func New(options Options) (*Client, error) {
 		client = &http.Client{}
 	}
 
+	shared := NewMetrics()
+	if len(metrics) > 0 && metrics[0] != nil {
+		shared = metrics[0]
+	}
+
 	return &Client{
 		endpoint: strings.TrimRight(options.URL, "/") + "/v1/embeddings",
 		model:    options.Model,
 		apiKey:   options.APIKey,
 		timeout:  timeout,
 		http:     client,
-		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "toolgate_tool_search_embedding_errors_total",
-			Help: "Failed calls of the tool search embeddings endpoint, by use (query or document).",
-		}, []string{"use"}),
+		breaker:  breaker{now: valueOrNow(options.Now)},
+		metrics:  shared,
 	}, nil
 }
 
@@ -93,10 +126,19 @@ func New(options Options) (*Client, error) {
 func (c *Client) Model() string { return c.model }
 
 // Collectors returns the client's metrics.
-func (c *Client) Collectors() []prometheus.Collector { return []prometheus.Collector{c.errors} }
+func (c *Client) Collectors() []prometheus.Collector { return c.metrics.Collectors() }
 
-// CountError counts a failed use of the endpoint. use is `query` or `document`.
-func (c *Client) CountError(use string) { c.errors.WithLabelValues(use).Inc() }
+// CountError counts a failed use of the endpoint. use is `query` or
+// `document`; err says whether the call failed or was skipped.
+func (c *Client) CountError(use string, err error) {
+	if errors.Is(err, ErrCircuitOpen) {
+		c.metrics.count(use, "circuit_open")
+
+		return
+	}
+
+	c.metrics.count(use, "error")
+}
 
 type request struct {
 	Model string   `json:"model"`
@@ -131,6 +173,17 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 }
 
 func (c *Client) embedBatch(ctx context.Context, texts []string) ([][]float32, error) {
+	if !c.breaker.allow() {
+		return nil, ErrCircuitOpen
+	}
+
+	vectors, err := c.callBatch(ctx, texts)
+	c.breaker.record(err != nil)
+
+	return vectors, err
+}
+
+func (c *Client) callBatch(ctx context.Context, texts []string) ([][]float32, error) {
 	body, err := json.Marshal(request{Model: c.model, Input: texts})
 	if err != nil {
 		return nil, fmt.Errorf("encode the embeddings request: %w", err)
@@ -206,4 +259,12 @@ func FormatVector(vector []float32) string {
 	builder.WriteByte(']')
 
 	return builder.String()
+}
+
+func valueOrNow(now func() time.Time) func() time.Time {
+	if now == nil {
+		return time.Now
+	}
+
+	return now
 }

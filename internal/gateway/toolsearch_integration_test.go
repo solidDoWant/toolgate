@@ -447,10 +447,17 @@ func TestAC4_03SearchQuality(t *testing.T) {
 	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: endpoint.Model, Timeout: 30 * time.Second})
 	require.NoError(t, err)
 
-	// The first replica searches with embeddings; the second, made after the
-	// embedder is cleared, searches by words only.
-	active := embedder
-	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Embedder = active })
+	rerankEndpoint := testutil.StartReranker(t)
+
+	reranker, err := embeddings.NewReranker(embeddings.Options{URL: rerankEndpoint.URL, Model: rerankEndpoint.Model, Timeout: 60 * time.Second}, nil)
+	require.NoError(t, err)
+
+	// Each replica is made with the endpoints set in active and activeRerank.
+	active, activeRerank := embedder, (*embeddings.Reranker)(nil)
+	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) {
+		options.Embedder = active
+		options.Reranker = activeRerank
+	})
 	fixture.embedder = embedder
 
 	for _, server := range servers.Servers {
@@ -489,15 +496,21 @@ func TestAC4_03SearchQuality(t *testing.T) {
 		return rate
 	}
 
-	hybrid := score("hybrid")
+	// The words-only and hybrid scores are for information; only hybrid
+	// search with the reranker gates.
+	score("hybrid")
 
-	// The words-only score is for information; it does not gate.
-	active = nil
+	activeRerank = reranker
+	fixture.server = fixture.replica(t)
+
+	reranked := score("hybrid and rerank")
+
+	active, activeRerank = nil, nil
 	fixture.server = fixture.replica(t)
 
 	score("words only")
 
-	assert.GreaterOrEqual(t, hybrid, 0.9)
+	assert.GreaterOrEqual(t, reranked, 0.9)
 }
 
 func contains(values []string, want string) bool {
@@ -602,4 +615,119 @@ func TestToolSearchRanksByMeaning(t *testing.T) {
 	}
 
 	assert.Equal(t, []string{"srv__z_marine", "srv__a_tree"}, names)
+}
+
+const (
+	degradedNote   = `Search by meaning is unavailable right now, so these are keyword matches only. If none fits, reword the request with the action and the object (for example "list Slack channels"), or try again later.`
+	noResultNote   = `No tool matched. Reword the request with a specific action and object (for example "list Slack channels").`
+	noResultDegrad = `No tool matched, and search by meaning is unavailable right now. Reword the request with a specific action and object (for example "list Slack channels"), or try again later.`
+)
+
+// TestToolSearchNotes covers the notes of a degraded search and of an empty
+// result, and the circuit breaker that skips a failed endpoint.
+func TestToolSearchNotes(t *testing.T) {
+	var calls atomic.Int32
+
+	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(down.Close)
+
+	embedder, err := embeddings.New(embeddings.Options{URL: down.URL, Model: "m"})
+	require.NoError(t, err)
+
+	t.Run("without an endpoint", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		template := fixture.addEnableTemplate("srv", "per-user", anyone)
+		fixture.declareTools(t, template, declared("echo", "Echo text back"))
+		session := fixture.connect(t, searching(alice()))
+
+		found, _ := findTools(t, session, "echo", 0)
+		assert.Equal(t, []string{"srv__echo"}, foundNames(found))
+		assert.Empty(t, found.Note)
+
+		found, _ = findTools(t, session, "zzzqqq", 0)
+		assert.Empty(t, found.Tools)
+		assert.Equal(t, noResultNote, found.Note)
+	})
+
+	t.Run("endpoint down", func(t *testing.T) {
+		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Embedder = embedder })
+		fixture.embedder = embedder
+		template := fixture.addEnableTemplate("srv", "per-user", anyone)
+		fixture.declareTools(t, template, declared("echo", "Echo text back"))
+		session := fixture.connect(t, searching(alice()))
+
+		before := calls.Load()
+
+		found, _ := findTools(t, session, "echo", 0)
+		assert.Equal(t, []string{"srv__echo"}, foundNames(found))
+		assert.Equal(t, degradedNote, found.Note)
+
+		found, _ = findTools(t, session, "zzzqqq", 0)
+		assert.Empty(t, found.Tools)
+		assert.Equal(t, noResultDegrad, found.Note)
+
+		// The rebuild's failed call opened the circuit, so the searches
+		// sent nothing.
+		assert.Equal(t, before, calls.Load())
+	})
+}
+
+// TestToolSearchRerank checks that the reranker's order decides the result,
+// that it cuts the result to the limit, and that a failing reranker leaves the
+// fused order without a note.
+func TestToolSearchRerank(t *testing.T) {
+	var healthy atomic.Bool
+
+	rerankServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !healthy.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+
+			return
+		}
+
+		var in struct {
+			Texts []string `json:"texts"`
+		}
+		assert.NoError(t, json.NewDecoder(r.Body).Decode(&in))
+
+		out := make([]map[string]any, len(in.Texts))
+		for index, text := range in.Texts {
+			score := 0.0
+			if strings.Contains(text, "winner") {
+				score = 1
+			}
+
+			out[index] = map[string]any{"index": index, "score": score}
+		}
+
+		assert.NoError(t, json.NewEncoder(w).Encode(out))
+	}))
+	t.Cleanup(rerankServer.Close)
+
+	reranker, err := embeddings.NewReranker(embeddings.Options{URL: rerankServer.URL, Model: "r"}, nil)
+	require.NoError(t, err)
+
+	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Reranker = reranker })
+	template := fixture.addEnableTemplate("srv", "per-user", anyone)
+	fixture.declareTools(t, template,
+		declared("a_plain", "report the weather"),
+		declared("b_plain", "report the weather"),
+		declared("c_winner", "report the weather winner"),
+	)
+	session := fixture.connect(t, searching(alice()))
+
+	healthy.Store(true)
+
+	found, _ := findTools(t, session, "report weather", 1)
+	assert.Equal(t, []string{"srv__c_winner"}, foundNames(found))
+	assert.Empty(t, found.Note)
+
+	healthy.Store(false)
+
+	found, _ = findTools(t, session, "report weather", 2)
+	assert.Len(t, found.Tools, 2)
+	assert.Empty(t, found.Note, "a failed reranker leaves no note")
 }

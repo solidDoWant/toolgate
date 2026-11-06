@@ -17,7 +17,10 @@ import (
 const EmbeddingsImage = "ghcr.io/huggingface/text-embeddings-inference:cpu-1.9@sha256:2538ea1c9640d3763b15af668039d24172d063b42337b0c27796fc2be180c78d"
 
 // EmbeddingsModel is the model the embeddings server loads.
-const EmbeddingsModel = "BAAI/bge-base-en-v1.5"
+const EmbeddingsModel = "BAAI/bge-small-en-v1.5"
+
+// RerankModel is the model the rerank server loads.
+const RerankModel = "BAAI/bge-reranker-base"
 
 const embeddingsPort = "80/tcp"
 
@@ -34,6 +37,20 @@ type Embeddings struct {
 // tb when Docker is not available.
 func StartEmbeddings(tb testing.TB) *Embeddings {
 	tb.Helper()
+
+	return startModelServer(tb, EmbeddingsModel)
+}
+
+// StartReranker starts a second server for RerankModel, which answers
+// `POST /rerank`. It is otherwise like StartEmbeddings.
+func StartReranker(tb testing.TB) *Embeddings {
+	tb.Helper()
+
+	return startModelServer(tb, RerankModel)
+}
+
+func startModelServer(tb testing.TB, model string) *Embeddings {
+	tb.Helper()
 	RequireDocker(tb)
 
 	cacheRoot, err := os.UserCacheDir()
@@ -47,7 +64,7 @@ func StartEmbeddings(tb testing.TB) *Embeddings {
 	ctx := tb.Context()
 
 	container, err := testcontainers.Run(ctx, EmbeddingsImage,
-		testcontainers.WithCmd("--model-id", EmbeddingsModel, "--port", "80"),
+		testcontainers.WithCmd("--model-id", model, "--port", "80"),
 		testcontainers.WithHostConfigModifier(func(config *container.HostConfig) {
 			config.Binds = append(config.Binds, cache+":/data")
 		}),
@@ -62,5 +79,5 @@ func StartEmbeddings(tb testing.TB) *Embeddings {
 	endpoint, err := container.PortEndpoint(ctx, embeddingsPort, "http")
 	require.NoError(tb, err)
 
-	return &Embeddings{URL: endpoint, Model: EmbeddingsModel}
+	return &Embeddings{URL: endpoint, Model: model}
 }
