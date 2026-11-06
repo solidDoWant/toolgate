@@ -149,7 +149,7 @@ func TestMarkStartingRecordsResolvedExpiry(t *testing.T) {
 	instance := fixture.instance(t, template, "user:mark-expiry-user", "mark-expiry-user", "pending")
 
 	expiresAt := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
-	changed, err := runtime.PostgresStartStore{Pool: fixture.pool}.MarkStarting(t.Context(), instance.ID, 1, expiresAt)
+	changed, err := runtime.PostgresStartStore{Pool: fixture.pool}.MarkStarting(t.Context(), instance.ID, 1, nil, expiresAt)
 	require.NoError(t, err)
 	require.True(t, changed)
 

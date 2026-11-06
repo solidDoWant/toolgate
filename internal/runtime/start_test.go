@@ -54,6 +54,8 @@ type memoryStore struct {
 	writes     int
 	// resolvedExpiresAt is what MarkStarting recorded.
 	resolvedExpiresAt time.Time
+	// healthCheck is what MarkStarting recorded.
+	healthCheck []byte
 	// secretsRecorded says RecordSecretsUsed was called.
 	secretsRecorded bool
 }
@@ -76,7 +78,7 @@ func (m *memoryStore) RecordSecretsUsed(context.Context, string, map[string]time
 	return nil
 }
 
-func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64, resolvedExpiresAt time.Time) (bool, error) {
+func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -84,7 +86,7 @@ func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64
 		return false, nil
 	}
 
-	m.status, m.generation, m.resolvedExpiresAt = "starting", generation, resolvedExpiresAt
+	m.status, m.generation, m.resolvedExpiresAt, m.healthCheck = "starting", generation, resolvedExpiresAt, healthCheck
 	m.writes++
 
 	return true, nil
@@ -898,4 +900,82 @@ func TestStarterTimeoutReasonIsTheNotReadyObjectsMessage(t *testing.T) {
 	status, reason, _, _ := fixture.store.snapshot()
 	assert.Equal(t, "failed", status)
 	assert.Equal(t, "The server didn't become ready within 5m0s: HelmRelease server: chart not found", reason)
+}
+
+func healthCheckTemplate(service, onFailure string) *v1alpha1.MCPServerTemplate {
+	template := testTemplate(configMapResource)
+	template.Spec.HealthCheck = &v1alpha1.HealthCheck{
+		HTTP:      v1alpha1.HealthCheckHTTP{Service: service, Port: 8081, Path: "/healthz-${instance.id}", ExpectedStatus: 204},
+		Interval:  metav1.Duration{Duration: time.Minute},
+		Timeout:   metav1.Duration{Duration: 2 * time.Second},
+		OnFailure: onFailure, FailureThreshold: 2, SuccessThreshold: 1, MaxRepairs: 4,
+	}
+
+	return template
+}
+
+func decodeCheck(t *testing.T, raw []byte) v1alpha1.HealthCheck {
+	t.Helper()
+	require.NotNil(t, raw)
+
+	var check v1alpha1.HealthCheck
+	require.NoError(t, json.Unmarshal(raw, &check))
+
+	return check
+}
+
+func TestStarterWritesRenderedHealthCheckWithStarting(t *testing.T) {
+	template := healthCheckTemplate("db-${instance.id}", "reapply")
+	fixture := newStarterFixture(t, template, "pending")
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	check := decodeCheck(t, fixture.store.healthCheck)
+	assert.Equal(t, "db-"+instanceID, check.HTTP.Service, "http.service is rendered")
+	assert.Equal(t, "/healthz-${instance.id}", check.HTTP.Path, "the path is not rendered")
+	assert.Equal(t, int32(8081), check.HTTP.Port)
+	assert.Equal(t, int32(204), check.HTTP.ExpectedStatus)
+	assert.Equal(t, "reapply", check.OnFailure)
+	assert.Equal(t, time.Minute, check.Interval.Duration)
+	assert.Equal(t, int32(4), check.MaxRepairs)
+}
+
+func TestStarterWithoutHealthCheckWritesNull(t *testing.T) {
+	fixture := newStarterFixture(t, testTemplate(configMapResource), "pending")
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	status, _, _, _ := fixture.store.snapshot()
+	assert.Equal(t, "starting", status)
+	assert.Nil(t, fixture.store.healthCheck)
+}
+
+func TestStarterKeepsHealthCheckItStartedWith(t *testing.T) {
+	template := healthCheckTemplate("db-${instance.id}", "replace")
+	fixture := newStarterFixture(t, template, "pending", readyPod())
+
+	require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
+
+	started := string(fixture.store.healthCheck)
+
+	// The admin changes the check and onFailure, then removes the check. The
+	// running instance's column is not written again.
+	template.Spec.HealthCheck.OnFailure = "none"
+	template.Spec.HealthCheck.HTTP.Path = "/other"
+	template.Generation = 4
+
+	starting := fixture.instance
+	starting.Status = "starting"
+	require.NoError(t, fixture.starter.Step(t.Context(), starting))
+	assert.Equal(t, started, string(fixture.store.healthCheck))
+
+	template.Spec.HealthCheck = nil
+
+	require.NoError(t, fixture.starter.Step(t.Context(), starting))
+	assert.Equal(t, started, string(fixture.store.healthCheck))
+
+	// The next instance gets the template's current (here: no) check.
+	next := newStarterFixture(t, template, "pending")
+	require.NoError(t, next.starter.Step(t.Context(), next.instance))
+	assert.Nil(t, next.store.healthCheck)
 }

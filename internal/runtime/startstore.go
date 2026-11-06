@@ -26,8 +26,9 @@ type StartStore interface {
 	RecordSecretsUsed(ctx context.Context, id string, versions map[string]time.Time) error
 	// MarkStarting moves a pending instance to starting and records the
 	// template generation its objects were applied with and the earliest
-	// expiry of its resolved values (zero for none).
-	MarkStarting(ctx context.Context, id string, generation int64, resolvedExpiresAt time.Time) (bool, error)
+	// expiry of its resolved values (zero for none). healthCheck is the
+	// rendered custom health check as JSON, nil for none.
+	MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time) (bool, error)
 	// MarkReady moves a starting instance to ready with its tool list.
 	MarkReady(ctx context.Context, id string, tools []byte) (bool, error)
 	// MarkFailed moves an instance from status from to failed.
@@ -68,10 +69,10 @@ func (s PostgresStartStore) RecordSecretsUsed(ctx context.Context, id string, ve
 }
 
 // MarkStarting implements StartStore.
-func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generation int64, resolvedExpiresAt time.Time) (bool, error) {
+func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time) (bool, error) {
 	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceStarting(ctx, db.SetInstanceStartingParams{
-			ID: id, Generation: generation,
+			ID: id, Generation: generation, HealthCheck: healthCheck,
 			ResolvedExpiresAt: pgtype.Timestamptz{Time: resolvedExpiresAt, Valid: !resolvedExpiresAt.IsZero()},
 		})
 	})

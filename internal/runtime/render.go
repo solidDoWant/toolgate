@@ -205,6 +205,41 @@ func RenderEndpointService(template *v1alpha1.MCPServerTemplate, instance Instan
 	return renderer.text(template.Spec.Endpoint.Service, []string{"endpoint", "service"})
 }
 
+// RenderHealthCheck returns the template's health check as JSON, with
+// http.service rendered like the endpoint Service, or nil when the template
+// has none. The path is not rendered. The result is what an instance keeps in
+// its health_check column, so later template changes don't reach it.
+func RenderHealthCheck(template *v1alpha1.MCPServerTemplate, instance Instance) ([]byte, error) {
+	if template.Spec.HealthCheck == nil {
+		return nil, nil
+	}
+
+	check := template.Spec.HealthCheck.DeepCopy()
+
+	shared := *template
+	shared.Spec.Scope = scopeShared
+
+	renderer := &renderer{
+		ctx:         context.Background(),
+		input:       Input{Template: &shared, Instance: instance, Secrets: noSecrets{}},
+		secretsUsed: map[string]time.Time{},
+	}
+
+	service, err := renderer.text(check.HTTP.Service, []string{"healthCheck", "http", "service"})
+	if err != nil {
+		return nil, err
+	}
+
+	check.HTTP.Service = service
+
+	encoded, err := json.Marshal(check)
+	if err != nil {
+		return nil, fmt.Errorf("encode health check: %w", err)
+	}
+
+	return encoded, nil
+}
+
 // noSecrets is a SecretSource with no values. The shared scope set by
 // RenderEndpointService refuses secret variables before they reach it.
 type noSecrets struct{}

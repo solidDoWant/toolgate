@@ -77,6 +77,31 @@ The name of the template is the name of the server. It has 31 characters at most
 - `tools`: changes for single tools, with the name of the tool as the key. Each entry can set `environments` or `blocked: true`. A blocked tool is never offered and every call to it is refused.
 - `endpoint`: the Service, port and path where the instance serves MCP over HTTP.
 - `resources`: the Kubernetes objects that toolgate applies for each instance.
+- `healthCheck`: an optional HTTP check of a running instance. See [Health checks](#health-checks).
+
+## Health checks
+
+A template can add a `healthCheck`. It is a `GET` request to a Service in the instance namespace. The request passes when the status is the one you expect. Without a `healthCheck`, toolgate only does its MCP ping.
+
+```yaml
+spec:
+  healthCheck:
+    http:
+      service: db-proxy    # a Service in the template; ${instance.id} is replaced
+      port: 8080
+      path: /healthz       # starts with /, at most 1024 characters, not replaced
+      expectedStatus: 200  # 100 to 599
+    interval: 30s          # 10s to 10m
+    timeout: 5s            # 1s to 60s, less than interval
+    failureThreshold: 3    # 1 to 10: failures in a row that make the instance unhealthy
+    successThreshold: 1    # 1 to 10: passes in a row that make it healthy again
+    onFailure: replace     # replace | reapply | none
+    maxRepairs: 3          # 1 to 10: repairs allowed in 30 minutes
+```
+
+The values above are the defaults, except for `http`, which has no default. In a `namespace: shared` template, `http.service` must contain `${instance.id}`, like `endpoint.service`. The Kubernetes API server and the catalog both check these limits. A template that breaks one is invalid, and the `Valid` condition gives the reason.
+
+An instance keeps the check it started with. A change to `healthCheck` applies to instances that start after it.
 
 ## Who can use a server
 

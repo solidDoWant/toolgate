@@ -1,7 +1,9 @@
 package catalog_test
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +41,87 @@ func secretWith(field, value string) string {
 
 func podWithEnv(value string) string {
 	return `{"apiVersion":"v1","kind":"Pod","metadata":{"name":"mcp"},"spec":{"containers":[{"name":"mcp","image":"mcp:1","env":[{"name":"V","value":"` + value + `"}]}]}}`
+}
+
+func withHealthCheck(template *v1alpha1.MCPServerTemplate, change func(*v1alpha1.HealthCheck)) *v1alpha1.MCPServerTemplate {
+	check := &v1alpha1.HealthCheck{
+		HTTP:     v1alpha1.HealthCheckHTTP{Service: "mcp", Port: 8080, Path: "/healthz", ExpectedStatus: 200},
+		Interval: metav1.Duration{Duration: 30 * time.Second}, Timeout: metav1.Duration{Duration: 5 * time.Second},
+		FailureThreshold: 3, SuccessThreshold: 1, OnFailure: "replace", MaxRepairs: 3,
+	}
+	change(check)
+	template.Spec.HealthCheck = check
+
+	return template
+}
+
+func TestValidateHealthCheck(t *testing.T) {
+	longPath := "/" + strings.Repeat("a", 1023)
+	tests := []struct {
+		name        string
+		change      func(*v1alpha1.HealthCheck)
+		shared      bool
+		wantProblem string
+	}{
+		{name: "a valid check", change: func(*v1alpha1.HealthCheck) {}},
+		{name: "defaults left out are valid", change: func(check *v1alpha1.HealthCheck) {
+			*check = v1alpha1.HealthCheck{HTTP: v1alpha1.HealthCheckHTTP{Service: "mcp", Port: 80, Path: "/"}}
+		}},
+		{name: "path of exactly 1024 characters is valid", change: func(check *v1alpha1.HealthCheck) { check.HTTP.Path = longPath }},
+		{name: "path of 1025 characters", change: func(check *v1alpha1.HealthCheck) { check.HTTP.Path = longPath + "a" }, wantProblem: "healthCheck.http.path"},
+		{name: "path without a leading slash", change: func(check *v1alpha1.HealthCheck) { check.HTTP.Path = "healthz" }, wantProblem: "healthCheck.http.path"},
+		{name: "empty service", change: func(check *v1alpha1.HealthCheck) { check.HTTP.Service = "" }, wantProblem: "healthCheck.http.service"},
+		{name: "port 0", change: func(check *v1alpha1.HealthCheck) { check.HTTP.Port = 0 }, wantProblem: "healthCheck.http.port"},
+		{name: "port 65536", change: func(check *v1alpha1.HealthCheck) { check.HTTP.Port = 65536 }, wantProblem: "healthCheck.http.port"},
+		{name: "expectedStatus 99", change: func(check *v1alpha1.HealthCheck) { check.HTTP.ExpectedStatus = 99 }, wantProblem: "expectedStatus"},
+		{name: "expectedStatus 600", change: func(check *v1alpha1.HealthCheck) { check.HTTP.ExpectedStatus = 600 }, wantProblem: "expectedStatus"},
+		{name: "expectedStatus 599", change: func(check *v1alpha1.HealthCheck) { check.HTTP.ExpectedStatus = 599 }},
+		{name: "interval 10s", change: func(check *v1alpha1.HealthCheck) { check.Interval.Duration = 10 * time.Second }},
+		{name: "interval 9s", change: func(check *v1alpha1.HealthCheck) { check.Interval.Duration = 9 * time.Second }, wantProblem: "healthCheck.interval"},
+		{name: "interval 10m", change: func(check *v1alpha1.HealthCheck) { check.Interval.Duration = 10 * time.Minute }},
+		{name: "interval 10m1s", change: func(check *v1alpha1.HealthCheck) { check.Interval.Duration = 10*time.Minute + time.Second }, wantProblem: "healthCheck.interval"},
+		{name: "timeout 999ms", change: func(check *v1alpha1.HealthCheck) { check.Timeout.Duration = 999 * time.Millisecond }, wantProblem: "healthCheck.timeout"},
+		{name: "timeout 61s", change: func(check *v1alpha1.HealthCheck) {
+			check.Interval.Duration, check.Timeout.Duration = 10*time.Minute, 61*time.Second
+		}, wantProblem: "healthCheck.timeout"},
+		{name: "timeout equal to interval", change: func(check *v1alpha1.HealthCheck) { check.Timeout.Duration = 30 * time.Second }, wantProblem: "less than"},
+		{name: "timeout one below interval", change: func(check *v1alpha1.HealthCheck) { check.Timeout.Duration = 29 * time.Second }},
+		{name: "failureThreshold 11", change: func(check *v1alpha1.HealthCheck) { check.FailureThreshold = 11 }, wantProblem: "failureThreshold"},
+		{name: "failureThreshold 10", change: func(check *v1alpha1.HealthCheck) { check.FailureThreshold = 10 }},
+		{name: "successThreshold 11", change: func(check *v1alpha1.HealthCheck) { check.SuccessThreshold = 11 }, wantProblem: "successThreshold"},
+		{name: "maxRepairs 11", change: func(check *v1alpha1.HealthCheck) { check.MaxRepairs = 11 }, wantProblem: "maxRepairs"},
+		{name: "maxRepairs negative", change: func(check *v1alpha1.HealthCheck) { check.MaxRepairs = -1 }, wantProblem: "maxRepairs"},
+		{name: "unknown onFailure", change: func(check *v1alpha1.HealthCheck) { check.OnFailure = "restart" }, wantProblem: "onFailure"},
+		{name: "onFailure none", change: func(check *v1alpha1.HealthCheck) { check.OnFailure = "none" }},
+		{name: "shared namespace service without the instance id", shared: true, change: func(check *v1alpha1.HealthCheck) {}, wantProblem: "`healthCheck.http.service` must contain `${instance.id}`"},
+		{name: "shared namespace service with the instance id", shared: true, change: func(check *v1alpha1.HealthCheck) { check.HTTP.Service = "mcp-${instance.id}" }},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var template *v1alpha1.MCPServerTemplate
+
+			validator := catalog.Validator{}
+
+			if test.shared {
+				template = newTemplate("github", catalog.ScopeShared)
+				template.Spec.Namespace = catalog.NamespaceShared
+				template.Spec.Endpoint.Service = "mcp-${instance.id}"
+				validator.SharedNamespace = "shared"
+			} else {
+				template = newTemplate("github", catalog.ScopePerUser)
+			}
+
+			problems := validator.Validate(withHealthCheck(template, test.change))
+			if test.wantProblem == "" {
+				assert.Empty(t, problems)
+
+				return
+			}
+
+			assert.Contains(t, catalog.Reason(problems), test.wantProblem)
+		})
+	}
 }
 
 func TestValidate(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -96,6 +97,85 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 	for index, raw := range spec.Resources {
 		problems = append(problems, v.validateResource(spec.Scope, index, raw.Raw)...)
 	}
+
+	problems = append(problems, validateHealthCheck(spec)...)
+
+	return problems
+}
+
+// Health check bounds (docs/design/phase-3.md §6). The CRD's CEL rules check
+// the same ones.
+const (
+	minHealthInterval = 10 * time.Second
+	maxHealthInterval = 10 * time.Minute
+	minHealthTimeout  = time.Second
+	maxHealthTimeout  = time.Minute
+	maxHealthPath     = 1024
+	maxServiceName    = 63
+)
+
+// validateHealthCheck checks the template's healthCheck, if any. Zero values
+// are the CRD defaults, which are in bounds.
+func validateHealthCheck(spec v1alpha1.MCPServerTemplateSpec) []string {
+	check := spec.HealthCheck
+	if check == nil {
+		return nil
+	}
+
+	var problems []string
+
+	if check.HTTP.Service == "" || len(check.HTTP.Service) > maxServiceName {
+		problems = append(problems, "`healthCheck.http.service` must be 1 to 63 characters.")
+	}
+
+	if spec.Namespace == NamespaceShared && !strings.Contains(check.HTTP.Service, instanceIDVariable) {
+		problems = append(problems, "`healthCheck.http.service` must contain `"+instanceIDVariable+"` in a shared namespace.")
+	}
+
+	if check.HTTP.Port < 1 || check.HTTP.Port > 65535 {
+		problems = append(problems, "`healthCheck.http.port` must be 1 to 65535.")
+	}
+
+	if !strings.HasPrefix(check.HTTP.Path, "/") || len(check.HTTP.Path) > maxHealthPath {
+		problems = append(problems, "`healthCheck.http.path` must start with / and be at most 1024 characters.")
+	}
+
+	if status := check.HTTP.ExpectedStatus; status != 0 && (status < 100 || status > 599) {
+		problems = append(problems, "`healthCheck.http.expectedStatus` must be 100 to 599.")
+	}
+
+	interval, timeout := check.Interval.Duration, check.Timeout.Duration
+	if interval == 0 {
+		interval = 30 * time.Second
+	}
+
+	if timeout == 0 {
+		timeout = 5 * time.Second
+	}
+
+	if interval < minHealthInterval || interval > maxHealthInterval {
+		problems = append(problems, "`healthCheck.interval` must be 10s to 10m.")
+	}
+
+	if timeout < minHealthTimeout || timeout > maxHealthTimeout {
+		problems = append(problems, "`healthCheck.timeout` must be 1s to 60s.")
+	}
+
+	if timeout >= interval {
+		problems = append(problems, "`healthCheck.timeout` must be less than `healthCheck.interval`.")
+	}
+
+	for name, value := range map[string]int32{"failureThreshold": check.FailureThreshold, "successThreshold": check.SuccessThreshold, "maxRepairs": check.MaxRepairs} {
+		if value != 0 && (value < 1 || value > 10) {
+			problems = append(problems, "`healthCheck."+name+"` must be 1 to 10.")
+		}
+	}
+
+	if !slices.Contains([]string{"", "replace", "reapply", "none"}, check.OnFailure) {
+		problems = append(problems, fmt.Sprintf("`healthCheck.onFailure` %q must be one of replace, reapply, none.", check.OnFailure))
+	}
+
+	slices.Sort(problems)
 
 	return problems
 }
