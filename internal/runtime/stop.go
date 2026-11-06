@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -207,32 +206,21 @@ func ownerHasAccess(ctx context.Context, queries *db.Queries, principal string, 
 		return false, fmt.Errorf("read the latest session of an instance owner: %w", err)
 	}
 
-	identity := auth.Identity{
+	return policy.HasAccess(snapshotIdentity(session), access), nil
+}
+
+// snapshotIdentity is the identity a session snapshot was taken from. Its
+// kind is the one recorded on the session, never inferred from the
+// attestation or the principal's form.
+func snapshotIdentity(session db.Session) auth.Identity {
+	return auth.Identity{
 		Principal:   session.Principal,
 		Email:       session.Email,
 		Groups:      session.Groups,
 		Workspace:   session.Workspace,
 		Session:     session.SessionID,
-		Kind:        snapshotKind(session.Attestation, session.Principal),
+		Kind:        session.Kind,
 		Attestation: session.Attestation,
-	}
-
-	return policy.HasAccess(identity, access), nil
-}
-
-// snapshotKind is the kind of the identity a session snapshot was taken
-// from. Snapshots don't record the kind, so it follows from the attestation
-// and the principal's form, which is exact while every user signs in with
-// user attestation: only a JWT-SVID is attested with a spiffe:// principal,
-// and only a TokenReview token with a service-account one.
-func snapshotKind(attestation, principal string) string {
-	switch {
-	case attestation == auth.AttestationAttested && strings.HasPrefix(principal, "spiffe://"):
-		return auth.KindSPIFFE
-	case attestation == auth.AttestationAttested && strings.HasPrefix(principal, "system:serviceaccount:"):
-		return auth.KindServiceAccount
-	default:
-		return auth.KindUser
 	}
 }
 

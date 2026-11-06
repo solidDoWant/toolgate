@@ -29,7 +29,7 @@ func (e *uiEnv) insertApproval(t *testing.T, id, principal string, expiresIn tim
 	queries := db.New(e.pool)
 
 	session, err := queries.CreateSession(t.Context(), db.CreateSessionParams{
-		Principal: principal, SessionID: "session-" + id, Workspace: "github.com/acme/repo", Attestation: "user", Groups: []string{},
+		Principal: principal, SessionID: "session-" + id, Workspace: "github.com/acme/repo", Attestation: "user", Kind: "user", Groups: []string{},
 	})
 	require.NoError(t, err)
 

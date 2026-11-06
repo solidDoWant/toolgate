@@ -2,8 +2,8 @@
 -- Creates the session or, for an existing one, writes this request's
 -- identity snapshot and moves last_seen_at forward. It does not restart an
 -- ended session (RestartSession does).
-INSERT INTO sessions (principal, session_id, workspace, attestation, email, name, groups)
-VALUES (@principal, @session_id, @workspace, @attestation, @email, @name, @groups)
+INSERT INTO sessions (principal, session_id, workspace, attestation, kind, email, name, groups)
+VALUES (@principal, @session_id, @workspace, @attestation, @kind, @email, @name, @groups)
 ON CONFLICT (principal, session_id) DO UPDATE
     SET email = EXCLUDED.email,
         name = EXCLUDED.name,
@@ -13,8 +13,8 @@ RETURNING *;
 
 -- name: CreateSession :one
 -- Creates the session. It returns no row when the session already exists.
-INSERT INTO sessions (principal, session_id, workspace, attestation, email, name, groups)
-VALUES (@principal, @session_id, @workspace, @attestation, @email, @name, @groups)
+INSERT INTO sessions (principal, session_id, workspace, attestation, kind, email, name, groups)
+VALUES (@principal, @session_id, @workspace, @attestation, @kind, @email, @name, @groups)
 ON CONFLICT (principal, session_id) DO NOTHING
 RETURNING *;
 
@@ -32,7 +32,7 @@ UPDATE sessions SET last_seen_at = now() WHERE id = @id;
 
 -- name: RestartSession :one
 UPDATE sessions
-SET ended_at = NULL, workspace = @workspace, attestation = @attestation, last_seen_at = now()
+SET ended_at = NULL, workspace = @workspace, attestation = @attestation, kind = @kind, last_seen_at = now()
 WHERE id = @id AND ended_at IS NOT NULL
 RETURNING *;
 

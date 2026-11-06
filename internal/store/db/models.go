@@ -8,6 +8,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AccessRequest struct {
+	ID           string
+	Principal    string
+	Kind         string
+	SessionPk    pgtype.Int8
+	Workspace    string
+	Verified     bool
+	Server       pgtype.Text
+	Change       []byte
+	Status       string
+	CreatedAt    pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	DecidedAt    pgtype.Timestamptz
+	DecidedBy    pgtype.Text
+	DecidedScope pgtype.Text
+}
+
 type Approval struct {
 	ID              string
 	Principal       string
@@ -99,6 +116,14 @@ type Session struct {
 	CreatedAt   pgtype.Timestamptz
 	LastSeenAt  pgtype.Timestamptz
 	EndedAt     pgtype.Timestamptz
+	Kind        string
+}
+
+type SessionAddition struct {
+	SessionPk int64
+	Server    string
+	RequestID string
+	CreatedAt pgtype.Timestamptz
 }
 
 type SessionServer struct {
@@ -140,6 +165,14 @@ type UiSession struct {
 	ExpiresAt  pgtype.Timestamptz
 }
 
+type UserScope struct {
+	ID                int64
+	Principal         string
+	VerifiedDefault   string
+	UnverifiedDefault string
+	UpdatedAt         pgtype.Timestamptz
+}
+
 type UserSecret struct {
 	Principal  string
 	Name       string
@@ -147,4 +180,18 @@ type UserSecret struct {
 	KeyID      int64
 	CreatedAt  pgtype.Timestamptz
 	UpdatedAt  pgtype.Timestamptz
+}
+
+type WorkspaceList struct {
+	ID        int64
+	ScopeID   int64
+	Workspace string
+	CreatedAt pgtype.Timestamptz
+	UpdatedAt pgtype.Timestamptz
+}
+
+type WorkspaceListServer struct {
+	ListID  int64
+	Server  string
+	AddedAt pgtype.Timestamptz
 }

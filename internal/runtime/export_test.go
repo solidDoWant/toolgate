@@ -1,9 +1,12 @@
 package runtime
 
 import (
+	"context"
 	"time"
 
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+
+	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
 // NewLeaseWithClock is NewLease with a clock the test controls.
@@ -12,4 +15,13 @@ func NewLeaseWithClock(lock resourcelock.Interface, renewDeadline time.Duration,
 	lease.now = now
 
 	return lease
+}
+
+// SnapshotIdentity is snapshotIdentity, the identity the reconciler's access
+// re-check judges.
+var SnapshotIdentity = snapshotIdentity
+
+// RenderIdentity is the identity the starter renders the instance with.
+func (s *Starter) RenderIdentity(ctx context.Context, instance db.Instance) (Identity, error) {
+	return s.identity(ctx, instance)
 }

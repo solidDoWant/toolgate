@@ -55,7 +55,7 @@ func newHealthHarness(t *testing.T) *healthHarness {
 	t.Cleanup(harness.http.Close)
 
 	harness.session, err = harness.queries.CreateSession(t.Context(), db.CreateSessionParams{
-		Principal: "alice", SessionID: "session-1", Workspace: "laptop", Attestation: "user", Groups: []string{},
+		Principal: "alice", SessionID: "session-1", Workspace: "laptop", Attestation: "user", Kind: "user", Groups: []string{},
 	})
 	require.NoError(t, err)
 	require.NoError(t, harness.queries.EnableServer(t.Context(), db.EnableServerParams{
