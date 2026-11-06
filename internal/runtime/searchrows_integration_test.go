@@ -87,7 +87,7 @@ func TestConcurrentReadyWritesRebuildSearchRows(t *testing.T) {
 			go func() {
 				defer wait.Done()
 
-				_, errs[index] = startStore.MarkReady(t.Context(), id, []byte(`[{"name":"create_issue"},{"name":"list_repos"}]`))
+				_, errs[index] = startStore.MarkReady(t.Context(), db.Instance{ID: id}, []byte(`[{"name":"create_issue"},{"name":"list_repos"}]`), runtime.RevisionStateful)
 			}()
 		}
 
