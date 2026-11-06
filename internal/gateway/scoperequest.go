@@ -151,7 +151,16 @@ func (w *Workspaces) allowItems(identity auth.Identity, items []string) ([]Scope
 
 		server, tool, isTool := strings.Cut(item, toolSeparator)
 
+		// A server must be offered now. A tool is named by its exposed name
+		// in the curation calls use, so while the current generation is
+		// invalid it maps with the last valid one (docs/design/phase-4.md §6).
 		template, err := w.catalog.Offered(server)
+		if isTool {
+			if curation, found := w.catalog.Curation(server); found {
+				template, err = curation, nil
+			}
+		}
+
 		if err != nil || !policy.HasAccess(identity, template.Spec.Access) {
 			return nil, workspaceError(http.StatusForbidden, "You don't have access to server `%s`.", truncate(server, maxServerNameLength))
 		}
@@ -715,7 +724,7 @@ func (w *Workspaces) exposedItem(item ScopeItem) string {
 	}
 
 	tool := item.Tool
-	if template, err := w.catalog.Offered(item.Server); err == nil {
+	if template, found := w.catalog.Curation(item.Server); found {
 		tool = toolcatalog.ExposedName(template, item.Tool)
 	}
 
