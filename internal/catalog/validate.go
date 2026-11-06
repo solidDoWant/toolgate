@@ -74,6 +74,9 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 		problems = append(problems, fmt.Sprintf("the name %q is the server name and must match %s", template.Name, serverNamePattern))
 	}
 
+	problems = append(problems, validateReservedName(template)...)
+	problems = append(problems, validateTools(template)...)
+
 	spec := template.Spec
 
 	if !slices.Contains([]string{ScopePerSession, ScopePerUser, ScopeShared}, spec.Scope) {

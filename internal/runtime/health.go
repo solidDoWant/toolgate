@@ -334,7 +334,13 @@ func (w *watcher) refreshTools(ctx context.Context) bool {
 		return ctx.Err() == nil
 	}
 
-	encoded, reason := CheckToolList(w.instance.TemplateName, tools)
+	template, found := w.monitor.Template(types.NamespacedName{Namespace: w.instance.TemplateNs, Name: w.instance.TemplateName})
+	if !found {
+		// The stop path handles a deleted template.
+		return true
+	}
+
+	encoded, reason := CheckCuratedToolList(template, tools)
 	if reason != "" {
 		w.monitor.fail(ctx, w.instance, reason)
 

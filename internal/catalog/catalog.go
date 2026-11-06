@@ -267,7 +267,7 @@ func (c *Catalog) Running(key types.NamespacedName) (*v1alpha1.MCPServerTemplate
 	defer c.mu.RUnlock()
 
 	current, found := c.entries[key]
-	if !found || current.lastValid == nil {
+	if !found || current.lastValid == nil || key.Name == ReservedServerName {
 		return nil, false
 	}
 

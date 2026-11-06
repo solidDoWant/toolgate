@@ -140,6 +140,11 @@ spec:
   tools:                        # optional per-tool overrides
     delete_repository: {environments: attested, approval: required}
     list_secrets: {blocked: true}
+    create_issue: {name: open_issue, description: Open an issue., inputDescriptions: {repo: owner/name}}
+  start: onCall                 # onCall (default) | onEnable
+  toolFilter: {deny: [delete_repository]}   # exactly one of allow and deny
+  declaredTools:                # optional; the admin's own tool list
+    - {name: create_issue, description: Create an issue., inputSchema: {type: object}}
   endpoint: {service: github-mcp, port: 8080, path: /mcp}
   healthCheck:                  # optional; HTTP GET against a Service of the instance
     http: {service: github-mcp, port: 8080, path: /healthz, expectedStatus: 200}
@@ -151,6 +156,8 @@ spec:
     maxRepairs: 3               # 1-10 repairs in 30 minutes
   resources: [ ... Kubernetes objects ... ]
 ```
+
+**Tools and curation** (`docs/design/phase-4.md` §3 and §6): `start` says when an instance starts. `declaredTools` (at most 512 tools, 1 MiB, unique names) is the admin's own tool list. `toolFilter.allow` or `toolFilter.deny` (exactly one; at most 512 names of 128 characters) hides tools. `tools.<name>` also sets the exposed `name` (`^[A-Za-z0-9_.-]{1,128}$`, at most 64 characters with the `<server>__` prefix), a `description` (4096 characters) and `inputDescriptions` (64 entries). A name that collides with another tool, or equals the name of a hidden tool, makes the template invalid. The server name `toolgate` is reserved for the built-in server: a template with it is invalid and counts as deleted.
 
 **Scopes:**
 - `per-session`: one instance per session.

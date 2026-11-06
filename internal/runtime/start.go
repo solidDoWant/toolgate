@@ -37,6 +37,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 	"github.com/solidDoWant/toolgate/internal/testtime"
+	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 )
 
@@ -59,8 +60,8 @@ const NamespacePrefix = "tg-"
 
 // Tool list limits (docs/design/phase-1.md §3).
 const (
-	MaxToolNameLength = 64
-	MaxTools          = 512
+	MaxToolNameLength = toolcatalog.MaxToolNameLength
+	MaxTools          = toolcatalog.MaxTools
 	MaxToolListBytes  = 1 << 20
 )
 
@@ -271,7 +272,7 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 		return nil
 	}
 
-	encoded, reason := CheckToolList(template.Name, tools)
+	encoded, reason := CheckCuratedToolList(template, tools)
 	if reason != "" {
 		return s.fail(ctx, instance, StatusStarting, reason)
 	}
@@ -322,18 +323,19 @@ func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
 	return nil
 }
 
-// CheckToolList applies the tool list checks to the tools of server. It
-// returns the stored form of the list, or a reason when a check fails.
+// CheckToolList applies the tool list checks to the tools of an uncurated
+// server called server. It returns the stored form of the list, or a reason
+// when a check fails.
 func CheckToolList(server string, tools []*mcp.Tool) ([]byte, string) {
-	if len(tools) > MaxTools {
-		return nil, fmt.Sprintf("The server lists %d tools, more than the limit of %d.", len(tools), MaxTools)
-	}
+	return CheckCuratedToolList(&v1alpha1.MCPServerTemplate{ObjectMeta: metav1.ObjectMeta{Name: server}}, tools)
+}
 
-	for _, tool := range tools {
-		if len(server)+len("__")+len(tool.Name) > MaxToolNameLength {
-			return nil, fmt.Sprintf("Tool `%s` is longer than %d characters with its `%s__` prefix.",
-				truncate(tool.Name, maxReasonBytes/2), MaxToolNameLength, server)
-		}
+// CheckCuratedToolList applies the tool list checks to the tools of the
+// template's server, after the template's curation. It returns the stored
+// form of the upstream list, or a reason when a check fails.
+func CheckCuratedToolList(template *v1alpha1.MCPServerTemplate, tools []*mcp.Tool) ([]byte, string) {
+	if reason := toolcatalog.Check(template, tools); reason != "" {
+		return nil, reason
 	}
 
 	if tools == nil {

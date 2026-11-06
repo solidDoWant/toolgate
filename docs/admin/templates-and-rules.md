@@ -75,6 +75,12 @@ The name of the template is the name of the server. It has 31 characters at most
 - `startTimeout`: how long an instance can take to become ready. The default is 5 minutes. While the instance starts, toolgate tries the MCP `initialize` and `tools/list` requests again every 30 seconds. Each try stops after 10 seconds. A server that does not answer stays `starting` until `startTimeout` passes, and then it fails.
 - `access`: who can see and turn on the server. See [Who can use a server](#who-can-use-a-server).
 - `tools`: changes for single tools, with the name of the tool as the key. Each entry can set `environments` or `blocked: true`. A blocked tool is never offered and every call to it is refused.
+  - `name`: the name that users and the model see, in place of the tool's own name. It matches `^[A-Za-z0-9_.-]{1,128}$`. With the `<server>__` prefix it has 64 characters at most. It cannot be the name of another tool of the server, or the name of a hidden tool.
+  - `description`: replaces the description of the tool. It has 4096 characters at most.
+  - `inputDescriptions`: a description for each top-level input property of the tool, with the property name as the key. There are 64 entries at most, of 4096 characters each. A property that the tool does not have is ignored.
+- `toolFilter`: hides tools. Set exactly one of `allow` and `deny`. Each is a list of tool names, as the server gives them. There are 512 names at most, of 128 characters each. With `allow`, the server offers only the listed tools. With `deny`, it offers all tools except the listed ones.
+- `declaredTools`: your own list of the server's tools, with `name`, `description` and `inputSchema` (a JSON Schema object). There are 512 tools at most, and the list has 1 MiB at most. Names must be unique. The list follows the same checks as a list from a server, after the changes in `tools` and `toolFilter`.
+- `start`: when an instance starts. `onCall` (the default) or `onEnable`. This release stores and checks the field. It does not change when instances start yet.
 - `endpoint`: the Service, port and path where the instance serves MCP over HTTP.
 - `resources`: the Kubernetes objects that toolgate applies for each instance.
 - `healthCheck`: an optional HTTP check of a running instance. See [Health checks](#health-checks).
@@ -204,6 +210,15 @@ kubectl --namespace toolgate-catalog get mcpservertemplate github \
 ```
 
 If the status is `False`, the message gives the reason. The gateway does not offer an invalid template. If an earlier version was valid, the gateway uses that version until you fix the template.
+
+A template is also invalid when:
+
+- an override `name` does not match the pattern, or is too long with the `<server>__` prefix;
+- two `declaredTools` have the same name, or the list is too large;
+- a name in `declaredTools` collides with another tool after your changes;
+- an override `name` is the name of a tool in `toolFilter.deny`.
+
+The server name `toolgate` is reserved for the built-in server. A template with that name is always invalid, and the gateway treats it as deleted: its running instances stop. Rename such a template before you upgrade.
 
 A running instance keeps the version of the template that it started with. A change applies to instances that start after it.
 
