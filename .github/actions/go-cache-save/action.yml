@@ -6,6 +6,22 @@ description: >-
 runs:
   using: composite
   steps:
+    # Each master run restores the last build cache and saves it again, so
+    # without this it only grows (the unit cache reached 4.7 GB compressed and
+    # filled the runner disk). Go refreshes the mtime of an entry it uses when
+    # the mtime is over an hour old, so an entry older than the job start plus
+    # that hour (and a margin) wasn't used by this job.
+    - shell: bash
+      run: |
+        dir=~/.cache/go-build
+        if [[ -z "${TOOLGATE_JOB_START:-}" || ! -d "$dir" ]]; then
+          echo "::warning::no job start time or build cache; saving the build cache untrimmed"
+          exit 0
+        fi
+        mins=$(( ( $(date +%s) - TOOLGATE_JOB_START ) / 60 + 75 ))
+        echo "build cache before trim: $(du -sh "$dir" | cut -f1)"
+        find "$dir" -type f -mmin "+$mins" -delete
+        echo "build cache after trim: $(du -sh "$dir" | cut -f1)"
     - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/go-build
