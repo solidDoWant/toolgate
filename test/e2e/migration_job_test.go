@@ -262,6 +262,13 @@ func TestAC3_15SeparateMigrationCredential(t *testing.T) {
 		name := createTemplate(t, kube, "e2e-split", "per-session", testServerResources(t, image, 0, nil))
 		requireTemplateValid(t, kube, name)
 
+		// The harness gives e2e principals both scoping defaults all in its
+		// own database only; this test's database needs the same row, or
+		// the workspace-scope step refuses alice every server.
+		output, err = psql(t, postgresNamespace, superuser, database,
+			"INSERT INTO toolgate.user_scopes (principal, verified_default, unverified_default) VALUES ('alice', 'all', 'all') ON CONFLICT (principal) DO NOTHING")
+		require.NoError(t, err, output)
+
 		pods := gatewayPods(t, admin)
 		session := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 
