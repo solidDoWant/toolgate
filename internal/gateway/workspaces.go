@@ -36,6 +36,9 @@ const (
 	MaxWorkspaceListServers = 64
 	// MaxWorkspaceLength is the longest workspace a list may have.
 	MaxWorkspaceLength = 256
+	// MaxUnverifiedServers is the most servers on one principal's
+	// unverified allow list.
+	MaxUnverifiedServers = 64
 	// MaxPendingAccessRequestsPerPrincipal is the most pending access
 	// requests one principal has, counted apart from approvals.
 	MaxPendingAccessRequestsPerPrincipal = 100
@@ -108,8 +111,12 @@ type WorkspaceChange struct {
 	// place of Workspace.
 	Session string   `json:"session,omitempty"`
 	Servers []string `json:"servers,omitempty"`
-	// Verified and Unverified are the new defaults of a defaults change,
-	// none or all. Empty leaves a default as it is.
+	// UnverifiedList makes an allow or a deny change the unverified allow
+	// list, in place of a workspace or a session.
+	UnverifiedList bool `json:"unverifiedList,omitempty"`
+	// Verified and Unverified are the new defaults of a defaults change:
+	// none or all, and for Unverified also list. Empty leaves a default as
+	// it is.
 	Verified   string `json:"verified,omitempty"`
 	Unverified string `json:"unverified,omitempty"`
 }
@@ -143,8 +150,12 @@ type WorkspaceList struct {
 
 // WorkspaceScopes is a user's defaults and lists.
 type WorkspaceScopes struct {
-	VerifiedDefault   string
+	VerifiedDefault string
+	// UnverifiedDefault is none, all or list.
 	UnverifiedDefault string
+	// UnverifiedServers is the unverified allow list, which applies when
+	// UnverifiedDefault is list.
+	UnverifiedServers []string
 	Lists             []WorkspaceList
 	// Entries are the scope entries of each workspace that has any, with or
 	// without a list.
@@ -200,7 +211,10 @@ func VerifiedWorkspace(identity auth.Identity) string {
 // user_scopes row has both defaults none and no lists.
 func (w *Workspaces) Scopes(ctx context.Context, principal string) (WorkspaceScopes, error) {
 	queries := db.New(w.database)
-	scopes := WorkspaceScopes{VerifiedDefault: ScopeNone, UnverifiedDefault: ScopeNone, Lists: []WorkspaceList{}, Entries: map[string]ScopeEntries{}}
+	scopes := WorkspaceScopes{
+		VerifiedDefault: ScopeNone, UnverifiedDefault: ScopeNone, UnverifiedServers: []string{},
+		Lists: []WorkspaceList{}, Entries: map[string]ScopeEntries{},
+	}
 
 	row, err := queries.GetUserScope(ctx, principal)
 
@@ -211,7 +225,14 @@ func (w *Workspaces) Scopes(ctx context.Context, principal string) (WorkspaceSco
 		return WorkspaceScopes{}, fmt.Errorf("read user scope: %w", err)
 	}
 
-	scopes.VerifiedDefault, scopes.UnverifiedDefault = row.VerifiedDefault, row.UnverifiedDefault
+	scopes.VerifiedDefault, scopes.UnverifiedDefault = row.VerifiedDefault, ReadUnverifiedDefault(row.UnverifiedDefault, row.UnverifiedList)
+
+	unverified, err := queries.ListUnverifiedServers(ctx, row.ID)
+	if err != nil {
+		return WorkspaceScopes{}, fmt.Errorf("read unverified servers: %w", err)
+	}
+
+	scopes.UnverifiedServers = append(scopes.UnverifiedServers, unverified...)
 
 	rows, err := queries.ListWorkspaceListsOfPrincipal(ctx, principal)
 	if err != nil {
@@ -364,7 +385,7 @@ func (w *Workspaces) Request(ctx context.Context, identity auth.Identity, change
 		return WorkspaceResult{}, workspaceError(http.StatusForbidden, "Only users have workspace lists.")
 	}
 
-	if needsScopeRequest(change) {
+	if !change.UnverifiedList && needsScopeRequest(change) {
 		target := ScopeTarget{Workspace: change.Workspace, Session: change.Session}
 		if target.Workspace == "" && target.Session == "" {
 			target.Workspace = VerifiedWorkspace(identity)
@@ -643,14 +664,17 @@ func accessEvent(identity auth.Identity, eventType string, request db.AccessRequ
 func (w *Workspaces) validate(identity auth.Identity, change WorkspaceChange) (WorkspaceChange, error) {
 	switch change.Action {
 	case WorkspaceDefaults:
-		if len(change.Servers) > 0 || change.Workspace != "" || change.Session != "" {
+		if len(change.Servers) > 0 || change.Workspace != "" || change.Session != "" || change.UnverifiedList {
 			return change, workspaceError(http.StatusBadRequest, "A defaults change takes only `verified` and `unverified`.")
 		}
 
-		for _, value := range []string{change.Verified, change.Unverified} {
-			if value != "" && value != ScopeNone && value != ScopeAll {
-				return change, workspaceError(http.StatusBadRequest, "A default is `none` or `all`, not `%s`.", value)
-			}
+		if value := change.Verified; value != "" && value != ScopeNone && value != ScopeAll {
+			return change, workspaceError(http.StatusBadRequest, "The verified default is `none` or `all`, not `%s`.", truncate(value, maxServerNameLength))
+		}
+
+		if value := change.Unverified; value != "" && value != ScopeNone && value != ScopeAll && value != ScopeList {
+			return change, workspaceError(http.StatusBadRequest,
+				"The unverified default is `none`, `all` or `list`, not `%s`.", truncate(value, maxServerNameLength))
 		}
 
 		if change.Verified == "" && change.Unverified == "" {
@@ -665,6 +689,10 @@ func (w *Workspaces) validate(identity auth.Identity, change WorkspaceChange) (W
 
 	if change.Verified != "" || change.Unverified != "" {
 		return change, workspaceError(http.StatusBadRequest, "Only a defaults change takes `verified` and `unverified`.")
+	}
+
+	if change.UnverifiedList {
+		return w.validateUnverified(identity, change)
 	}
 
 	if change.Action == WorkspaceClear && len(change.Servers) > 0 {
@@ -772,34 +800,11 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 	notifyScope := func() error { return store.Notify(ctx, tx, store.KindScope, strconv.FormatInt(scope.ID, 10)) }
 
 	if change.Action == WorkspaceDefaults {
-		verified, unverified := scope.VerifiedDefault, scope.UnverifiedDefault
-		if change.Verified != "" {
-			verified = change.Verified
-		}
+		return w.changeDefaults(ctx, tx, identity, change, scope, via, mode)
+	}
 
-		if change.Unverified != "" {
-			unverified = change.Unverified
-		}
-
-		widens := (scope.VerifiedDefault == ScopeNone && verified == ScopeAll) || (scope.UnverifiedDefault == ScopeNone && unverified == ScopeAll)
-		if widens && mode != widenApply {
-			return w.notWidened(ctx, tx, identity, change, mode)
-		}
-
-		if err := queries.SetUserScopeDefaults(ctx, db.SetUserScopeDefaultsParams{ID: scope.ID, VerifiedDefault: verified, UnverifiedDefault: unverified}); err != nil {
-			return WorkspaceResult{}, fmt.Errorf("set defaults: %w", err)
-		}
-
-		err := recorder.Record(ctx, scopeEvent(identity, TypeWorkspaceDefaults, "", map[string]any{
-			"old": map[string]any{"verified": scope.VerifiedDefault, "unverified": scope.UnverifiedDefault},
-			"new": map[string]any{"verified": verified, "unverified": unverified},
-			"via": via,
-		}))
-		if err != nil {
-			return WorkspaceResult{}, err
-		}
-
-		return applied, notifyScope()
+	if change.UnverifiedList {
+		return w.changeUnverified(ctx, tx, identity, change, scope, via, mode)
 	}
 
 	if change.Action == WorkspaceDeny {

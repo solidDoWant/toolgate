@@ -292,7 +292,7 @@ func TestAC3_17WorkspaceLists(t *testing.T) {
 		list := api.list(t, attestedAlice())
 		require.NotNil(t, list.Current)
 		assert.Equal(t, aliceWorkspace, *list.Current)
-		assert.Equal(t, workspacesapi.Defaults{Verified: "none", Unverified: "none"}, list.Defaults)
+		assert.Equal(t, workspacesapi.Defaults{Verified: "none", Unverified: "none", UnverifiedServers: []string{}}, list.Defaults)
 		assert.Empty(t, list.Workspaces, "a widening change doesn't apply before approval")
 		assertBlockedInWorkspace(t, listServers(t, client.session), "github")
 
@@ -619,9 +619,9 @@ func TestAC3_18WorkspaceDefaults(t *testing.T) {
 		assertBlockedInWorkspace(t, listServers(t, client.session), "github")
 
 		id := api.requestChange(t, attestedAlice(), workspacesapi.Change{Action: "defaults", Verified: "all"})
-		assert.Equal(t, workspacesapi.Defaults{Verified: "none", Unverified: "none"}, api.list(t, attestedAlice()).Defaults)
+		assert.Equal(t, workspacesapi.Defaults{Verified: "none", Unverified: "none", UnverifiedServers: []string{}}, api.list(t, attestedAlice()).Defaults)
 		require.NoError(t, api.approve(t, id))
-		assert.Equal(t, workspacesapi.Defaults{Verified: "all", Unverified: "none"}, api.list(t, attestedAlice()).Defaults)
+		assert.Equal(t, workspacesapi.Defaults{Verified: "all", Unverified: "none", UnverifiedServers: []string{}}, api.list(t, attestedAlice()).Defaults)
 
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
 
@@ -654,7 +654,7 @@ func TestAC3_18WorkspaceDefaults(t *testing.T) {
 		client := fixture.connectObserved(t, alice())
 		assert.Empty(t, listServers(t, client.session))
 
-		id := api.requestChange(t, alice(), workspacesapi.Change{Action: "defaults", Unverified: "all"})
+		id := api.requestChange(t, alice(), workspacesapi.Change{Action: "defaults", Unverified: workspacesapi.Unverified{Default: "all"}})
 		assert.Empty(t, listServers(t, client.session))
 		require.NoError(t, api.approve(t, id))
 
@@ -663,7 +663,7 @@ func TestAC3_18WorkspaceDefaults(t *testing.T) {
 
 		before := client.listChangedCount()
 
-		api.applyChange(t, alice(), workspacesapi.Change{Action: "defaults", Unverified: "none"})
+		api.applyChange(t, alice(), workspacesapi.Change{Action: "defaults", Unverified: workspacesapi.Unverified{Default: "none"}})
 
 		require.Eventually(t, func() bool { return client.listChangedCount() > before }, scopeChangeBound, 10*time.Millisecond)
 		refused := callTool(t, client.session, "github__echo", map[string]any{"text": "x"})

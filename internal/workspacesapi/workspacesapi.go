@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/swaggest/jsonschema-go"
 
 	"github.com/solidDoWant/toolgate/internal/apidoc"
 	"github.com/solidDoWant/toolgate/internal/auth"
@@ -43,10 +44,73 @@ const (
 )
 
 // Defaults are the defaults for sessions with and without a verified
-// workspace: none or all.
+// workspace: none or all, and for sessions without one also list.
 type Defaults struct {
-	Verified   string `json:"verified"`
-	Unverified string `json:"unverified"`
+	Verified   string `json:"verified" enum:"none,all"`
+	Unverified string `json:"unverified" enum:"none,all,list"`
+	// UnverifiedServers is the unverified allow list: the servers sessions
+	// without a verified workspace get when unverified is list.
+	UnverifiedServers []string `json:"unverifiedServers"`
+}
+
+// Unverified is a change's `unverified`: true for an allow or a deny of
+// the unverified allow list, or the new default for sessions without a
+// verified workspace (none, all or list) for a defaults change.
+type Unverified struct {
+	// List is true for `unverified: true`.
+	List bool
+	// Default is the default of `unverified: "<default>"`.
+	Default string
+}
+
+// IsZero reports whether the field is absent.
+func (u Unverified) IsZero() bool { return !u.List && u.Default == "" }
+
+// MarshalJSON encodes true for List, else the default.
+func (u Unverified) MarshalJSON() ([]byte, error) {
+	if u.List {
+		return []byte("true"), nil
+	}
+
+	return json.Marshal(u.Default)
+}
+
+// UnmarshalJSON decodes a boolean or a string.
+func (u *Unverified) UnmarshalJSON(data []byte) error {
+	var list bool
+	if err := json.Unmarshal(data, &list); err == nil {
+		*u = Unverified{List: list}
+
+		return nil
+	}
+
+	var value string
+	if err := json.Unmarshal(data, &value); err != nil {
+		return errors.New("unverified is true, false or a default")
+	}
+
+	*u = Unverified{Default: value}
+
+	return nil
+}
+
+// unverifiedDefault is the string form of Unverified in the OpenAPI
+// document.
+type unverifiedDefault string
+
+// Enum lists the defaults.
+func (unverifiedDefault) Enum() []any { return []any{"none", "all", "list"} }
+
+// JSONSchemaOneOf describes Unverified in the OpenAPI document: a boolean
+// or a default.
+func (Unverified) JSONSchemaOneOf() []any { return []any{true, unverifiedDefault("")} }
+
+// PrepareJSONSchema drops the object type the reflector gives the struct:
+// the field is a boolean or a string.
+func (Unverified) PrepareJSONSchema(schema *jsonschema.Schema) error {
+	schema.Type = nil
+
+	return nil
 }
 
 // Workspace is one workspace's list and scope entries.
@@ -84,9 +148,13 @@ type Change struct {
 	// Servers are server names, or `<server>__<tool>` with the tool's
 	// exposed name. An allow for a session or of a tool answers 202 with a
 	// scope access request.
-	Servers    []string `json:"servers,omitempty"`
-	Verified   string   `json:"verified,omitempty" enum:"none,all"`
-	Unverified string   `json:"unverified,omitempty" enum:"none,all"`
+	Servers  []string `json:"servers,omitempty"`
+	Verified string   `json:"verified,omitempty" enum:"none,all"`
+	// Unverified is true for an allow or a deny of the unverified allow
+	// list, in place of workspace and session; adding a server answers 202
+	// with a scope access request. In a defaults change it is the default
+	// for sessions without a verified workspace: none, all or list.
+	Unverified Unverified `json:"unverified,omitzero"`
 }
 
 // Applied answers a narrowing change.
@@ -198,7 +266,9 @@ func (h *Handler) list(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	body := List{
-		Defaults:   Defaults{Verified: scopes.VerifiedDefault, Unverified: scopes.UnverifiedDefault},
+		Defaults: Defaults{
+			Verified: scopes.VerifiedDefault, Unverified: scopes.UnverifiedDefault, UnverifiedServers: nonNil(scopes.UnverifiedServers),
+		},
 		Workspaces: make([]Workspace, 0, len(scopes.Lists)),
 	}
 
@@ -277,7 +347,7 @@ func (h *Handler) change(writer http.ResponseWriter, request *http.Request) {
 
 	result, err := h.Workspaces.Request(request.Context(), identity, gateway.WorkspaceChange{
 		Action: change.Action, Workspace: change.Workspace, Session: change.Session, Servers: change.Servers,
-		Verified: change.Verified, Unverified: change.Unverified,
+		UnverifiedList: change.Unverified.List, Verified: change.Verified, Unverified: change.Unverified.Default,
 	})
 
 	var refusal *gateway.WorkspaceError

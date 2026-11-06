@@ -51,6 +51,18 @@ type ScopeChange struct {
 	Items   []ScopeItem `json:"items"`
 	// AskedBy is the client session ID of the session that asked, or empty.
 	AskedBy string `json:"askedBy,omitempty"`
+	// Unverified makes the request a change of the unverified allow list:
+	// an allow of Items' servers, or with Defaults, a defaults change that
+	// sets list. Workspace and Session are then empty.
+	Unverified bool                 `json:"unverified,omitempty"`
+	Defaults   *ScopeDefaultsChange `json:"defaults,omitempty"`
+}
+
+// ScopeDefaultsChange is the defaults change of a scope request; an empty
+// default stays as it is.
+type ScopeDefaultsChange struct {
+	Verified   string `json:"verified,omitempty"`
+	Unverified string `json:"unverified,omitempty"`
 }
 
 // ScopeTarget names the target of a scope allow: exactly one of a
@@ -410,9 +422,12 @@ func (w *Workspaces) ApproveScopeRequest(ctx context.Context, tx pgx.Tx, identit
 		return fmt.Errorf("approve access request: %w", err)
 	}
 
-	if pending.SessionPk.Valid {
+	switch {
+	case change.Unverified:
+		err = w.approveUnverified(ctx, tx, identity, request, change, scope)
+	case pending.SessionPk.Valid:
 		err = w.allowInSession(ctx, tx, identity, request, change, scope, session)
-	} else {
+	default:
 		err = w.allowInWorkspace(ctx, tx, identity, request, change, scope)
 	}
 
@@ -733,10 +748,35 @@ type ScopeState struct {
 // ScopePreview is a scope request's target, the asking session, and the
 // target's state before and after the approval.
 type ScopePreview struct {
-	Workspace     string
-	Session       string
-	AskedBy       string
+	Workspace string
+	Session   string
+	AskedBy   string
+	// Unverified is true for a change of the unverified allow list or the
+	// default list: then Default is the unverified default.
+	Unverified    bool
 	Before, After ScopeState
+}
+
+// previewUnverified is the preview of a scope request of the unverified
+// allow list or the default list.
+func previewUnverified(preview ScopePreview, scopes WorkspaceScopes, change ScopeChange) ScopePreview {
+	preview.Unverified = true
+	preview.Before = ScopeState{Default: scopes.UnverifiedDefault, Allowed: slices.Clone(scopes.UnverifiedServers), Denied: []string{}}
+	preview.After = ScopeState{Default: scopes.UnverifiedDefault, Allowed: slices.Clone(scopes.UnverifiedServers), Denied: []string{}}
+
+	if change.Defaults != nil && change.Defaults.Unverified != "" {
+		preview.After.Default = change.Defaults.Unverified
+	}
+
+	for _, item := range change.Items {
+		if !slices.Contains(preview.After.Allowed, item.Server) {
+			preview.After.Allowed = append(preview.After.Allowed, item.Server)
+		}
+	}
+
+	slices.Sort(preview.After.Allowed)
+
+	return preview
 }
 
 // PreviewScopeRequest returns the preview of a scope request of principal's
@@ -753,6 +793,11 @@ func (w *Workspaces) PreviewScopeRequest(ctx context.Context, principal string, 
 	}
 
 	preview := ScopePreview{Workspace: change.Workspace, Session: change.Session, AskedBy: change.AskedBy}
+
+	if change.Unverified {
+		return previewUnverified(preview, scopes, change), nil
+	}
+
 	before := ScopeState{Default: scopes.VerifiedDefault, Allowed: []string{}, Denied: []string{}}
 
 	for _, list := range scopes.Lists {

@@ -116,6 +116,17 @@ func (q *Queries) CountSessionFoundTools(ctx context.Context, sessionPk int64) (
 	return count, err
 }
 
+const countUnverifiedServers = `-- name: CountUnverifiedServers :one
+SELECT count(*) FROM unverified_servers WHERE scope_id = $1
+`
+
+func (q *Queries) CountUnverifiedServers(ctx context.Context, scopeID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countUnverifiedServers, scopeID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const deleteEndedSessionAllowEntries = `-- name: DeleteEndedSessionAllowEntries :execrows
 DELETE FROM scope_entries e
 USING sessions s
