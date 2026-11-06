@@ -84,6 +84,7 @@ They go on records, not on the resource, because Prometheus and most metrics bac
 ### Limits
 
 - Request body at most 4 MiB as sent (phase 1's limit), and at most 4 MiB after gzip, read through `http.MaxBytesReader` and `io.LimitReader`. Over that gets 413.
+- A request body must arrive within 10 s, or the gateway ends the request with 408 without decoding it. A request takes no slot while its body uploads.
 - At most 4 ingest requests decode or forward at once per replica. Another gets 503 with `Retry-After: 2` at once. This bounds memory: decoded `pdata` is a few times the wire size, and the gateway's default memory limit is 256 MiB.
 - Metrics: `toolgate_otlp_ingest_requests_total{signal,code}`.
 

@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,9 @@ const (
 	MaxConcurrent = 4
 	// ForwardTimeout bounds one forward to the backend.
 	ForwardTimeout = 10 * time.Second
+	// BodyTimeout bounds how long a request body may take to arrive. A slower
+	// upload ends with 408 and is not decoded.
+	BodyTimeout = 10 * time.Second
 
 	busyRetryAfter        = "2"
 	defaultRetryAfter     = "5"
@@ -115,6 +119,8 @@ type Options struct {
 	// Client overrides the forwarding client. Nil uses one with a 10 s
 	// timeout that follows no redirects.
 	Client *http.Client
+	// BodyTimeout overrides BodyTimeout. Zero uses the default.
+	BodyTimeout time.Duration
 }
 
 // Ingest serves the OTLP routes. Create it with New.
@@ -124,6 +130,7 @@ type Ingest struct {
 	logger       *slog.Logger
 	client       *http.Client
 	slots        chan struct{}
+	bodyTimeout  time.Duration
 	requests     *prometheus.CounterVec
 }
 
@@ -145,12 +152,18 @@ func New(options Options) *Ingest {
 		logger = slog.New(slog.DiscardHandler)
 	}
 
+	bodyTimeout := options.BodyTimeout
+	if bodyTimeout <= 0 {
+		bodyTimeout = BodyTimeout
+	}
+
 	return &Ingest{
 		endpoint:     strings.TrimSuffix(options.Endpoint, "/"),
 		allowContent: options.AllowContent,
 		logger:       logger,
 		client:       client,
 		slots:        make(chan struct{}, MaxConcurrent),
+		bodyTimeout:  bodyTimeout,
 		requests: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "toolgate_otlp_ingest_requests_total",
 			Help: "OTLP ingest requests, by signal and the HTTP status code the gateway answered.",
@@ -179,6 +192,9 @@ type statusWriter struct {
 	http.ResponseWriter
 	code int
 }
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 func (w *statusWriter) WriteHeader(code int) {
 	if w.code == 0 {
@@ -229,24 +245,28 @@ func (i *Ingest) serve(writer http.ResponseWriter, request *http.Request, signal
 		return
 	}
 
-	select {
-	case i.slots <- struct{}{}:
-		defer func() { <-i.slots }()
-	default:
-		writer.Header().Set("Retry-After", busyRetryAfter)
-		http.Error(writer, "The gateway is busy. Retry later.", http.StatusServiceUnavailable)
-
-		return
-	}
-
-	body, status := readBody(writer, request, gzipped)
+	body, status := i.readBody(writer, request, gzipped)
 	if status != 0 {
 		message := "The OTLP request body can't be read."
 		if status == http.StatusRequestEntityTooLarge {
 			message = "The OTLP request body is larger than 4 MiB. Send smaller batches."
 		}
 
+		if status == http.StatusRequestTimeout {
+			message = "The OTLP request body did not arrive in time. Send the whole body within 10 seconds."
+		}
+
 		http.Error(writer, message, status)
+
+		return
+	}
+
+	select {
+	case i.slots <- struct{}{}:
+		defer func() { <-i.slots }()
+	default:
+		writer.Header().Set("Retry-After", busyRetryAfter)
+		http.Error(writer, "The gateway is busy. Retry later.", http.StatusServiceUnavailable)
 
 		return
 	}
@@ -421,7 +441,12 @@ func requestIsGzip(request *http.Request) (gzipped, ok bool) {
 // readBody reads the body within MaxBodyBytes as sent and after gzip. It
 // returns a non-zero status when the body is too large (413) or unreadable
 // (400).
-func readBody(writer http.ResponseWriter, request *http.Request, gzipped bool) ([]byte, int) {
+// readBody reads the request body within the body timeout. It holds no slot,
+// so a slow upload costs a connection but no decoding capacity.
+func (i *Ingest) readBody(writer http.ResponseWriter, request *http.Request, gzipped bool) ([]byte, int) {
+	controller := http.NewResponseController(writer)
+	_ = controller.SetReadDeadline(time.Now().Add(i.bodyTimeout))
+
 	var reader io.Reader = http.MaxBytesReader(writer, request.Body, MaxBodyBytes)
 
 	if gzipped {
@@ -437,8 +462,13 @@ func readBody(writer http.ResponseWriter, request *http.Request, gzipped bool) (
 
 	body, err := io.ReadAll(io.LimitReader(reader, MaxBodyBytes+1))
 	if err != nil {
+		// On failure the deadline stays set: an expired one stops the server
+		// waiting for the rest of an unread body before it sends the answer.
 		return nil, readStatus(err)
 	}
+
+	// The body is complete: clear the deadline so it can't cancel the forward.
+	_ = controller.SetReadDeadline(time.Time{})
 
 	if len(body) > MaxBodyBytes {
 		return nil, http.StatusRequestEntityTooLarge
@@ -448,6 +478,10 @@ func readBody(writer http.ResponseWriter, request *http.Request, gzipped bool) (
 }
 
 func readStatus(err error) int {
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		return http.StatusRequestTimeout
+	}
+
 	if maxBytesError := new(http.MaxBytesError); errors.As(err, &maxBytesError) {
 		return http.StatusRequestEntityTooLarge
 	}
