@@ -52,6 +52,11 @@ type Request struct {
 	// ExposedTool is the name the tool is offered under, when it differs
 	// from Tool. Rules match both names; every other step uses Tool.
 	ExposedTool string
+	// ProxiedTool is the name a session sees for the tool, when it isn't
+	// <server>__<ExposedTool>: the built-in server's tools are offered
+	// under exact names such as toolgate_allow. Rules and temporary blocks
+	// match it too; every other step ignores it.
+	ProxiedTool string
 	// State is the request's live grants and temporary blocks. The zero
 	// value has none.
 	State State
@@ -142,7 +147,7 @@ func (e *Engine) Decide(request Request) Decision {
 	}
 
 	if e.Rules != nil {
-		subject := ruleTarget(identity, server, request.Tool, request.ExposedTool)
+		subject := ruleTarget(identity, server, request)
 
 		if rule, found := e.Rules.match(subject, e.now()); found {
 			name := rule.key.String()
@@ -152,7 +157,7 @@ func (e *Engine) Decide(request Request) Decision {
 	}
 
 	if len(request.State.Blocks) > 0 {
-		subject := ruleTarget(identity, server, request.Tool, request.ExposedTool)
+		subject := ruleTarget(identity, server, request)
 		for _, block := range request.State.Blocks {
 			if block.match.applies(subject, time.Time{}) {
 				return Decision{Step: StepTemporaryBlock, Block: block.ID, Grant: grantID, Reason: block.refusal()}
@@ -229,7 +234,7 @@ func (e *Engine) refuseEnvironment(request Request, environment string) Decision
 }
 
 // ruleTarget is what rules and temporary blocks are matched against.
-func ruleTarget(identity auth.Identity, server, tool, exposed string) target {
+func ruleTarget(identity auth.Identity, server string, request Request) target {
 	subject := target{
 		principal:   identity.Principal,
 		email:       identity.Email,
@@ -239,11 +244,13 @@ func ruleTarget(identity auth.Identity, server, tool, exposed string) target {
 		attestation: identity.Attestation,
 		server:      server,
 	}
-	if tool != "" {
-		subject.tool = proxiedName(server, tool)
-		if exposed != "" && exposed != tool {
-			subject.exposedTool = proxiedName(server, exposed)
+	if request.Tool != "" {
+		subject.tool = proxiedName(server, request.Tool)
+		if request.ExposedTool != "" && request.ExposedTool != request.Tool {
+			subject.exposedTool = proxiedName(server, request.ExposedTool)
 		}
+
+		subject.sessionTool = request.ProxiedTool
 	}
 
 	return subject
