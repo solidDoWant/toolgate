@@ -24,7 +24,7 @@ Record the choice on the issue.
 
 These are non-negotiable. Reviews and tests enforce them, and only the owner can change them.
 
-1. **No tool call is forwarded without an authorization decision, and every decision is recorded.** There is no path from a client to an MCP server that skips the policy engine or the audit log. The principle covers tool calls that come from clients: a health-check call that an admin's template defines carries no client data, and isn't one.
+1. **No tool call is forwarded without an authorization decision, and every decision is recorded.** There is no path from a client to an MCP server that skips the policy engine or the audit log.
 2. **Trust only what is verified.** Fields a client merely claims (§6) can narrow access, never widen it. Attestation decides what a request may reach.
 3. **Git is the source of truth for admin configuration.** Catalog entries, standing rules and settings profiles are Kubernetes objects applied by Flux. toolgate reads them and never writes them.
 4. **Secrets stay secret.** User secrets are encrypted at rest, appear in plain text only inside Kubernetes Secret objects created for an instance, and are never logged, never placed in a template's other fields, and never returned by any API after they are set.

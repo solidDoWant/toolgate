@@ -14,7 +14,7 @@ Phase 1's split stays (phase 1 §1): request handling runs on every replica and 
 - `GET /api/v1/sessions` and `GET /api/v1/audit/tail` (§5).
 
 **New reconciler work**, on the leader only:
-- running each instance's custom health check, next to phase 1's `ping` (§6);
+- running each instance's custom health check, next to phase 1's `ping`, and repairing unhealthy instances (§6);
 - creating the audit partitions when it gets the Lease and every 24 h after that (§7).
 
 **New out-of-process work:** the chart's migration hook Job runs `toolgate migrate` before the gateway pods of a release start, when the admin turns it on (§7).
@@ -236,54 +236,53 @@ Phase 2 §9 chose `github.com/swaggest/openapi-go` with its `openapi31` reflecto
 
 ### Custom health checks
 
-AC-3-13. Only admins write templates, so only admins define checks.
+AC-3-13. The owner's aim: toolgate detects that a running MCP server can't do its job, like a Kubernetes readiness probe, and doesn't send it tool calls while that lasts. Then it repairs the instance the way the template says. Only admins write templates, so only admins define checks.
 
 ```yaml
 spec:
   healthCheck:
-    interval: 30s          # 10s to 10m, default 30s
-    timeout: 5s            # 1s to 60s, default 5s, less than interval
-    failureThreshold: 3    # 1 to 10, default 3
-    http:                  # exactly one of http and tool
+    http:
       service: db-proxy    # rendered and validated like endpoint.service
       port: 8080
       path: /healthz       # starts with /, at most 1024 characters, not rendered
       expectedStatus: 200  # 100 to 599, default 200
-    tool:
-      name: ping_database      # the tool's own name
-      arguments: {}            # a JSON object, at most 4 KiB, not rendered
+    interval: 30s          # 10s to 10m, default 30s
+    timeout: 5s            # 1s to 60s, default 5s, less than interval
+    failureThreshold: 3    # 1 to 10, default 3
+    successThreshold: 1    # 1 to 10, default 1: passes in a row to count as healthy again
+    onFailure: replace     # replace (default) | reapply | none
+    maxRepairs: 3          # 1 to 10, default 3: repairs allowed within 30 minutes
 ```
 
-- The CRD checks these with CEL. The catalog checks them again, and also checks the shared-namespace rule for `http.service` (phase 1 §7: it must contain `${instance.id}`). A bad check makes the template invalid, with the reason in `Valid`. The catalog also marks the template invalid when `healthCheck.tool.name` names a tool whose `tools` override has `blocked: true` or `approval: required`. The `Valid` message names the tool, such as "Health check tool `purge_cache` is blocked or needs approval in `tools`."
-- **HTTP check:** `GET http://<service>.<instance namespace>.svc:<port><path>` with a client that doesn't follow redirects, uses no proxy and reads at most 64 KiB of the body before discarding it. It passes when the status equals `expectedStatus`. The instance namespace already admits the gateway's pods on every port (phase 1 §6).
-- **Tool check:** a `tools/call` on the reconciler's monitoring session (phase 1 §3, "Upstream tool changes"), with the response bounded to 1 MiB through `upstreamlimit`. It passes when the call returns a result with `isError` false. When the monitoring session is closed (`watcher.ping` closes it after a failed ping), the tool check opens it the same way `ping` does. A failure to connect counts as a check failure, with the reason "didn't answer within `<timeout>`". The tool must be in the instance's tool list. This is checked with the tool list checks at `starting` → `ready` and on every list change (phase 1 §3), so a missing tool fails the instance with "Health check tool `ping_database` isn't in the server's tool list."
-- **Not a client call.** A tool check comes from the admin's template, not from a client. It runs no policy decision and writes no audit event per call. Its result is discarded and never logged.
-  - **Principle 1 covers tool calls that come from clients.** That's its reason for existing: no path from a client to an MCP server skips policy or audit. A health-check call is defined by the admin's template and carries no client data. `SPEC.md` §2, principle 1, says so. This is the operator's interpretation, and the owner reviews it on return.
-  - **Health changes are audited.** Every change in an instance's health-check state, from passing to failing and back, writes an `instance.health` audit event, with no payload. The state starts as passing when monitoring starts. So a failing check writes one event at its first failure, not one per call. The failure it causes is also audited (`instance.fail`).
+- The CRD checks these with CEL. The catalog checks them again, and also checks the shared-namespace rule for `http.service` (phase 1 §7: it must contain `${instance.id}`). A bad check makes the template invalid, with the reason in `Valid`.
+- **The check** is `GET http://<service>.<instance namespace>.svc:<port><path>` with a client that doesn't follow redirects, uses no proxy and reads at most 64 KiB of the body before discarding it. It passes when the status equals `expectedStatus`. The instance namespace already admits the gateway's pods on every port (phase 1 §6). There's no MCP tool-call check: a health check is an HTTP request to an endpoint the admin chose, never a tool call, so principle 1 needs no exception.
+- **Running.** The leader's `Monitor` runs the check in its own goroutine, next to phase 1's `ping`, with its own ticker and counters, so a hanging `ping` doesn't delay it (row 103). The first check runs when the instance is `ready`, then every `interval`, each with a context of `timeout`. The check doesn't gate `starting` → `ready`.
 
-**Running.** The leader's `Monitor` runs the check in its own goroutine, next to phase 1's `ping`, with its own ticker and its own failure counter. A `ping` that hangs for its 30 s timeout doesn't delay the check. Both goroutines fail the row with phase 1's compare-and-set (row 94).
-- The first check runs when monitoring starts, then every `interval`. Each check gets a context with `timeout`.
-- A pass resets the counter. At `failureThreshold` failures in a row, the monitor marks the row `ready` → `failed` (phase 1's compare-and-set), with the reason, and stops.
-- The check doesn't gate `starting` → `ready`. AC-3-13 is about failures after `ready`, and phase 1's readiness rules stay as they are.
+**Detection: unhealthy.** At `failureThreshold` failures in a row, the reconciler sets `instances.unhealthy_since = now()` and `unhealthy_reason` on the `ready` row (compare-and-set on `status = 'ready'`), writes `instance.health` (unhealthy, with the reason), and notifies. The status stays `ready`, because the instance still exists. While `unhealthy_since` is set:
+- `tools/list` leaves the server's tools out, and every replica sends `list_changed` to the sessions that enable it (phase 1 §3 fan-out);
+- a call is refused at once with reason `not-ready` and the message "`github` is unhealthy: GET http://db-proxy:8080/healthz answered 503, expected 200. toolgate is repairing it." It writes `tool.decision` as phase 1 does, so nothing is forwarded to a server known to be broken;
+- `toolgate_server_status` and the Servers page show the reason.
 
-**Bound.** A target that turns unhealthy is seen by a check that starts within one `interval`. So the `failureThreshold`-th failing check starts within `interval × failureThreshold` and ends at most `timeout` later. So AC-3-13's bound is `interval × failureThreshold` plus one `timeout`, plus the write and the fan-out. The AC-3-13 test uses a target that fails fast (HTTP 503), and allows a few seconds for the write and the fan-out. A unit test covers the bound while `ping` hangs (row 103).
+At `successThreshold` passes in a row, the reconciler clears `unhealthy_since` (compare-and-set), writes `instance.health` (healthy), and notifies, and the tools come back with `list_changed`.
 
-**Reasons** name the check and never a tool result:
-- "Health check failed 3 times in a row: GET http://db-proxy:8080/healthz answered 503, expected 200."
-- "Health check failed 3 times in a row: tool `ping_database` returned an error."
-- "Health check failed 3 times in a row: tool `ping_database` didn't answer within 5s."
+**Repair** follows `onFailure`, right after the instance becomes unhealthy:
+- **`replace`** (default): the reconciler replaces the instance with phase 2 §6's restart procedure (step 2): same advisory lock, the stop conditions checked first, a new row, and reason `health-check`. Sessions keep the server enabled, and the new instance's tools arrive when it's ready.
+- **`reapply`**: the reconciler re-renders the instance at its own generation and server-side applies its objects again. That repairs objects that were edited or deleted. The row keeps its ID and stays unhealthy until the check passes. If it's still unhealthy `failureThreshold × interval` later, that counts as one more repair.
+- **`none`**: no repair. The instance stays unhealthy, with its tools withdrawn, until the check passes again.
 
-They reach the model through `toolgate_server_status` and phase 1's `not-ready` refusals, and the audit log through `instance.fail`.
+**Repairs are bounded.** `instances.repairs` lists the repair times for the template and scope key, carried over to each replacement row. A repair beyond `maxRepairs` within 30 minutes isn't made. Instead the reconciler fails the row as phase 1 does (`ready` → `failed`, torn down), with the reason "Health check still failing after 3 repairs in 30 minutes: `<last reason>`." Sessions keep the server enabled with no tools, and the next enable inserts a new instance with an empty repair history. So a broken server can't restart forever, which keeps phase 1's rule that an automatic retry never loops.
 
-**After failure,** exactly as phase 1 row 12: the instance is torn down, sessions keep the server enabled with no tools and get `list_changed`, and the next enable inserts a new instance. There's no automatic restart. A check that would pass again doesn't bring a failed row back, because a row never goes back to an earlier status (phase 1 §2).
+**Bound (AC-3-13).** A target that turns unhealthy is seen by a check that starts within one `interval`, so the instance is marked unhealthy, and its tools withdrawn, within `interval × failureThreshold` plus one `timeout`, plus the write and the fan-out. The AC-3-13 test uses a target that answers 503 and then 200 on command. It checks the withdrawal and the refusal, the repair for each `onFailure` value, the return of the tools, and the failure after `maxRepairs`.
 
-A template without `healthCheck` behaves as in phase 2: `health_check` is null and only the `ping` runs.
+**Audit.** Every change of health writes `instance.health`, with no payload. Each repair writes `instance.stop` (reason `health-check`) or `instance.reapply`, and the final give-up writes `instance.fail`.
+
+A template without `healthCheck` behaves as in phase 2: `health_check` is null, and only the `ping` runs.
 
 ### Object health after `ready`
 
 AC-3-14. This is phase 2 §7's readiness rule applied to `ready` instances, which `Starter.checkReady` already does on every step.
 - On each 30 s pass, and on each notification for the row, the reconciler judges every object of a `ready` instance. It uses kstatus, with phase 2's rule first: a `Ready` condition that has been `False` for at least 60 s at its object's current generation (read from the condition's own `observedGeneration`) counts as failed.
-- A failed object moves the row `ready` → `failed` with "`<Kind>` `<name>` failed: `<Ready message>`".
+- A failed object marks the instance unhealthy with the reason "`<Kind>` `<name>` failed: `<Ready message>`", and it's repaired as its template's `healthCheck.onFailure` says, bounded by `maxRepairs` (above). A template without `healthCheck` uses `replace` with the default bound. When the object is ready again, the instance becomes healthy.
 - **Bound:** within 60 s of the condition turning `False`, plus up to one 30 s pass.
 - Objects whose `Ready` condition has no `observedGeneration`, such as Pods, are judged by kstatus alone, as in phase 2. A pod that only restarts is left to the health checks.
 - The AC-3-14 e2e test points a `ready` HelmRelease instance's `OCIRepository` at a tag that doesn't exist. Its `Ready` turns `False` at the new generation, and the instance must fail with that message. The work for this scenario is the test, plus any defect it finds.
@@ -415,6 +414,12 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 103 | `ping` hangs for its timeout | custom check failing | The check runs in its own goroutine, so it reaches its threshold within `interval × failureThreshold + timeout`. | unit |
 | 104 | A 0.2 leader starts an instance of a template with `healthCheck` | rolling upgrade from 0.2 | `health_check` stays null, and only `ping` runs. The next instance gets the check. | unit |
 | 105 | Client sends prompt or tool content attributes (`OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`) | ingest | Removed, unless `telemetry.allowContent` is `true` (§3). | AC-3-05 |
+| 106 | Instance becomes unhealthy | call in flight | The call finishes or gets the upstream error. Later calls are refused with the unhealthy reason, and the tools are withdrawn with `list_changed`. | integration |
+| 107 | Instance becomes unhealthy | enable waiting on it | The enable returns the unhealthy reason and leaves the server enabled. The tools arrive with `list_changed` once it's healthy again or replaced. | integration |
+| 108 | Health check passes again | repair (`replace`) under way | The old row is already stopping, so its compare-and-set to healthy matches nothing. The new row starts healthy. | unit |
+| 109 | Leader dies | instance unhealthy, repair not yet made | The new leader sees `unhealthy_since` on its first pass and makes the repair, counting it in `repairs`. | e2e |
+| 110 | The `maxRepairs`-th repair window is full | check still failing | The row fails as phase 1 does, with the give-up reason. The next enable starts with an empty repair history. | unit |
+| 111 | Template's `onFailure` changes | instance unhealthy | The instance keeps the `health_check` it started with (row 93). New instances use the new one. | unit |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
@@ -442,8 +447,8 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - SPIFFE ID 2048 bytes; `spiffeIDs` 64 items;
   - sessions list 200;
   - tail backlog 20 events from the past 24 h, `after` at most 31 days back, 500 rows a query; 4 tails per principal on each replica, and 64 on each replica;
-  - health check: HTTP body 64 KiB read, tool response 1 MiB, arguments 4 KiB, path 1024 characters.
-- **Audit events:** `instance.health`, written on every change in an instance's health-check state, with no payload (§6). Health failures are `instance.fail` with the check's reason.
+  - health check: HTTP body 64 KiB read, path 1024 characters, at most 10 repairs in 30 minutes.
+- **Audit events:** `instance.health` on every change of health, and `instance.reapply` for each reapply, both with no payload (§6). Health failures are `instance.fail` with the check's reason.
 - **Libraries:**
   - `go.opentelemetry.io/collector/pdata` (the `ptraceotlp`, `pmetricotlp` and `plogotlp` packages);
   - `github.com/spiffe/go-spiffe/v2` (`jwtsvid`, `jwtbundle`, `federation`, `spiffeid`, `workloadapi`, and `proto/spiffe/workload` in tests);
