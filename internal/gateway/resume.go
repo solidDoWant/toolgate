@@ -18,7 +18,12 @@ import (
 // server refused now, no longer offered, or over an instance limit is
 // removed from the set with server.disable naming the reason, so resuming
 // never widens what the session could do when it ended.
-func (m *metaTools) restoreServers(ctx context.Context, current requestContext, servers []db.SessionServer) error {
+//
+// It runs inside the restart's transaction, each server in its own
+// savepoint. So a restore that fails or stops part-way rolls back the
+// restart too: the session stays ended, and the next request restarts it and
+// restores the whole set again.
+func (m *metaTools) restoreServers(ctx context.Context, tx pgx.Tx, current requestContext, servers []db.SessionServer) error {
 	state, err := m.policyState(ctx, current.identity)
 	if err != nil {
 		return err
@@ -30,7 +35,7 @@ func (m *metaTools) restoreServers(ctx context.Context, current requestContext, 
 			gone := &v1alpha1.MCPServerTemplate{}
 			gone.Namespace, gone.Name = row.TemplateNs, row.TemplateName
 
-			if err := m.removeServer(ctx, current, gone, map[string]any{"decision": "refuse", "reason": "not-offered"}); err != nil {
+			if err := m.removeServer(ctx, tx, current, gone, map[string]any{"decision": "refuse", "reason": "not-offered"}); err != nil {
 				return err
 			}
 
@@ -39,18 +44,18 @@ func (m *metaTools) restoreServers(ctx context.Context, current requestContext, 
 
 		decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, State: state})
 		if !decision.Allowed {
-			if err := m.removeServer(ctx, current, template, refusalDetails(decision)); err != nil {
+			if err := m.removeServer(ctx, tx, current, template, refusalDetails(decision)); err != nil {
 				return err
 			}
 
 			continue
 		}
 
-		err = m.restoreInTransaction(ctx, current, template)
+		err = m.restoreInTransaction(ctx, tx, current, template)
 
 		var limitErr *instanceLimitError
 		if errors.As(err, &limitErr) {
-			if err := m.removeServer(ctx, current, template, map[string]any{
+			if err := m.removeServer(ctx, tx, current, template, map[string]any{
 				"decision": "refuse", "reason": "limit", "limit": limitErr.limit,
 			}); err != nil {
 				return err
@@ -70,10 +75,11 @@ func (m *metaTools) restoreServers(ctx context.Context, current requestContext, 
 // restoreInTransaction reuses or inserts the live instance of one restored
 // server and writes server.enable for the decision. A server the session no
 // longer has, because a disable or another restart came first, is skipped.
-// A serialization failure or unique violation is retried once.
-func (m *metaTools) restoreInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) error {
+// A serialization failure or unique violation is retried once. It runs in a
+// savepoint of the restart's transaction outer.
+func (m *metaTools) restoreInTransaction(ctx context.Context, outer pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate) error {
 	attempt := func() error {
-		return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
+		return pgx.BeginFunc(ctx, outer, func(tx pgx.Tx) error {
 			queries := db.New(tx)
 
 			if err := m.lockSession(ctx, tx, current); err != nil {

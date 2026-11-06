@@ -501,13 +501,20 @@ func (m *metaTools) disableInTransaction(ctx context.Context, current requestCon
 		details = refusalDetails(decision)
 	}
 
-	return m.removeServer(ctx, current, template, details)
+	return m.removeServer(ctx, m.database, current, template, details)
+}
+
+// beginner starts a transaction: a pool, or a transaction that starts a
+// savepoint.
+type beginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 // removeServer deletes the session's session_servers row, writes
-// server.disable with details and notifies session:<id>.
-func (m *metaTools) removeServer(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, details map[string]any) error {
-	return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
+// server.disable with details and notifies session:<id>, in a transaction
+// started on database.
+func (m *metaTools) removeServer(ctx context.Context, database beginner, current requestContext, template *v1alpha1.MCPServerTemplate, details map[string]any) error {
+	return pgx.BeginFunc(ctx, database, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
 		if err := m.lockSession(ctx, tx, current); err != nil {
