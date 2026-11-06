@@ -19,10 +19,12 @@ import (
 )
 
 // objectFailureBound is how long an object's Ready condition must be False
-// before it counts as failed, plus one 30 s reconciler pass
-// (docs/design/phase-3.md §6), plus time for Flux to reconcile the change,
-// the write and the fan-out.
-const objectFailureBound = 60*time.Second + 30*time.Second + 20*time.Second
+// before it counts as failed, plus one reconciler pass
+// (docs/design/phase-3.md §6), both scaled, plus time for Flux to reconcile
+// the change, the write and the fan-out.
+func objectFailureBound() time.Duration {
+	return scaled(runtime.ReadyFailureHold) + scaled(runtime.DefaultPassInterval) + 20*time.Second
+}
 
 // gatewayQuery runs SQL against the gateway's database, through psql in
 // the harness's PostgreSQL pod, and returns its output.
@@ -75,7 +77,7 @@ func TestAC3_14ObjectHealthAfterReady(t *testing.T) {
 			for _, tool := range prefixedTools(name) {
 				assert.NotContains(collect, listed, tool)
 			}
-		}, objectFailureBound, time.Second, "the tools are withdrawn within 60 s plus one 30 s pass")
+		}, objectFailureBound(), time.Second, "the tools are withdrawn within the Ready=False hold plus one pass")
 
 		reason := gatewayQuery(t, admin, "SELECT details->>'reason' FROM audit_events WHERE type = 'instance.health' "+
 			"AND details->>'instance' = '"+instanceID+"' AND details->>'healthy' = 'false'")

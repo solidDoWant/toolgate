@@ -36,6 +36,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 )
 
@@ -284,7 +285,7 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 
 // checkReady marks a ready instance unhealthy when one of its objects has
 // failed: kstatus reports it failed, or its Ready condition has been False
-// for readyFailureHold at its generation. The Repairer then repairs it. An
+// for ReadyFailureHold at its generation. The Repairer then repairs it. An
 // object that is only in progress, such as a restarting pod, is left to the
 // health checks. When no object has failed, an unhealthy instance without a
 // custom health check becomes healthy again; with one, its checker decides.
@@ -640,7 +641,7 @@ func (s *Starter) objectsCurrent(ctx context.Context, instance db.Instance, temp
 		for index := range list.Items {
 			object := &list.Items[index]
 
-			if message, held, ok := readyFalse(object, s.now()); ok && held >= readyFailureHold {
+			if message, held, ok := readyFalse(object, s.now()); ok && held >= testtime.Scale(ReadyFailureHold) {
 				return false, truncate(fmt.Sprintf("%s %s failed: %s", kind.Kind, object.GetName(), message), maxReasonBytes), nil
 			}
 
@@ -688,11 +689,11 @@ func readinessKinds(template *v1alpha1.MCPServerTemplate) []schema.GroupVersionK
 	return kinds
 }
 
-// readyFailureHold is how long an object's Ready condition must stay False
+// ReadyFailureHold is how long an object's Ready condition must stay False
 // at the object's current generation before the object counts as failed.
 // It keeps objects that report Ready=False briefly while they make progress
 // from failing early.
-const readyFailureHold = 60 * time.Second
+const ReadyFailureHold = 60 * time.Second
 
 // readyFalse returns the message of an object's Ready condition and how
 // long it has been False, when the condition is False at the object's

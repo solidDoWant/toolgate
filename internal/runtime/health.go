@@ -16,6 +16,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 )
 
@@ -202,7 +203,7 @@ func (m *Monitor) watch(ctx context.Context, instance db.Instance, endpoint stri
 		}()
 	}
 
-	ticker := time.NewTicker(m.interval())
+	ticker := time.NewTicker(testtime.Scale(m.interval()))
 	defer ticker.Stop()
 
 	if !state.check(ctx) {

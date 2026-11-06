@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/solidDoWant/toolgate/internal/store"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // DefaultPassInterval is how often the reconciler does a full pass over
@@ -110,7 +111,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, _ passRequest) (reconcile.Re
 
 	interval := r.Interval
 	if interval == 0 {
-		interval = DefaultPassInterval
+		interval = testtime.Scale(DefaultPassInterval)
 	}
 
 	return reconcile.Result{RequeueAfter: interval}, nil
