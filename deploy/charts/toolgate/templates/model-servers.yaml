@@ -1,0 +1,171 @@
+{{- /*
+The optional embeddings server of tool search: a model cache claim, a hook
+Job that downloads the model at a pinned revision, and a
+Deployment and Service that run text-embeddings-inference offline from the
+downloaded directory. No NetworkPolicy: cluster admins add that.
+*/ -}}
+{{- $values := .Values.embeddings -}}
+{{- $servers := list -}}
+{{- if $values.server.enabled }}{{ $servers = append $servers (dict "key" "server" "name" "embeddings" "dir" "embeddings") }}{{ end -}}
+{{- if $servers }}
+{{- $claim := include "toolgate.modelClaim" . -}}
+{{- if not $values.server.cache.existingClaim }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "toolgate.fullname" . }}-models
+  labels: {{- include "toolgate.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: {{ toYaml $values.server.cache.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ $values.server.cache.size }}
+  {{- with $values.server.cache.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}
+{{- range $entry := $servers }}
+{{- $server := index $values $entry.key }}
+{{- $fullname := printf "%s-%s" (include "toolgate.fullname" $) $entry.name }}
+{{- $claimName := $claim }}
+{{- if not (regexMatch "^[0-9a-f]{40}$" (toString $server.modelRevision)) }}
+{{- fail (printf "embeddings.%s.modelRevision must be a full 40-character commit SHA of the model repository" $entry.key) }}
+{{- end }}
+{{- $image := printf "%s:%s@%s" $server.image.repository $server.image.tag $server.image.digest }}
+{{- $selector := dict "app.kubernetes.io/name" $.Chart.Name "app.kubernetes.io/instance" $.Release.Name "app.kubernetes.io/component" $entry.name }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-download
+  labels: {{- include "toolgate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $entry.name }}-download
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: {{ $values.downloader.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels: {{- include "toolgate.selectorLabels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $entry.name }}-download
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: download
+          image: {{ printf "%s:%s@%s" $values.downloader.image.repository $values.downloader.image.tag $values.downloader.image.digest | quote }}
+          command: [uvx]
+          args:
+            - --from
+            - huggingface_hub=={{ $values.downloader.hubVersion }}
+            - --with
+            - typer
+            - --with
+            - click
+            - hf
+            - download
+            - {{ $server.model | quote }}
+            - --revision
+            - {{ $server.modelRevision | quote }}
+            - --local-dir
+            - /models/{{ $entry.dir }}
+          env:
+            - {name: HOME, value: /tmp}
+            - {name: HF_HOME, value: /tmp/hf}
+            - {name: UV_CACHE_DIR, value: /tmp/uv}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ $claimName }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "toolgate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $entry.name }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {{- toYaml $selector | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- toYaml $selector | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: server
+          image: {{ $image | quote }}
+          args: [--model-id, /models/{{ $entry.dir }}, --port, "80"]
+          env:
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: HUGGINGFACE_HUB_CACHE, value: /tmp/hf}
+          ports:
+            - {name: http, containerPort: 80}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          resources: {{- toYaml $server.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: models, mountPath: /models, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: {{ $claimName }}
+            readOnly: true
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}
+  labels: {{- include "toolgate.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $entry.name }}
+spec:
+  selector: {{- toYaml $selector | nindent 4 }}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+{{- end }}
+{{- end }}

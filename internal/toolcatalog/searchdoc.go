@@ -15,28 +15,49 @@ const MaxSearchTextBytes = 4 << 10
 
 // SearchParts are the four weighted parts of a tool's search document, as
 // plain text. The database turns each into a weighted tsvector, with weights
-// A to D in this order (docs/design/phase-4.md §5).
+// A, B, C and C in this order (docs/design/phase-4.md §5).
 type SearchParts struct {
-	// Name is the exposed name with its word boundaries turned into spaces.
+	// Name is the exposed name and the upstream name with their word
+	// boundaries turned into spaces.
 	Name string
-	// Description is the curated description, cut at MaxSearchTextBytes.
+	// Description is the curated title and description, cut at MaxSearchTextBytes.
 	Description string
 	// Server is the server name and the template description.
 	Server string
-	// Input is the top-level input property names and their descriptions,
-	// cut at MaxSearchTextBytes.
+	// Input is the top-level input property names, their descriptions and
+	// enum values, cut at MaxSearchTextBytes.
 	Input string
+}
+
+// MaxEmbeddingTextBytes cuts the text sent to the embeddings endpoint.
+const MaxEmbeddingTextBytes = 2 << 10
+
+// EmbeddingText is the text of the document sent to the embeddings endpoint:
+// the parts in weight order, cut at MaxEmbeddingTextBytes.
+func (p SearchParts) EmbeddingText() string {
+	return cutText(strings.Join([]string{p.Name, p.Description, p.Server, p.Input}, ". "), MaxEmbeddingTextBytes)
 }
 
 // SearchPartsOf builds the search document parts of a curated tool of
 // template.
 func SearchPartsOf(template *v1alpha1.MCPServerTemplate, tool Tool) SearchParts {
 	return SearchParts{
-		Name:        SplitName(tool.ExposedName),
-		Description: cutText(tool.Tool.Description, MaxSearchTextBytes),
+		Name:        nameText(tool),
+		Description: cutText(strings.TrimSpace(tool.Tool.Title+" "+tool.Tool.Description), MaxSearchTextBytes),
 		Server:      strings.TrimSpace(template.Name + " " + template.Spec.Description),
 		Input:       cutText(inputText(tool.Tool.InputSchema), MaxSearchTextBytes),
 	}
+}
+
+// nameText is the exposed name and, when it differs, the upstream name, each
+// split into words.
+func nameText(tool Tool) string {
+	text := SplitName(tool.ExposedName)
+	if tool.UpstreamName != "" && tool.UpstreamName != tool.ExposedName {
+		text += " " + SplitName(tool.UpstreamName)
+	}
+
+	return text
 }
 
 // SplitName turns the `_`, `-` and `.` characters of name and its camelCase
@@ -92,6 +113,14 @@ func inputText(schema any) string {
 		if property, isMap := properties[name].(map[string]any); isMap {
 			if description, isString := property["description"].(string); isString {
 				parts = append(parts, description)
+			}
+
+			if values, isList := property["enum"].([]any); isList {
+				for _, value := range values {
+					if text, isString := value.(string); isString {
+						parts = append(parts, SplitName(text))
+					}
+				}
 			}
 		}
 	}

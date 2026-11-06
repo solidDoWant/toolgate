@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -101,6 +102,11 @@ type MCPOptions struct {
 	// server lists the open sessions seen within it, as GET
 	// /api/v1/sessions does. Zero means defaultSessionIdleTimeout.
 	SessionIdleTimeout time.Duration
+	// ToolSearch is the gateway's default for tool search mode, used by a
+	// request that sends no X-Toolgate-Tool-Search header.
+	ToolSearch bool
+	// Embedder embeds search queries for tool search; nil means words only.
+	Embedder *embeddings.Client
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -136,6 +142,9 @@ type requestContext struct {
 	// request is served on. It is nil on an MCP session, whose tools are
 	// found by its ID.
 	stateless *sessionTools
+	// searchMode says the request asked for tool search mode, by header or
+	// by the gateway's setting. It only changes what a tool list holds.
+	searchMode bool
 }
 
 const requestContextKey = "toolgate"
@@ -175,6 +184,9 @@ type mcpEndpoint struct {
 	// Mcp-Session-Id the go-sdk assigns to the session it initializes.
 	newServer func(stateless bool, sessionID string) *mcp.Server
 	callTool  mcp.ToolHandler
+	// toolSearch is the setting that decides the mode of a request without
+	// the X-Toolgate-Tool-Search header.
+	toolSearch bool
 	// handler is the stateful handler. It serves every revision before
 	// 2026-07-28, and server/discover on every revision.
 	handler http.Handler
@@ -219,9 +231,10 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 	}
 
 	endpoint := &mcpEndpoint{
-		sessions: &sessionStore{pool: options.Database, auditOutput: auditOutput, now: now},
-		logger:   logger,
-		bindings: make(map[string]*mcpSession),
+		sessions:   &sessionStore{pool: options.Database, auditOutput: auditOutput, now: now},
+		logger:     logger,
+		toolSearch: options.ToolSearch,
+		bindings:   make(map[string]*mcpSession),
 
 		stateless: make(map[mcpBinding]*mcpSession),
 
@@ -269,6 +282,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 		workspaceScoping:     options.WorkspaceScoping,
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
+		embedder:             options.Embedder,
 	}
 
 	if tools.workspaces == nil {
@@ -461,7 +475,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	current := requestContext{identity: identity, session: session}
+	current := requestContext{identity: identity, session: session, searchMode: searchModeOf(request, e.toolSearch)}
 
 	if stateless {
 		e.serveStateless(writer, request, binding, current)

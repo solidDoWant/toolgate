@@ -74,6 +74,19 @@ settings from `config`.
 {{- with $config.ui.approvalTimeout }}
 {{- $env = append $env (dict "name" "TOOLGATE_APPROVAL_TIMEOUT" "value" .) }}
 {{- end }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH" "value" (toString (default false $config.toolSearch))) -}}
+{{- with $config.toolSearchEmbeddings }}
+{{- range $setting, $name := dict "url" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_URL" "model" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_MODEL" "apiKeyFile" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_API_KEY_FILE" "timeout" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_TIMEOUT" }}
+{{- with index $.Values.config.toolSearchEmbeddings $setting }}
+{{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /* A server the chart runs sets the URL and model, unless config sets a URL. */ -}}
+{{- if and .Values.embeddings.server.enabled (not $config.toolSearchEmbeddings.url) }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_URL" "value" (printf "http://%s-embeddings.%s.svc:80" (include "toolgate.fullname" .) .Release.Namespace)) }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_MODEL" "value" .Values.embeddings.server.model) }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

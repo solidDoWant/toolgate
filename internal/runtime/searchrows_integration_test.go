@@ -153,7 +153,7 @@ func TestRebuildToolSearchRows(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT document::text FROM tool_search WHERE template_uid = 'uid-1'`).Scan(&weights))
 	// A is the name, B the description, C the server name and its description;
 	// D, the default weight, shows with no letter.
-	assert.Equal(t, "'code':7C 'creat':1A 'github':6C 'head':10 'host':8C 'issu':2A,5B 'open':3B 'titl':9", weights)
+	assert.Equal(t, "'code':7C 'creat':1A 'github':6C 'head':10C 'host':8C 'issu':2A,5B 'open':3B 'titl':9C", weights)
 
 	var matches int
 

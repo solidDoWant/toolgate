@@ -121,6 +121,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/nix-dev-shell
+      # The embeddings model of the tool search quality test (testutil.StartEmbeddings).
+      - name: Cache the embeddings model
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/toolgate-embeddings
+          key: embeddings-model-bge-small
       - name: Integration tests
         env:
           GO_TEST_JSON: build/acceptance/results/go-integration.json

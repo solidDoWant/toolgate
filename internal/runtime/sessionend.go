@@ -179,6 +179,10 @@ func endSession(ctx context.Context, pool *pgxpool.Pool, auditOutput io.Writer, 
 			return err
 		}
 
+		if err := queries.DeleteSessionFoundTools(ctx, id); err != nil {
+			return fmt.Errorf("delete found tools: %w", err)
+		}
+
 		if err := store.Notify(ctx, tx, store.KindSession, fmt.Sprint(id)); err != nil {
 			return err
 		}

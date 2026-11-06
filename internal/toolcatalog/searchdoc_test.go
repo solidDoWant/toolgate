@@ -28,19 +28,20 @@ func TestSearchPartsOf(t *testing.T) {
 	template.Name = "github"
 	template.Spec.Description = "Code hosting"
 
-	tool := toolcatalog.Tool{ExposedName: "createIssue", Tool: &mcp.Tool{
-		Name: "createIssue", Description: "Open an issue",
+	tool := toolcatalog.Tool{ExposedName: "createIssue", UpstreamName: "create_issue", Tool: &mcp.Tool{
+		Name: "createIssue", Title: "New issue", Description: "Open an issue",
 		InputSchema: map[string]any{"properties": map[string]any{
 			"repoName": map[string]any{"description": "The repository"},
 			"title":    map[string]any{"type": "string"},
+			"state":    map[string]any{"enum": []any{"open", "closedAll"}},
 		}},
 	}}
 
 	parts := toolcatalog.SearchPartsOf(template, tool)
-	assert.Equal(t, "create Issue", parts.Name)
-	assert.Equal(t, "Open an issue", parts.Description)
+	assert.Equal(t, "create Issue create issue", parts.Name)
+	assert.Equal(t, "New issue Open an issue", parts.Description)
 	assert.Equal(t, "github Code hosting", parts.Server)
-	assert.Equal(t, "repo Name The repository title", parts.Input)
+	assert.Equal(t, "repo Name The repository state open closed All title", parts.Input)
 }
 
 func TestSearchPartsCutAtFourKiB(t *testing.T) {

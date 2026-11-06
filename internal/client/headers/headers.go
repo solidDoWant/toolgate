@@ -32,6 +32,9 @@ import (
 const (
 	SessionEnv   = "TOOLGATE_SESSION"
 	WorkspaceEnv = "TOOLGATE_WORKSPACE"
+	// ToolSearchEnv turns tool search mode on or off for the session. Its
+	// value is sent as the X-Toolgate-Tool-Search header.
+	ToolSearchEnv = "TOOLGATE_TOOL_SEARCH"
 )
 
 const (

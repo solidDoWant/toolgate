@@ -7,6 +7,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/embeddings"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,7 +79,9 @@ type listServersInput struct{}
 // metaTools implements the toolgate_* tools.
 type metaTools struct {
 	// metrics counts calls and starts. Nil means none.
-	metrics     *runtime.Metrics
+	metrics *runtime.Metrics
+	// embedder embeds search queries; nil means words only.
+	embedder    *embeddings.Client
 	database    *pgxpool.Pool
 	catalog     *catalog.Catalog
 	policy      *policy.Engine
@@ -124,6 +128,11 @@ func (m *metaTools) register(server *mcp.Server) {
 		Name:        ToolDisableServer,
 		Description: "Remove a server's tools from this session.",
 	}, m.disableServer)
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        ToolFindTools,
+		Description: "Search the tools of the servers you can use by what you want to do. The tools it returns are added to your tool list.",
+	}, m.findTools)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        ToolServerStatus,

@@ -29,6 +29,7 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/config"
+	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -57,6 +58,8 @@ type runtimeOptions struct {
 	listener *store.Listener
 	// tracerProvider makes the render and apply spans.
 	tracerProvider trace.TracerProvider
+	// embedder embeds the tool search rows; nil means words only.
+	embedder *embeddings.Client
 }
 
 // skipControllerNameValidation turns off controller-runtime's check that
@@ -267,6 +270,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	searchRows := &runtime.SearchRebuilder{
 		Pool: pool, Fence: lease, Templates: options.catalog.LastValidByUID,
 		Changes: options.catalog.Subscribe, Loaded: options.catalog.Loaded(), Log: logger,
+		Embedder: options.embedder,
 	}
 	if err := mgr.Add(manager.RunnableFunc(searchRows.Run)); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

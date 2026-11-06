@@ -28,6 +28,9 @@ import (
 const (
 	SessionHeader   = "X-Toolgate-Session"
 	WorkspaceHeader = "X-Toolgate-Workspace"
+	// ToolSearchHeader turns tool search mode on or off for a request. It is
+	// a claim that only changes what a tool list holds.
+	ToolSearchHeader = "X-Toolgate-Tool-Search"
 
 	// MCPSessionPrefix starts the ID of a session tied to an MCP session,
 	// which the MCP endpoint makes for a client that sends no session

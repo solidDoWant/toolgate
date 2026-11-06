@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -39,6 +40,9 @@ import (
 const templateNamespace = "toolgate-servers"
 
 type mcpFixture struct {
+	// embedder, when set, embeds the search rows that declareTools writes.
+	embedder *embeddings.Client
+
 	provider *testutil.OIDCProvider
 	pool     *pgxpool.Pool
 	catalog  *catalog.Catalog
@@ -159,6 +163,8 @@ type user struct {
 	workspace string
 	// attestation, if set, is sent in the attestation header.
 	attestation string
+	// search, if set, is sent as the tool search header.
+	search string
 }
 
 func (f *mcpFixture) headers(t *testing.T, client user) http.Header {
@@ -179,6 +185,10 @@ func (f *mcpFixture) headers(t *testing.T, client user) http.Header {
 
 	if client.attestation != "" {
 		header.Set(auth.AttestationHeader, client.attestation)
+	}
+
+	if client.search != "" {
+		header.Set(auth.ToolSearchHeader, client.search)
 	}
 
 	return header

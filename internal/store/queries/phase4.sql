@@ -17,13 +17,14 @@ SELECT * FROM tool_catalog WHERE template_uid = @template_uid ORDER BY generatio
 DELETE FROM tool_catalog WHERE template_uid = @template_uid AND generation < @generation;
 
 -- name: InsertToolSearch :exec
--- The document has four weighted parts (docs/design/phase-4.md §5).
-INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document)
-VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name,
+-- The document has weighted parts (docs/design/phase-4.md §5); name_text
+-- feeds the trigram term of the ranking.
+INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, embedding, embedding_model, document)
+VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name, @name_part::text, CAST(NULLIF(@embedding::text, '') AS vector), @embedding_model::text,
     setweight(to_tsvector('english', @name_part::text), 'A')
     || setweight(to_tsvector('english', @description_part::text), 'B')
     || setweight(to_tsvector('english', @server_part::text), 'C')
-    || setweight(to_tsvector('english', @input_part::text), 'D'));
+    || setweight(to_tsvector('english', @input_part::text), 'C'));
 
 -- name: LockToolSearch :exec
 SELECT pg_advisory_xact_lock(hashtextextended('toolsearch/' || @template_uid::text, 0));
@@ -163,3 +164,69 @@ WHERE s.id = f.session_pk AND s.ended_at IS NOT NULL;
 SELECT session_pk, server FROM session_additions
 WHERE session_pk = ANY(@session_pks::bigint[])
 ORDER BY session_pk, server;
+
+-- name: SearchTools :many
+-- Ranks the search rows of the candidate templates against a tsquery text:
+-- cover density over the weighted document, plus a small trigram similarity
+-- between the plain query and the name words.
+
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name
+FROM tool_search, to_tsquery('english', @expanded::text) AS q, to_tsquery('english', @query::text) AS q0
+WHERE tool_search.template_uid = ANY(@template_uids::text[]) AND tool_search.document @@ q
+ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, @plain::text)) DESC, tool_search.exposed_name
+LIMIT 100;
+
+-- name: SearchToolsHybrid :many
+-- Like SearchTools, and also ranks the rows embedded with the given model by
+-- cosine distance to the query vector. The two ranks are fused by reciprocal
+-- rank fusion with constant 60: a row missing from a list gets nothing from it.
+WITH words AS (
+    SELECT tool_search.template_uid, tool_search.upstream_name,
+           row_number() OVER (ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, @plain::text)) DESC, tool_search.exposed_name) AS rank
+    FROM tool_search, to_tsquery('english', @expanded::text) AS q, to_tsquery('english', @query::text) AS q0
+    WHERE tool_search.template_uid = ANY(@template_uids::text[]) AND tool_search.document @@ q
+), vectors AS (
+    SELECT tool_search.template_uid, tool_search.upstream_name,
+           row_number() OVER (ORDER BY tool_search.embedding <=> CAST(@query_vector::text AS vector), tool_search.exposed_name) AS rank
+    FROM tool_search
+    WHERE tool_search.template_uid = ANY(@template_uids::text[])
+      AND tool_search.embedding_model = @model::text AND tool_search.embedding IS NOT NULL
+)
+SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+       tool_search.upstream_name, tool_search.exposed_name
+FROM tool_search
+LEFT JOIN words USING (template_uid, upstream_name)
+LEFT JOIN vectors USING (template_uid, upstream_name)
+WHERE tool_search.template_uid = ANY(@template_uids::text[]) AND (words.rank IS NOT NULL OR vectors.rank IS NOT NULL)
+ORDER BY (COALESCE(1.0 / (60 + words.rank), 0) + COALESCE(1.0 / (60 + vectors.rank), 0)) DESC, tool_search.exposed_name
+LIMIT 100;
+
+-- name: ListToolSearchUIDsNeedingEmbedding :many
+-- The templates that have a row not embedded with the given model.
+SELECT DISTINCT template_uid FROM tool_search WHERE embedding_model <> @model::text OR embedding IS NULL;
+
+-- name: QueryIsEmpty :one
+SELECT numnode(to_tsquery('english', @query::text)) = 0;
+
+-- name: TouchSessionFoundTool :exec
+INSERT INTO session_found_tools (session_pk, template_ns, template_name, upstream_name, found_at)
+VALUES (@session_pk, @template_ns, @template_name, @upstream_name, clock_timestamp())
+ON CONFLICT (session_pk, template_ns, template_name, upstream_name) DO UPDATE SET found_at = clock_timestamp();
+
+-- name: TrimSessionFoundTools :exec
+-- Keeps the newest @keep found tools of a session.
+DELETE FROM session_found_tools AS t
+WHERE t.session_pk = @session_pk
+  AND (t.template_ns, t.template_name, t.upstream_name) NOT IN (
+    SELECT f.template_ns, f.template_name, f.upstream_name FROM session_found_tools f
+    WHERE f.session_pk = @session_pk
+    ORDER BY f.found_at DESC, f.template_name, f.upstream_name
+    LIMIT @keep::int);
+
+-- name: DeleteSessionFoundTool :exec
+DELETE FROM session_found_tools
+WHERE session_pk = @session_pk AND template_ns = @template_ns AND template_name = @template_name AND upstream_name = @upstream_name;
+
+-- name: ListFoundToolSessions :many
+SELECT DISTINCT session_pk FROM session_found_tools WHERE template_ns = @template_ns AND template_name = @template_name;

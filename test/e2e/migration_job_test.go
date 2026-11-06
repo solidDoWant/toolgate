@@ -34,6 +34,8 @@ const splitRoleSQL = `
 CREATE ROLE toolgate_migrator LOGIN PASSWORD '%[1]s';
 CREATE ROLE toolgate_app LOGIN PASSWORD '%[1]s';
 CREATE SCHEMA toolgate AUTHORIZATION toolgate_migrator;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS vector;
 ALTER ROLE toolgate_migrator SET search_path = toolgate;
 ALTER ROLE toolgate_app SET search_path = toolgate;
 GRANT USAGE ON SCHEMA toolgate TO toolgate_app;

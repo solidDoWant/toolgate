@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -120,6 +121,8 @@ func (e *mcpEndpoint) handleEvent(tools *metaTools, event store.Event) {
 		e.resyncGrantPrincipal(tools, event.ID)
 	case event.Kind == store.KindScope:
 		e.resyncScopePrincipal(tools, event.ID)
+	case event.Kind == store.KindToolSearch:
+		e.resyncToolSearch(tools, event.ID)
 	case event.Kind == store.KindSession:
 		id, err := strconv.ParseInt(event.ID, 10, 64)
 		if err != nil {
@@ -128,6 +131,55 @@ func (e *mcpEndpoint) handleEvent(tools *metaTools, event store.Event) {
 
 		e.resync(tools, func(current requestContext) bool { return current.session.ID == id })
 	}
+}
+
+// resyncToolSearch re-syncs the search-mode MCP sessions whose found tools
+// include the template with the given UID, after the leader rebuilt its
+// search rows (docs/design/phase-4.md §1, "Notifications"). A template that
+// is no longer in the catalog re-syncs every search-mode session.
+func (e *mcpEndpoint) resyncToolSearch(tools *metaTools, uid string) {
+	searching := func(current requestContext) bool { return current.searchMode }
+
+	if tools.database == nil || tools.catalog == nil {
+		return
+	}
+
+	var template *v1alpha1.MCPServerTemplate
+
+	for _, candidate := range tools.catalog.List() {
+		if string(candidate.UID) == uid {
+			template = candidate
+
+			break
+		}
+	}
+
+	if template == nil {
+		e.resync(tools, searching)
+
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), fanOutTimeout)
+	pks, err := db.New(tools.database).ListFoundToolSessions(ctx, db.ListFoundToolSessionsParams{
+		TemplateNs: template.Namespace, TemplateName: template.Name,
+	})
+
+	cancel()
+
+	if err != nil {
+		e.logger.Error("reading the sessions with found tools failed", slog.String("error", err.Error()))
+		e.resync(tools, searching)
+
+		return
+	}
+
+	found := make(map[int64]bool, len(pks))
+	for _, pk := range pks {
+		found[pk] = true
+	}
+
+	e.resync(tools, func(current requestContext) bool { return current.searchMode && found[current.session.ID] })
 }
 
 // resyncGrantPrincipal re-syncs the MCP sessions of the grant's principal.
