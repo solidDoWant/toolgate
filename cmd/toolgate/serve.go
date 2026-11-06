@@ -294,13 +294,18 @@ func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, migrateOnStart boo
 // requests are refused until discovery succeeds. Failed sign-ins go to the
 // audit log, and the count of those over its rate limit to /metrics. When
 // serviceAccountNamespaces is set, pods in those namespaces sign in with
-// their service-account tokens, checked by TokenReview.
+// their service-account tokens, checked by TokenReview. When
+// workspaceAttestation is set, a user's request may carry a workload token
+// that verifies its workspace.
 func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Server, stdout io.Writer,
 	logger *slog.Logger,
 ) (*lazyAuthenticator, error) {
-	var serviceAccounts *auth.ServiceAccountOptions
+	var (
+		serviceAccounts *auth.ServiceAccountOptions
+		attestation     = cfg.AttestationOptions()
+	)
 
-	if len(cfg.ServiceAccountNamespaces) > 0 {
+	if len(cfg.ServiceAccountNamespaces) > 0 || attestation != nil {
 		restConfig, err := ctrl.GetConfig()
 		if err != nil {
 			return nil, fmt.Errorf("kubernetes: %w", err)
@@ -311,7 +316,13 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 			return nil, fmt.Errorf("kubernetes: %w", err)
 		}
 
-		serviceAccounts = &auth.ServiceAccountOptions{Client: clientset, Namespaces: cfg.ServiceAccountNamespaces}
+		if len(cfg.ServiceAccountNamespaces) > 0 {
+			serviceAccounts = &auth.ServiceAccountOptions{Client: clientset, Namespaces: cfg.ServiceAccountNamespaces}
+		}
+
+		if attestation != nil {
+			attestation.Client = clientset
+		}
 	}
 
 	authenticator := &lazyAuthenticator{
@@ -328,6 +339,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 			},
 			ServiceAccounts: serviceAccounts,
 			SPIFFE:          spiffeOptions(cfg, logger),
+			Attestation:     attestation,
 		},
 		logger:          logger,
 		registerMetrics: server.RegisterMetrics,

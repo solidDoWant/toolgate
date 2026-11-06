@@ -12,6 +12,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 - [Gateway configuration reference](configuration.md): every setting of `toolgate serve`. This page is generated from the code.
 - [Pod sign-in](pod-sign-in.md): how pods sign in with a Kubernetes service-account token.
 - [SPIFFE sign-in](spiffe-sign-in.md): how workloads sign in with a SPIFFE JWT-SVID, and the `spiffeIDs` access list.
+- [Workspace attestation](workspace-attestation.md): how a user session in a workspace gets a verified workspace, and why the pod labels can be trusted.
 - [The web UI](web-ui.md): how to turn on the web UI, its OIDC client, its sessions and its admins.
 
 ## Write the catalog and rules

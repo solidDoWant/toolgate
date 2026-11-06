@@ -152,6 +152,8 @@ type user struct {
 	claims    testutil.TokenClaims
 	session   string
 	workspace string
+	// attestation, if set, is sent in the attestation header.
+	attestation string
 }
 
 func (f *mcpFixture) headers(t *testing.T, client user) http.Header {
@@ -168,6 +170,10 @@ func (f *mcpFixture) headers(t *testing.T, client user) http.Header {
 
 	if client.workspace != "" {
 		header.Set(auth.WorkspaceHeader, client.workspace)
+	}
+
+	if client.attestation != "" {
+		header.Set(auth.AttestationHeader, client.attestation)
 	}
 
 	return header

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/go-jose/go-jose/v4/jwt"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -50,13 +53,7 @@ type serviceAccountVerifier struct {
 	namespaces []string
 	now        func() time.Time
 
-	mutex sync.Mutex
-	cache map[[sha256.Size]byte]cachedIdentity
-}
-
-type cachedIdentity struct {
-	identity Identity
-	expires  time.Time
+	cache *tokenCache[Identity]
 }
 
 func newServiceAccountVerifier(options ServiceAccountOptions) (*serviceAccountVerifier, error) {
@@ -73,7 +70,7 @@ func newServiceAccountVerifier(options ServiceAccountOptions) (*serviceAccountVe
 		client:     options.Client,
 		namespaces: slices.Clone(options.Namespaces),
 		now:        now,
-		cache:      map[[sha256.Size]byte]cachedIdentity{},
+		cache:      newTokenCache[Identity](),
 	}, nil
 }
 
@@ -83,72 +80,134 @@ func (v *serviceAccountVerifier) verify(ctx context.Context, token string) (Iden
 	key := sha256.Sum256([]byte(token))
 	now := v.now()
 
-	if identity, ok := v.cached(key, now); ok {
+	if identity, ok := v.cache.get(key, now); ok {
 		return identity, nil
 	}
 
+	reviewed, err := v.reviewPod(ctx, token)
+	if err != nil {
+		var failure *podReviewError
+		if !errors.As(err, &failure) {
+			return Identity{}, &Refusal{Reason: "token review failed"}
+		}
+
+		if failure.stage == stageTokenInvalid {
+			refusal := unverifiedRefusal(token)
+			refusal.Reason = failure.reason
+
+			return Identity{}, &refusal
+		}
+
+		return Identity{}, &Refusal{Reason: failure.reason}
+	}
+
+	workspace, err := v.podWorkspace(ctx, reviewed.pod)
+	if err != nil {
+		return Identity{}, &Refusal{Reason: err.Error()}
+	}
+
+	identity := Identity{
+		Principal:   reviewed.username,
+		Workspace:   workspace,
+		Kind:        KindServiceAccount,
+		Attestation: AttestationAttested,
+	}
+
+	v.cache.put(key, identity, now, tokenExpiry(token, now))
+
+	return identity, nil
+}
+
+// Stages of a pod review, which each caller names in its own words.
+const (
+	stageReviewFailed = iota
+	stageTokenInvalid
+	stageNotServiceAccount
+	stageNamespace
+	stageNotBound
+	stagePodLookup
+	stagePodUID
+)
+
+// podReviewError is a pod review that refused the token, or couldn't
+// decide when unavailable is set: a transport error or a 5xx from the API
+// server.
+type podReviewError struct {
+	stage       int
+	reason      string
+	unavailable bool
+}
+
+func (e *podReviewError) Error() string { return e.reason }
+
+// reviewedPod is a token TokenReview accepted, from an allowed namespace,
+// bound to the pod it names.
+type reviewedPod struct {
+	username string
+	pod      *corev1.Pod
+}
+
+// reviewPod checks the token with TokenReview and audience toolgate, checks
+// its namespace and its pod binding, and gets the pod. The pod's UID must
+// match the token's, so a token from a deleted pod can't speak for a new pod
+// with the same name.
+func (v *serviceAccountVerifier) reviewPod(ctx context.Context, token string) (reviewedPod, error) {
 	review, err := v.client.AuthenticationV1().TokenReviews().Create(ctx, &authenticationv1.TokenReview{
 		Spec: authenticationv1.TokenReviewSpec{Token: token, Audiences: []string{ServiceAccountAudience}},
 	}, metav1.CreateOptions{})
 	if err != nil {
-		return Identity{}, &Refusal{Reason: "token review failed"}
+		return reviewedPod{}, &podReviewError{stage: stageReviewFailed, reason: "token review failed", unavailable: unavailable(err)}
 	}
 
 	if !review.Status.Authenticated || !slices.Contains(review.Status.Audiences, ServiceAccountAudience) {
-		refusal := unverifiedRefusal(token)
-		refusal.Reason = "invalid service-account token"
-
-		return Identity{}, &refusal
+		return reviewedPod{}, &podReviewError{stage: stageTokenInvalid, reason: "invalid service-account token"}
 	}
 
 	namespace, _, ok := splitServiceAccount(review.Status.User.Username)
 	if !ok {
-		return Identity{}, &Refusal{Reason: "not a service account"}
+		return reviewedPod{}, &podReviewError{stage: stageNotServiceAccount, reason: "not a service account"}
 	}
 
 	if !slices.Contains(v.namespaces, namespace) {
-		return Identity{}, &Refusal{Reason: "namespace not allowed"}
+		return reviewedPod{}, &podReviewError{stage: stageNamespace, reason: "namespace not allowed"}
 	}
 
 	podName := singleExtra(review.Status.User.Extra, podNameExtra)
 	podUID := singleExtra(review.Status.User.Extra, podUIDExtra)
 
 	if podName == "" || podUID == "" {
-		return Identity{}, &Refusal{Reason: "token not bound to a pod"}
+		return reviewedPod{}, &podReviewError{stage: stageNotBound, reason: "token not bound to a pod"}
 	}
 
-	workspace, err := v.podWorkspace(ctx, namespace, podName, podUID)
-	if err != nil {
-		return Identity{}, &Refusal{Reason: err.Error()}
-	}
-
-	identity := Identity{
-		Principal:   review.Status.User.Username,
-		Workspace:   workspace,
-		Kind:        KindServiceAccount,
-		Attestation: AttestationAttested,
-	}
-
-	v.store(key, identity, tokenExpiry(token, now))
-
-	return identity, nil
-}
-
-// podWorkspace returns `k8s/<namespace>/<owner kind>/<owner name>` for the
-// pod. The pod's UID must match the token's, so a token from a deleted pod
-// can't speak for a new pod with the same name. A ReplicaSet owned by a
-// Deployment reports the Deployment. A pod without a controller reports
-// itself.
-func (v *serviceAccountVerifier) podWorkspace(ctx context.Context, namespace, podName, podUID string) (string, error) {
 	pod, err := v.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
-		return "", errors.New("pod lookup failed")
+		return reviewedPod{}, &podReviewError{stage: stagePodLookup, reason: "pod lookup failed", unavailable: unavailable(err)}
 	}
 
 	if string(pod.UID) != podUID {
-		return "", errors.New("pod UID mismatch")
+		return reviewedPod{}, &podReviewError{stage: stagePodUID, reason: "pod UID mismatch"}
 	}
 
+	return reviewedPod{username: review.Status.User.Username, pod: pod}, nil
+}
+
+// unavailable reports whether an API call failed without an answer: a
+// transport error, or a 5xx status.
+func unavailable(err error) bool {
+	var status apierrors.APIStatus
+	if !errors.As(err, &status) {
+		return true
+	}
+
+	return status.Status().Code >= http.StatusInternalServerError
+}
+
+// podWorkspace returns `k8s/<namespace>/<owner kind>/<owner name>` for the
+// pod. A ReplicaSet owned by a
+// Deployment reports the Deployment. A pod without a controller reports
+// itself.
+func (v *serviceAccountVerifier) podWorkspace(ctx context.Context, pod *corev1.Pod) (string, error) {
+	namespace := pod.Namespace
 	kind, name := "Pod", pod.Name
 
 	if owner := metav1.GetControllerOf(pod); owner != nil {
@@ -173,46 +232,65 @@ func (v *serviceAccountVerifier) podWorkspace(ctx context.Context, namespace, po
 	return fmt.Sprintf("k8s/%s/%s/%s", namespace, kind, name), nil
 }
 
-func (v *serviceAccountVerifier) cached(key [sha256.Size]byte, now time.Time) (Identity, bool) {
-	v.mutex.Lock()
-	defer v.mutex.Unlock()
+// tokenCache holds what was learned from a token, keyed by its SHA-256,
+// until the token's expiry, at most maxTokenCacheTime.
+type tokenCache[T any] struct {
+	mutex   sync.Mutex
+	entries map[[sha256.Size]byte]tokenCacheEntry[T]
+}
 
-	entry, ok := v.cache[key]
+type tokenCacheEntry[T any] struct {
+	value   T
+	expires time.Time
+}
+
+func newTokenCache[T any]() *tokenCache[T] {
+	return &tokenCache[T]{entries: map[[sha256.Size]byte]tokenCacheEntry[T]{}}
+}
+
+func (c *tokenCache[T]) get(key [sha256.Size]byte, now time.Time) (T, bool) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	entry, ok := c.entries[key]
 	if !ok {
-		return Identity{}, false
+		var zero T
+
+		return zero, false
 	}
 
 	if !now.Before(entry.expires) {
-		delete(v.cache, key)
+		delete(c.entries, key)
 
-		return Identity{}, false
+		var zero T
+
+		return zero, false
 	}
 
-	return entry.identity, true
+	return entry.value, true
 }
 
-func (v *serviceAccountVerifier) store(key [sha256.Size]byte, identity Identity, expires time.Time) {
-	now := v.now()
+func (c *tokenCache[T]) put(key [sha256.Size]byte, value T, now, expires time.Time) {
 	if !now.Before(expires) {
 		return
 	}
 
-	v.mutex.Lock()
-	defer v.mutex.Unlock()
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 
-	if len(v.cache) >= maxCachedTokens {
-		for existing, entry := range v.cache {
+	if len(c.entries) >= maxCachedTokens {
+		for existing, entry := range c.entries {
 			if !now.Before(entry.expires) {
-				delete(v.cache, existing)
+				delete(c.entries, existing)
 			}
 		}
 	}
 
-	if len(v.cache) >= maxCachedTokens {
+	if len(c.entries) >= maxCachedTokens {
 		return
 	}
 
-	v.cache[key] = cachedIdentity{identity: identity, expires: expires}
+	c.entries[key] = tokenCacheEntry[T]{value: value, expires: expires}
 }
 
 // tokenExpiry reads the expiry of a token TokenReview has accepted, capped at

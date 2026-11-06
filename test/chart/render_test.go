@@ -618,3 +618,28 @@ func TestSPIFFETrustDomainSettings(t *testing.T) {
 		assert.Contains(t, err.Error(), "needs exactly one of bundleEndpointURL and jwksURL")
 	})
 }
+
+func TestWorkspaceAttestationSetting(t *testing.T) {
+	values := filepath.Join(t.TempDir(), "attestation.yaml")
+	require.NoError(t, os.WriteFile(values, []byte(`config:
+  workspaceAttestation:
+    namespaces: [coder]
+    match: {by: email}
+    workspaceID: coder/{username}/{workspace}
+`), 0o600))
+
+	manifests := renderQuickStart(t, "--values", values)
+	configMap := find[corev1.ConfigMap](t, manifests, "ConfigMap")
+
+	var file struct {
+		WorkspaceAttestation map[string]any `json:"workspaceAttestation"`
+	}
+	require.NoError(t, yaml.UnmarshalStrict([]byte(configMap.Data["config.yaml"]), &file))
+	assert.Equal(t, map[string]any{
+		"namespaces": []any{"coder"}, "match": map[string]any{"by": "email"}, "workspaceID": "coder/{username}/{workspace}",
+	}, file.WorkspaceAttestation)
+
+	_, err := render(t, append(append([]string{}, quickStartValues...), "config.workspaceAttestation.workspaceID=coder/{workspace}"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "namespaces is required")
+}
