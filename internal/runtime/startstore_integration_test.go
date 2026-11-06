@@ -90,3 +90,32 @@ func expectEvent(t *testing.T, events <-chan store.Event) {
 		t.Fatal("no notification within 30s")
 	}
 }
+
+// A pending instance's used secrets are stored with the time each was set,
+// and read back unchanged.
+func TestPostgresStartStoreRecordsSecretsUsed(t *testing.T) {
+	pg := testutil.StartPostgres(t)
+
+	pool, err := store.Open(t.Context(), pg.ConnString())
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	require.NoError(t, store.Migrate(t.Context(), pool))
+
+	queries := db.New(pool)
+	_, err = queries.InsertInstance(t.Context(), db.InsertInstanceParams{
+		ID: instanceID, TemplateNs: "catalog", TemplateName: "github", TemplateUid: templateUID,
+		Generation: 1, Scope: "per-user", ScopeKey: "alice", OwnerPrincipal: "alice", Namespace: instanceNamespace,
+	})
+	require.NoError(t, err)
+
+	setAt := time.Date(2030, 1, 2, 3, 4, 5, 6000, time.UTC)
+	require.NoError(t, runtime.PostgresStartStore{Pool: pool}.RecordSecretsUsed(t.Context(), instanceID, map[string]time.Time{"token": setAt}))
+
+	row, err := queries.GetInstance(t.Context(), instanceID)
+	require.NoError(t, err)
+
+	used, err := runtime.DecodeSecretsUsed(row.SecretsUsed)
+	require.NoError(t, err)
+	require.Contains(t, used, "token")
+	assert.True(t, setAt.Equal(used["token"]))
+}

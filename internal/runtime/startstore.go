@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -20,6 +21,9 @@ type StartStore interface {
 	// Session returns the session row whose identity snapshot an instance
 	// is rendered with.
 	Session(ctx context.Context, id int64) (db.Session, error)
+	// RecordSecretsUsed stores, for a pending instance, the user secrets its
+	// render used and the time each was last set.
+	RecordSecretsUsed(ctx context.Context, id string, versions map[string]time.Time) error
 	// MarkStarting moves a pending instance to starting and records the
 	// template generation its objects were applied with and the earliest
 	// expiry of its resolved values (zero for none).
@@ -45,6 +49,22 @@ func (s PostgresStartStore) Session(ctx context.Context, id int64) (db.Session, 
 	}
 
 	return session, nil
+}
+
+// RecordSecretsUsed implements StartStore.
+func (s PostgresStartStore) RecordSecretsUsed(ctx context.Context, id string, versions map[string]time.Time) error {
+	encoded, err := EncodeSecretsUsed(versions)
+	if err != nil {
+		return err
+	}
+
+	// No notification: the instance is still pending and nothing else
+	// needs to wake for this write.
+	if _, err := db.New(s.Pool).SetInstanceSecretsUsed(ctx, db.SetInstanceSecretsUsedParams{ID: id, SecretsUsed: encoded}); err != nil {
+		return fmt.Errorf("record secrets used of instance %s: %w", id, err)
+	}
+
+	return nil
 }
 
 // MarkStarting implements StartStore.
@@ -107,4 +127,41 @@ func (s PostgresStartStore) change(ctx context.Context, id string, update func(*
 	})
 
 	return changed, err
+}
+
+// EncodeSecretsUsed returns the stored form of the secrets a render used: a
+// JSON object from secret name to the RFC 3339 time it was last set.
+func EncodeSecretsUsed(versions map[string]time.Time) ([]byte, error) {
+	stored := make(map[string]string, len(versions))
+	for name, setAt := range versions {
+		stored[name] = setAt.UTC().Format(time.RFC3339Nano)
+	}
+
+	encoded, err := json.Marshal(stored)
+	if err != nil {
+		return nil, fmt.Errorf("encode secrets used: %w", err)
+	}
+
+	return encoded, nil
+}
+
+// DecodeSecretsUsed parses the stored form written by EncodeSecretsUsed.
+func DecodeSecretsUsed(encoded []byte) (map[string]time.Time, error) {
+	var stored map[string]string
+	if err := json.Unmarshal(encoded, &stored); err != nil {
+		return nil, fmt.Errorf("decode secrets used: %w", err)
+	}
+
+	versions := make(map[string]time.Time, len(stored))
+
+	for name, text := range stored {
+		setAt, err := time.Parse(time.RFC3339Nano, text)
+		if err != nil {
+			return nil, fmt.Errorf("decode secrets used: %w", err)
+		}
+
+		versions[name] = setAt
+	}
+
+	return versions, nil
 }

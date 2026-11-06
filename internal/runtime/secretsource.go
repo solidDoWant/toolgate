@@ -21,11 +21,11 @@ type brokerSource struct {
 	principal string
 }
 
-func (b brokerSource) Secret(ctx context.Context, name string) (string, error) {
-	value, _, err := b.get(ctx, b.principal, name)
+func (b brokerSource) Secret(ctx context.Context, name string) (string, time.Time, error) {
+	value, setAt, err := b.get(ctx, b.principal, name)
 	if err != nil {
-		return "", err
+		return "", time.Time{}, err
 	}
 
-	return string(value), nil
+	return string(value), setAt, nil
 }

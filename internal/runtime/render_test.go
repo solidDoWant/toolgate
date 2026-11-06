@@ -22,15 +22,17 @@ type fakeSecrets struct {
 	resolvers map[string]string
 }
 
+var secretSetAt = time.Date(2024, 5, 6, 7, 8, 9, 0, time.UTC)
+
 var errNoSecret = errors.New("not set")
 
-func (f fakeSecrets) Secret(_ context.Context, name string) (string, error) {
+func (f fakeSecrets) Secret(_ context.Context, name string) (string, time.Time, error) {
 	value, found := f.secrets[name]
 	if !found {
-		return "", errNoSecret
+		return "", time.Time{}, errNoSecret
 	}
 
-	return value, nil
+	return value, secretSetAt, nil
 }
 
 func (f fakeSecrets) Resolve(_ context.Context, request runtime.ResolveRequest) (runtime.Resolved, error) {
@@ -153,6 +155,7 @@ stringData:
 	assert.Equal(t, "ghp_secret", nestedString(t, secret, "stringData", "token"))
 	assert.Equal(t, "resolved", nestedString(t, secret, "stringData", "app"))
 	assert.Equal(t, []string{"github-token"}, result.SecretsUsed)
+	assert.Equal(t, map[string]time.Time{"github-token": secretSetAt}, result.SecretVersions)
 }
 
 func TestRenderValuesAreLiteral(t *testing.T) {

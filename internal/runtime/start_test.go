@@ -54,6 +54,8 @@ type memoryStore struct {
 	writes     int
 	// resolvedExpiresAt is what MarkStarting recorded.
 	resolvedExpiresAt time.Time
+	// secretsRecorded says RecordSecretsUsed was called.
+	secretsRecorded bool
 }
 
 func (m *memoryStore) Session(_ context.Context, id int64) (db.Session, error) {
@@ -63,6 +65,15 @@ func (m *memoryStore) Session(_ context.Context, id int64) (db.Session, error) {
 	}
 
 	return session, nil
+}
+
+func (m *memoryStore) RecordSecretsUsed(context.Context, string, map[string]time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.secretsRecorded = true
+
+	return nil
 }
 
 func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64, resolvedExpiresAt time.Time) (bool, error) {
@@ -244,6 +255,7 @@ func TestStarterPendingPreparesNamespaceAndApplies(t *testing.T) {
 
 	status, _, _, _ := fixture.store.snapshot()
 	assert.Equal(t, "starting", status)
+	assert.True(t, fixture.store.secretsRecorded, "the render's secrets are stored before the objects are applied")
 	assert.Equal(t, int64(3), fixture.store.generation, "the write records the generation it rendered")
 
 	namespace := &corev1.Namespace{}

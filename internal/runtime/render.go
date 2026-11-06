@@ -68,8 +68,9 @@ type Instance struct {
 // SecretSource resolves ${secret:…} for the identity being rendered. The
 // secrets package implements it.
 type SecretSource interface {
-	// Secret returns the value of the user's secret name.
-	Secret(ctx context.Context, name string) (string, error)
+	// Secret returns the value of the user's secret name and the time it was
+	// last set.
+	Secret(ctx context.Context, name string) (string, time.Time, error)
 }
 
 // Input is everything one render needs.
@@ -89,6 +90,9 @@ type Result struct {
 	Objects []*unstructured.Unstructured
 	// SecretsUsed are the names of the user secrets the render used, sorted.
 	SecretsUsed []string
+	// SecretVersions maps each used secret's name to the time it was last
+	// set, as read by the render.
+	SecretVersions map[string]time.Time
 	// ResolvedExpiresAt is the earliest expiresAt of the resolver values
 	// the render used, or zero when it used none.
 	ResolvedExpiresAt time.Time
@@ -123,7 +127,7 @@ func (e *VariableError) Unwrap() error { return e.Err }
 // never in keys, and a substituted value is never scanned again, so a value
 // can't add fields or variables.
 func Render(ctx context.Context, input Input) (*Result, error) {
-	renderer := &renderer{ctx: ctx, input: input, secretsUsed: map[string]bool{}}
+	renderer := &renderer{ctx: ctx, input: input, secretsUsed: map[string]time.Time{}}
 
 	result := &Result{}
 
@@ -167,6 +171,8 @@ func Render(ctx context.Context, input Input) (*Result, error) {
 		result.Objects = append(result.Objects, decoded)
 	}
 
+	result.SecretVersions = renderer.secretsUsed
+
 	for name := range renderer.secretsUsed {
 		result.SecretsUsed = append(result.SecretsUsed, name)
 	}
@@ -193,7 +199,7 @@ func RenderEndpointService(template *v1alpha1.MCPServerTemplate, instance Instan
 	renderer := &renderer{
 		ctx:         context.Background(),
 		input:       Input{Template: &shared, Instance: instance, Secrets: noSecrets{}},
-		secretsUsed: map[string]bool{},
+		secretsUsed: map[string]time.Time{},
 	}
 
 	return renderer.text(template.Spec.Endpoint.Service, []string{"endpoint", "service"})
@@ -203,8 +209,8 @@ func RenderEndpointService(template *v1alpha1.MCPServerTemplate, instance Instan
 // RenderEndpointService refuses secret variables before they reach it.
 type noSecrets struct{}
 
-func (noSecrets) Secret(context.Context, string) (string, error) {
-	return "", fmt.Errorf("no secrets here")
+func (noSecrets) Secret(context.Context, string) (string, time.Time, error) {
+	return "", time.Time{}, fmt.Errorf("no secrets here")
 }
 
 // errNoResolvers is the error of ${resolver:…} when no resolvers are
@@ -214,7 +220,7 @@ var errNoResolvers = errors.New("no resolvers are configured")
 type renderer struct {
 	ctx         context.Context
 	input       Input
-	secretsUsed map[string]bool
+	secretsUsed map[string]time.Time
 	// resolved holds each resolver's value: each render calls each resolver
 	// it names once.
 	resolved map[string]Resolved
@@ -335,12 +341,12 @@ func (r *renderer) variable(variable string, path []string) (string, error) {
 	}
 
 	if name, found := strings.CutPrefix(variable, "secret:"); found {
-		value, err := r.input.Secrets.Secret(r.ctx, name)
+		value, setAt, err := r.input.Secrets.Secret(r.ctx, name)
 		if err != nil {
 			return "", fail("could not be read", err)
 		}
 
-		r.secretsUsed[name] = true
+		r.secretsUsed[name] = setAt
 
 		return value, nil
 	}
