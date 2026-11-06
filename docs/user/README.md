@@ -223,6 +223,17 @@ The effective list never gives you a server that your admin does not let you use
 
 In a verified workspace, `toolgate_list_servers` shows a server that is not on the effective list as `blocked`, with "not allowed in this workspace; enable it to ask". In an unverified session, it does not show the server. Claude does not get the tools of the server. If a server leaves the effective list, it stays turned on, but its tools go away. If the server comes back on the list, its tools come back, and you do not turn it on again.
 
+### Change your lists and defaults
+
+Use `toolgate workspace` to see and change them:
+
+- `toolgate workspace list` shows your two defaults and a table with the columns `WORKSPACE`, `SERVERS` and `UPDATED`.
+- `toolgate workspace allow SERVER...` adds servers to a workspace's list. `toolgate workspace deny SERVER...` removes them. `toolgate workspace clear` deletes the list, so your default applies again. These commands act on the verified workspace of the machine. To use another workspace, add `--workspace ID`. If the machine has no verified workspace, the commands stop with "This machine has no verified workspace. Pass --workspace."
+- `toolgate workspace deny --session ID SERVER...` removes servers that you added to one session only. Do not use it with `--workspace`.
+- `toolgate workspace defaults --verified none|all --unverified none|all` sets the defaults. Without options, it shows them.
+
+A change that gives more access needs your approval in the browser, because a process that has your token must not widen your access alone. The command prints "Approve this change at `URL`. Waiting…" and checks every 2 seconds. It exits with code 0 only when you approve. Ctrl-C stops the command, but the request stays open until it expires. A change that gives less access applies at once. If the gateway refuses a change, the command shows the gateway's message.
+
 A workspace list does not protect you from a process that has your token. The process can leave out the workload token, and toolgate then treats its session as unverified. A workspace's list limits a process holding your token only while the default for unverified sessions is nothing.
 
 ## The headers that Claude Code sends
@@ -245,7 +256,7 @@ If your admin sends Claude Code telemetry to the gateway, Claude Code runs `tool
 
 Use this in a place that runs a SPIFFE Workload API, for example a Coder workspace with a SPIRE agent, when your admin has set it up. Set the variable `TOOLGATE_SPIFFE_SOCKET` to the address of the Workload API, for example `unix:///run/spire/agent.sock`.
 
-Then these commands do not use your stored sign-in: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions` and `audit tail`. Each run gets a new JWT-SVID (the token that proves the identity of the workload) for the audience `toolgate` and sends it as the access token. If toolgate cannot get the token within 5 seconds, the command shows the error and exits with a non-zero code. It never uses your stored sign-in instead, because that would change who you are without a warning.
+Then these commands do not use your stored sign-in: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions`, `workspace` and `audit tail`. Each run gets a new JWT-SVID (the token that proves the identity of the workload) for the audience `toolgate` and sends it as the access token. If toolgate cannot get the token within 5 seconds, the command shows the error and exits with a non-zero code. It never uses your stored sign-in instead, because that would change who you are without a warning.
 
 If you have not signed in with `toolgate login`, set `TOOLGATE_GATEWAY` to the gateway URL. `toolgate headers` and `toolgate otel-headers` do not need it, because they do not call the gateway. toolgate does not read `SPIFFE_ENDPOINT_SOCKET`, because other tools may set it.
 
@@ -255,7 +266,7 @@ Use this when another service already holds your consent and can print your acce
 
 Every command that needs your token runs the command with `/bin/sh -c` (`cmd.exe /d /c` on Windows) and uses its output instead of your stored sign-in. The command gets no standard input and has 5 seconds to finish. It must print one line with the token and at most 16 KiB. The command's own standard error reaches you, cut at 4 KiB.
 
-toolgate keeps the token in its runtime directory while it has more than 60 seconds to live. A token that has no `exp` claim is not kept. If the gateway answers 401 to `servers`, `secret`, `sessions`, `audit tail` or `hook session-start`, toolgate deletes the kept token, runs the command again and tries once more.
+toolgate keeps the token in its runtime directory while it has more than 60 seconds to live. A token that has no `exp` claim is not kept. If the gateway answers 401 to `servers`, `secret`, `sessions`, `workspace`, `audit tail` or `hook session-start`, toolgate deletes the kept token, runs the command again and tries once more.
 
 These errors name the cause and never show the output of the command:
 
@@ -277,7 +288,7 @@ Set at most one of these variables:
 - `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`: the address of a SPIFFE Workload API. toolgate gets a new JWT-SVID for the audience `toolgate` on each run, within 5 seconds.
 - `TOOLGATE_ATTESTATION_TOKEN_REQUEST`: for a KubeVirt virtual machine. The value is the directory of the mounted `serviceAccount` disk, which holds `token`, `namespace` and `ca.crt`. toolgate asks the Kubernetes API server for a token with the audience `toolgate` that lasts 600 seconds. It uses the URL in `TOOLGATE_KUBE_API`, or `https://kubernetes.default.svc` when that is not set. The virtual machine must be able to reach the API server. toolgate asks again on each run.
 
-Every command that calls the gateway sends the token in the `X-Toolgate-Attestation` header: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions` and `audit tail`. `toolgate headers` adds the header to its output.
+Every command that calls the gateway sends the token in the `X-Toolgate-Attestation` header: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions`, `workspace` and `audit tail`. `toolgate headers` adds the header to its output.
 
 If toolgate cannot get the token, the command shows the reason, never the token, and exits with a non-zero code. It sends no request, because a request without the attestation would change the attestation of your session without a warning. If the Kubernetes API server refuses a token request, the command shows its status and message.
 
