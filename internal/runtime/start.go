@@ -199,6 +199,10 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return s.fail(ctx, instance, StatusPending, "The template didn't render: "+err.Error())
 	}
 
+	if err := s.Store.RecordSecretsUsed(ctx, instance.ID, result.SecretVersions); err != nil {
+		return fmt.Errorf("instance %s: %w", instance.ID, err)
+	}
+
 	applied, err := s.applyAll(ctx, instance, template, result, spanAttributes)
 	if err != nil || !applied {
 		return err

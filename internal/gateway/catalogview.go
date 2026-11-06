@@ -14,6 +14,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -102,7 +103,10 @@ func (v *CatalogView) LiveInstances(ctx context.Context, principal string, inclu
 			entry.ReadyAt = &readyAt
 		}
 
-		entry.Outdated = v.outdated(row)
+		entry.Outdated, err = v.outdated(ctx, db.New(v.tools.database), row)
+		if err != nil {
+			return nil, err
+		}
 
 		instances = append(instances, entry)
 	}
@@ -147,7 +151,12 @@ func (v *CatalogView) RequestRestart(ctx context.Context, id, principal string, 
 			return ErrInstanceNotFound
 		}
 
-		if row.Desired != "running" || row.Status != "ready" || !v.outdated(row) {
+		outdatedNow, err := v.outdated(ctx, queries, row)
+		if err != nil {
+			return err
+		}
+
+		if row.Desired != "running" || row.Status != "ready" || !outdatedNow {
 			return ErrInstanceChanged
 		}
 
@@ -167,12 +176,49 @@ func (v *CatalogView) RequestRestart(ctx context.Context, id, principal string, 
 }
 
 // outdated reports whether row was started from an older version of its
-// template, or from a template that is no longer offered.
-func (v *CatalogView) outdated(row db.Instance) bool {
+// template, from a template that is no longer offered, or with a user secret
+// that its owner has changed or deleted since the render.
+func (v *CatalogView) outdated(ctx context.Context, queries *db.Queries, row db.Instance) (bool, error) {
 	template, err := v.tools.catalog.Offered(row.TemplateName)
 	if err != nil || template.Namespace != row.TemplateNs {
-		return true
+		return true, nil
 	}
 
-	return row.Generation != template.Generation || row.TemplateUid != string(template.UID)
+	if row.Generation != template.Generation || row.TemplateUid != string(template.UID) {
+		return true, nil
+	}
+
+	return secretsChanged(ctx, queries, row)
+}
+
+// secretsChanged reports whether a secret in row's secrets_used no longer
+// has the value time the render read.
+func secretsChanged(ctx context.Context, queries *db.Queries, row db.Instance) (bool, error) {
+	used, err := runtime.DecodeSecretsUsed(row.SecretsUsed)
+	if err != nil {
+		return false, err
+	}
+
+	if len(used) == 0 {
+		return false, nil
+	}
+
+	infos, err := queries.ListUserSecretNames(ctx, row.OwnerPrincipal)
+	if err != nil {
+		return false, fmt.Errorf("read secrets: %w", err)
+	}
+
+	current := make(map[string]time.Time, len(infos))
+	for _, info := range infos {
+		current[info.Name] = info.UpdatedAt.Time
+	}
+
+	for name, usedAt := range used {
+		setAt, found := current[name]
+		if !found || !setAt.Equal(usedAt) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
