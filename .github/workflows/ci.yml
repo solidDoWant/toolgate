@@ -16,7 +16,7 @@ permissions:
 # The acceptance phases the e2e-scoreboard job scores: every phase up to the
 # current one. Add a phase here when it starts.
 env:
-  ACCEPTANCE_PHASES: "1 2 3"
+  ACCEPTANCE_PHASES: "1 2 3 4"
   # GitHub runners are discarded after each job, so testcontainers' reaper
   # container (pulled from Docker Hub) isn't needed to clean up.
   TESTCONTAINERS_RYUK_DISABLED: "true"
