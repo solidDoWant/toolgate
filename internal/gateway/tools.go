@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
@@ -133,27 +134,13 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 			continue
 		}
 
-		instance, err := queries.GetLiveInstance(ctx, db.GetLiveInstanceParams{
-			TemplateNs: template.Namespace, TemplateName: template.Name,
-			ScopeKey: scopeKey(template.Spec.Scope, current.identity),
-		})
-		if errors.Is(err, pgx.ErrNoRows) {
-			continue
-		}
-
+		upstream, found, err := m.listedTools(ctx, current, template)
 		if err != nil {
-			return nil, nil, fmt.Errorf("read live instance: %w", err)
+			return nil, nil, err
 		}
 
-		// An unhealthy instance's tools are withdrawn until it is healthy
-		// again.
-		if instance.Status != statusReady || instance.UnhealthySince.Valid {
+		if !found {
 			continue
-		}
-
-		var upstream []*mcp.Tool
-		if err := json.Unmarshal(instance.Tools, &upstream); err != nil {
-			return nil, nil, fmt.Errorf("decode tools of instance %s: %w", instance.ID, err)
 		}
 
 		for _, curated := range toolcatalog.Curate(template, upstream) {
@@ -180,6 +167,72 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 	}
 
 	return tools, byServer, nil
+}
+
+// listedTools returns the upstream tools listed for an enabled server, and
+// whether it lists any (docs/design/phase-4.md §3, "Lists while nothing
+// runs"):
+//   - a ready, healthy live instance lists its own tools;
+//   - a pending or starting instance, or no live instance, lists the catalog
+//     list, unless the newest instance failed on the template's current
+//     generation;
+//   - an unhealthy instance lists none.
+func (m *metaTools) listedTools(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) ([]*mcp.Tool, bool, error) {
+	queries := db.New(m.database)
+
+	instance, err := queries.GetLiveInstance(ctx, db.GetLiveInstanceParams{
+		TemplateNs: template.Namespace, TemplateName: template.Name,
+		ScopeKey: scopeKey(template.Spec.Scope, current.identity),
+	})
+
+	switch {
+	case err == nil && instance.Status == statusReady:
+		// An unhealthy instance's tools are withdrawn until it is healthy
+		// again.
+		if instance.UnhealthySince.Valid {
+			return nil, false, nil
+		}
+
+		var upstream []*mcp.Tool
+		if err := json.Unmarshal(instance.Tools, &upstream); err != nil {
+			return nil, false, fmt.Errorf("decode tools of instance %s: %w", instance.ID, err)
+		}
+
+		return upstream, true, nil
+	case err == nil:
+		// Pending or starting.
+	case errors.Is(err, pgx.ErrNoRows):
+		newest, found, err := m.newestInstance(ctx, current.identity, template)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if found && newest.FailedAt.Valid && newest.Generation == template.Generation {
+			return nil, false, nil
+		}
+	default:
+		return nil, false, fmt.Errorf("read live instance: %w", err)
+	}
+
+	return m.catalogList(ctx, template)
+}
+
+// catalogList returns the upstream tools of the template's catalog list.
+func (m *metaTools) catalogList(ctx context.Context, template *v1alpha1.MCPServerTemplate) ([]*mcp.Tool, bool, error) {
+	var learned []toolcatalog.Learned
+
+	if len(template.Spec.DeclaredTools) == 0 {
+		rows, err := db.New(m.database).ListToolCatalogForTemplate(ctx, string(template.UID))
+		if err != nil {
+			return nil, false, fmt.Errorf("read the tool catalog: %w", err)
+		}
+
+		for _, row := range rows {
+			learned = append(learned, toolcatalog.Learned{Generation: row.Generation, Tools: row.Tools})
+		}
+	}
+
+	return toolcatalog.CatalogList(template, learned)
 }
 
 // syncSession brings the proxied tools of the MCP session session up to

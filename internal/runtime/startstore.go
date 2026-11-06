@@ -48,6 +48,10 @@ type PostgresStartStore struct {
 	// AuditOutput receives the audit events the health writes record. Nil
 	// discards them; the rows are still written.
 	AuditOutput io.Writer
+	// DeclaresTools reports whether the template an instance runs from
+	// declares its tools. The gateway then learns nothing from the
+	// instance. Nil means no template declares tools.
+	DeclaresTools func(instance db.Instance) bool
 }
 
 // Session implements StartStore.
@@ -88,7 +92,7 @@ func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generat
 
 // MarkReady implements StartStore.
 func (s PostgresStartStore) MarkReady(ctx context.Context, id string, tools []byte) (bool, error) {
-	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
+	return s.changeAndLearn(ctx, id, tools, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceReady(ctx, db.SetInstanceReadyParams{ID: id, Tools: tools})
 	})
 }
@@ -112,7 +116,7 @@ func (s PostgresStartStore) Instance(ctx context.Context, id string) (db.Instanc
 
 // SetTools implements HealthStore.
 func (s PostgresStartStore) SetTools(ctx context.Context, id string, tools []byte) (bool, error) {
-	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
+	return s.changeAndLearn(ctx, id, tools, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceTools(ctx, db.SetInstanceToolsParams{ID: id, Tools: tools})
 	})
 }
@@ -168,6 +172,38 @@ func (s PostgresStartStore) SetHealth(ctx context.Context, instance db.Instance,
 }
 
 func (s PostgresStartStore) change(ctx context.Context, id string, update func(*db.Queries) (int64, error)) (bool, error) {
+	return s.changeWith(ctx, id, update, nil)
+}
+
+// changeAndLearn is change for a write of an instance's tool list. In the
+// same transaction it stores the list as the catalog row of the instance's
+// template generation, unless the template declares tools.
+func (s PostgresStartStore) changeAndLearn(ctx context.Context, id string, tools []byte, update func(*db.Queries) (int64, error)) (bool, error) {
+	return s.changeWith(ctx, id, update, func(queries *db.Queries) error {
+		instance, err := queries.GetInstance(ctx, id)
+		if err != nil {
+			return fmt.Errorf("get instance %s: %w", id, err)
+		}
+
+		if s.DeclaresTools != nil && s.DeclaresTools(instance) {
+			return nil
+		}
+
+		// The search rows of the template are rebuilt here, in the same
+		// transaction, once tool search exists.
+		if err := queries.UpsertToolCatalog(ctx, db.UpsertToolCatalogParams{
+			TemplateUid: instance.TemplateUid, Generation: instance.Generation,
+			TemplateNs: instance.TemplateNs, TemplateName: instance.TemplateName,
+			Tools: tools, InstanceID: instance.ID,
+		}); err != nil {
+			return fmt.Errorf("learn tools of instance %s: %w", id, err)
+		}
+
+		return nil
+	})
+}
+
+func (s PostgresStartStore) changeWith(ctx context.Context, id string, update func(*db.Queries) (int64, error), afterChange func(*db.Queries) error) (bool, error) {
 	changed := false
 
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
@@ -181,6 +217,12 @@ func (s PostgresStartStore) change(ctx context.Context, id string, update func(*
 		}
 
 		changed = true
+
+		if afterChange != nil {
+			if err := afterChange(db.New(tx)); err != nil {
+				return err
+			}
+		}
 
 		return store.Notify(ctx, tx, store.KindInstance, id)
 	})

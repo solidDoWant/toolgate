@@ -1,6 +1,8 @@
 -- name: UpsertToolCatalog :exec
+-- A list whose stored form is over 1 MiB is not learned.
 INSERT INTO tool_catalog (template_uid, generation, template_ns, template_name, tools, instance_id)
-VALUES (@template_uid, @generation, @template_ns, @template_name, @tools, @instance_id)
+SELECT @template_uid::text, @generation::bigint, @template_ns::text, @template_name::text, @tools::jsonb, @instance_id::text
+WHERE octet_length((@tools::jsonb)::text) <= 1048576
 ON CONFLICT (template_uid, generation) DO UPDATE
 SET template_ns = EXCLUDED.template_ns, template_name = EXCLUDED.template_name,
     tools = EXCLUDED.tools, instance_id = EXCLUDED.instance_id, learned_at = now();
@@ -85,3 +87,17 @@ DELETE FROM unverified_servers WHERE scope_id = @scope_id AND server = ANY(@serv
 
 -- name: SetUserScopeUnverifiedList :exec
 UPDATE user_scopes SET unverified_list = @unverified_list, updated_at = now() WHERE id = @id;
+
+-- name: ListToolCatalogUIDs :many
+SELECT DISTINCT template_uid FROM tool_catalog;
+
+-- name: DeleteToolCatalogOfTemplates :execrows
+DELETE FROM tool_catalog WHERE template_uid = ANY(@template_uids::text[]);
+
+-- name: DeleteToolCatalogOlderThanNewestTwo :execrows
+DELETE FROM tool_catalog c
+WHERE c.generation < (
+    SELECT n.generation FROM tool_catalog n
+    WHERE n.template_uid = c.template_uid
+    ORDER BY n.generation DESC OFFSET 1 LIMIT 1
+);
