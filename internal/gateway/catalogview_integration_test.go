@@ -47,7 +47,7 @@ func TestCatalogViewServersMatchListServersForAUser(t *testing.T) {
 
 	view := gateway.NewCatalogView(fixture.pool, fixture.catalog, &policy.Engine{Rules: fixture.rules})
 
-	servers, err := view.Servers(t.Context(), auth.Identity{Principal: "alice", Attestation: auth.AttestationUser})
+	servers, err := view.Servers(t.Context(), auth.Identity{Principal: "alice", Kind: auth.KindUser, Attestation: auth.AttestationUser})
 	require.NoError(t, err)
 
 	assert.ElementsMatch(t, []gateway.ServerEntry{

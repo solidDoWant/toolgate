@@ -382,6 +382,7 @@ func (v *spiffeVerifier) verify(ctx context.Context, token, subject string) (Ide
 	return Identity{
 		Principal:   svid.ID.String(),
 		Workspace:   svid.ID.Path(),
+		Kind:        KindSPIFFE,
 		Attestation: AttestationAttested,
 		Expiry:      svid.Expiry,
 	}, nil

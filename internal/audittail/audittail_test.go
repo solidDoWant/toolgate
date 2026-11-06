@@ -100,18 +100,18 @@ const adminGroup = "toolgate-admins"
 // identities are what the test middleware puts in the context, by the
 // value of the X-Test-Identity header.
 var identities = map[string]auth.Identity{
-	"alice":         {Principal: "alice", Attestation: auth.AttestationUser, Groups: []string{"eng"}},
-	"bob":           {Principal: "bob", Attestation: auth.AttestationUser},
-	"admin":         {Principal: "admin", Attestation: auth.AttestationUser, Groups: []string{"eng", adminGroup}},
-	"attested-pods": {Principal: "system:serviceaccount:ci:runner", Attestation: auth.AttestationAttested, Groups: []string{adminGroup}},
+	"alice":         {Principal: "alice", Kind: auth.KindUser, Attestation: auth.AttestationUser, Groups: []string{"eng"}},
+	"bob":           {Principal: "bob", Kind: auth.KindUser, Attestation: auth.AttestationUser},
+	"admin":         {Principal: "admin", Kind: auth.KindUser, Attestation: auth.AttestationUser, Groups: []string{"eng", adminGroup}},
+	"attested-pods": {Principal: "system:serviceaccount:ci:runner", Kind: auth.KindServiceAccount, Attestation: auth.AttestationAttested, Groups: []string{adminGroup}},
 	// The admin after leaving the admin group.
-	"former-admin": {Principal: "admin", Attestation: auth.AttestationUser, Groups: []string{"eng"}},
+	"former-admin": {Principal: "admin", Kind: auth.KindUser, Attestation: auth.AttestationUser, Groups: []string{"eng"}},
 }
 
 func init() {
 	for index := range audittail.MaxTotal / audittail.MaxPerPrincipal {
 		name := fmt.Sprintf("user-%d", index)
-		identities[name] = auth.Identity{Principal: name, Attestation: auth.AttestationUser}
+		identities[name] = auth.Identity{Principal: name, Kind: auth.KindUser, Attestation: auth.AttestationUser}
 	}
 }
 
@@ -587,7 +587,19 @@ func TestIsAdmin(t *testing.T) {
 		{name: "user in the group", identity: identities["admin"], adminGroup: adminGroup, want: true},
 		{name: "user outside the group", identity: identities["alice"], adminGroup: adminGroup},
 		{name: "service account in the group", identity: identities["attested-pods"], adminGroup: adminGroup},
-		{name: "no admin group", identity: auth.Identity{Principal: "x", Attestation: auth.AttestationUser, Groups: []string{""}}},
+		{
+			name:       "attested user in the group",
+			identity:   auth.Identity{Principal: "admin", Kind: auth.KindUser, Attestation: auth.AttestationAttested, Groups: []string{adminGroup}},
+			adminGroup: adminGroup,
+			want:       true,
+		},
+		{
+			name:       "SPIFFE workload in the group",
+			identity:   auth.Identity{Principal: "spiffe://example.test/admin", Kind: auth.KindSPIFFE, Attestation: auth.AttestationAttested, Groups: []string{adminGroup}},
+			adminGroup: adminGroup,
+		},
+		{name: "user-attested identity of no kind in the group", identity: auth.Identity{Principal: "admin", Attestation: auth.AttestationUser, Groups: []string{adminGroup}}, adminGroup: adminGroup},
+		{name: "no admin group", identity: auth.Identity{Principal: "x", Kind: auth.KindUser, Attestation: auth.AttestationUser, Groups: []string{""}}},
 	}
 
 	for _, test := range tests {

@@ -123,6 +123,7 @@ func (u *UI) servers(writer http.ResponseWriter, request *http.Request) {
 		Principal:   session.Principal,
 		Email:       session.Email,
 		Groups:      session.Groups,
+		Kind:        auth.KindUser,
 		Attestation: auth.AttestationUser,
 	}
 

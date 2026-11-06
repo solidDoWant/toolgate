@@ -10,7 +10,6 @@ import (
 
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
@@ -37,8 +36,6 @@ const (
 const (
 	attestationUser     = auth.AttestationUser
 	attestationAttested = auth.AttestationAttested
-
-	serviceAccountPrefix = "system:serviceaccount:"
 )
 
 // Request is one question to the policy engine.
@@ -217,48 +214,36 @@ func proxiedName(server, tool string) string {
 }
 
 // HasAccess reports whether the identity is named by the access lists, the
-// first step of a decision.
-// Service accounts match only serviceAccounts, and users only users and
-// groups, so an IdP subject that looks like a service account name can't
-// pass as one.
+// first step of a decision. The identity's kind alone picks the list:
+// SPIFFE workloads match only spiffeIDs, service accounts only
+// serviceAccounts, and users only users and groups, so a user whose subject
+// looks like a SPIFFE ID or a service account name can't pass as one. An
+// identity without a kind matches nothing.
 func HasAccess(identity auth.Identity, access v1alpha1.Access) bool {
-	if isSPIFFE(identity) {
+	switch identity.Kind {
+	case auth.KindSPIFFE:
 		return slices.ContainsFunc(access.SPIFFEIDs, func(pattern string) bool {
 			compiled, err := glob.Compile(pattern)
 
 			return err == nil && compiled.Match(identity.Principal)
 		})
-	}
-
-	if isServiceAccount(identity) {
+	case auth.KindServiceAccount:
 		return slices.Contains(access.ServiceAccounts, identity.Principal)
+	case auth.KindUser:
+		if slices.Contains(access.Users, identity.Principal) {
+			return true
+		}
+
+		if identity.Email != "" && slices.Contains(access.Users, identity.Email) {
+			return true
+		}
+
+		return slices.ContainsFunc(identity.Groups, func(group string) bool {
+			return slices.Contains(access.Groups, group)
+		})
+	default:
+		return false
 	}
-
-	if slices.Contains(access.Users, identity.Principal) {
-		return true
-	}
-
-	if identity.Email != "" && slices.Contains(access.Users, identity.Email) {
-		return true
-	}
-
-	return slices.ContainsFunc(identity.Groups, func(group string) bool {
-		return slices.Contains(access.Groups, group)
-	})
-}
-
-// isSPIFFE reports whether the identity is a verified SPIFFE workload. Only
-// JWT-SVIDs are attested with a spiffe:// principal; a user's subject that
-// starts with spiffe:// stays a user.
-func isSPIFFE(identity auth.Identity) bool {
-	return identity.Attestation == attestationAttested && strings.HasPrefix(identity.Principal, "spiffe://")
-}
-
-// isServiceAccount reports whether the identity is a Kubernetes service
-// account. Only workload tokens verified by TokenReview are attested with
-// such a principal.
-func isServiceAccount(identity auth.Identity) bool {
-	return identity.Attestation == attestationAttested && strings.HasPrefix(identity.Principal, serviceAccountPrefix)
 }
 
 // environmentAllows reports whether an attestation level satisfies an

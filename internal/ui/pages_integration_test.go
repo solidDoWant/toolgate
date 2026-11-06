@@ -252,7 +252,7 @@ func TestServersPage(t *testing.T) {
 			body := readBody(t, response)
 
 			identity, includeShared := env.servers.last()
-			assert.Equal(t, auth.Identity{Principal: "dave", Groups: test.groups, Attestation: auth.AttestationUser}, identity,
+			assert.Equal(t, auth.Identity{Principal: "dave", Groups: test.groups, Kind: auth.KindUser, Attestation: auth.AttestationUser}, identity,
 				"the catalog is the user's with `user` attestation and no workspace or session claim")
 			assert.Equal(t, test.wantShared, includeShared)
 

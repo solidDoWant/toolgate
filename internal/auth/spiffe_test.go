@@ -216,6 +216,7 @@ func TestSVIDBuildsAttestedIdentity(t *testing.T) {
 	assert.Equal(t, auth.Identity{
 		Principal:   allowedID,
 		Workspace:   "/owner/alice/workspace/dev",
+		Kind:        auth.KindSPIFFE,
 		Attestation: auth.AttestationAttested,
 	}, identity)
 }

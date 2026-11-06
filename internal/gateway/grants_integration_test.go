@@ -67,7 +67,7 @@ func startGrants(t *testing.T) grantsFixture {
 	return grantsFixture{pool: pool, grants: gateway.NewGrants(pool, templates, io.Discard)}
 }
 
-var grantUser = auth.Identity{Principal: "erin", Groups: []string{"dev"}, Attestation: auth.AttestationUser}
+var grantUser = auth.Identity{Principal: "erin", Groups: []string{"dev"}, Kind: auth.KindUser, Attestation: auth.AttestationUser}
 
 func TestGrantCreationRules(t *testing.T) {
 	fixture := startGrants(t)
