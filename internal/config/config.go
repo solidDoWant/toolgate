@@ -6,6 +6,8 @@
 package config
 
 import (
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
+
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +51,16 @@ type Config struct {
 	// 503 while the gateway cannot connect to this database.
 	DatabaseURL string `json:"databaseURL" env:"TOOLGATE_DATABASE_URL"`
 
+	// Whether the gateway creates and updates its tables when it starts. If
+	// it is `false`, the gateway does not change the schema. Before it opens
+	// its listeners, it checks that the database schema is at the version it
+	// needs. If the schema is older, or has no tables yet, the gateway logs a
+	// message and exits with code 1. Run `toolgate migrate`, or let the
+	// chart's migration Job run, before you start the gateway. Use `false`
+	// when the gateway's database user has data rights only. A schema that is
+	// newer than the gateway (after a rollback) is only logged.
+	MigrateOnStart bool `json:"migrateOnStart" env:"TOOLGATE_MIGRATE_ON_START"`
+
 	// After SIGTERM, the gateway stops accepting requests and waits this long
 	// for open requests to finish. Then it stops. Write it as a Go duration,
 	// such as `30s`.
@@ -62,6 +74,27 @@ type Config struct {
 	// `http://otel-collector:4318`. The gateway sends traces to `/v1/traces`
 	// under this URL. If it is empty, the gateway does not export traces.
 	OTLPEndpoint string `json:"otlpEndpoint" env:"TOOLGATE_OTLP_ENDPOINT"`
+
+	// When it is `true`, the gateway accepts OpenTelemetry data from signed-in
+	// clients at `POST /v1/traces`, `/v1/metrics` and `/v1/logs`. It forwards
+	// the data to `otlpEndpoint`, so `otlpEndpoint` is required. The gateway
+	// removes the identity attributes that the client sent. These are the
+	// attributes whose name starts with `user_`, `enduser_` or `workspace_`
+	// after each character outside `[A-Za-z0-9]` changes to `_` and the name
+	// changes to lower case. Then the gateway sets `user.id`, `enduser.id`,
+	// `user.email` and `workspace.id` from the verified identity. A request
+	// body can be 4 MiB at most, and each replica handles 4 requests at the
+	// same time at most. When it is `false`, these paths answer 404.
+	OTLPIngest bool `json:"otlpIngest" env:"TOOLGATE_OTLP_INGEST"`
+
+	// When it is `true`, the gateway keeps prompt and tool content in the
+	// OpenTelemetry data that clients send to it. Prompts, tool inputs and
+	// tool output are examples of this content. Clients add it when users set
+	// `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` or
+	// `OTEL_LOG_TOOL_CONTENT`. When it is `false`, the gateway removes it.
+	// Set it to `true` only when the telemetry backend is allowed to hold user
+	// content. The gateway then sends that content to the backend.
+	TelemetryAllowContent bool `json:"telemetry.allowContent" env:"TOOLGATE_TELEMETRY_ALLOW_CONTENT"`
 
 	// The issuer URL of the OIDC identity provider (IdP) that users sign in
 	// with, such as `https://idp.example.com/realms/main`. Required. The
@@ -251,6 +284,60 @@ type Config struct {
 	// `/var/run/secrets/toolgate/resolvers/<name>/token` for each request.
 	// The chart sets it from `config.resolvers` and mounts each token.
 	Resolvers []Resolver `json:"resolvers"`
+
+	// The SPIFFE trust domains whose JWT-SVIDs may sign in. Set it in the
+	// YAML file only. Each item has a `name` (the trust domain, such as
+	// `coder.example.com`), exactly one of `bundleEndpointURL` (a SPIFFE
+	// bundle endpoint with the `https_web` profile) and `jwksURL` (a JWKS
+	// document, such as that of SPIRE's OIDC discovery provider), both
+	// `https://`, and an optional `caFile`, a PEM file of private
+	// certificate authorities added to the system ones. This list is the
+	// only gateway-level allow-list for SPIFFE IDs. The chart sets it from
+	// `config.spiffe.trustDomains`.
+	SPIFFETrustDomains []SPIFFETrustDomain `json:"spiffeTrustDomains"`
+}
+
+// SPIFFETrustDomain is one entry of the spiffeTrustDomains setting.
+type SPIFFETrustDomain struct {
+	Name              string `json:"name"`
+	BundleEndpointURL string `json:"bundleEndpointURL"`
+	JWKSURL           string `json:"jwksURL"`
+	CAFile            string `json:"caFile"`
+}
+
+func (c Config) validateSPIFFETrustDomains() []error {
+	var problems []error
+
+	seen := map[string]bool{}
+
+	for index, domain := range c.SPIFFETrustDomains {
+		where := fmt.Sprintf("spiffeTrustDomains[%d]", index)
+
+		if trustDomain, err := spiffeid.TrustDomainFromString(domain.Name); err != nil {
+			problems = append(problems, fmt.Errorf("%s.name: %q is not a SPIFFE trust domain: %w", where, domain.Name, err))
+		} else if seen[trustDomain.Name()] {
+			problems = append(problems, fmt.Errorf("%s.name: %q is listed twice", where, domain.Name))
+		} else {
+			seen[trustDomain.Name()] = true
+		}
+
+		switch {
+		case (domain.BundleEndpointURL == "") == (domain.JWKSURL == ""):
+			problems = append(problems, fmt.Errorf("%s: set exactly one of bundleEndpointURL and jwksURL", where))
+		case domain.BundleEndpointURL != "" && !isHTTPSURL(domain.BundleEndpointURL):
+			problems = append(problems, fmt.Errorf("%s.bundleEndpointURL: %q must be an https:// URL", where, domain.BundleEndpointURL))
+		case domain.JWKSURL != "" && !isHTTPSURL(domain.JWKSURL):
+			problems = append(problems, fmt.Errorf("%s.jwksURL: %q must be an https:// URL", where, domain.JWKSURL))
+		}
+	}
+
+	return problems
+}
+
+func isHTTPSURL(value string) bool {
+	target, err := url.Parse(value)
+
+	return err == nil && target.Scheme == "https" && target.Host != ""
 }
 
 // Resolver is one entry of the resolvers setting.
@@ -347,6 +434,7 @@ func Default() Config {
 		MetricsListenAddress:   ":9090",
 		ShutdownTimeout:        Duration(30 * time.Second),
 		LogLevel:               "info",
+		MigrateOnStart:         true,
 		OIDCEmailClaim:         "email",
 		OIDCEmailVerifiedClaim: "email_verified",
 		OIDCGroupsClaim:        "groups",
@@ -417,20 +505,67 @@ func Load(path string, getenv func(string) string) (Config, error) {
 	return cfg, nil
 }
 
-func loadFile(path string, cfg *Config) error {
+// LoadDatabaseURL reads only databaseURL, from the YAML file at path (when
+// path is not empty) and then from TOOLGATE_DATABASE_URL. It ignores every
+// other setting, so `toolgate migrate` needs no other configuration.
+func LoadDatabaseURL(path string, getenv func(string) string) (string, error) {
+	var file struct {
+		DatabaseURL string `json:"databaseURL"`
+	}
+
+	if path != "" {
+		data, err := readFile(path)
+		if err != nil {
+			return "", err
+		}
+
+		if err := yaml.Unmarshal(data, &file); err != nil {
+			return "", fmt.Errorf("configuration file %s: %w", path, err)
+		}
+	}
+
+	databaseURL := file.DatabaseURL
+	if value := getenv("TOOLGATE_DATABASE_URL"); value != "" {
+		databaseURL = value
+	}
+
+	if databaseURL == "" {
+		return "", errors.New("databaseURL: required")
+	}
+
+	if _, err := pgxpool.ParseConfig(databaseURL); err != nil {
+		// The parse error can echo the connection string, which may hold a
+		// password, so it is not included.
+		return "", errors.New("databaseURL: not a valid PostgreSQL connection string")
+	}
+
+	return databaseURL, nil
+}
+
+// readFile reads the configuration file, bounded by maxFileSize.
+func readFile(path string) ([]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("configuration file: %w", err)
+		return nil, fmt.Errorf("configuration file: %w", err)
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(io.LimitReader(file, maxFileSize+1))
 	if err != nil {
-		return fmt.Errorf("configuration file %s: %w", path, err)
+		return nil, fmt.Errorf("configuration file %s: %w", path, err)
 	}
 
 	if len(data) > maxFileSize {
-		return fmt.Errorf("configuration file %s: larger than %d bytes", path, maxFileSize)
+		return nil, fmt.Errorf("configuration file %s: larger than %d bytes", path, maxFileSize)
+	}
+
+	return data, nil
+}
+
+func loadFile(path string, cfg *Config) error {
+	data, err := readFile(path)
+	if err != nil {
+		return err
 	}
 
 	if err := yaml.UnmarshalStrict(data, cfg); err != nil {
@@ -544,6 +679,10 @@ func (c Config) Validate() []error {
 		}
 	}
 
+	if c.OTLPIngest && c.OTLPEndpoint == "" {
+		problems = append(problems, errors.New("otlpEndpoint: required when otlpIngest is true"))
+	}
+
 	if c.OIDCIssuerURL == "" {
 		problems = append(problems, errors.New("oidcIssuerURL: required"))
 	} else if issuer, err := url.Parse(c.OIDCIssuerURL); err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" {
@@ -623,6 +762,7 @@ func (c Config) Validate() []error {
 
 	problems = append(problems, c.validateUI()...)
 	problems = append(problems, c.validateResolvers()...)
+	problems = append(problems, c.validateSPIFFETrustDomains()...)
 
 	if c.AuditPayloads && c.AuditS3Bucket == "" {
 		problems = append(problems, errors.New("auditS3Bucket: required when auditPayloads is true"))

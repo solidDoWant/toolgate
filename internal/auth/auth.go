@@ -90,6 +90,9 @@ type Refusal struct {
 	// the token can't be parsed.
 	Issuer   string
 	Audience []string
+	// TrustDomain is the SPIFFE trust domain of a refused JWT-SVID, read
+	// from its unverified subject. It is empty for other tokens.
+	TrustDomain string
 	// RemoteAddress is the client's IP address.
 	RemoteAddress string
 }
@@ -115,6 +118,9 @@ type Options struct {
 	// ServiceAccounts enables sign-in with Kubernetes projected
 	// service-account tokens. Nil accepts only user access tokens.
 	ServiceAccounts *ServiceAccountOptions
+	// SPIFFE enables sign-in with SPIFFE JWT-SVIDs. Nil, or no trust
+	// domains, accepts none.
+	SPIFFE *SPIFFEOptions
 }
 
 // Authenticator checks user access tokens and the identity headers.
@@ -123,6 +129,7 @@ type Authenticator struct {
 	issuer   string
 	audience string
 	accounts *serviceAccountVerifier
+	spiffe   *spiffeVerifier
 	claims   claimNames
 	recorder RefusalRecorder
 	limiter  *RateLimiter
@@ -164,11 +171,24 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		}
 	}
 
+	var spiffe *spiffeVerifier
+	if options.SPIFFE != nil && len(options.SPIFFE.TrustDomains) > 0 {
+		spiffe, err = newSPIFFEVerifier(*options.SPIFFE)
+		if err != nil {
+			return nil, err
+		}
+
+		// The bundles are fetched in the background for the gateway's
+		// lifetime; sign-in doesn't wait for them.
+		spiffe.run(context.WithoutCancel(ctx))
+	}
+
 	return &Authenticator{
 		verifier: provider.VerifierContext(context.WithoutCancel(ctx), &oidc.Config{ClientID: options.Audience}),
 		issuer:   options.IssuerURL,
 		audience: options.Audience,
 		accounts: accounts,
+		spiffe:   spiffe,
 		claims:   claims,
 		recorder: options.Recorder,
 		limiter:  NewRateLimiter(),
@@ -183,6 +203,23 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 // limit. Register it with the gateway's metrics registry.
 func (a *Authenticator) DroppedRefusals() prometheus.Counter {
 	return a.dropped
+}
+
+// Collectors are the authenticator's metrics. Register them with the
+// gateway's metrics registry.
+func (a *Authenticator) Collectors() []prometheus.Collector {
+	collectors := []prometheus.Collector{a.dropped}
+
+	if a.spiffe != nil {
+		collectors = append(collectors, bundleAgeCollector{
+			verifier: a.spiffe,
+			description: prometheus.NewDesc("toolgate_spiffe_bundle_age_seconds",
+				"Seconds since the trust domain's SPIFFE bundle was last fetched successfully.",
+				[]string{"trust_domain"}, nil),
+		})
+	}
+
+	return collectors
 }
 
 // Middleware authenticates every request before next runs. A request without
@@ -266,8 +303,15 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 		return Identity{}, &Refusal{Reason: "missing token"}
 	}
 
-	// The unverified issuer only picks the verifier; both verify fully.
-	if a.accounts != nil && unverifiedIssuer(token) != a.issuer {
+	// The unverified claims only pick the verifier; each verifies fully,
+	// so a wrong pick fails closed.
+	issuer, subject := unverifiedIssuerAndSubject(token)
+
+	if a.spiffe != nil && isSPIFFESubject(subject) {
+		return a.spiffe.verify(request.Context(), token, subject)
+	}
+
+	if a.accounts != nil && issuer != a.issuer {
 		return a.accounts.verify(request.Context(), token)
 	}
 
@@ -355,19 +399,20 @@ func unverifiedRefusal(token string) Refusal {
 	return Refusal{Issuer: truncate(claims.Issuer), Audience: bounded}
 }
 
-// unverifiedIssuer reads a token's issuer without checking its signature.
-func unverifiedIssuer(token string) string {
+// unverifiedIssuerAndSubject reads a token's issuer and subject without
+// checking its signature.
+func unverifiedIssuerAndSubject(token string) (issuer, subject string) {
 	parsed, err := jwt.ParseSigned(token, tokenAlgorithms)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 
 	var claims jwt.Claims
 	if err := parsed.UnsafeClaimsWithoutVerification(&claims); err != nil {
-		return ""
+		return "", ""
 	}
 
-	return claims.Issuer
+	return claims.Issuer, claims.Subject
 }
 
 func (a *Authenticator) refuse(request *http.Request, refusal Refusal) {

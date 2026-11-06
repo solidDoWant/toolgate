@@ -54,7 +54,7 @@ func (l *lazyAuthenticator) get() (*auth.Authenticator, error) {
 	}
 
 	if l.registerMetrics != nil {
-		if err := l.registerMetrics(authenticator.DroppedRefusals()); err != nil {
+		if err := l.registerMetrics(authenticator.Collectors()...); err != nil {
 			l.logger.WarnContext(ctx, "cannot register the authenticator's metrics", "error", err)
 		}
 	}
@@ -111,7 +111,7 @@ func (r refusalRecorder) RecordAuthRefusal(ctx context.Context, refusal auth.Ref
 		audience = []string{}
 	}
 
-	err := r.recorder.Record(ctx, audit.Event{
+	event := audit.Event{
 		Type: audit.TypeAuthRefuse,
 		Details: map[string]any{
 			"reason":        refusal.Reason,
@@ -119,7 +119,12 @@ func (r refusalRecorder) RecordAuthRefusal(ctx context.Context, refusal auth.Ref
 			"audience":      audience,
 			"remoteAddress": refusal.RemoteAddress,
 		},
-	})
+	}
+	if refusal.TrustDomain != "" {
+		event.Details["trustDomain"] = refusal.TrustDomain
+	}
+
+	err := r.recorder.Record(ctx, event)
 	if err != nil {
 		r.logger.WarnContext(ctx, "cannot write the auth.refuse audit event", "error", err)
 	}

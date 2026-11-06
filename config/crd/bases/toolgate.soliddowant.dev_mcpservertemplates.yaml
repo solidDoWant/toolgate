@@ -78,6 +78,16 @@ spec:
                       type: string
                     maxItems: 1024
                     type: array
+                  spiffeIDs:
+                    description: |-
+                      SPIFFEIDs are glob patterns, such as
+                      spiffe://coder.example.com/owner/*/workspace/*, matched against the
+                      SPIFFE ID of a JWT-SVID sign-in. Only SPIFFE identities match them.
+                    items:
+                      maxLength: 2048
+                      type: string
+                    maxItems: 64
+                    type: array
                   users:
                     description: Users are OIDC subjects or verified emails.
                     items:

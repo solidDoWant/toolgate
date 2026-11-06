@@ -4,6 +4,8 @@
 package catalog
 
 import (
+	"github.com/gobwas/glob"
+
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -92,6 +94,12 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 		problems = append(problems, validateSharedNames(template)...)
 	default:
 		problems = append(problems, fmt.Sprintf("namespace %q must be one of per-instance, shared", spec.Namespace))
+	}
+
+	for index, pattern := range spec.Access.SPIFFEIDs {
+		if _, err := glob.Compile(pattern); err != nil {
+			problems = append(problems, fmt.Sprintf("access.spiffeIDs[%d]: %q is not a valid pattern", index, pattern))
+		}
 	}
 
 	for index, raw := range spec.Resources {

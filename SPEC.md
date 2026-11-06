@@ -51,7 +51,7 @@ Gateway components (packages under `internal/`):
 
 | Component | Job |
 |---|---|
-| Auth | Verifies the bearer token (user OIDC token, toolgate session token, or Kubernetes service-account token). Produces the request's identity (§6). |
+| Auth | Verifies the bearer token (user OIDC token, toolgate session token, Kubernetes service-account token, or SPIFFE JWT-SVID). Produces the request's identity (§6). |
 | MCP endpoint | Streamable HTTP MCP server. Serves the meta tools (§7) and every enabled server's tools, renamed. Forwards calls. |
 | Session manager | The enabled-server set per session, in PostgreSQL. Idle timeouts. |
 | Policy engine | Decides every enable, list and call (§10). |
@@ -78,8 +78,8 @@ Every authenticated request has an **identity**:
 
 | Field | Source | Verified? |
 |---|---|---|
-| `principal` | User: the OIDC `sub`, with `email` and `groups`. Workload: `system:serviceaccount:<ns>:<name>`. | Always |
-| `workspace` | Workload: `k8s/<namespace>/<owner kind>/<owner name>`, read from the token's pod claims. User: the claimed header, prefixed `claimed/`. | Workload only |
+| `principal` | User: the OIDC `sub`, with `email` and `groups`. Pod: `system:serviceaccount:<ns>:<name>`. SPIFFE workload: the SPIFFE ID. | Always |
+| `workspace` | Pod: `k8s/<namespace>/<owner kind>/<owner name>`, read from the token's pod claims. SPIFFE workload: the SPIFFE ID's path, such as `/owner/alice/workspace/dev`. User: the claimed header, prefixed `claimed/`. | Workload only |
 | `session` | The `X-Toolgate-Session` header | Never |
 | `attestation` | `attested` or `user` | Computed |
 
@@ -132,6 +132,7 @@ spec:
     users: []                   # OIDC subjects or emails
     groups: [dev]
     serviceAccounts: []         # system:serviceaccount:ns:name
+    spiffeIDs: []               # globs, such as spiffe://td/owner/*/workspace/*
     environments: opt-in        # any | opt-in (default) | attested
   tools:                        # optional per-tool overrides
     delete_repository: {environments: attested, approval: required}
@@ -186,7 +187,7 @@ With `shared`, all instances go in one configured namespace and are told apart b
 ## 10. Policy
 
 **Order of evaluation**, the same for enable, list and call:
-1. **Catalog access:** the identity must match `access.users`, `groups` or `serviceAccounts`. A template with no access lists is available to no one.
+1. **Catalog access:** the identity must match `access.users`, `groups`, `serviceAccounts` or `spiffeIDs`. A SPIFFE identity matches only `spiffeIDs`, and `spiffeIDs` matches nothing else. A template with no access lists is available to no one.
 2. **Environment:** the server's `environments`, or the tool's override.
    - `any` passes.
    - `attested` needs `attested`.
@@ -233,7 +234,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 
 **Gateway traces:** OpenTelemetry (`go.opentelemetry.io/otel`) spans for each request, policy decision, render, apply and forward. Incoming `traceparent` is honoured, so Claude Code's tool spans (it sends `traceparent` on HTTP MCP requests) become the parents. Metrics are Prometheus-format at `/metrics` on a separate port.
 
-**OTLP ingest** (phase 3): `/v1/traces`, `/v1/metrics` and `/v1/logs` over OTLP/HTTP (protobuf and JSON), using the collector's `pdata` packages for decoding. The request is authenticated like any other, through `otelHeadersHelper`. The ingest replaces `user.*`, `enduser.id` and `workspace.id` attributes with the verified identity, then forwards to the configured OTLP endpoint. This gives token usage (`claude_code.token.usage`, `claude_code.cost.usage`, and the `claude_code.llm_request` spans) per principal, workspace and session, with no proxy for model traffic.
+**OTLP ingest** (phase 3): `/v1/traces`, `/v1/metrics` and `/v1/logs` over OTLP/HTTP (protobuf and JSON), using the collector's `pdata` packages for decoding. The request is authenticated like any other, through `otelHeadersHelper`. It is on only when the setting `otlpIngest` is `true`; otherwise the routes answer 404. The ingest removes, at every level, each attribute whose name starts with `user`, `enduser` or `workspace` after every character outside `[A-Za-z0-9]` becomes `_` and the case is lowered. Then it sets `user.id`, `enduser.id`, `user.email` (only when verified) and `workspace.id` from the verified identity on every span, metric data point and log record. `session.id` is kept as the client sent it, because it is claimed like `X-Toolgate-Session`. Prompt and tool content (what `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` and `OTEL_LOG_TOOL_CONTENT` add) is removed unless the setting `telemetry.allowContent` is `true`. The result is forwarded synchronously to the configured OTLP endpoint, with nothing buffered or retried by the gateway (`docs/design/phase-3.md` §3). This gives token usage (`claude_code.token.usage`, `claude_code.cost.usage`, and the `claude_code.llm_request` spans) per principal, workspace and session, with no proxy for model traffic.
 
 ## 13. Client: CLI and Claude Code plugin
 

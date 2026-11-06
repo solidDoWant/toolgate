@@ -94,6 +94,7 @@ Provisioned through `flake.nix`; agents get it through `CLAUDE_ENV_FILE`. Docker
 - Every HTTP handler authenticates first, and every MCP operation goes through the policy engine. Add a test proving an unauthorized identity is refused.
 - Template rendering is structured (`SPEC.md` §9): substitute into parsed string values only. Never build YAML or JSON by string concatenation.
 - Bound all inputs: request sizes, header lengths, tool-result sizes, list lengths.
+- **No Docker Hub (owner rule).** Every container image this repo references, whether in tests, the e2e manifests, kind, the chart, Dockerfiles or docs examples, comes from `ghcr.io` first, then `quay.io`, and only if neither publishes it, from `mirror.gcr.io` (Google's Docker Hub mirror: `mirror.gcr.io/library/<name>` for official images). Never `docker.io`, and never an unqualified name like `postgres`. Pin by digest. Docker Hub rate-limits anonymous pulls and has failed CI.
 - Never log secrets, tokens, or tool arguments and results (those go to the audit payload store only, and only when enabled).
 
 ## Documentation

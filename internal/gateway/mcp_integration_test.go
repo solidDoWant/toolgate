@@ -51,6 +51,14 @@ type mcpFixture struct {
 func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFixture {
 	t.Helper()
 
+	return newMCPFixtureWithAuth(t, nil, configure...)
+}
+
+// newMCPFixtureWithAuth is newMCPFixture with more authenticator options,
+// such as SPIFFE trust domains.
+func newMCPFixtureWithAuth(t *testing.T, authOptions *auth.Options, configure ...func(*gateway.MCPOptions)) *mcpFixture {
+	t.Helper()
+
 	postgres := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), postgres.ConnString())
@@ -60,7 +68,14 @@ func newMCPFixture(t *testing.T, configure ...func(*gateway.MCPOptions)) *mcpFix
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 
-	authenticator, err := auth.New(t.Context(), auth.Options{IssuerURL: provider.Issuer, Audience: provider.Audience})
+	options := auth.Options{}
+	if authOptions != nil {
+		options = *authOptions
+	}
+
+	options.IssuerURL, options.Audience = provider.Issuer, provider.Audience
+
+	authenticator, err := auth.New(t.Context(), options)
 	require.NoError(t, err)
 
 	servers := catalog.New()
@@ -132,6 +147,8 @@ func (f *mcpFixture) addTemplate(name, scope string, access v1alpha1.Access) *v1
 
 // user is one signed-in client of the gateway.
 type user struct {
+	// token, if set, is sent instead of an access token for claims.
+	token     string
 	claims    testutil.TokenClaims
 	session   string
 	workspace string
@@ -140,8 +157,13 @@ type user struct {
 func (f *mcpFixture) headers(t *testing.T, client user) http.Header {
 	t.Helper()
 
+	token := client.token
+	if token == "" {
+		token = f.provider.MintAccessToken(t, client.claims)
+	}
+
 	header := http.Header{}
-	header.Set("Authorization", "Bearer "+f.provider.MintAccessToken(t, client.claims))
+	header.Set("Authorization", "Bearer "+token)
 	header.Set(auth.SessionHeader, client.session)
 
 	if client.workspace != "" {

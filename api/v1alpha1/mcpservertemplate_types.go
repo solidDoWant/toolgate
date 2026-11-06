@@ -181,6 +181,14 @@ type Access struct {
 	// +kubebuilder:validation:items:MaxLength=320
 	ServiceAccounts []string `json:"serviceAccounts,omitempty"`
 
+	// SPIFFEIDs are glob patterns, such as
+	// spiffe://coder.example.com/owner/*/workspace/*, matched against the
+	// SPIFFE ID of a JWT-SVID sign-in. Only SPIFFE identities match them.
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=2048
+	SPIFFEIDs []string `json:"spiffeIDs,omitempty"`
+
 	// Environments says which attestation a request needs: any, opt-in
 	// or attested. It defaults to opt-in.
 	// +optional

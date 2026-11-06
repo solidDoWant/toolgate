@@ -33,6 +33,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
+	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
 	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
@@ -72,7 +73,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := migrateDatabase(ctx, server.Database(), logger); err != nil {
+	if err := migrateDatabase(ctx, server.Database(), cfg.MigrateOnStart, logger); err != nil {
 		logger.Error("gateway failed to start", "error", err)
 
 		return 1
@@ -157,6 +158,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		ApprovalTimeout:      time.Duration(cfg.ApprovalTimeout),
 	}), true))
 
+	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
+
 	if err := server.Listen(); err != nil {
 		logger.Error("gateway failed to start", "error", err)
 
@@ -238,12 +245,27 @@ func serve(args []string, stdout, stderr io.Writer) int {
 // starting together take turns behind goose's PostgreSQL session lock. A
 // database newer than this binary (a rollback) is only logged: migrations
 // never run down.
-func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error {
-	if err := store.Migrate(ctx, pool); err != nil {
-		return fmt.Errorf("database migrations: %w", err)
+func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, migrateOnStart bool, logger *slog.Logger) error {
+	var (
+		database, binary int64
+		err              error
+	)
+
+	if migrateOnStart {
+		if err := store.Migrate(ctx, pool); err != nil {
+			return fmt.Errorf("database migrations: %w", err)
+		}
+
+		database, binary, err = store.SchemaVersions(ctx, pool)
+	} else {
+		// With migrateOnStart false the gateway never changes the schema:
+		// it refuses to start on an older one (docs/design/phase-3.md §7).
+		database, binary, err = store.CheckSchemaVersion(ctx, pool)
+		if err == nil {
+			err = store.EnsureAuditPartitions(ctx, pool)
+		}
 	}
 
-	database, binary, err := store.SchemaVersions(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("database migrations: %w", err)
 	}
@@ -294,6 +316,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 				logger:   logger,
 			},
 			ServiceAccounts: serviceAccounts,
+			SPIFFE:          spiffeOptions(cfg, logger),
 		},
 		logger:          logger,
 		registerMetrics: server.RegisterMetrics,
@@ -326,6 +349,28 @@ func registerSecretsAPI(server *gateway.Server, cfg config.Config, authenticator
 	})
 
 	return broker, nil
+}
+
+// registerOTLPIngest serves the OTLP ingest routes behind authentication when
+// otlpIngest is on. Without it the routes are not registered, so they answer
+// 404.
+func registerOTLPIngest(server *gateway.Server, cfg config.Config, authenticator *lazyAuthenticator,
+	logger *slog.Logger,
+) error {
+	if !cfg.OTLPIngest {
+		return nil
+	}
+
+	otlp := ingest.New(ingest.Options{
+		Endpoint:     cfg.OTLPEndpoint,
+		AllowContent: cfg.TelemetryAllowContent,
+		Logger:       logger,
+	})
+	otlp.Register(server.Handle, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
+
+	return server.RegisterMetrics(otlp.Collectors()...)
 }
 
 // errNoSecretsKeyset is the render error for `${secret:…}` on a gateway
@@ -469,4 +514,24 @@ func (l *ruleLister) Rules(ctx context.Context) ([]v1alpha1.ToolgateRule, error)
 	}
 
 	return rules, nil
+}
+
+// spiffeOptions turns the spiffeTrustDomains setting into the
+// authenticator's SPIFFE options, or nil when it is empty.
+func spiffeOptions(cfg config.Config, logger *slog.Logger) *auth.SPIFFEOptions {
+	if len(cfg.SPIFFETrustDomains) == 0 {
+		return nil
+	}
+
+	domains := make([]auth.SPIFFETrustDomain, 0, len(cfg.SPIFFETrustDomains))
+	for _, domain := range cfg.SPIFFETrustDomains {
+		domains = append(domains, auth.SPIFFETrustDomain{
+			Name:              domain.Name,
+			BundleEndpointURL: domain.BundleEndpointURL,
+			JWKSURL:           domain.JWKSURL,
+			CAFile:            domain.CAFile,
+		})
+	}
+
+	return &auth.SPIFFEOptions{TrustDomains: domains, Logger: logger}
 }

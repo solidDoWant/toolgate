@@ -130,6 +130,16 @@ config:
   # with `resources.persistence`.
   resolvers: []
 
+  spiffe:
+    # -- SPIFFE trust domains whose JWT-SVIDs may sign in, attested as the
+    # workload. Each item has a `name` (the trust domain), exactly one of
+    # `bundleEndpointURL` (a SPIFFE bundle endpoint with the `https_web`
+    # profile) and `jwksURL` (a JWKS document, such as that of SPIRE's OIDC
+    # discovery provider), both `https://`, and an optional `caFile`. The
+    # chart writes them to the gateway's configuration file. Mount a
+    # `caFile` with `resources.persistence`.
+    trustDomains: []
+
   # -- More environment variables for the gateway container, as a list of
   # Kubernetes `EnvVar` objects.
   extraEnv: []

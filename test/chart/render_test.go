@@ -582,3 +582,39 @@ func TestResolverSettings(t *testing.T) {
 		}
 	})
 }
+
+func TestSPIFFETrustDomainSettings(t *testing.T) {
+	spiffeValues := filepath.Join(t.TempDir(), "spiffe.yaml")
+	require.NoError(t, os.WriteFile(spiffeValues, []byte(`config:
+  spiffe:
+    trustDomains:
+      - name: coder.example.com
+        bundleEndpointURL: https://spire.example.com:8443
+        caFile: /etc/toolgate/spire-ca.pem
+`), 0o600))
+
+	t.Run("trust domains go in the configuration file", func(t *testing.T) {
+		manifests := renderQuickStart(t, "--values", spiffeValues)
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		assert.Equal(t, []string{"serve", "--config", "/etc/toolgate/config.yaml"}, deployment.Spec.Template.Spec.Containers[0].Args)
+
+		configMap := find[corev1.ConfigMap](t, manifests, "ConfigMap")
+
+		var file struct {
+			SPIFFETrustDomains []map[string]string `json:"spiffeTrustDomains"`
+		}
+		require.NoError(t, yaml.UnmarshalStrict([]byte(configMap.Data["config.yaml"]), &file))
+		assert.Equal(t, []map[string]string{{
+			"name": "coder.example.com", "bundleEndpointURL": "https://spire.example.com:8443", "caFile": "/etc/toolgate/spire-ca.pem",
+		}}, file.SPIFFETrustDomains)
+	})
+
+	t.Run("a trust domain with both URLs is rejected", func(t *testing.T) {
+		_, err := render(t, append(append([]string{}, quickStartValues...),
+			"config.spiffe.trustDomains[0].name=coder.example.com",
+			"config.spiffe.trustDomains[0].bundleEndpointURL=https://a.example",
+			"config.spiffe.trustDomains[0].jwksURL=https://b.example"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "needs exactly one of bundleEndpointURL and jwksURL")
+	})
+}
