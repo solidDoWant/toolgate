@@ -25,9 +25,19 @@ import (
 // a session sees.
 const toolSeparator = "__"
 
-// ProxiedToolName is the name a session sees for tool of server.
+// ProxiedToolName is the name a session sees for tool of server. The
+// built-in server's tools have their own exact names.
 func ProxiedToolName(server, tool string) string {
+	if name, ok := builtinProxiedName(server, tool); ok {
+		return name
+	}
+
 	return server + toolSeparator + tool
+}
+
+// cutProxiedName splits a `<server>__<tool>` name.
+func cutProxiedName(name string) (server, tool string, ok bool) {
+	return strings.Cut(name, toolSeparator)
 }
 
 // sessionTools is the set of proxied tools one MCP session's server
@@ -178,6 +188,11 @@ func (m *metaTools) proxiedTools(ctx context.Context, current requestContext) (t
 //     generation;
 //   - an unhealthy instance lists none.
 func (m *metaTools) listedTools(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) ([]*mcp.Tool, bool, error) {
+	// The built-in server lists its declared tools.
+	if isBuiltin(template) {
+		return m.catalogList(ctx, template)
+	}
+
 	queries := db.New(m.database)
 
 	instance, err := queries.GetLiveInstance(ctx, db.GetLiveInstanceParams{
@@ -294,8 +309,9 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 
 // routeProxiedCalls sends every `tools/call` of a `<server>__<tool>` name to
 // callTool, also when the session doesn't offer that tool (not yet, or no
-// longer), so every such call gets a recorded decision. Meta tool names
-// have no separator. A tool the session offers goes through the go-sdk's
+// longer), so every such call gets a recorded decision. The built-in
+// server's exact tool names count as proxied names. Meta tool names have no
+// separator. A tool the session offers goes through the go-sdk's
 // own tool path, whose multi round-trip handling serves URL elicitation; a
 // call of a tool it doesn't offer is answered here without elicitation.
 func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler {
@@ -305,7 +321,11 @@ func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler 
 		}
 
 		call, ok := request.(*mcp.CallToolRequest)
-		if !ok || call.Params == nil || !strings.Contains(call.Params.Name, toolSeparator) {
+		if !ok || call.Params == nil {
+			return next(ctx, method, request)
+		}
+
+		if _, _, proxied := splitProxiedName(call.Params.Name); !proxied {
 			return next(ctx, method, request)
 		}
 

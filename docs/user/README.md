@@ -45,7 +45,7 @@ Do these steps after you install the plugin and sign in with `toolgate login`.
 1. Start a new Claude Code session.
 2. Run `/mcp`. Make sure that the `toolgate` server shows as connected and has four tools: `toolgate_list_servers`, `toolgate_enable_server`, `toolgate_disable_server` and `toolgate_server_status`.
 3. Ask Claude to list the toolgate servers. Make sure that Claude calls `toolgate_list_servers`.
-4. Ask Claude to turn on one of the servers and to use one of its tools. Make sure that Claude calls `toolgate_enable_server`, and then calls a tool with a name that starts with the server name, for example `test__echo`.
+4. Ask Claude to use a tool of one of the servers. Make sure that Claude calls a tool with a name that starts with the server name, for example `test__echo`. Claude does not need to call `toolgate_enable_server` first. The call turns on the server.
 5. Ask Claude to turn the server off. Make sure that Claude calls `toolgate_disable_server`.
 6. Run `/status` and write down the session ID.
 7. Ask your admin to find these calls in the audit log of the gateway. Make sure that the audit log shows the same session ID.
@@ -147,7 +147,11 @@ You do not call the gateway yourself. Ask Claude for what you need, and Claude u
 - `toolgate_disable_server` turns off a server in this session.
 - `toolgate_server_status` shows if a server is running, and why it failed.
 
+Claude can call a tool of a server that the rules allow without `toolgate_enable_server` first. The call turns on the server in this session. If the server is not running, the call starts it and waits. Claude shows the progress, so the first call can take longer. If the server cannot start, the call fails with the reason.
+
 The name of each tool of a server starts with the name of the server and two underscores, for example `github__list_issues`. One session can have 32 servers turned on at most.
+
+If the gateway has a web UI, the catalog also has a server named `toolgate`. It runs inside the gateway and is always ready. Its tool `toolgate_list_scopes` shows your own workspace scope: your defaults, the servers and tools that each workspace allows or denies, and the servers that each open session allows or denies. It shows at most 200 workspaces and 200 sessions. You can use it only in a session where you allow the `toolgate` server, in the same way as any other server.
 
 A server has one of three scopes. Your admin sets the scope:
 

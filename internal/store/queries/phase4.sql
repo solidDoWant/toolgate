@@ -154,3 +154,9 @@ WHERE s.id = e.session_pk AND e.effect = 'allow' AND s.ended_at IS NOT NULL;
 DELETE FROM session_found_tools f
 USING sessions s
 WHERE s.id = f.session_pk AND s.ended_at IS NOT NULL;
+
+-- name: ListSessionAdditionsOfSessions :many
+-- The session additions of the given sessions.
+SELECT session_pk, server FROM session_additions
+WHERE session_pk = ANY(@session_pks::bigint[])
+ORDER BY session_pk, server;

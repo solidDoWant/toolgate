@@ -210,6 +210,10 @@ type Access struct {
 	// +kubebuilder:validation:items:MaxLength=2048
 	SPIFFEIDs []string `json:"spiffeIDs,omitempty"`
 
+	// AllUsers gives every identity of kind user access. It is never read
+	// from a template: only the gateway's built-in server sets it.
+	AllUsers bool `json:"-"`
+
 	// Environments says which attestation a request needs: any, opt-in
 	// or attested. It defaults to opt-in.
 	// +optional

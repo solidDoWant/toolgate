@@ -575,6 +575,38 @@ func (q *Queries) ListScopeEntriesOfSessions(ctx context.Context, sessionPks []i
 	return items, nil
 }
 
+const listSessionAdditionsOfSessions = `-- name: ListSessionAdditionsOfSessions :many
+SELECT session_pk, server FROM session_additions
+WHERE session_pk = ANY($1::bigint[])
+ORDER BY session_pk, server
+`
+
+type ListSessionAdditionsOfSessionsRow struct {
+	SessionPk int64
+	Server    string
+}
+
+// The session additions of the given sessions.
+func (q *Queries) ListSessionAdditionsOfSessions(ctx context.Context, sessionPks []int64) ([]ListSessionAdditionsOfSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listSessionAdditionsOfSessions, sessionPks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionAdditionsOfSessionsRow{}
+	for rows.Next() {
+		var i ListSessionAdditionsOfSessionsRow
+		if err := rows.Scan(&i.SessionPk, &i.Server); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSessionFoundTools = `-- name: ListSessionFoundTools :many
 SELECT session_pk, template_ns, template_name, upstream_name, found_at FROM session_found_tools WHERE session_pk = $1
 ORDER BY template_ns, template_name, upstream_name

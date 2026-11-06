@@ -345,10 +345,14 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 		return db.Instance{}, fmt.Errorf("enable server: %w", err)
 	}
 
+	// The built-in server never has an instance.
 	var instance db.Instance
-	if options.lazy {
+
+	switch {
+	case isBuiltin(template):
+	case options.lazy:
 		instance, err = m.retryInstance(ctx, queries, current, template)
-	} else {
+	default:
 		instance, err = m.liveOrNewInstance(ctx, queries, current, template)
 	}
 

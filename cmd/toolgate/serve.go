@@ -142,6 +142,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	})
 
 	if cfg.UIEnabled() {
+		// The built-in server is offered only with the web UI, where
+		// widening a scope can take a step-up (docs/design/phase-4.md §7).
+		templates.SetBuiltin(gateway.BuiltinTemplate())
+
 		engine.GrantURL = ui.GrantLink(cfg.PublicURL)
 
 		if err := registerUI(server, cfg, gateway.NewCatalogView(server.Database(), templates, engine), ruleView,
@@ -183,6 +187,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		ApprovalURL:          approvalURL,
 		ApprovalTimeout:      time.Duration(cfg.ApprovalTimeout),
 		WorkspaceScoping:     cfg.UIEnabled(),
+		Workspaces:           workspaces,
+		SessionIdleTimeout:   testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {
