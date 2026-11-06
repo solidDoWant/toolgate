@@ -262,18 +262,19 @@ The AC-4-03 test is an integration test. It loads the fixture through the real r
 
 AC-4-18, added by the owner on 2026-11-06. No MCP client tells a server whether a search result was right, so toolgate infers it from what the session does next. The query text is never stored or logged.
 
-- **Search event.** Each `toolgate_find_tools` call gets a `search_id` (UUIDv7). The gateway writes the audit event `tool.search` with `search_id`, the session, the returned tools as (server, upstream name, rank 1 to N), `degraded` (embeddings unavailable), `reranked`, and the result count. It stores the same list in `session_found_tools`, which gains `search_id` and `rank`. A newer search replaces the session's "latest search" pointer, `sessions.last_search_id`.
+- **Search event.** Each `toolgate_find_tools` call gets a `search_id` (UUIDv7). The gateway writes the audit event `tool.search` with `search_id`, the session, the returned tools as (server, upstream name, rank 1 to N), `degraded` (embeddings unavailable), `reranked`, `embedding_model` and `rerank_model` (the configured model names, empty when not configured), and the result count. It stores the same list in `session_found_tools`, which gains `search_id` and `rank`. A newer search replaces the session's "latest search" pointer, `sessions.last_search_id`.
 - **Hit.** When a call's step 2 decides a tool that is in the session's latest search, the gateway writes `tool.search_hit` with `search_id`, the tool and its rank, once per search. It does this in the call's decision transaction, before forwarding, whatever the policy outcome.
 - **Re-search.** A new search while the latest search has no hit counts as a re-search of the previous one.
 - **No follow-up.** A search with no hit and no newer search when the session ends, or after 30 minutes, counts as "no call". The leader's 30 s pass marks these, so the metrics don't depend on which replica served the search.
 - **Metrics.**
-  - `toolgate_tool_search_total{degraded,reranked}`
+  - `toolgate_tool_search_total{degraded,reranked,embedding_model,rerank_model}`
   - `toolgate_tool_search_hits_total{rank,degraded,reranked}`
   - `toolgate_tool_search_researches_total{degraded,reranked}`
   - `toolgate_tool_search_no_call_total{degraded,reranked}`
 
-  There are no per-server or per-user labels, to keep cardinality bounded. Per-server hit rates come from the audit log (`server` on `tool.search_hit`).
-- **Docs.** `docs/admin/tool-search.md` explains the metrics, gives example PromQL for top-1 and top-5 hit rates and the re-search rate, and says which servers need better descriptions (low hit rate in the audit log).
+  Each counter also has `embedding_model` and `rerank_model` labels. Only one value of each is configured at a time, so cardinality stays small. After an admin changes a model, the hit rates before and after the change can be compared directly. There are no per-server or per-user labels, to keep cardinality bounded. Per-server hit rates come from the audit log (`server` on `tool.search_hit`).
+- **Offline comparison.** `make search-eval EMBED_URL=… EMBED_MODEL=… [RERANK_URL=… RERANK_MODEL=…]` runs the AC-4-03 fixture through the real rebuild and search code against any endpoints and models. It prints the words-only, hybrid and hybrid-plus-rerank scores and the per-task misses. It's a developer and admin tool for choosing a model before switching. It never changes the fixture, and it doesn't gate CI.
+- **Docs.** `docs/admin/tool-search.md` explains the metrics, how to compare models with them and with `make search-eval`, gives example PromQL for top-1 and top-5 hit rates and the re-search rate, and says which servers need better descriptions (low hit rate in the audit log).
 
 ## 6. Tool curation
 
