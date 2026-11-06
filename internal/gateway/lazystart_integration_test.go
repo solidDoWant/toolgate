@@ -331,3 +331,25 @@ func (f *mcpFixture) liveID(t *testing.T, template *v1alpha1.MCPServerTemplate, 
 
 	return live.ID
 }
+
+// A call that enables its server does not retry a start that failed on the
+// current generation: it is refused at once and inserts no instance.
+func TestImplicitEnableDoesNotRetryFailedStart(t *testing.T) {
+	const scopeKey = "session:alice:session-1"
+
+	fixture := newMCPFixture(t)
+	template := fixture.lazyTemplate(t, "per-session", "echo")
+	fixture.startUpstream(t, "github")
+	fixture.failedInstance(t, template, scopeKey, template.Generation, "image pull failed")
+	client := fixture.connectObserved(t, alice())
+
+	call := startWaitingCall(t, client, "github__echo", map[string]any{"text": "x"})
+	result := awaitWaitingCall(t, call)
+
+	assert.Contains(t, resultText(result), "Enable `github` again to retry.")
+	assert.Len(t, fixture.instancesOf(t, template), 1, "the call must not insert an instance")
+
+	// An explicit enable retries without waiting.
+	require.Empty(t, awaitEnable(t, startEnable(t, client.session, "github")).err)
+	assert.Len(t, fixture.instancesOf(t, template), 2)
+}
