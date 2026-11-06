@@ -5,8 +5,9 @@
 #   scripts/e2e/run.sh COMMAND [ARGS...]
 #
 # Steps:
-#  1. builds the gateway image from this checkout (scripts/build-images.sh)
-#     and the test MCP server image (test/mcpserver);
+#  1. builds the gateway image from this checkout with the e2e build tag
+#     (scripts/build-images.sh with GO_TAGS=e2e, so the gateway honours
+#     TOOLGATE_TEST_TIME_SCALE) and the test MCP server image (test/mcpserver);
 #  2. creates a kind cluster with a unique name (toolgate-<worktree>-<random>,
 #     or E2E_CLUSTER) and loads both images into it;
 #  3. installs Flux (`flux install`), then PostgreSQL, the S3 server and an
@@ -18,6 +19,10 @@
 #     HelmRelease and OCIRepository, and waits until it is ready;
 #  5. runs COMMAND with these variables set:
 #       KUBECONFIG                    the cluster's kubeconfig
+#       TOOLGATE_TEST_TIME_SCALE      the factor the e2e gateway image scales
+#                                     its waits by (internal/testtime), also
+#                                     set in the chart; tests derive their
+#                                     deadlines from it
 #       TOOLGATE_E2E_NAMESPACE        the release namespace
 #       TOOLGATE_E2E_MCPSERVER_IMAGE  the test MCP server image
 #       TOOLGATE_E2E_DATABASE_URL     PostgreSQL through a port-forward; the test
@@ -76,6 +81,8 @@ cluster="${E2E_CLUSTER:-toolgate-${worktree:0:24}-$suffix}"
 release_namespace=toolgate-system
 deps_namespace=toolgate-e2e
 image_tag="e2e-$suffix"
+# The e2e gateway image and the tests scale product waits by this factor.
+export TOOLGATE_TEST_TIME_SCALE="${TOOLGATE_TEST_TIME_SCALE:-0.1}"
 gateway_repository=ghcr.io/soliddowant/toolgate
 # Kubernetes 1.35 (the chart needs it), through the Docker Hub mirror, pinned by digest.
 kind_node_image=mirror.gcr.io/kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
@@ -111,8 +118,8 @@ postgres_image="$(pinned_image PostgresImage internal/testutil/postgres.go)"
 s3_image="$(pinned_image S3Image internal/testutil/s3.go)"
 [[ -n "$postgres_image" && -n "$s3_image" ]] || { log "cannot read the pinned images in internal/testutil"; exit 1; }
 
-log "building the gateway image $gateway_repository:$image_tag"
-VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
+log "building the e2e gateway image $gateway_repository:$image_tag"
+GO_TAGS=e2e VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
 
 log "building the test MCP server image $mcpserver_image"
 mkdir -p "$work/mcpserver"
@@ -236,6 +243,8 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.sharedNamespace.name=toolgate-shared \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
 	--set "config.extraEnv[0].value=$workload_namespace" \
+	--set 'config.extraEnv[2].name=TOOLGATE_TEST_TIME_SCALE' \
+	--set-string "config.extraEnv[2].value=$TOOLGATE_TEST_TIME_SCALE" \
 	--set-json "config.resolvers=[{\"name\":\"test\",\"url\":\"https://$TOOLGATE_E2E_RESOLVER_LISTEN/resolve\",\"audience\":\"toolgate-resolver-test\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json "config.spiffe.trustDomains=[{\"name\":\"allowed.test\",\"bundleEndpointURL\":\"https://$TOOLGATE_E2E_SPIFFE_LISTEN\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}}}' \
