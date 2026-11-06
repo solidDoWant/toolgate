@@ -25,8 +25,9 @@ spec:
               set -eu
               export PGDATA=/tmp/pgdata PGHOST=/tmp
               printf '%s' "$POSTGRES_PASSWORD" > /tmp/pwfile
-              initdb -D "$PGDATA" -U toolgate --pwfile=/tmp/pwfile --auth-local=trust --auth-host=scram-sha-256 >/dev/null
+              initdb -D "$PGDATA" -U toolgate --pwfile=/tmp/pwfile --auth-local=trust --auth-host=trust >/dev/null
               rm /tmp/pwfile
+              # Loopback is trusted (the harness runs psql in this pod); other hosts need the password.
               echo 'host all all all scram-sha-256' >> "$PGDATA/pg_hba.conf"
               pg_ctl -D "$PGDATA" -w -o "-c listen_addresses='' -c unix_socket_directories=/tmp" start >/dev/null
               createdb -U toolgate toolgate
