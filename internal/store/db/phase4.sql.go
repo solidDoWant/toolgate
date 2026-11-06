@@ -78,6 +78,33 @@ func (q *Queries) CountAllowScopeEntries(ctx context.Context, scopeID int64) (in
 	return count, err
 }
 
+const countPredecessorInstances = `-- name: CountPredecessorInstances :one
+SELECT count(*) FROM instances
+WHERE template_ns = $1 AND template_name = $2 AND scope_key = $3
+  AND id <> $4 AND status NOT IN ('stopped', 'failed')
+`
+
+type CountPredecessorInstancesParams struct {
+	TemplateNs   string
+	TemplateName string
+	ScopeKey     string
+	ID           string
+}
+
+// Counts the rows of the same template and scope key, other than id, that
+// are not yet stopped or failed: an instance being replaced or stopped.
+func (q *Queries) CountPredecessorInstances(ctx context.Context, arg CountPredecessorInstancesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countPredecessorInstances,
+		arg.TemplateNs,
+		arg.TemplateName,
+		arg.ScopeKey,
+		arg.ID,
+	)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countSessionFoundTools = `-- name: CountSessionFoundTools :one
 SELECT count(*) FROM session_found_tools WHERE session_pk = $1
 `
@@ -134,6 +161,35 @@ type DeleteToolCatalogBeforeParams struct {
 func (q *Queries) DeleteToolCatalogBefore(ctx context.Context, arg DeleteToolCatalogBeforeParams) error {
 	_, err := q.db.Exec(ctx, deleteToolCatalogBefore, arg.TemplateUid, arg.Generation)
 	return err
+}
+
+const deleteToolCatalogOfTemplates = `-- name: DeleteToolCatalogOfTemplates :execrows
+DELETE FROM tool_catalog WHERE template_uid = ANY($1::text[])
+`
+
+func (q *Queries) DeleteToolCatalogOfTemplates(ctx context.Context, templateUids []string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteToolCatalogOfTemplates, templateUids)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteToolCatalogOlderThanNewestTwo = `-- name: DeleteToolCatalogOlderThanNewestTwo :execrows
+DELETE FROM tool_catalog c
+WHERE c.generation < (
+    SELECT n.generation FROM tool_catalog n
+    WHERE n.template_uid = c.template_uid
+    ORDER BY n.generation DESC OFFSET 1 LIMIT 1
+)
+`
+
+func (q *Queries) DeleteToolCatalogOlderThanNewestTwo(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteToolCatalogOlderThanNewestTwo)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const deleteToolSearchForTemplate = `-- name: DeleteToolSearchForTemplate :exec
@@ -371,6 +427,30 @@ func (q *Queries) ListToolCatalogForTemplate(ctx context.Context, templateUid st
 	return items, nil
 }
 
+const listToolCatalogUIDs = `-- name: ListToolCatalogUIDs :many
+SELECT DISTINCT template_uid FROM tool_catalog
+`
+
+func (q *Queries) ListToolCatalogUIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listToolCatalogUIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var template_uid string
+		if err := rows.Scan(&template_uid); err != nil {
+			return nil, err
+		}
+		items = append(items, template_uid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listToolSearchForTemplate = `-- name: ListToolSearchForTemplate :many
 SELECT template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, rebuilt_at
 FROM tool_search WHERE template_uid = $1 ORDER BY upstream_name
@@ -454,7 +534,8 @@ func (q *Queries) SetUserScopeUnverifiedList(ctx context.Context, arg SetUserSco
 
 const upsertToolCatalog = `-- name: UpsertToolCatalog :exec
 INSERT INTO tool_catalog (template_uid, generation, template_ns, template_name, tools, instance_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+SELECT $1::text, $2::bigint, $3::text, $4::text, $5::jsonb, $6::text
+WHERE octet_length(($5::jsonb)::text) <= 1048576
 ON CONFLICT (template_uid, generation) DO UPDATE
 SET template_ns = EXCLUDED.template_ns, template_name = EXCLUDED.template_name,
     tools = EXCLUDED.tools, instance_id = EXCLUDED.instance_id, learned_at = now()
@@ -469,6 +550,7 @@ type UpsertToolCatalogParams struct {
 	InstanceID   string
 }
 
+// A list whose stored form is over 1 MiB is not learned.
 func (q *Queries) UpsertToolCatalog(ctx context.Context, arg UpsertToolCatalogParams) error {
 	_, err := q.db.Exec(ctx, upsertToolCatalog,
 		arg.TemplateUid,

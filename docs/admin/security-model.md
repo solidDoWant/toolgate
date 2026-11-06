@@ -65,6 +65,12 @@ Each `per-session` or `per-user` instance runs in its own namespace. The namespa
 
 The gateway can write only the kinds of objects that a template can contain, and only in namespaces with toolgate's label and the Pod Security level `restricted`. An admission policy enforces this, so a gateway that an attacker controls cannot do more. For example, it cannot start a privileged pod. [The chart page](chart.md) tells more about these permissions.
 
+## Tool lists cross users
+
+toolgate remembers the tool list of each template generation. It learns the list from the last instance of that generation that became ready. A user whose instance does not run yet sees this list. So a list learned from the instance of Alice can show to Bob until the instance of Bob is ready.
+
+Tool names and descriptions can then cross from one user to another. For a `per-user` server whose tools depend on the user, declare the tools in `spec.declaredTools`. The gateway then shows your list and learns nothing from instances of that template.
+
 ## Secrets
 
 Users set their secrets with `toolgate secret set`. The gateway encrypts each value with a key that is not in PostgreSQL. A value is decrypted only when an instance of that user starts, and it is written only into a Secret in the namespace of that instance. The gateway never returns a value and never writes one to its log. [User secrets](user-secrets.md) tells how to keep and rotate the key.

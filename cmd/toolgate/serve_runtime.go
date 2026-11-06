@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/trace"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -201,7 +202,14 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger}
 	replacer := &runtime.Replacer{Pool: pool, Stops: stops, AuditOutput: options.auditOutput, Log: logger}
 
-	startStore := runtime.PostgresStartStore{Pool: pool, AuditOutput: options.auditOutput}
+	startStore := runtime.PostgresStartStore{
+		Pool: pool, AuditOutput: options.auditOutput,
+		DeclaresTools: func(instance db.Instance) bool {
+			template, found := options.catalog.Running(types.NamespacedName{Namespace: instance.TemplateNs, Name: instance.TemplateName})
+
+			return found && string(template.UID) == instance.TemplateUid && len(template.Spec.DeclaredTools) > 0
+		},
+	}
 
 	starter := &runtime.Starter{
 		Store:            startStore,
@@ -240,9 +248,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// template exists, so the first pass waits until every watched template
 	// has been read.
 	queries := db.New(pool)
+	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
-		runtime.RowCleanup(queries, approvalExpirer.Pass(sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, repairer.Step, teardown.Step, starter.Step, monitor.Step)))))))
+		runtime.RowCleanup(queries, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, repairer.Step, teardown.Step, starter.Step, monitor.Step))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

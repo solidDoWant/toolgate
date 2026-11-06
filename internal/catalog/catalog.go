@@ -259,6 +259,19 @@ func (c *Catalog) List() []*v1alpha1.MCPServerTemplate {
 	return templates
 }
 
+// UIDs returns the UID of every template read, valid or not.
+func (c *Catalog) UIDs() map[string]bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	uids := make(map[string]bool, len(c.entries))
+	for _, current := range c.entries {
+		uids[string(current.current.UID)] = true
+	}
+
+	return uids
+}
+
 // Running returns the last valid generation of a template, for the instances
 // already running from it. It stays available while the template is invalid,
 // and is gone once the template is deleted. A copy is returned.
