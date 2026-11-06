@@ -215,15 +215,20 @@ func TestBuiltinServerSearchRows(t *testing.T) {
 		uid := string(gateway.BuiltinTemplate().UID)
 		rows, err := queries.ListToolSearchForTemplate(t.Context(), uid)
 		require.NoError(t, err)
-		require.Len(t, rows, 1)
-		assert.Equal(t, "list_scopes", rows[0].UpstreamName)
-		assert.Equal(t, gateway.BuiltinServerName, rows[0].TemplateName)
+
+		upstream := make([]string, 0, len(rows))
+		for _, row := range rows {
+			upstream = append(upstream, row.UpstreamName)
+			assert.Equal(t, gateway.BuiltinServerName, row.TemplateName)
+		}
+
+		assert.ElementsMatch(t, []string{"list_scopes", "deny"}, upstream)
 
 		cleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: fixture.catalog.UIDs}
 		require.NoError(t, cleaner.Run(t.Context()))
 
 		rows, err = queries.ListToolSearchForTemplate(t.Context(), uid)
 		require.NoError(t, err)
-		assert.Len(t, rows, 1)
+		assert.Len(t, rows, 2)
 	})
 }
