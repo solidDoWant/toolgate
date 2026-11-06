@@ -26,7 +26,7 @@ func hostPod(namespace string) *corev1.Pod {
 			HostNetwork: true,
 			Containers: []corev1.Container{{
 				Name:    "host",
-				Image:   "busybox",
+				Image:   "mirror.gcr.io/library/busybox",
 				Command: []string{"sleep", "3600"},
 				SecurityContext: &corev1.SecurityContext{
 					Privileged: ptr.To(true),
@@ -68,7 +68,7 @@ func restrictedPod(namespace string) *corev1.Pod {
 			},
 			Containers: []corev1.Container{{
 				Name:    "main",
-				Image:   "busybox",
+				Image:   "mirror.gcr.io/library/busybox",
 				Command: []string{"sleep", "3600"},
 				SecurityContext: &corev1.SecurityContext{
 					AllowPrivilegeEscalation: ptr.To(false),
