@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
@@ -69,9 +70,18 @@ type Identity struct {
 	// Attestation is AttestationUser for users and AttestationAttested for
 	// pods.
 	Attestation string `json:"attestation"`
+	// Expiry is when the bearer token expires, or zero when it has no
+	// expiry. It is never serialized.
+	Expiry time.Time `json:"-"`
 }
 
 type identityKey struct{}
+
+// WithIdentity returns a copy of ctx holding identity, as Middleware stores
+// it.
+func WithIdentity(ctx context.Context, identity Identity) context.Context {
+	return context.WithValue(ctx, identityKey{}, identity)
+}
 
 // IdentityFrom returns the identity Middleware stored in ctx.
 func IdentityFrom(ctx context.Context) (Identity, bool) {
@@ -264,7 +274,7 @@ func (a *Authenticator) Middleware(next http.Handler, requireSession bool) http.
 			identity.Workspace = claimedPrefix + workspace
 		}
 
-		next.ServeHTTP(writer, request.WithContext(context.WithValue(request.Context(), identityKey{}, identity)))
+		next.ServeHTTP(writer, request.WithContext(WithIdentity(request.Context(), identity)))
 	})
 }
 
@@ -312,7 +322,14 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 	}
 
 	if a.accounts != nil && issuer != a.issuer {
-		return a.accounts.verify(request.Context(), token)
+		identity, refusal := a.accounts.verify(request.Context(), token)
+		if refusal == nil {
+			// TokenReview accepted the token, so its expiry claim is the
+			// API server's.
+			identity.Expiry = unverifiedExpiry(token)
+		}
+
+		return identity, refusal
 	}
 
 	verified, err := a.verifier.Verify(request.Context(), token)
@@ -332,6 +349,8 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, *Refusal)
 	if err != nil {
 		return Identity{}, &Refusal{Reason: "invalid claims", Issuer: verified.Issuer, Audience: verified.Audience}
 	}
+
+	identity.Expiry = verified.Expiry
 
 	return identity, nil
 }

@@ -235,6 +235,22 @@ func tokenExpiry(token string, now time.Time) time.Time {
 	return limit
 }
 
+// unverifiedExpiry reads the expiry claim of a token that was already
+// verified, or zero when it has none.
+func unverifiedExpiry(token string) time.Time {
+	parsed, err := jwt.ParseSigned(token, tokenAlgorithms)
+	if err != nil {
+		return time.Time{}
+	}
+
+	var claims jwt.Claims
+	if err := parsed.UnsafeClaimsWithoutVerification(&claims); err != nil || claims.Expiry == nil {
+		return time.Time{}
+	}
+
+	return claims.Expiry.Time()
+}
+
 // splitServiceAccount splits `system:serviceaccount:<ns>:<name>`.
 func splitServiceAccount(username string) (namespace, name string, ok bool) {
 	rest, found := strings.CutPrefix(username, serviceAccountPrefix)

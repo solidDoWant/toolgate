@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/solidDoWant/toolgate/internal/apidoc"
+	"github.com/solidDoWant/toolgate/internal/audittail"
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/sessionsapi"
 	"github.com/solidDoWant/toolgate/internal/settings"
@@ -29,6 +30,7 @@ func TestOperationsAreExactlyTheRegisteredAPIRoutes(t *testing.T) {
 	secrets.NewAPI(nil, nil, nil).Register(mux, passThrough)
 	(&settings.Handler{}).Register(mux, passThrough)
 	(&sessionsapi.Handler{}).Register(mux, passThrough)
+	audittail.New(audittail.Options{}).Register(mux, passThrough)
 
 	var routes []string
 
@@ -54,7 +56,7 @@ func TestBuildDocumentsEveryOperation(t *testing.T) {
 	require.NoError(t, err)
 
 	text := string(document)
-	for _, path := range []string{"/api/v1/secrets/{name}:", "/api/v1/secrets:", "/api/v1/settings:", "/api/v1/sessions:"} {
+	for _, path := range []string{"/api/v1/secrets/{name}:", "/api/v1/secrets:", "/api/v1/settings:", "/api/v1/sessions:", "/api/v1/audit/tail:"} {
 		assert.Contains(t, text, path)
 	}
 }

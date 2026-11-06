@@ -47,6 +47,8 @@ type Server struct {
 
 	listener        net.Listener
 	metricsListener net.Listener
+
+	onShutdown []func()
 }
 
 // New builds the gateway from cfg. It does not connect to PostgreSQL: the
@@ -106,6 +108,12 @@ func (s *Server) PublicRoutes() []string {
 // authenticate the request itself.
 func (s *Server) Handle(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, handler)
+}
+
+// RegisterOnShutdown registers f to run when the main port starts to shut
+// down, as http.Server.RegisterOnShutdown. Call it before Serve.
+func (s *Server) RegisterOnShutdown(f func()) {
+	s.onShutdown = append(s.onShutdown, f)
 }
 
 // Database returns the gateway's PostgreSQL connection pool. Serve closes
@@ -172,6 +180,10 @@ func (s *Server) Serve(ctx context.Context) error {
 		ReadHeaderTimeout: readHeaderTimeout,
 		MaxHeaderBytes:    maxHeaderBytes,
 		ErrorLog:          slog.NewLogLogger(s.logger.Handler(), slog.LevelWarn),
+	}
+
+	for _, f := range s.onShutdown {
+		mainServer.RegisterOnShutdown(f)
 	}
 
 	metricsServer := &http.Server{

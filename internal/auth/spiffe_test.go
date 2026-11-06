@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -201,12 +202,14 @@ func TestSVIDBuildsAttestedIdentity(t *testing.T) {
 	endpoint := startBundleEndpoint(t, "allowed.test", key)
 	f := newSPIFFEFixture(t, &fakeClock{now: time.Now()}, endpoint.trustDomainConfig())
 
-	token := key.sign(t, svidClaims{subject: allowedID})
+	expiry := time.Now().Add(23 * time.Minute).Truncate(time.Second)
+	token := key.sign(t, svidClaims{subject: allowedID, expiry: expiry})
 	waitForBundle(t, f, token)
 
 	// The workspace header doesn't change an attested workspace.
 	response := f.do(t, token, map[string]string{auth.WorkspaceHeader: "other"})
 	require.Equal(t, http.StatusOK, response.Code)
+	assert.Equal(t, strconv.FormatInt(expiry.Unix(), 10), response.Header().Get("X-Test-Expiry"))
 
 	var identity auth.Identity
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &identity))

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/solidDoWant/toolgate/internal/apidoc"
+	"github.com/solidDoWant/toolgate/internal/audittail"
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/sessionsapi"
 	"github.com/solidDoWant/toolgate/internal/settings"
@@ -19,6 +20,7 @@ func Operations() []apidoc.Operation {
 	operations = append(operations, secrets.Operations...)
 	operations = append(operations, settings.Operations...)
 	operations = append(operations, sessionsapi.Operations...)
+	operations = append(operations, audittail.Operations...)
 
 	return operations
 }
