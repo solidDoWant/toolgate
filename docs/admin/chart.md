@@ -10,6 +10,7 @@ The chart installs these objects:
 
 - The three toolgate CRDs: `MCPServerTemplate`, `ToolgateRule` and `SettingsProfile`.
 - A Deployment with two gateway pods, a Service for them, and a second Service for their metrics.
+- A migration Job with its own ServiceAccount and NetworkPolicy, only in the split database mode (see below).
 - A PodDisruptionBudget that keeps at least one gateway pod running when Kubernetes drains a node. A PodDisruptionBudget is a limit on how many pods Kubernetes can evict at the same time.
 - A ServiceMonitor for the metrics Service, if you set `config.serviceMonitor.enabled` to `true`. The Prometheus Operator must be installed.
 - A ServiceAccount for the gateway.
@@ -127,6 +128,61 @@ toolgate does not rename the objects of a template. Several instances share this
 - Each `metadata.name` contains `${instance.id}`, and `endpoint.service` contains it too.
 - The selectors contain `toolgate.soliddowant.dev/instance: ${instance.id}`. This applies to `spec.selector` of a Service, `spec.selector.matchLabels` and `spec.template.metadata.labels` of a Deployment or StatefulSet, and `spec.podSelector.matchLabels` of a NetworkPolicy.
 - The template contains only these kinds: Pod, Deployment, StatefulSet, Service, ConfigMap, Secret, ServiceAccount, NetworkPolicy and PersistentVolumeClaim. toolgate cannot check the names and selectors of other kinds, such as `CiliumNetworkPolicy` or `HelmRelease`.
+
+## Database rights and the migration Job
+
+The gateway keeps its state in PostgreSQL and creates its tables itself. You can run it in one of two modes.
+
+**Single role (the default).** `config.database.migrateOnStart` is `true`. The gateway connects with one database role, and creates and updates its tables when it starts. That role needs the right to create tables. The chart installs no Job.
+
+**Split roles.** The gateway connects with a role that can only read and write data. A second role owns the tables and runs the migrations. To use it:
+
+1. Create the two roles, a schema and the default privileges. This SQL does it, as a PostgreSQL superuser, in the database for toolgate. Give both roles a way to sign in that fits your setup, such as a password, and make the connection string of each:
+
+   ```sql
+   CREATE ROLE toolgate_migrator LOGIN;
+   CREATE ROLE toolgate_app LOGIN;
+   CREATE SCHEMA toolgate AUTHORIZATION toolgate_migrator;
+   ALTER ROLE toolgate_migrator SET search_path = toolgate;
+   ALTER ROLE toolgate_app SET search_path = toolgate;
+   GRANT USAGE ON SCHEMA toolgate TO toolgate_app;
+   ALTER DEFAULT PRIVILEGES FOR ROLE toolgate_migrator IN SCHEMA toolgate
+     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO toolgate_app;
+   ALTER DEFAULT PRIVILEGES FOR ROLE toolgate_migrator IN SCHEMA toolgate
+     GRANT USAGE, SELECT ON SEQUENCES TO toolgate_app;
+   ALTER DEFAULT PRIVILEGES FOR ROLE toolgate_migrator IN SCHEMA toolgate
+     GRANT EXECUTE ON FUNCTIONS TO toolgate_app;
+   ```
+
+2. Put each connection string in a Secret in the release namespace.
+3. Set these values:
+
+   ```yaml
+   config:
+     database:
+       existingSecret: toolgate-app        # the toolgate_app role
+       migrateOnStart: false
+       migrationSecret: toolgate-migrator  # the toolgate_migrator role
+       migrationEgress:                    # NetworkPolicy egress rules that reach PostgreSQL
+         - to:
+             - namespaceSelector:
+                 matchLabels:
+                   kubernetes.io/metadata.name: databases
+           ports:
+             - protocol: TCP
+               port: 5432
+   ```
+
+If you already have a database that one role owns, move it to the split mode with these steps, with the same default privileges as above. Use `REASSIGN OWNED BY old_role TO toolgate_migrator`, then `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA toolgate TO toolgate_app` and `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA toolgate TO toolgate_app`. Do not grant `EXECUTE` on a function by name: the audit partition function does not exist until the Job runs, and the default privilege for functions covers it.
+
+When `migrationSecret` is set and `migrateOnStart` is `false`, the chart adds three objects: a ServiceAccount with no permissions, a NetworkPolicy and a Job named `<release>-migrate` that runs `toolgate migrate`. The NetworkPolicy allows no ingress, and allows egress to DNS (port 53) and to `migrationEgress`. The chart fails with a message that names `config.database.migrationEgress` if you leave it empty.
+
+These are Helm hooks (`pre-install` and `pre-upgrade`). Helm and the Flux helm-controller run them before they apply the other objects, and wait for the Job. So the new gateway pods start only after the migrations. If the Job fails, the install or upgrade fails and the old pods keep serving. Helm deletes the objects after the Job succeeds.
+
+- **Hooks need Helm or Flux.** `helm template | kubectl apply` does not run hooks, so nothing migrates. In that case run `toolgate migrate` yourself before each upgrade.
+- **The deadline.** The Job stops after 240 seconds. The default timeout of the helm-controller is 5 minutes, so the Job fails before Flux gives up. If you set a longer `spec.timeout` on the HelmRelease, you must also raise `activeDeadlineSeconds` under `resources.controllers.migrate.job`.
+- **Mounts.** The Job mounts nothing from the release, because the release's ConfigMap and Secrets do not exist yet when it runs. If the Job needs a file, such as a client certificate for PostgreSQL, mount it with `resources.persistence.<name>.advancedMounts.migrate`. Mount files for the gateway, such as a resolver `caFile`, with `advancedMounts.gateway.gateway`. A `globalMounts` entry also mounts the file into the Job.
+- **No migration Secret.** If `migrateOnStart` is `false` and `migrationSecret` is empty, nothing migrates. The gateway refuses to start while the schema is older than it needs, and its log says so. Run `toolgate migrate` yourself.
 
 ## CRD upgrades
 

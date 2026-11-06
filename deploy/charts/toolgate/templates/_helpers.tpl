@@ -19,6 +19,14 @@ so two releases in different namespaces don't collide.
 {{- default (include "toolgate.fullname" .) .Values.config.serviceAccount.name -}}
 {{- end -}}
 
+{{/*
+"true" when the migration hook Job renders: a migration Secret is set and the
+gateway doesn't migrate on start. Empty otherwise.
+*/}}
+{{- define "toolgate.migrateJobEnabled" -}}
+{{- if and .Values.config.database.migrationSecret (not .Values.config.database.migrateOnStart) -}}true{{- end -}}
+{{- end -}}
+
 {{- define "toolgate.selectorLabels" -}}
 app.kubernetes.io/name: {{ .Chart.Name }}
 app.kubernetes.io/instance: {{ .Release.Name }}

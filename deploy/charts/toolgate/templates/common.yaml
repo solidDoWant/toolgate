@@ -26,6 +26,9 @@ settings from `config`.
 {{- if and .audit.payloads (not .audit.s3.bucket) }}
 {{- fail "config.audit.s3.bucket is required when config.audit.payloads is true" }}
 {{- end }}
+{{- if and (include "toolgate.migrateJobEnabled" $) (not .database.migrationEgress) }}
+{{- fail "config.database.migrationEgress is required when the migration Job renders (config.database.migrationSecret is set and config.database.migrateOnStart is false): NetworkPolicy egress rules that reach PostgreSQL" }}
+{{- end }}
 {{- end }}
 
 {{- $resources := mustDeepCopy .Values.resources -}}
@@ -37,6 +40,7 @@ settings from `config`.
   (dict "name" "TOOLGATE_LISTEN_ADDRESS" "value" ":8080")
   (dict "name" "TOOLGATE_METRICS_LISTEN_ADDRESS" "value" ":9090")
   (dict "name" "TOOLGATE_DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $config.database.existingSecret "key" $config.database.secretKey)))
+  (dict "name" "TOOLGATE_MIGRATE_ON_START" "value" (toString $config.database.migrateOnStart))
   (dict "name" "TOOLGATE_OIDC_ISSUER_URL" "value" $config.oidc.issuerURL)
   (dict "name" "TOOLGATE_OIDC_AUDIENCE" "value" $config.oidc.audience)
 -}}
@@ -119,12 +123,17 @@ resolver gets its own projected service-account token with its audience.
 {{- $_ := set $gateway "args" (concat ($gateway.args | default list) (list "--config" "/etc/toolgate/config.yaml")) }}
 {{- $_ := set $resources "configMaps" (merge ($resources.configMaps | default dict) (dict "config" (dict "data" (dict "config.yaml" (toYaml $file))))) }}
 {{- $persistence := $resources.persistence | default dict }}
-{{- $_ := set $persistence "config" (dict "type" "configMap" "identifier" "config" "globalMounts" (list (dict "path" "/etc/toolgate/config.yaml" "subPath" "config.yaml" "readOnly" true))) }}
+{{- $_ := set $persistence "config" (dict "type" "configMap" "identifier" "config" "advancedMounts" (dict "gateway" (dict "gateway" (list (dict "path" "/etc/toolgate/config.yaml" "subPath" "config.yaml" "readOnly" true))))) }}
 {{- range $resolver := ($config.resolvers | default list) }}
 {{- $token := dict "serviceAccountToken" (dict "audience" $resolver.audience "expirationSeconds" 600 "path" "token") }}
-{{- $_ := set $persistence (printf "resolver-%s" $resolver.name) (dict "type" "custom" "volumeSpec" (dict "projected" (dict "sources" (list $token))) "globalMounts" (list (dict "path" (printf "/var/run/secrets/toolgate/resolvers/%s" $resolver.name) "readOnly" true))) }}
+{{- $_ := set $persistence (printf "resolver-%s" $resolver.name) (dict "type" "custom" "volumeSpec" (dict "projected" (dict "sources" (list $token))) "advancedMounts" (dict "gateway" (dict "gateway" (list (dict "path" (printf "/var/run/secrets/toolgate/resolvers/%s" $resolver.name) "readOnly" true))))) }}
 {{- end }}
 {{- $_ := set $resources "persistence" $persistence }}
+{{- end }}
+
+{{- if include "toolgate.migrateJobEnabled" . }}
+{{- $policy := index $resources "rawResources" "migrate-networkpolicy" "manifest" "spec" }}
+{{- $_ := set $policy "egress" (concat $policy.egress $config.database.migrationEgress) }}
 {{- end }}
 
 {{- with $config.imagePullSecrets }}

@@ -23,6 +23,24 @@ config:
     # -- Key in `config.database.existingSecret` that holds the connection
     # string.
     secretKey: url
+    # -- Whether the gateway creates and updates its tables when it starts.
+    # Set false when the gateway's database user has data rights only. Then
+    # run the migrations with `config.database.migrationSecret`, or run
+    # `toolgate migrate` yourself.
+    migrateOnStart: true
+    # -- Name of an existing Secret in the release namespace that holds the
+    # connection string of the database role that owns the tables. When it is
+    # set and `config.database.migrateOnStart` is false, a Helm hook Job runs
+    # `toolgate migrate` with it before every install and upgrade. Hooks need
+    # Helm or Flux: `helm template | kubectl apply` skips them.
+    migrationSecret: ""
+    # -- Key in `config.database.migrationSecret` that holds the connection
+    # string.
+    migrationSecretKey: url
+    # -- Egress rules (the `egress` list of a Kubernetes `NetworkPolicy`) that
+    # let the migration Job reach PostgreSQL. Required when the Job renders.
+    # The chart adds DNS (port 53) itself.
+    migrationEgress: []
 
   oidc:
     # -- Issuer URL of the OIDC identity provider that users sign in with,
@@ -275,6 +293,52 @@ resources:
               memory: 256Mi
             limits:
               memory: 256Mi
+    # The migration Job. It renders only when `config.database.migrationSecret`
+    # is set and `config.database.migrateOnStart` is false. It mounts nothing
+    # from the release, because the release's ConfigMap and Secrets don't exist
+    # yet when it runs. Mount client certificates with
+    # `resources.persistence.<name>.advancedMounts.migrate`.
+    migrate:
+      enabled: '{{ include "toolgate.migrateJobEnabled" . }}'
+      type: job
+      annotations:
+        helm.sh/hook: pre-install,pre-upgrade
+        helm.sh/hook-weight: "0"
+        helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+      serviceAccount:
+        identifier: migrate
+      job:
+        backoffLimit: 2
+        activeDeadlineSeconds: 240
+      pod:
+        restartPolicy: Never
+        automountServiceAccountToken: false
+      containers:
+        migrate:
+          image:
+            repository: "{{ .Values.config.image.repository }}"
+            tag: "{{ .Values.config.image.tag | default .Chart.AppVersion }}"
+            pullPolicy: "{{ .Values.config.image.pullPolicy }}"
+          args:
+            - migrate
+          env:
+            - name: TOOLGATE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.config.database.migrationSecret }}"
+                  key: "{{ .Values.config.database.migrationSecretKey }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 256Mi
   service:
     gateway:
       controller: gateway
@@ -295,6 +359,16 @@ resources:
   serviceAccount:
     gateway:
       forceRename: '{{ include "toolgate.serviceAccountName" . }}'
+    # The migration Job's service account, with no RBAC. The release's own
+    # service account doesn't exist yet at install.
+    migrate:
+      enabled: '{{ include "toolgate.migrateJobEnabled" . }}'
+      forceRename: '{{ include "toolgate.fullname" . }}-migrate'
+      automountServiceAccountToken: false
+      annotations:
+        helm.sh/hook: pre-install,pre-upgrade
+        helm.sh/hook-weight: "-20"
+        helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   serviceMonitor:
     gateway:
       enabled: "{{ .Values.config.serviceMonitor.enabled }}"
@@ -306,6 +380,30 @@ resources:
       endpoints:
         - port: metrics
   rawResources:
+    # Confines the migration Job's pods: no ingress, DNS and
+    # `config.database.migrationEgress` out (templates/common.yaml adds it).
+    migrate-networkpolicy:
+      enabled: '{{ include "toolgate.migrateJobEnabled" . }}'
+      forceRename: '{{ include "toolgate.fullname" . }}-migrate'
+      manifest:
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        metadata:
+          annotations:
+            helm.sh/hook: pre-install,pre-upgrade
+            helm.sh/hook-weight: "-10"
+            helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+        spec:
+          policyTypes: [Ingress, Egress]
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: "{{ .Chart.Name }}"
+              app.kubernetes.io/instance: "{{ .Release.Name }}"
+              app.kubernetes.io/controller: migrate
+          egress:
+            - ports:
+                - {protocol: UDP, port: 53}
+                - {protocol: TCP, port: 53}
     gateway-pdb:
       forceRename: '{{ include "toolgate.fullname" . }}'
       manifest:

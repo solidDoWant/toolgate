@@ -22,7 +22,7 @@ Each item has these fields:
 - `name`: the trust domain.
 - `bundleEndpointURL`: the SPIFFE bundle endpoint of the trust domain, with the `https_web` profile. The SPIRE server serves it when you turn on its federation bundle endpoint.
 - `jwksURL`: a JWKS document, such as the one that the SPIRE OIDC discovery provider serves. Set it instead of `bundleEndpointURL`.
-- `caFile`: optional. A PEM file of private certificate authorities that the gateway adds to the system ones. Mount the file with `resources.persistence`.
+- `caFile`: optional. A PEM file of private certificate authorities that the gateway adds to the system ones. Mount the file with `resources.persistence` and `advancedMounts.gateway.gateway`.
 
 Set exactly one of `bundleEndpointURL` and `jwksURL`. Both must be `https://` URLs.
 

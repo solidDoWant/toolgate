@@ -12,7 +12,7 @@ The web UI uses its own OIDC client. It is not the client of `toolgate login`, b
 2. Set its redirect URI to the public URL of the gateway plus `/ui/auth/callback`, for example `https://toolgate.example.com/ui/auth/callback`.
 3. Make the IdP put the email, the email-verified and the groups claims in the ID token. The UI reads the user from the ID token only.
 4. Set `config.ui.publicURL` and `config.ui.clientID` in the chart values.
-5. If the client is confidential (it has a secret), mount the secret from a Kubernetes Secret with `persistence`, and set `config.ui.clientSecretFile` to the path of the file.
+5. If the client is confidential (it has a secret), mount the secret from a Kubernetes Secret with `resources.persistence` and `advancedMounts.gateway.gateway`, and set `config.ui.clientSecretFile` to the path of the file.
 
 The public URL must start with `https://`. The UI cookies use the `__Host-` prefix, and a browser keeps them only on a secure origin.
 
