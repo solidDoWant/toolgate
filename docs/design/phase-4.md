@@ -2,7 +2,7 @@
 
 This document decides the behaviour `SPEC.md` leaves open for phase 4. It adds to `docs/design/phase-1.md`, `docs/design/phase-2.md` and `docs/design/phase-3.md`, which still hold unless a section here says otherwise. Where they disagree, stop and ask (`HANDOFF: question`). Workers implement it and never change its rules. The operator and owner change it.
 
-The target is `docs/acceptance/phase-4.md`: AC-4-12 and AC-4-13 (tool catalog and lazy start), AC-4-01 to AC-4-03 (tool search), AC-4-04 and AC-4-05 (curation), AC-4-14 to AC-4-17 (delegated access), AC-4-11 (unverified allow list), AC-4-07 and AC-4-08 (MCP revisions), AC-4-09 and AC-4-10 (connectors) and AC-4-06 (release).
+The target is `docs/acceptance/phase-4.md`: AC-4-12 and AC-4-13 (tool catalog and lazy start), AC-4-01 to AC-4-03 and AC-4-18 (tool search), AC-4-04 and AC-4-05 (curation), AC-4-14 to AC-4-17 (delegated access), AC-4-11 (unverified allow list), AC-4-07 and AC-4-08 (MCP revisions), AC-4-09 and AC-4-10 (connectors) and AC-4-06 (release).
 
 Words used in this document:
 - **Tool catalog:** the tool list toolgate keeps for each server template, so it can list and search a server's tools while nothing runs. It isn't the template catalog of phase 1, which is the set of `MCPServerTemplate` objects.
@@ -257,6 +257,23 @@ AC-4-03. The fixture is `test/fixtures/toolsearch/`:
 One agent writes the fixture and opens it in its own PR before any ranking code merges. The search worker may not change it. So the fixture isn't fitted to the ranking.
 
 The AC-4-03 test is an integration test. It loads the fixture through the real rebuild code into PostgreSQL and runs every task through the real search, **with embeddings configured**. In CI, the embeddings endpoint is Hugging Face text-embeddings-inference (CPU image from `ghcr.io/huggingface/text-embeddings-inference`, pinned by digest) with `BAAI/bge-small-en-v1.5`, cached between runs. The test passes when the expected tool is in the top 5 for at least 90 percent of the tasks. It also prints the full-text-only score for information, which doesn't gate. If hybrid search misses the bar, the worker hands back with the per-task misses and doesn't add words or change the fixture.
+
+### Search quality in use
+
+AC-4-18, added by the owner on 2026-11-06. No MCP client tells a server whether a search result was right, so toolgate infers it from what the session does next. The query text is never stored or logged.
+
+- **Search event.** Each `toolgate_find_tools` call gets a `search_id` (UUIDv7). The gateway writes the audit event `tool.search` with `search_id`, the session, the returned tools as (server, upstream name, rank 1 to N), `degraded` (embeddings unavailable), `reranked`, and the result count. It stores the same list in `session_found_tools`, which gains `search_id` and `rank`. A newer search replaces the session's "latest search" pointer, `sessions.last_search_id`.
+- **Hit.** When a call's step 2 decides a tool that is in the session's latest search, the gateway writes `tool.search_hit` with `search_id`, the tool and its rank, once per search. It does this in the call's decision transaction, before forwarding, whatever the policy outcome.
+- **Re-search.** A new search while the latest search has no hit counts as a re-search of the previous one.
+- **No follow-up.** A search with no hit and no newer search when the session ends, or after 30 minutes, counts as "no call". The leader's 30 s pass marks these, so the metrics don't depend on which replica served the search.
+- **Metrics.**
+  - `toolgate_tool_search_total{degraded,reranked}`
+  - `toolgate_tool_search_hits_total{rank,degraded,reranked}`
+  - `toolgate_tool_search_researches_total{degraded,reranked}`
+  - `toolgate_tool_search_no_call_total{degraded,reranked}`
+
+  There are no per-server or per-user labels, to keep cardinality bounded. Per-server hit rates come from the audit log (`server` on `tool.search_hit`).
+- **Docs.** `docs/admin/tool-search.md` explains the metrics, gives example PromQL for top-1 and top-5 hit rates and the re-search rate, and says which servers need better descriptions (low hit rate in the audit log).
 
 ## 6. Tool curation
 
@@ -623,6 +640,9 @@ Phase 1's rows (phase 1 §4), phase 2's rows (phase 2 §10) and phase 3's rows (
 | 255 | Embeddings endpoint down, slow or erroring | search | The search uses full-text only, writes a metric, and answers. | unit |
 | 256 | Embeddings model changed in the setting | rows embedded with the old model | The next rebuild embeds them again. Until then, those rows rank by full-text only. | integration |
 | 257 | No embeddings setting | — | Full-text only, as before. No call is made. | unit |
+| 258 | Session calls a tool from its latest search | latest search, no hit yet | `tool.search_hit` with its rank, once per search, written before forwarding | integration |
+| 259 | Session searches again before calling a returned tool | latest search, no hit | The previous search counts as a re-search, and the pointer moves to the new search | integration |
+| 260 | Search with no hit, session ends or 30 min pass | — | The leader counts it as "no call", once | integration |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
