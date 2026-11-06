@@ -283,7 +283,7 @@ func TestTemporaryBlocks(t *testing.T) {
 
 		var terminated int
 		require.NoError(t, fixture.pool.QueryRow(t.Context(),
-			"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE query LIKE 'LISTEN%' AND pid <> pg_backend_pid()) AS t").Scan(&terminated))
+			"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%' AND pid <> pg_backend_pid()) AS t").Scan(&terminated))
 		require.Positive(t, terminated)
 
 		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, policyChangeBound, 10*time.Millisecond,

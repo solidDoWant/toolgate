@@ -110,11 +110,12 @@ func TestAuditPartitionKeeperLogsAndCountsFailures(t *testing.T) {
 	ctx := t.Context()
 
 	// A role without EXECUTE on the function: every call fails.
-	_, err := admin.Exec(ctx, "CREATE ROLE no_execute LOGIN")
+	role := pg.RoleName("no_execute")
+	_, err := admin.Exec(ctx, "CREATE ROLE "+pgx.Identifier{role}.Sanitize()+" LOGIN")
 	require.NoError(t, err)
 
-	certFile, keyFile := pg.IssueClientCert(t, "no_execute")
-	pool := openPool(t, pg.ConnStringFor("no_execute", certFile, keyFile))
+	certFile, keyFile := pg.IssueClientCert(t, role)
+	pool := openPool(t, pg.ConnStringFor(role, certFile, keyFile))
 
 	logs := &syncBuffer{}
 	keeper := store.NewAuditPartitionKeeper(pool, slog.New(slog.NewJSONHandler(logs, nil)))
@@ -134,12 +135,14 @@ func TestAuditPartitionFunctionWorksForRoleWithoutDDLRights(t *testing.T) {
 	pg, admin := migratedPool(t)
 	ctx := t.Context()
 
+	role := pgx.Identifier{pg.RoleName("data_only")}.Sanitize()
+
 	for _, statement := range []string{
 		"REVOKE CREATE ON SCHEMA public FROM PUBLIC",
-		"CREATE ROLE data_only LOGIN",
-		"GRANT USAGE ON SCHEMA public TO data_only",
-		"GRANT SELECT, INSERT ON audit_events TO data_only",
-		"GRANT EXECUTE ON FUNCTION toolgate_ensure_audit_partitions() TO data_only",
+		"CREATE ROLE " + role + " LOGIN",
+		"GRANT USAGE ON SCHEMA public TO " + role,
+		"GRANT SELECT, INSERT ON audit_events TO " + role,
+		"GRANT EXECUTE ON FUNCTION toolgate_ensure_audit_partitions() TO " + role,
 	} {
 		_, err := admin.Exec(ctx, statement)
 		require.NoError(t, err, statement)
@@ -147,8 +150,8 @@ func TestAuditPartitionFunctionWorksForRoleWithoutDDLRights(t *testing.T) {
 
 	dropCurrentPartitions(t, admin)
 
-	certFile, keyFile := pg.IssueClientCert(t, "data_only")
-	pool := openPool(t, pg.ConnStringFor("data_only", certFile, keyFile))
+	certFile, keyFile := pg.IssueClientCert(t, pg.RoleName("data_only"))
+	pool := openPool(t, pg.ConnStringFor(pg.RoleName("data_only"), certFile, keyFile))
 
 	err := store.CreateAuditPartitions(ctx, pool, time.Now())
 	require.ErrorContains(t, err, "permission denied", "the role can't create tables itself")
