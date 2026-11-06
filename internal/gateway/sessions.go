@@ -85,6 +85,7 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity) (sess
 			SessionID:   identity.Session,
 			Workspace:   identity.Workspace,
 			Attestation: identity.Attestation,
+			Kind:        identity.Kind,
 			Email:       identity.Email,
 			Groups:      snapshotGroups(identity),
 		})
@@ -129,6 +130,7 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 			ID:          id,
 			Workspace:   identity.Workspace,
 			Attestation: identity.Attestation,
+			Kind:        identity.Kind,
 		})
 		if err != nil {
 			return fmt.Errorf("restart session: %w", err)
@@ -152,6 +154,7 @@ func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity
 			SessionID:   identity.Session,
 			Workspace:   session.Workspace,
 			Attestation: session.Attestation,
+			Kind:        session.Kind,
 			Email:       identity.Email,
 			Groups:      groups,
 		})

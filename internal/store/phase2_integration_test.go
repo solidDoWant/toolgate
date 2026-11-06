@@ -63,7 +63,7 @@ func newSession(t *testing.T, queries *db.Queries, principal string) int64 {
 	t.Helper()
 
 	session, err := queries.UpsertSession(t.Context(), db.UpsertSessionParams{
-		Principal: principal, SessionID: "s-" + principal, Workspace: "repo", Attestation: "user", Groups: []string{},
+		Principal: principal, SessionID: "s-" + principal, Workspace: "repo", Attestation: "user", Kind: "user", Groups: []string{},
 	})
 	require.NoError(t, err)
 
@@ -152,9 +152,10 @@ func TestPhase2MigrationKeepsPhase1Rows(t *testing.T) {
 
 	snapshot := func() string {
 		var rows string
+		// sessions.kind came with a later migration; its own test checks it.
 		require.NoError(t, pool.QueryRow(ctx, `SELECT
 			(SELECT json_agg(json_build_object('id', id, 'status', status, 'updated_at', updated_at, 'trace', trace_context)) FROM instances) || '' ||
-			(SELECT json_agg(to_jsonb(sessions)) FROM sessions)`).Scan(&rows))
+			(SELECT json_agg(to_jsonb(sessions) - 'kind') FROM sessions)`).Scan(&rows))
 
 		return rows
 	}

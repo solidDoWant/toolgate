@@ -107,12 +107,20 @@ func (f *stopFixture) template(name, scope string, idleStop time.Duration, acces
 	return template
 }
 
-// session creates a session with an identity snapshot.
+// session creates a session with a user's identity snapshot.
 func (f *stopFixture) session(t *testing.T, principal, sessionID, email string, groups ...string) db.Session {
 	t.Helper()
 
+	return f.sessionOf(t, principal, sessionID, "claimed/default", "user", "user", email, groups...)
+}
+
+// sessionOf creates a session with an identity snapshot of the given
+// workspace, attestation and kind.
+func (f *stopFixture) sessionOf(t *testing.T, principal, sessionID, workspace, attestation, kind, email string, groups ...string) db.Session {
+	t.Helper()
+
 	session, err := f.queries.UpsertSession(t.Context(), db.UpsertSessionParams{
-		Principal: principal, SessionID: sessionID, Workspace: "claimed/default", Attestation: "user",
+		Principal: principal, SessionID: sessionID, Workspace: workspace, Attestation: attestation, Kind: kind,
 		Email: email, Groups: append([]string{}, groups...),
 	})
 	require.NoError(t, err)
@@ -344,6 +352,22 @@ func TestStopDecisions(t *testing.T) {
 		fixture.session(t, "access-user", "s2", "")
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+	})
+
+	t.Run("an attested user's snapshot is judged as a user whatever its principal looks like", func(t *testing.T) {
+		const principal = "system:serviceaccount:team:attested-user"
+
+		userAccess := fixture.template("kind-users", "per-user", time.Hour, v1alpha1.Access{Users: []string{principal}})
+		serviceAccountAccess := fixture.template("kind-service-accounts", "per-user", time.Hour, v1alpha1.Access{ServiceAccounts: []string{principal}})
+		session := fixture.sessionOf(t, principal, "s1", "coder/alice/w", "attested", "user", "")
+		fixture.enable(t, session, userAccess)
+		fixture.enable(t, session, serviceAccountAccess)
+		kept := fixture.instance(t, userAccess, "user:"+principal, principal, "ready")
+		stopped := fixture.instance(t, serviceAccountAccess, "user:"+principal, principal, "ready")
+
+		fixture.pass(t)
+		fixture.requireRunning(t, kept)
+		fixture.requireTornDown(t, stopped)
 	})
 
 	t.Run("[row 13] a per-session instance stops once its session's enabled rows are gone", func(t *testing.T) {

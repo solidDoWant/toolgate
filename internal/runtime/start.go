@@ -374,6 +374,7 @@ func (s *Starter) identity(ctx context.Context, instance db.Instance) (Identity,
 		PrincipalName:   session.Name,
 		PrincipalGroups: session.Groups,
 		WorkspaceID:     session.Workspace,
+		Kind:            session.Kind,
 		Attested:        session.Attestation == auth.AttestationAttested,
 		SessionID:       session.SessionID,
 	}, nil

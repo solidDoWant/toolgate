@@ -73,19 +73,19 @@ func TestGrantCreationRules(t *testing.T) {
 	fixture := startGrants(t)
 
 	_, err := db.New(fixture.pool).CreateSession(t.Context(), db.CreateSessionParams{
-		Principal: grantUser.Principal, SessionID: "open-session", Workspace: "w", Attestation: auth.AttestationUser, Groups: []string{},
+		Principal: grantUser.Principal, SessionID: "open-session", Workspace: "w", Attestation: auth.AttestationUser, Kind: auth.KindUser, Groups: []string{},
 	})
 	require.NoError(t, err)
 
 	ended, err := db.New(fixture.pool).CreateSession(t.Context(), db.CreateSessionParams{
-		Principal: grantUser.Principal, SessionID: "ended-session", Workspace: "w", Attestation: auth.AttestationUser, Groups: []string{},
+		Principal: grantUser.Principal, SessionID: "ended-session", Workspace: "w", Attestation: auth.AttestationUser, Kind: auth.KindUser, Groups: []string{},
 	})
 	require.NoError(t, err)
 	_, err = fixture.pool.Exec(t.Context(), "UPDATE sessions SET ended_at = now() WHERE id = $1", ended.ID)
 	require.NoError(t, err)
 
 	_, err = db.New(fixture.pool).CreateSession(t.Context(), db.CreateSessionParams{
-		Principal: "frank", SessionID: "franks-session", Workspace: "w", Attestation: auth.AttestationUser, Groups: []string{},
+		Principal: "frank", SessionID: "franks-session", Workspace: "w", Attestation: auth.AttestationUser, Kind: auth.KindUser, Groups: []string{},
 	})
 	require.NoError(t, err)
 
