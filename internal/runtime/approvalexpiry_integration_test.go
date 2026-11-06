@@ -73,3 +73,60 @@ func TestApprovalExpiry(t *testing.T) {
 	require.NoError(t, expirer.Run(t.Context()))
 	assert.Equal(t, []string{overdue}, expires(t), "an expired approval isn't expired again")
 }
+
+func TestAccessRequestExpiry(t *testing.T) {
+	fixture := newStopFixture(t)
+
+	insert := func(t *testing.T, id string, ago time.Duration) {
+		t.Helper()
+
+		_, err := fixture.pool.Exec(t.Context(), `INSERT INTO access_requests (id, principal, kind, workspace, verified, change, created_at, expires_at)
+			VALUES ($1, 'requester', 'change', 'coder/requester/dev', true, '{"action":"allow"}', now() - interval '1 hour', now() - make_interval(secs => $2))`,
+			id, ago.Seconds())
+		require.NoError(t, err)
+	}
+
+	status := func(t *testing.T, id string) string {
+		t.Helper()
+
+		var value string
+		require.NoError(t, fixture.pool.QueryRow(t.Context(), `SELECT status FROM access_requests WHERE id = $1`, id).Scan(&value))
+
+		return value
+	}
+
+	expires := func(t *testing.T) []string {
+		t.Helper()
+
+		rows, err := fixture.pool.Query(t.Context(), `SELECT details->>'request' FROM audit_events WHERE type = 'access.expire' ORDER BY id`)
+		require.NoError(t, err)
+
+		defer rows.Close()
+
+		var ids []string
+
+		for rows.Next() {
+			var id string
+			require.NoError(t, rows.Scan(&id))
+			ids = append(ids, id)
+		}
+
+		return ids
+	}
+
+	overdue := "00000000000000000000000000000011"
+	recent := "00000000000000000000000000000012"
+
+	insert(t, overdue, time.Minute+5*time.Second)
+	insert(t, recent, 30*time.Second)
+
+	expirer := &runtime.ApprovalExpirer{Pool: fixture.pool}
+	require.NoError(t, expirer.Run(t.Context()))
+
+	assert.Equal(t, "expired", status(t, overdue), "a request more than 1 minute past expires_at expires")
+	assert.Equal(t, "pending", status(t, recent), "a request less than 1 minute past expires_at stays pending")
+	assert.Equal(t, []string{overdue}, expires(t))
+
+	require.NoError(t, expirer.Run(t.Context()))
+	assert.Equal(t, []string{overdue}, expires(t), "an expired request isn't expired again")
+}

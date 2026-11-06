@@ -18,3 +18,8 @@ DELETE FROM temporary_blocks WHERE expires_at <= now() - interval '7 days';
 -- than 7 days ago.
 DELETE FROM approvals
 WHERE LEAST(CASE WHEN status = 'denied' THEN decided_at END, used_at, expires_at) <= now() - interval '7 days';
+
+-- name: DeleteStaleAccessRequests :execrows
+-- Deletes access requests that stopped being live (decided or expired) more
+-- than 7 days ago. LEAST ignores a null decided_at.
+DELETE FROM access_requests WHERE LEAST(decided_at, expires_at) <= now() - interval '7 days';

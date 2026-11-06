@@ -490,6 +490,19 @@ func TestDeleteStaleRows(t *testing.T) {
 	approval("keep-used-recently", "approved", "7 days 1 hour", "1 day", "now() - interval '7 days'", "now() - interval '6 days 23 hours 59 minutes'")
 	approval("drop-used", "approved", "8 days", "1 day", "now() - interval '8 days'", "now() - interval '7 days 1 minute'")
 
+	accessRequest := func(name, status, created, expires, decided string) {
+		exec("access_requests", name, fmt.Sprintf(`INSERT INTO access_requests (id, principal, kind, workspace, verified, change, status, created_at, expires_at, decided_at)
+			VALUES (md5($1), 'alice', 'change', $1, true, '{}', '%s', now() - interval '%s', now() - interval '%s', %s)`,
+			status, created, expires, decided), name)
+	}
+	accessRequest("keep-pending", "pending", "1 minute", "-10 minutes", "NULL")
+	accessRequest("keep-expired-recently", "expired", "7 days 1 hour", "6 days 23 hours 59 minutes", "NULL")
+	accessRequest("drop-expired", "expired", "8 days", "7 days 1 minute", "NULL")
+	accessRequest("keep-approved-recently", "approved", "7 days 1 hour", "1 day", "now() - interval '6 days 23 hours 59 minutes'")
+	accessRequest("drop-approved", "approved", "8 days", "1 day", "now() - interval '7 days 1 minute'")
+	accessRequest("keep-denied-recently", "denied", "7 days 1 hour", "1 day", "now() - interval '6 days 23 hours 59 minutes'")
+	accessRequest("drop-denied", "denied", "8 days", "1 day", "now() - interval '7 days 1 minute'")
+
 	uiSession := func(name, created, lastSeen string) {
 		exec("ui_sessions", name, fmt.Sprintf(`INSERT INTO ui_sessions (id_hash, principal, csrf_token, created_at, last_seen_at, expires_at)
 			VALUES (sha256(convert_to($1::text, 'UTF8')), $1::text, sha256(convert_to($1::text, 'UTF8')), now() - interval '%s', now() - interval '%s', now() - interval '%s' + interval '8 hours')`,
@@ -510,6 +523,7 @@ func TestDeleteStaleRows(t *testing.T) {
 
 	for table, column := range map[string]string{
 		"grants": "tool", "temporary_blocks": "reason", "approvals": "tool", "ui_sessions": "principal", "ui_logins": "nonce",
+		"access_requests": "workspace",
 	} {
 		rows, err := pool.Query(ctx, fmt.Sprintf("SELECT %s FROM %s", column, table))
 		require.NoError(t, err)
