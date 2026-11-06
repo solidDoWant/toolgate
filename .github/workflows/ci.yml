@@ -17,6 +17,9 @@ permissions:
 # current one. Add a phase here when it starts.
 env:
   ACCEPTANCE_PHASES: "1 2"
+  # GitHub runners are discarded after each job, so testcontainers' reaper
+  # container (pulled from Docker Hub) isn't needed to clean up.
+  TESTCONTAINERS_RYUK_DISABLED: "true"
 
 concurrency:
   group: ci-${{ github.ref }}
