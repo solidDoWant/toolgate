@@ -270,7 +270,6 @@ func (m *metaTools) enableInTransaction(ctx context.Context, current requestCont
 
 func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, error) {
 	queries := db.New(tx)
-	identity := current.identity
 
 	if err := m.lockSession(ctx, tx, current); err != nil {
 		return db.Instance{}, err
@@ -298,7 +297,19 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 		return db.Instance{}, fmt.Errorf("enable server: %w", err)
 	}
 
-	key := scopeKey(template.Spec.Scope, identity)
+	instance, err := m.liveOrNewInstance(ctx, queries, current, template)
+	if err != nil {
+		return db.Instance{}, err
+	}
+
+	return instance, m.recordEnable(ctx, tx, current, template, instance, map[string]any{"decision": "allow", "instance": instance.ID})
+}
+
+// liveOrNewInstance runs the insert part of Enable step 4: under the
+// (template, scope key) advisory lock it returns the live instance, or
+// inserts a pending one within the instance limits.
+func (m *metaTools) liveOrNewInstance(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate) (db.Instance, error) {
+	key := scopeKey(template.Spec.Scope, current.identity)
 
 	if err := queries.LockInstanceScope(ctx, db.LockInstanceScopeParams{
 		TemplateNs: template.Namespace, TemplateName: template.Name, ScopeKey: key,
@@ -324,22 +335,22 @@ func (m *metaTools) enableTx(ctx context.Context, tx pgx.Tx, current requestCont
 		return db.Instance{}, fmt.Errorf("read live instance: %w", err)
 	}
 
-	recorder := audit.NewRecorder(m.auditOutput, queries)
-	if err := recorder.Record(ctx, auditEvent(current, "server.enable", template.Name, map[string]any{
-		"decision": "allow", "instance": instance.ID,
-	})); err != nil {
-		return db.Instance{}, err
+	return instance, nil
+}
+
+// recordEnable writes server.enable with details and notifies the session
+// and the instance.
+func (m *metaTools) recordEnable(ctx context.Context, tx pgx.Tx, current requestContext, template *v1alpha1.MCPServerTemplate, instance db.Instance, details map[string]any) error {
+	recorder := audit.NewRecorder(m.auditOutput, db.New(tx))
+	if err := recorder.Record(ctx, auditEvent(current, "server.enable", template.Name, details)); err != nil {
+		return err
 	}
 
 	if err := store.Notify(ctx, tx, store.KindSession, strconv.FormatInt(current.session.ID, 10)); err != nil {
-		return db.Instance{}, err
+		return err
 	}
 
-	if err := store.Notify(ctx, tx, store.KindInstance, instance.ID); err != nil {
-		return db.Instance{}, err
-	}
-
-	return instance, nil
+	return store.Notify(ctx, tx, store.KindInstance, instance.ID)
 }
 
 var errTooManyServers = fmt.Errorf("This session already has %d servers enabled. Disable one with `%s` first.", MaxEnabledServers, ToolDisableServer) //nolint:staticcheck // A sentence for the model.
@@ -465,6 +476,17 @@ func (m *metaTools) lockSession(ctx context.Context, tx pgx.Tx, current requestC
 // server.disable and notifies session:<id>. A refused decision is recorded
 // as the reason (Enable step 6).
 func (m *metaTools) disableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, decision policy.Decision) error {
+	details := map[string]any{}
+	if !decision.Allowed {
+		details = refusalDetails(decision)
+	}
+
+	return m.removeServer(ctx, current, template, details)
+}
+
+// removeServer deletes the session's session_servers row, writes
+// server.disable with details and notifies session:<id>.
+func (m *metaTools) removeServer(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, details map[string]any) error {
 	return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 
@@ -476,11 +498,6 @@ func (m *metaTools) disableInTransaction(ctx context.Context, current requestCon
 			SessionPk: current.session.ID, TemplateNs: template.Namespace, TemplateName: template.Name,
 		}); err != nil {
 			return fmt.Errorf("disable server: %w", err)
-		}
-
-		details := map[string]any{}
-		if !decision.Allowed {
-			details = refusalDetails(decision)
 		}
 
 		if err := audit.NewRecorder(m.auditOutput, queries).Record(ctx, auditEvent(current, "server.disable", template.Name, details)); err != nil {

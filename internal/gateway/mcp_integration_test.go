@@ -518,4 +518,36 @@ func TestSessions(t *testing.T) {
 			"SELECT count(*) FROM audit_events WHERE type = 'session.start' AND principal = 'alice'").Scan(&starts))
 		assert.Equal(t, 2, starts)
 	})
+
+	t.Run("a request for an ended session from the same workspace restarts it with its enabled set", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		fixture.addTemplate("kept", "per-user", v1alpha1.Access{Users: []string{"alice"}, Environments: "any"})
+
+		first := alice()
+		first.workspace = "repo-a"
+		fixture.connect(t, first)
+
+		row := fixture.sessionRow(t, "alice", "session-1")
+		_, err := fixture.pool.Exec(t.Context(), "UPDATE sessions SET ended_at = now() WHERE id = $1", row.ID)
+		require.NoError(t, err)
+		_, err = fixture.pool.Exec(t.Context(),
+			"INSERT INTO session_servers (session_pk, template_ns, template_name) VALUES ($1, $2, 'kept')", row.ID, templateNamespace)
+		require.NoError(t, err)
+
+		fixture.connect(t, first)
+
+		restarted := fixture.sessionRow(t, "alice", "session-1")
+		assert.Equal(t, row.ID, restarted.ID)
+		assert.False(t, restarted.EndedAt.Valid)
+
+		var enabled int
+		require.NoError(t, fixture.pool.QueryRow(context.WithoutCancel(t.Context()),
+			"SELECT count(*) FROM session_servers WHERE session_pk = $1", row.ID).Scan(&enabled))
+		assert.Equal(t, 1, enabled, "a resume from the same workspace keeps the enabled set")
+
+		var resumes int
+		require.NoError(t, fixture.pool.QueryRow(context.WithoutCancel(t.Context()),
+			"SELECT count(*) FROM audit_events WHERE type = 'session.resume' AND principal = 'alice'").Scan(&resumes))
+		assert.Equal(t, 1, resumes)
+	})
 }
