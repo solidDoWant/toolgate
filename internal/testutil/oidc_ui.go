@@ -25,6 +25,14 @@ const (
 	DefaultOIDCUIRedirectURI = "http://127.0.0.1:*/ui/auth/callback"
 )
 
+// Defaults of the fake OIDC provider's connector client.
+const (
+	DefaultOIDCConnectorClientID = "toolgate-connector"
+	// DefaultOIDCConnectorRedirectURI matches a connector test's callback
+	// on any loopback port.
+	DefaultOIDCConnectorRedirectURI = "http://127.0.0.1:*/callback"
+)
+
 // OIDCSignInPath is the path of the fake provider's sign-in page.
 const OIDCSignInPath = "/login"
 
@@ -193,8 +201,8 @@ type uiAuthRequests struct {
 }
 
 func (s *oidcStorage) CreateAuthRequest(ctx context.Context, authRequest *oidc.AuthRequest, userID string) (op.AuthRequest, error) {
-	if authRequest.ClientID == s.uiClient.id && authRequest.CodeChallenge == "" {
-		return nil, oidc.ErrInvalidRequest().WithDescription("the UI client must use PKCE (code_challenge)")
+	if (authRequest.ClientID == s.uiClient.id || authRequest.ClientID == s.connectorClient.id) && authRequest.CodeChallenge == "" {
+		return nil, oidc.ErrInvalidRequest().WithDescription("the authorization-code clients must use PKCE (code_challenge)")
 	}
 
 	return s.Storage.CreateAuthRequest(ctx, authRequest, userID)

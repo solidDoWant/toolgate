@@ -87,6 +87,8 @@ The provider keeps a session in a browser cookie after a sign-in. On the next si
 - The request has a `max_age` that is shorter than the age of the session.
 - The browser has no session.
 
+The fake identity provider has a second authorization code client for connectors. Its client ID is `provider.ConnectorClientID`, `toolgate-connector` by default. Set `OIDCOptions.ConnectorClientID` and `ConnectorRedirectURIs` to change it. It is a public client that must use PKCE. The provider puts the client ID in the audience of its tokens, so the connector client ID is the audience of its access tokens. The go-sdk's `auth.AuthorizationCodeHandler` works with it: use `PreregisteredClient` with this client ID, and a scope filter that asks for `openid`, `email` and `profile`. It signs in through the same sign-in page as the UI client. `TestOIDCProviderConnectorClient` in `internal/testutil` shows the flow.
+
 The ID token has `auth_time`, the time of the sign-in that made the session. If you set `OIDCOptions.OmitAuthTime`, the provider leaves `auth_time` out of the ID tokens of the UI client.
 
 `TestBrowserSignsInThroughGatewayIdP` in `test/e2e` shows a full sign-in. It reads the issuer from the gateway at `/.well-known/toolgate-client`, opens the sign-in page, and signs in as a user with groups.
@@ -106,6 +108,16 @@ These settings control the server:
 | `MCPSERVER_TOOLS` | `-tools` | `env,secrets` | The tool names, separated by commas. |
 | `MCPSERVER_SECRETS_DIR` | `-secrets-dir` | `/secrets` | The directory that the `secrets` tool reads. |
 | `MCPSERVER_LISTEN` | `-listen` | `:8080` | The listen address. |
+| `MCPSERVER_MODE` | `-mode` | `default` | `default`, or `2026-only`. See below. |
+| `MCPSERVER_TOOLS_FILE` | `-tools-file` | none | A file that declares the tools. See below. |
+
+`GET /calls` returns the number of calls to each tool, as a JSON object from tool name to count. A tool that was never called is not in it. Every mode counts calls.
+
+**Mode `2026-only`.** The server is stateless and speaks only protocol revision 2026-07-28. It refuses a request for any other revision with HTTP 400. Its tools are the names in `-tools`, and they echo their arguments, unless you set `-tools-file`.
+
+**Tools from a file.** With `-tools-file`, the server serves the tools that the file declares. The file is a JSON array of `{"name", "description", "inputSchema"}` objects, or an object with that array in `tools`. `inputSchema` must have type `object`. If you leave it out, the tool takes any arguments. Each tool echoes its arguments. Use this to serve any declared tool list, such as the servers of the tool search fixture.
+
+**Changing the tool list.** In `2026-only` mode, and with `-tools-file`, `PUT /tools` replaces the tool list. The body has the format of the file. Or use `PUT /tools?names=a,b` for echo tools with no schema. The server tells open sessions that the list changed. A request with a bad list gets HTTP 400 and changes nothing. In the default mode with no file, the list is fixed and `PUT /tools` gets 404.
 
 The tests get the image name from `TOOLGATE_E2E_MCPSERVER_IMAGE`. The image is only in the kind cluster, so use `imagePullPolicy: Never`.
 

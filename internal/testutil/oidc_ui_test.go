@@ -104,6 +104,13 @@ func (f *uiFlow) authorize(t *testing.T, verifier string, options ...oauth2.Auth
 func (f *uiFlow) signIn(t *testing.T, page *url.URL, user testutil.OIDCUser) *url.URL {
 	t.Helper()
 
+	return f.signInTo(t, page, user, f.config.RedirectURL)
+}
+
+// signInTo is signIn for a flow whose redirect URL is redirect.
+func (f *uiFlow) signInTo(t *testing.T, page *url.URL, user testutil.OIDCUser, redirect string) *url.URL {
+	t.Helper()
+
 	form := url.Values{
 		"authRequestID":  {page.Query().Get("authRequestID")},
 		"subject":        {user.Subject},
@@ -120,12 +127,12 @@ func (f *uiFlow) signIn(t *testing.T, page *url.URL, user testutil.OIDCUser) *ur
 	location, err := response.Location()
 	require.NoError(t, err)
 
-	callback, _ := f.followToCallback(t, location.String())
+	callback, _ := f.followToCallback(t, location.String(), redirect)
 
 	return callback
 }
 
-func (f *uiFlow) followToCallback(t *testing.T, target string) (*url.URL, string) {
+func (f *uiFlow) followToCallback(t *testing.T, target, redirect string) (*url.URL, string) {
 	t.Helper()
 
 	response, body := f.get(t, target)
@@ -133,7 +140,7 @@ func (f *uiFlow) followToCallback(t *testing.T, target string) (*url.URL, string
 
 	location, err := response.Location()
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(location.String(), f.config.RedirectURL), "redirect to %s", location)
+	require.True(t, strings.HasPrefix(location.String(), redirect), "redirect to %s", location)
 
 	return location, body
 }
