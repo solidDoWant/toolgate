@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -105,6 +106,15 @@ func TestAC2_15StandingRulesShown(t *testing.T) {
 	})
 }
 
+// e2eBlockMinutes is the duration the e2e test enters in the block form. The
+// e2e gateway stores it scaled, so the block lasts blockLifetime.
+const e2eBlockMinutes = 3
+
+// blockLifetime is how long the e2e test's block lasts.
+func blockLifetime() time.Duration {
+	return scaled(e2eBlockMinutes * time.Minute)
+}
+
 func TestAC2_14TemporaryBlock(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
@@ -129,7 +139,7 @@ func TestAC2_14TemporaryBlock(t *testing.T) {
 		require.NoError(t, chromedp.Do(browser,
 			chromedp.SendKeys(`textarea[name="servers"]`, name),
 			chromedp.SendKeys(`textarea[name="reason"]`, "Incident from the e2e test."),
-			chromedp.SetValue(`input[name="minutes"]`, "1"),
+			chromedp.SetValue(`input[name="minutes"]`, strconv.Itoa(e2eBlockMinutes)),
 			chromedp.Click(`#block-form button[type="submit"]`),
 		))
 
@@ -151,7 +161,7 @@ func TestAC2_14TemporaryBlock(t *testing.T) {
 		// and the session needs no new enable.
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Subset(collect, listedTools(collect, t.Context(), session.session), prefixedTools(name))
-		}, 90*time.Second, time.Second, "the tools came back by themselves")
-		assert.Less(t, time.Since(submitted), 2*time.Minute)
+		}, blockLifetime()+30*time.Second, time.Second, "the tools came back by themselves")
+		assert.Less(t, time.Since(submitted), blockLifetime()+time.Minute)
 	})
 }

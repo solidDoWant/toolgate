@@ -15,6 +15,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // Paths of the Approvals pages (docs/design/phase-2.md §5, "Pages").
@@ -200,7 +201,7 @@ func (u *UI) approve(writer http.ResponseWriter, request *http.Request) {
 	u.decide(writer, request, typeApprovalApprove, func(queries *db.Queries, id string, decidedBy pgtype.Text) (db.Approval, error) {
 		return queries.ApproveApproval(request.Context(), db.ApproveApprovalParams{
 			ID: id, DecidedBy: decidedBy,
-			ApprovalTimeout: pgtype.Interval{Microseconds: u.approvalTimeout().Microseconds(), Valid: true},
+			ApprovalTimeout: pgtype.Interval{Microseconds: testtime.Scale(u.approvalTimeout()).Microseconds(), Valid: true},
 		})
 	})
 }

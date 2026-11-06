@@ -35,6 +35,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
@@ -102,7 +103,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	(&sessionsapi.Handler{
 		Queries:     db.New(server.Database()),
-		IdleTimeout: time.Duration(cfg.SessionIdleTimeout),
+		IdleTimeout: testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
 		Log:         logger,
 	}).Register(server, func(next http.Handler) http.Handler {
 		return authenticator.Middleware(next, false)

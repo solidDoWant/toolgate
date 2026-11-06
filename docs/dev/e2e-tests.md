@@ -33,6 +33,12 @@ The package `internal/testtime` has the function `Scale(d)`. Gateway code calls 
 - In a normal build, such as the release image from `make build-images`, `Scale` returns `d` unchanged. It never reads an environment variable.
 - In a build with the `e2e` build tag, `Scale` multiplies `d` by the value of `TOOLGATE_TEST_TIME_SCALE`. If the variable is not set, or its value is not a positive number, `Scale` returns `d` unchanged.
 
+The gateway scales the durations that it stores or waits for. It does not scale the values in the configuration, the forms of the web UI, their limits or the messages. For example, a temporary block of "1 minute" from the Blocks page lasts 6 seconds with the scale `0.1`, and the page still shows 1 minute. These durations use the scale:
+
+- The approval timeout (`approvalTimeout`), the interval at which a waiting call reads its approval again, and the 1 minute after which the leader expires a pending approval.
+- The duration of a temporary block and of a grant.
+- `sessionIdleTimeout` and `sessionResumeWindow`.
+
 `scripts/e2e/run.sh` builds the gateway image with the `e2e` tag. It sets `TOOLGATE_TEST_TIME_SCALE` to `0.1` in the chart (through `config.extraEnv`) and for the tests. To use a different value, set `TOOLGATE_TEST_TIME_SCALE` before you run the script. The default values of the chart never set the variable.
 
 The e2e tests are built with the `e2e` tag too, so they read the same scale. To get the deadline for a scaled wait, call `scaled(d)` in `test/e2e`. Do not write the scaled number of seconds in the test. `TestTimeScaleMatchesGateway` makes sure that the gateway and the tests use the same value.

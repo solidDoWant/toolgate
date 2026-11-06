@@ -5,13 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // ApprovalExpirer marks pending approvals expired once their expires_at is
@@ -24,6 +27,10 @@ type ApprovalExpirer struct {
 	// them.
 	AuditOutput io.Writer
 }
+
+// approvalExpiryGrace is how long past its expires_at a pending approval
+// stays pending before the leader's pass expires it. An e2e build scales it.
+const approvalExpiryGrace = time.Minute
 
 // Pass wraps a full pass so that overdue approvals are expired before it.
 func (e *ApprovalExpirer) Pass(pass func(ctx context.Context) error) func(ctx context.Context) error {
@@ -39,7 +46,9 @@ func (e *ApprovalExpirer) Pass(pass func(ctx context.Context) error) func(ctx co
 // Run expires every overdue pending approval. An error on one approval
 // doesn't keep the others from being expired.
 func (e *ApprovalExpirer) Run(ctx context.Context) error {
-	overdue, err := db.New(e.Pool).ListOverdueApprovals(ctx)
+	grace := testtime.Scale(approvalExpiryGrace)
+
+	overdue, err := db.New(e.Pool).ListOverdueApprovals(ctx, pgtype.Interval{Microseconds: grace.Microseconds(), Valid: true})
 	if err != nil {
 		return fmt.Errorf("list overdue approvals: %w", err)
 	}

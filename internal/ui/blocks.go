@@ -23,6 +23,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // Temporary block bounds (docs/design/phase-2.md §2 and §11).
@@ -319,7 +320,7 @@ func (u *UI) createBlock(writer http.ResponseWriter, request *http.Request) {
 
 		row, err := queries.InsertTemporaryBlockWithinLimit(ctx, db.InsertTemporaryBlockWithinLimitParams{
 			ID: id, Match: encoded, Reason: reason, CreatedBy: session.Principal,
-			Lifetime:  pgtype.Interval{Microseconds: lifetime.Microseconds(), Valid: true},
+			Lifetime:  pgtype.Interval{Microseconds: testtime.Scale(lifetime).Microseconds(), Valid: true},
 			LiveLimit: store.MaxLiveTemporaryBlocks,
 		})
 		if errors.Is(err, pgx.ErrNoRows) {

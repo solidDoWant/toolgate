@@ -32,6 +32,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // runtimeOptions are the dependencies of startRuntime.
@@ -189,8 +190,8 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// per-session instances stop in the same pass.
 	sessionEnder := &runtime.SessionEnder{
 		Pool:         pool,
-		IdleTimeout:  time.Duration(cfg.SessionIdleTimeout),
-		ResumeWindow: time.Duration(cfg.SessionResumeWindow),
+		IdleTimeout:  testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
+		ResumeWindow: testtime.Scale(time.Duration(cfg.SessionResumeWindow)),
 		AuditOutput:  options.auditOutput,
 		Log:          logger,
 	}

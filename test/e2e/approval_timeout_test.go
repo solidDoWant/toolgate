@@ -20,17 +20,35 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 )
 
-// e2eApprovalTimeout is config.ui.approvalTimeout in the e2e install.
+// e2eApprovalTimeout is config.ui.approvalTimeout in the e2e install. The
+// e2e gateway scales it: an approval expires after scaled(e2eApprovalTimeout),
+// while the messages still name e2eApprovalTimeout.
 const e2eApprovalTimeout = time.Minute
 
+// approvalWaitTick is how often a waiting call re-reads its approval before
+// the scale.
+const approvalWaitTick = 10 * time.Second
+
+// approvalExpiryGrace is how long past expires_at the leader's pass leaves a
+// pending approval before it expires it, before the scale.
+const approvalExpiryGrace = time.Minute
+
+// reconcilerPass is the interval between the reconciler's full passes, which
+// run the leader's approval expiry. The e2e gateway does not scale it.
+const reconcilerPass = 30 * time.Second
+
 // approvalCallBound is how long a call waiting for an approval nobody acts
-// on may take: the timeout plus the 10 s re-read tick and some slack.
-const approvalCallBound = e2eApprovalTimeout + 45*time.Second
+// on may take: the scaled timeout and re-read tick, and some slack.
+func approvalCallBound() time.Duration {
+	return scaled(e2eApprovalTimeout+approvalWaitTick) + 30*time.Second
+}
 
 // leaderExpiryBound is how long a pending approval nobody waits for may stay
-// pending: the leader's pass expires it once expires_at is more than 1
-// minute past, and the pass runs every minute.
-const leaderExpiryBound = e2eApprovalTimeout + 3*time.Minute
+// pending: the leader's pass expires it once expires_at is more than the
+// scaled grace past, and the pass runs every reconcilerPass.
+func leaderExpiryBound() time.Duration {
+	return scaled(e2eApprovalTimeout+approvalExpiryGrace) + 2*reconcilerPass + time.Minute
+}
 
 const eventElicitation = "elicitation"
 
@@ -137,7 +155,7 @@ func TestAC2_13ApprovalTimeout(t *testing.T) {
 	enable(t, alice, name)
 
 	t.Run("[AC-2-13] an approval nobody acts on fails the call after the approval timeout", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(t.Context(), approvalCallBound+time.Minute)
+		ctx, cancel := context.WithTimeout(t.Context(), approvalCallBound()+time.Minute)
 		defer cancel()
 
 		started := time.Now()
@@ -148,7 +166,7 @@ func TestAC2_13ApprovalTimeout(t *testing.T) {
 		var outcome callResult
 		select {
 		case outcome = <-done:
-		case <-time.After(approvalCallBound):
+		case <-time.After(approvalCallBound()):
 			require.FailNow(t, "the call still waits after the approval timeout")
 		}
 
@@ -158,7 +176,7 @@ func TestAC2_13ApprovalTimeout(t *testing.T) {
 		match := approvalTimeoutPattern.FindStringSubmatch(callText(outcome.result))
 		require.NotNil(t, match, "the call fails with the timeout message: %s", callText(outcome.result))
 		assert.Equal(t, name+"__echo", match[1])
-		assert.GreaterOrEqual(t, time.Since(started), e2eApprovalTimeout, "the call waited for the approval timeout")
+		assert.GreaterOrEqual(t, time.Since(started), scaled(e2eApprovalTimeout), "the call waited for the approval timeout")
 	})
 }
 
@@ -216,7 +234,7 @@ func TestApprovalWaitReplicaDies(t *testing.T) {
 			match := approvalTimeoutPattern.FindStringSubmatch(callText(result))
 			require.NotNil(collect, match, "the approval is not expired yet: %s", callText(result))
 			assert.Equal(collect, id, match[2])
-		}, leaderExpiryBound, 10*time.Second)
+		}, leaderExpiryBound(), scaled(approvalWaitTick))
 	})
 }
 
