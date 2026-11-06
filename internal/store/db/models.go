@@ -102,6 +102,19 @@ type Instance struct {
 	UnhealthySince     pgtype.Timestamptz
 	UnhealthyReason    string
 	Repairs            []pgtype.Timestamptz
+	McpRevision        string
+}
+
+type ScopeEntry struct {
+	ID        int64
+	ScopeID   int64
+	Workspace pgtype.Text
+	SessionPk pgtype.Int8
+	Server    string
+	Tool      string
+	Effect    string
+	CreatedAt pgtype.Timestamptz
+	RequestID pgtype.Text
 }
 
 type Session struct {
@@ -126,6 +139,14 @@ type SessionAddition struct {
 	CreatedAt pgtype.Timestamptz
 }
 
+type SessionFoundTool struct {
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+	UpstreamName string
+	FoundAt      pgtype.Timestamptz
+}
+
 type SessionServer struct {
 	SessionPk    int64
 	TemplateNs   string
@@ -140,6 +161,27 @@ type TemporaryBlock struct {
 	CreatedBy string
 	CreatedAt pgtype.Timestamptz
 	ExpiresAt pgtype.Timestamptz
+}
+
+type ToolCatalog struct {
+	TemplateUid  string
+	Generation   int64
+	TemplateNs   string
+	TemplateName string
+	Tools        []byte
+	InstanceID   string
+	LearnedAt    pgtype.Timestamptz
+}
+
+type ToolSearch struct {
+	TemplateUid      string
+	TemplateNs       string
+	TemplateName     string
+	SourceGeneration int64
+	UpstreamName     string
+	ExposedName      string
+	Document         interface{}
+	RebuiltAt        pgtype.Timestamptz
 }
 
 type UiLogin struct {
@@ -165,12 +207,19 @@ type UiSession struct {
 	ExpiresAt  pgtype.Timestamptz
 }
 
+type UnverifiedServer struct {
+	ScopeID int64
+	Server  string
+	AddedAt pgtype.Timestamptz
+}
+
 type UserScope struct {
 	ID                int64
 	Principal         string
 	VerifiedDefault   string
 	UnverifiedDefault string
 	UpdatedAt         pgtype.Timestamptz
+	UnverifiedList    bool
 }
 
 type UserSecret struct {
