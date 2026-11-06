@@ -63,6 +63,14 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.ui.publicURL | string | `""` | URL where users open the gateway in a browser, such as `https://toolgate.example.com`. Required when `config.ui.clientID` is set. It must be `https://`. |
 | config.ui.scopes | list | `[]` | Scopes the web UI asks for at sign-in. Empty means the gateway's default, `openid email profile`. |
 | config.workspaceAttestation | string | `nil` | Attested user sessions: a user's token plus a workload token from a workspace pod (or a SPIFFE workload) bound to that user, so the session's workspace is verified. Off when null. It has `namespaces` (required), `keys` (`userID`, `email`, `username` and `workspace`: pod label keys, Coder's by default), `match` (`by: email`, or `by: claim` with `claim` and `key`), `workspaceID` (such as `coder/{username}/{workspace}`) and an optional `spiffeIDPattern`. The chart writes it to the gateway's configuration file. See docs/admin/workspace-attestation.md. |
+| dashboards.annotations | object | `{}` | Annotations of the dashboard ConfigMaps, such as `grafana_folder: toolgate` for the sidecar's folder annotation. |
+| dashboards.enabled | bool | `false` | Create one ConfigMap for each dashboard, for the Grafana dashboard sidecar. Ignored when `dashboards.grafanaOperator.enabled` is true. |
+| dashboards.grafanaOperator.allowCrossNamespaceImport | bool | `false` | Namespaces whose Grafana instances may load the dashboards: `allowCrossNamespaceImport`. |
+| dashboards.grafanaOperator.enabled | bool | `false` | Create a grafana-operator v5 `GrafanaDashboard` for each dashboard instead of a ConfigMap. |
+| dashboards.grafanaOperator.folder | string | `""` | Grafana folder for the dashboards. Empty means the General folder. |
+| dashboards.grafanaOperator.instanceSelector | object | `{"matchLabels":{}}` | Which Grafana instances load the dashboards: the `matchLabels` of the `GrafanaDashboard` `instanceSelector`. Required with `dashboards.grafanaOperator.enabled`. |
+| dashboards.labelKey | string | `"grafana_dashboard"` | Key of the label the sidecar selects ConfigMaps by. |
+| dashboards.labelValue | string | `"1"` | Value of that label. |
 | embeddings.downloader.hubVersion | string | `"1.0.0"` | Version of huggingface_hub that `uvx` installs. |
 | embeddings.downloader.image.digest | string | `"sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca"` |  |
 | embeddings.downloader.image.repository | string | `"ghcr.io/astral-sh/uv"` | Image that runs the model download Job: a pinned `uv`, which runs the `hf` command of huggingface_hub. |
