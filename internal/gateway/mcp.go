@@ -461,7 +461,9 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	session, err := e.sessions.resolve(request.Context(), identity)
+	searchMode := searchModeOf(request, e.toolSearch)
+
+	session, err := e.sessions.resolve(request.Context(), identity, searchMode)
 	if errors.Is(err, errWorkspaceChanged) {
 		http.Error(writer, "This session started in a different workspace. Start a new Claude Code session to use another workspace.", http.StatusBadRequest)
 
@@ -475,7 +477,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	current := requestContext{identity: identity, session: session, searchMode: searchModeOf(request, e.toolSearch)}
+	current := requestContext{identity: identity, session: session, searchMode: searchMode}
 
 	if stateless {
 		e.serveStateless(writer, request, binding, current)

@@ -30,6 +30,9 @@ var AllowedLabels = map[string][]string{
 	"scope":        {"per-session", "per-user", "shared"},
 	"status":       {"pending", "starting", "ready", "failed", "stopping"},
 	"verified":     {"true", "false"},
+	"tool_search":  {"on", "off"},
+	"operation":    {"query", "document"},
+	"use":          {"query", "document"},
 	"trust_domain": nil,
 	"server":       nil,
 	"version":      nil,
@@ -43,7 +46,7 @@ var AllowedLabels = map[string][]string{
 		"ready", "failed", "approved", "denied", "expired", "cancelled", "other",
 	},
 	"step":   {"access", "environment", "blocked", "rule", "temporary-block", "workspace-scope"},
-	"reason": {"denied", "refused"},
+	"reason": {"denied", "refused", "error", "circuit_open"},
 	"action": {"replace", "reapply", "gave_up"},
 	// The model names are admin-defined, and one is configured at a time.
 	"embedding_model": nil,
@@ -65,6 +68,12 @@ func Check(t *testing.T, registry *prometheus.Registry, templates int) int {
 	for _, family := range families {
 		for _, metric := range family.GetMetric() {
 			series++
+
+			// A histogram exports one series for each bucket, plus the
+			// sum, the count and the +Inf bucket.
+			if histogram := metric.GetHistogram(); histogram != nil {
+				series += len(histogram.GetBucket()) + 2
+			}
 
 			for _, pair := range metric.GetLabel() {
 				allowed, known := AllowedLabels[pair.GetName()]

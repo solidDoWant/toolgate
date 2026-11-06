@@ -131,6 +131,7 @@ type Session struct {
 	EndedAt      pgtype.Timestamptz
 	Kind         string
 	LastSearchID pgtype.UUID
+	ToolSearch   bool
 }
 
 type SessionAddition struct {

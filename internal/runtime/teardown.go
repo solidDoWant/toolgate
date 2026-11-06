@@ -135,8 +135,8 @@ func NewMetrics() *Metrics {
 		}),
 		Sessions: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "toolgate_sessions",
-			Help: "Open sessions (not ended), by whether the session is attested (verified). Set by the replica holding the leader Lease.",
-		}, []string{"verified"}),
+			Help: "Open sessions (not ended), by tool search mode (tool_search) and whether the session is attested (verified). Set by the replica holding the leader Lease.",
+		}, []string{"tool_search", "verified"}),
 		ToolCalls: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "toolgate_tool_calls_total",
 			Help: "Tool calls, by server and outcome.",
@@ -489,13 +489,25 @@ func (m *Metrics) update(ctx context.Context, queries *db.Queries, stuck int) er
 
 	// Both series always exist on the leader, so a scaler reads 0 rather
 	// than a missing series.
-	open := map[string]int64{"true": 0, "false": 0}
-	for _, row := range sessions {
-		open[strconv.FormatBool(row.Attestation == "attested")] += row.Total
+	open := map[[2]string]int64{}
+
+	for _, search := range []string{"on", "off"} {
+		for _, verified := range []string{"true", "false"} {
+			open[[2]string{search, verified}] = 0
+		}
 	}
 
-	for verified, total := range open {
-		m.Sessions.WithLabelValues(verified).Set(float64(total))
+	for _, row := range sessions {
+		search := "off"
+		if row.ToolSearch {
+			search = "on"
+		}
+
+		open[[2]string{search, strconv.FormatBool(row.Attestation == "attested")}] += row.Total
+	}
+
+	for labels, total := range open {
+		m.Sessions.WithLabelValues(labels[0], labels[1]).Set(float64(total))
 	}
 
 	return m.updatePending(ctx, queries)

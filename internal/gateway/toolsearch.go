@@ -286,7 +286,7 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 	var queryVector []float32
 
 	if m.embedder != nil && len(uids) > 0 {
-		vectors, embedErr := m.embedder.Embed(ctx, []string{rawQuery})
+		vectors, embedErr := m.embedder.EmbedFor(ctx, embeddings.OperationQuery, []string{rawQuery})
 		if embedErr != nil {
 			m.embedder.CountError("query", embedErr)
 
