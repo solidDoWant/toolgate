@@ -182,6 +182,7 @@ type ToolSearch struct {
 	ExposedName      string
 	Document         interface{}
 	RebuiltAt        pgtype.Timestamptz
+	NameText         string
 }
 
 type UiLogin struct {

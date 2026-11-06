@@ -468,12 +468,12 @@ func (q *Queries) InsertScopeEntry(ctx context.Context, arg InsertScopeEntryPara
 }
 
 const insertToolSearch = `-- name: InsertToolSearch :exec
-INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document)
-VALUES ($1, $2, $3, $4, $5, $6,
+INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, document)
+VALUES ($1, $2, $3, $4, $5, $6, $7::text,
     setweight(to_tsvector('english', $7::text), 'A')
     || setweight(to_tsvector('english', $8::text), 'B')
     || setweight(to_tsvector('english', $9::text), 'C')
-    || setweight(to_tsvector('english', $10::text), 'D'))
+    || setweight(to_tsvector('english', $10::text), 'C'))
 `
 
 type InsertToolSearchParams struct {
@@ -489,7 +489,8 @@ type InsertToolSearchParams struct {
 	InputPart        string
 }
 
-// The document has four weighted parts (docs/design/phase-4.md §5).
+// The document has weighted parts (docs/design/phase-4.md §5); name_text
+// feeds the trigram term of the ranking.
 func (q *Queries) InsertToolSearch(ctx context.Context, arg InsertToolSearchParams) error {
 	_, err := q.db.Exec(ctx, insertToolSearch,
 		arg.TemplateUid,
@@ -868,17 +869,20 @@ func (q *Queries) QueryIsEmpty(ctx context.Context, query string) (bool, error) 
 }
 
 const searchTools = `-- name: SearchTools :many
+
 SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
        tool_search.upstream_name, tool_search.exposed_name
-FROM tool_search, to_tsquery('english', $1::text) AS q
-WHERE tool_search.template_uid = ANY($2::text[]) AND tool_search.document @@ q
-ORDER BY ts_rank(tool_search.document, q, 1) DESC, tool_search.exposed_name
+FROM tool_search, to_tsquery('english', $1::text) AS q, to_tsquery('english', $2::text) AS q0
+WHERE tool_search.template_uid = ANY($3::text[]) AND tool_search.document @@ q
+ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, $4::text)) DESC, tool_search.exposed_name
 LIMIT 100
 `
 
 type SearchToolsParams struct {
+	Expanded     string
 	Query        string
 	TemplateUids []string
+	Plain        string
 }
 
 type SearchToolsRow struct {
@@ -889,9 +893,16 @@ type SearchToolsRow struct {
 	ExposedName  string
 }
 
-// Ranks the search rows of the candidate templates against a tsquery text.
+// Ranks the search rows of the candidate templates against a tsquery text:
+// cover density over the weighted document, plus a small trigram similarity
+// between the plain query and the name words.
 func (q *Queries) SearchTools(ctx context.Context, arg SearchToolsParams) ([]SearchToolsRow, error) {
-	rows, err := q.db.Query(ctx, searchTools, arg.Query, arg.TemplateUids)
+	rows, err := q.db.Query(ctx, searchTools,
+		arg.Expanded,
+		arg.Query,
+		arg.TemplateUids,
+		arg.Plain,
+	)
 	if err != nil {
 		return nil, err
 	}

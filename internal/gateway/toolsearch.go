@@ -174,7 +174,7 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 		}
 	}
 
-	rows, stopWordsOnly, err := m.searchRows(ctx, uids, tsQuery(words))
+	rows, stopWordsOnly, err := m.searchRows(ctx, uids, tsQuery(words), tsQuery(expandWords(words)), strings.Join(words, " "))
 	if err != nil {
 		return nil, FindToolsResult{}, err
 	}
@@ -248,7 +248,7 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 // searchRows runs the ranking query in a read-only transaction with a
 // statement timeout. stopWordsOnly is true when every word of the query is a
 // stop word, so the query is empty and matches nothing.
-func (m *metaTools) searchRows(ctx context.Context, uids []string, query string) (rows []db.SearchToolsRow, stopWordsOnly bool, err error) {
+func (m *metaTools) searchRows(ctx context.Context, uids []string, query, expanded, plain string) (rows []db.SearchToolsRow, stopWordsOnly bool, err error) {
 	err = pgx.BeginTxFunc(ctx, m.database, pgx.TxOptions{AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL statement_timeout = %d", searchTimeout.Milliseconds())); err != nil {
 			return fmt.Errorf("set the search timeout: %w", err)
@@ -271,7 +271,7 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, query string)
 			return nil
 		}
 
-		rows, err = queries.SearchTools(ctx, db.SearchToolsParams{Query: query, TemplateUids: uids})
+		rows, err = queries.SearchTools(ctx, db.SearchToolsParams{Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids})
 		if err != nil {
 			return fmt.Errorf("search the tools: %w", err)
 		}

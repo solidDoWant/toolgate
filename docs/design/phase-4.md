@@ -42,7 +42,7 @@ One additive migration, `00007_phase_4.sql` (phase 1 §7, "Database migrations")
 - `tools` is the upstream tool list as the instance served it, after phase 1's tool list checks, at most 1 MiB. It's stored before curation, so a curation change needs no new learning.
 - Only the reconciler writes it (§3).
 
-**Search rows.** `tool_search(template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document, rebuilt_at)`, primary key `(template_uid, upstream_name)`, with a GIN index on `document` (`tsvector`). Only the reconciler writes them (§5).
+**Search rows.** `tool_search(template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document, rebuilt_at)`, primary key `(template_uid, upstream_name)`, with a GIN index on `document` (`tsvector`) and a `name_text` column. Only the reconciler writes them (§5).
 
 **Found tools.** `session_found_tools(session_pk, template_ns, template_name, upstream_name, found_at)`, primary key `(session_pk, template_ns, template_name, upstream_name)`. At most 50 per session. Search mode lists them (§5).
 
@@ -197,14 +197,16 @@ Output: `{"tools": [{"name", "server", "description", "inputSchema", "access", "
 - The built-in `toolgate` server is a candidate like any other (§7).
 
 **Ranking** uses PostgreSQL full-text search. That's no new dependency and no new backend (`SPEC.md` §3), and it gives every replica the same answer.
-- The **document** of a tool is built by the leader. It has four weighted parts, each passed through `to_tsvector('english', …)` and `setweight`:
-  - A: the exposed name, with `_`, `-`, `.` and camelCase boundaries turned into spaces, so `createIssue` also gives "create issue";
-  - B: the curated description, cut at 4 KiB;
-  - C: the server name and the template's `description`;
-  - D: the input schema's top-level property names and their descriptions, cut at 4 KiB.
-- The **query**: Go lowercases the task description and keeps words of `[a-z0-9]`, at most 64 words. It joins them with ` | ` and passes the result as one parameter to `to_tsquery('english', $1)`. So the query is the OR of the stemmed words. The words hold no `tsquery` syntax, so a query can't inject any.
+- The **document** of a tool is built by the leader. Each part is passed through `to_tsvector('english', …)` and `setweight`:
+  - A: the exposed name and the upstream name, with `_`, `-`, `.` and camelCase boundaries turned into spaces, so `createIssue` also gives "create issue";
+  - B: the tool title and the curated description, cut at 4 KiB;
+  - C: the server name and the template's `description`, and the input schema's top-level property names, their descriptions and enum values, cut at 4 KiB.
+  
+  The row also holds `name_text`, the same name words as plain text, for the trigram term below. The `pg_trgm` extension ships with PostgreSQL. A migration creates it. It is a trusted extension, so the database owner can create it.
+- The **query**: Go lowercases the task description and keeps words of `[a-z0-9]`, at most 64 words. It joins them with ` | ` and passes the result as one parameter to `to_tsquery('english', $1)`. So the query is the OR of the stemmed words, and stop words drop out. The words hold no `tsquery` syntax, so a query can't inject any.
+- **Synonyms.** Go also builds an expanded query: the words, then the words of each synonym group that holds a query word (or its word without a plural or past-tense ending). The groups are a short fixed list of general computing words that apply to any server (folder and directory, delete and remove, show and list). They hold no product, server, tool or user names. A row matches when its document matches the expanded query, up to 256 words. The list is in `internal/gateway/toolsynonyms.go`.
 - **A query with no words.** When no `[a-z0-9]` words remain, for example in a query in a non-Latin script, no SQL runs. When every word is a stop word, `to_tsquery` gives an empty query, which matches no row. Both return `{"tools": []}` with "The query has no words to search for. Describe the task in English words." (row 252).
-- **The SQL** selects rows whose `template_uid` is in the candidate set and whose `document @@ query`. It orders them by `ts_rank(document, query, 1)` with the default weights, then by `exposed_name`, and returns at most 100 rows. The statement runs with a 2 s `statement_timeout`.
+- **The SQL** selects rows whose `template_uid` is in the candidate set and whose `document @@ query`. It orders them by a score, then by `exposed_name`. The score is `ts_rank_cd(document, query, 1)` over the plain query, plus 0.4 times the same rank over the expanded query, plus 0.3 times `word_similarity(name_text, plain query)` from `pg_trgm`. The rank uses the default weights, and returns at most 100 rows. The statement runs with a 2 s `statement_timeout`.
 - Go then decides each returned tool (phase 2 §3). It keeps the allowed ones, and, in a verified workspace, those whose only refusal is step 4's outside-the-list refusal, marked `ask`. It drops the rest. It keeps the first `limit`.
 
 **Found tools.** Claude Code can only call tools that are in its tool list. So the search also writes its results to `session_found_tools`, in one transaction that locks the `sessions` row first.
@@ -685,7 +687,7 @@ Any combination not in this table is a design gap: hand back `HANDOFF: question`
   - `workspace.defaults` gains the unverified allow list.
 - **Libraries:** nothing new in `go.mod`.
   - `github.com/modelcontextprotocol/go-sdk` v1.8.0: `ClientSessionOptions.ProtocolVersion`, `StreamableHTTPOptions.Stateless`, `ServerOptions.SupportedProtocolVersions`, `ServerOptions.SetCacheable`, `ServerOptions.GetSessionID` (a `func() string`, §9), `jsonrpc.DecodeMessage`, `oauthex.ProtectedResourceMetadata` and `auth.ProtectedResourceMetadataHandler`;
-  - PostgreSQL full-text search (`to_tsvector`, `to_tsquery`, `ts_rank`, a GIN index);
+  - PostgreSQL full-text search (`to_tsvector`, `to_tsquery`, `ts_rank_cd`, `pg_trgm`, a GIN index);
   - `crypto/rand` for connector session IDs;
   - `github.com/coreos/go-oidc/v3` for connector tokens, as for every token today.
 

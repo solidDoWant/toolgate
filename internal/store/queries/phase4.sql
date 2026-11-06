@@ -17,13 +17,14 @@ SELECT * FROM tool_catalog WHERE template_uid = @template_uid ORDER BY generatio
 DELETE FROM tool_catalog WHERE template_uid = @template_uid AND generation < @generation;
 
 -- name: InsertToolSearch :exec
--- The document has four weighted parts (docs/design/phase-4.md §5).
-INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, document)
-VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name,
+-- The document has weighted parts (docs/design/phase-4.md §5); name_text
+-- feeds the trigram term of the ranking.
+INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, document)
+VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name, @name_part::text,
     setweight(to_tsvector('english', @name_part::text), 'A')
     || setweight(to_tsvector('english', @description_part::text), 'B')
     || setweight(to_tsvector('english', @server_part::text), 'C')
-    || setweight(to_tsvector('english', @input_part::text), 'D'));
+    || setweight(to_tsvector('english', @input_part::text), 'C'));
 
 -- name: LockToolSearch :exec
 SELECT pg_advisory_xact_lock(hashtextextended('toolsearch/' || @template_uid::text, 0));
@@ -165,12 +166,15 @@ WHERE session_pk = ANY(@session_pks::bigint[])
 ORDER BY session_pk, server;
 
 -- name: SearchTools :many
--- Ranks the search rows of the candidate templates against a tsquery text.
+-- Ranks the search rows of the candidate templates against a tsquery text:
+-- cover density over the weighted document, plus a small trigram similarity
+-- between the plain query and the name words.
+
 SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
        tool_search.upstream_name, tool_search.exposed_name
-FROM tool_search, to_tsquery('english', @query::text) AS q
+FROM tool_search, to_tsquery('english', @expanded::text) AS q, to_tsquery('english', @query::text) AS q0
 WHERE tool_search.template_uid = ANY(@template_uids::text[]) AND tool_search.document @@ q
-ORDER BY ts_rank(tool_search.document, q, 1) DESC, tool_search.exposed_name
+ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, @plain::text)) DESC, tool_search.exposed_name
 LIMIT 100;
 
 -- name: QueryIsEmpty :one
