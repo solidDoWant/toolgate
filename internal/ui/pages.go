@@ -56,6 +56,7 @@ var pageTemplates = map[string]*template.Template{
 	"approval":       parsePage("approval"),
 	"workspaces":     parsePage("workspaces"),
 	"access_request": parsePage("access_request"),
+	"setup":          parsePage("setup"),
 }
 
 // parsePage parses the layout and one page's content template.

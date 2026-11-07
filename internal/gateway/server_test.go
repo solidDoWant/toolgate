@@ -437,6 +437,7 @@ func TestOnlyProbesClientMetadataAndUISignInArePublic(t *testing.T) {
 		"GET /ui/login",
 		"GET /ui/auth/callback",
 		"GET /ui/static/",
+		"GET /install.sh",
 	}, server.PublicRoutes())
 }
 
