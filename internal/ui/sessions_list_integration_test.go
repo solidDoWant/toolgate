@@ -101,7 +101,7 @@ func TestSessionsListShowsEachSessionState(t *testing.T) {
 	t.Run("an ended helper session inside the resume window can be resumed", func(t *testing.T) {
 		row := rowFor(list("?state=all"), `value="resumable-0001"`)
 		assert.Contains(t, row, "resumable until 20")
-		assert.NotContains(t, row, "<a href=")
+		assert.NotContains(t, row, `href="/ui/sessions/`)
 	})
 
 	t.Run("a connector session is never resumable", func(t *testing.T) {

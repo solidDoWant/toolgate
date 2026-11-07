@@ -93,6 +93,8 @@ The navigation shows the Blocks link only to admins.
 - **Where:** the workspace, with a "verified" or "unverified" badge. The raw workspace ID shows on hover.
 - **Client:** the client name and version that the client sent in `initialize`, for example "Claude Code 2.1.319", and the kind: a helper session, or a connector session (the session ID starts with `mcp.`).
 - **State:** `active` when the session is open and made a request in the last 5 minutes. `idle` when it is open and made none for 5 minutes or more. The gateway ends an idle session after `sessionIdleTimeout`. `resumable until` a time when the session ended and can still be resumed (`sessionResumeWindow` after it ended). Connector sessions are never resumed. Any other ended session shows `ended`.
+- **Servers:** the servers that the session has enabled, as small badges, and how many instances are running for it. The count includes ready shared instances, the user's ready per-user instances and the session's own ready per-session instances of those servers.
+- **Activity (last hour):** the tool decisions in the last hour, how many of them were refusals (`deny` or `refuse`), and the approvals that still wait for a decision. The first two numbers link to the audit page, filtered to this session. The third links to the approvals page. A session with no activity shows zeros.
 - **Tool search:** on or off.
 - **Last activity:** a relative time such as "2 min ago". The exact UTC time shows on hover.
 - **Session:** the first characters of the session ID. The full ID shows on hover and under "Copy".
