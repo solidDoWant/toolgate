@@ -1,4 +1,4 @@
-// Package secrets stores user secrets (SPEC.md §11). Each value is
+// Package secrets stores user secrets. Each value is
 // envelope-encrypted with Tink: a fresh AES256-GCM data key encrypts the
 // value, and the gateway's key-encryption keyset, read from a mounted
 // Kubernetes Secret and never stored in PostgreSQL, encrypts the data key.

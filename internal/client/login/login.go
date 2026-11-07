@@ -1,6 +1,5 @@
 // Package login signs the CLI in to the IdP with the OAuth 2.0 device
-// authorization grant and PKCE, and keeps what `toolgate status` shows
-// (docs/design/phase-1.md §8, "Client").
+// authorization grant and PKCE, and keeps what `toolgate status` shows.
 //
 // The gateway names the IdP: its /.well-known/toolgate-client document gives
 // the issuer, the public client ID, the scopes and the email claim. The

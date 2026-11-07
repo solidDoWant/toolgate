@@ -100,7 +100,7 @@ func TestRecordWritesOneLineAndOneRow(t *testing.T) {
 		Details:     row.Details,
 	}, row)
 	assert.JSONEq(t, `{"decision":"allow","rule":"default"}`, string(row.Details))
-	assert.Nil(t, row.Payload, "phase 1 stores no payloads")
+	assert.Nil(t, row.Payload, "the audit row holds no payload")
 }
 
 func TestRecordTakesTraceIDFromContext(t *testing.T) {

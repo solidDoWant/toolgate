@@ -9,7 +9,7 @@ import (
 )
 
 // State is the policy state one request loads from PostgreSQL before it
-// decides (docs/design/phase-2.md §3, "Loading grants and blocks"). Every
+// decides. Every
 // decision of that request uses the same State, so Decide stays pure.
 type State struct {
 	// Grants are the principal's live grants. They are empty for attested
@@ -22,10 +22,8 @@ type State struct {
 	Scope Scope
 }
 
-// Scope is the effective list of servers of a signed-in user's request
-// (docs/design/phase-3.md §10, "The effective list"), with the scope
-// entries that apply to it (docs/design/phase-4.md §7, "Step 4 with scope
-// entries"). It only refuses: a server it allows still has to pass every
+// Scope is the effective list of servers of a signed-in user's request,
+// with the scope entries that apply to it. It only refuses: a server it allows still has to pass every
 // other step.
 type Scope struct {
 	// Applies is set for identities of kind user on a gateway with the web
@@ -137,7 +135,7 @@ func NewTemporaryBlock(id string, match v1alpha1.RuleMatch, reason string, expir
 	return &TemporaryBlock{ID: id, Reason: reason, ExpiresAt: expiresAt, match: compiled}, nil
 }
 
-// refusal is the reason a temporary block gives (docs/design/phase-2.md §3).
+// refusal is the reason a temporary block gives.
 func (b *TemporaryBlock) refusal() string {
 	return fmt.Sprintf("Blocked by an admin until %s: %s (block %s).", b.ExpiresAt.UTC().Format(time.RFC3339), b.Reason, b.ID)
 }
@@ -198,7 +196,7 @@ type ScopeRows struct {
 	UnverifiedDefault string
 	// UnverifiedList is the user_scopes row's unverified_list: with
 	// UnverifiedDefault none, the default for unverified sessions is list,
-	// and UnverifiedServers are its servers (docs/design/phase-4.md §2).
+	// and UnverifiedServers are its servers.
 	UnverifiedList    bool
 	UnverifiedServers []string
 	// HasList says the user has a list for the request's verified
@@ -212,9 +210,7 @@ type ScopeRows struct {
 	Entries []ScopeEntry
 }
 
-// EffectiveScope builds the scope of a request from its rows
-// (docs/design/phase-3.md §10, "The effective list", and
-// docs/design/phase-4.md §7). In a verified workspace it is the workspace's
+// EffectiveScope builds the scope of a request from its rows. In a verified workspace it is the workspace's
 // list if there is one, else the verified default, plus the session's
 // additions, and the workspace's and the session's entries apply. An
 // unverified session gets the unverified default, or its allow list, and

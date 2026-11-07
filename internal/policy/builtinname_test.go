@@ -11,7 +11,7 @@ import (
 
 // A tool offered under an exact name, as the built-in server's are, is
 // refused by a rule or temporary block naming that name, as by one naming
-// <server>__<tool> (docs/design/phase-4.md §6 and §7).
+// <server>__<tool>.
 func TestRulesMatchTheExactProxiedName(t *testing.T) {
 	access := everyone()
 	access.Environments = policy.EnvironmentAny

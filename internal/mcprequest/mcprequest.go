@@ -1,6 +1,5 @@
 // Package mcprequest reads what the gateway routes an MCP request by: its
-// protocol revision and its JSON-RPC method (docs/design/phase-4.md §8,
-// "Client side: routing each request").
+// protocol revision and its JSON-RPC method.
 package mcprequest
 
 import (

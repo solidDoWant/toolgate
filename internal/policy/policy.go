@@ -1,5 +1,5 @@
 // Package policy decides whether an identity may list or enable a server and
-// call its tools (SPEC.md §10, docs/design/phase-2.md §3). A decision checks
+// call its tools. A decision checks
 // catalog access, then the environment (where a live grant passes opt-in for
 // a signed-in user), then the blocks: a tool's blocked flag, the standing
 // ToolgateRule objects and the live temporary blocks.
@@ -25,7 +25,7 @@ const (
 	// StepTemporaryBlock is a live temporary block made by an admin.
 	StepTemporaryBlock = "temporary-block"
 	// StepWorkspaceScope is a server outside the effective list of a
-	// signed-in user's session (docs/design/phase-3.md §10).
+	// signed-in user's session.
 	StepWorkspaceScope = "workspace-scope"
 )
 
@@ -79,12 +79,10 @@ type Decision struct {
 	// Reason is a short sentence for the model and the audit log.
 	Reason string
 	// NeedsApproval is set on an allow of a tool with `approval: required`:
-	// the call goes on only with a person's approval
-	// (docs/design/phase-2.md §4).
+	// the call goes on only with a person's approval.
 	NeedsApproval bool
 	// Denied is set when a deny entry refused at step 4, and says where it
-	// was made. Such a refusal is never asked about
-	// (docs/design/phase-4.md §7, "A deny is never asked about").
+	// was made. Such a refusal is never asked about.
 	Denied DeniedIn
 }
 
@@ -105,7 +103,7 @@ type Engine struct {
 	GrantURL func(server, tool, session string) string
 }
 
-// Decide applies SPEC.md §10 in order: catalog access, environment, blocks,
+// Decide applies the checks in order: catalog access, environment, blocks,
 // workspace scope, approval.
 // It reads the grants and temporary blocks from request.State only.
 func (e *Engine) Decide(request Request) Decision {
@@ -179,7 +177,7 @@ func (e *Engine) Decide(request Request) Decision {
 
 // WorkspaceScopeRefusal is the reason of a step-4 refusal: in a verified
 // workspace it names the workspace's list, in an unverified session the
-// default for unverified sessions (docs/design/phase-3.md §10).
+// default for unverified sessions.
 func WorkspaceScopeRefusal(identity auth.Identity, server string) string {
 	if identity.Attestation == attestationAttested {
 		return fmt.Sprintf("Server `%s` isn't in the list for workspace `%s`. Allow it in the Workspaces page or with `toolgate workspace allow %s`.", server, identity.Workspace, server)
@@ -190,7 +188,7 @@ func WorkspaceScopeRefusal(identity auth.Identity, server string) string {
 
 // deniedRefusal is the reason of a step-4 refusal by a deny entry: it names
 // the tool, or the server for a decision about the whole server, and where
-// the entry was made (docs/design/phase-4.md §7).
+// the entry was made.
 func deniedRefusal(identity auth.Identity, server, tool string, where DeniedIn) string {
 	subject := server
 	if tool != "" {
@@ -210,7 +208,7 @@ const ApprovalRequired = "required"
 
 // refuseEnvironment is the refusal of step 2. When a grant would pass it
 // and the gateway has a web UI, the reason links to the page that creates
-// one (docs/design/phase-2.md §4, "A missing grant").
+// one.
 func (e *Engine) refuseEnvironment(request Request, environment string) Decision {
 	server := request.Template.Name
 

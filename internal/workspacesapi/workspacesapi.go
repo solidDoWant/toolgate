@@ -1,6 +1,5 @@
 // Package workspacesapi serves the workspace API: `GET /api/v1/workspaces`,
-// `POST /api/v1/workspaces/changes` and `GET /api/v1/access-requests/{id}`
-// (docs/design/phase-3.md §10, "API and CLI").
+// `POST /api/v1/workspaces/changes` and `GET /api/v1/access-requests/{id}`.
 package workspacesapi
 
 import (

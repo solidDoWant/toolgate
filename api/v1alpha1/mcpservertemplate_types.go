@@ -230,7 +230,7 @@ type ToolOverride struct {
 	Environments string `json:"environments,omitempty"`
 
 	// Approval set to required makes each call wait for a person's
-	// approval (phase 2).
+	// approval.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == 'required'",message="approval must be required or omitted"
 	Approval string `json:"approval,omitempty"`

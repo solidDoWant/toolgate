@@ -1,6 +1,5 @@
 // Package settingssync merges the settings fragment the gateway serves into
-// Claude Code's settings file, changing only the keys toolgate owns
-// (SPEC.md §13, docs/design/phase-1.md §5, "Settings sync").
+// Claude Code's settings file, changing only the keys toolgate owns.
 package settingssync
 
 import (

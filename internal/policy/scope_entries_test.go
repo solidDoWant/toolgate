@@ -240,8 +240,7 @@ func TestStepFourScopeEntries(t *testing.T) {
 	}
 }
 
-// With the web UI off, the scope doesn't apply, so deny entries do nothing
-// (docs/design/phase-4.md row 254).
+// With the web UI off, the scope doesn't apply, so deny entries do nothing.
 func TestScopeEntriesDoNothingWhenTheScopeIsOff(t *testing.T) {
 	state := policy.State{Scope: policy.Scope{Denied: map[string]map[string]policy.DeniedIn{"github": {"": policy.DeniedInWorkspace}}}}
 	decision := engine(t).Decide(policy.Request{Identity: verifiedUser(), Template: template("github", anyone(), nil), State: state})

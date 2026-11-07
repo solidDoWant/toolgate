@@ -161,7 +161,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	if cfg.UIEnabled() {
 		// The built-in server is offered only with the web UI, where
-		// widening a scope can take a step-up (docs/design/phase-4.md §7).
+		// widening a scope can take a step-up.
 		templates.SetBuiltin(gateway.BuiltinTemplate())
 
 		engine.GrantURL = ui.GrantLink(cfg.PublicURL)
@@ -304,7 +304,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 }
 
 // migrateDatabase applies the schema migrations before the gateway opens its
-// listeners or joins leader election (docs/design/phase-1.md §7). Replicas
+// listeners or joins leader election. Replicas
 // starting together take turns behind goose's PostgreSQL session lock. A
 // database newer than this binary (a rollback) is only logged: migrations
 // never run down.
@@ -322,7 +322,7 @@ func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, migrateOnStart boo
 		database, binary, err = store.SchemaVersions(ctx, pool)
 	} else {
 		// With migrateOnStart false the gateway never changes the schema:
-		// it refuses to start on an older one (docs/design/phase-3.md §7).
+		// it refuses to start on an older one.
 		database, binary, err = store.CheckSchemaVersion(ctx, pool)
 		if err == nil {
 			err = store.EnsureAuditPartitions(ctx, pool)
