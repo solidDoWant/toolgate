@@ -2,12 +2,9 @@
 
 ## Unreleased
 
-- The gateway can accept access tokens from more than one OIDC issuer, with the new chart value `config.oidc.additionalIssuers` (`oidcAdditionalIssuers` in the gateway configuration). Use it when your identity provider gives each client its own issuer, as Authentik does.
-- With `embeddings.server.scaleToZero.enabled`, the gateway now stops the embeddings server when nobody searched or started a session with tool search on for `idleTimeout`. Before, an open but idle Claude Code session kept the server running for about two hours more.
-
 ## 0.4.4
 
-toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes sign-in failures when several Claude Code sessions start at the same time, and two problems in the web UI. The Helm chart also gets values for the client ID and scopes of the `toolgate` command.
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes sign-in failures when several Claude Code sessions start at the same time, and two problems in the web UI. The gateway can now accept access tokens from more than one OIDC issuer. The Helm chart also gets values for the client ID and scopes of the `toolgate` command.
 
 To install toolgate:
 
@@ -16,11 +13,16 @@ To install toolgate:
 
 ### Upgrade notes for admins
 
-This release has no breaking changes. An install of 0.4.3 upgrades with no changes to its values.
+This release has no breaking changes. An install of 0.4.3 upgrades with no changes to its values. The gateway adds one table to its database when it starts. You do not have to do anything for this.
 
 ### Signing in
 
+- The gateway can accept access tokens from more than one OIDC issuer. An issuer is the identity provider address in the `iss` claim of a token. Use the new chart value `config.oidc.additionalIssuers` (`oidcAdditionalIssuers` in the gateway configuration) when your identity provider gives each client its own issuer, as Authentik does. Each issuer must give one person the same `sub` claim. The `toolgate` command and the web UI still sign in with `config.oidc.issuerURL`. See `docs/admin/chart-values.md`. ([#506](https://github.com/solidDoWant/toolgate/pull/506))
 - When several `toolgate` commands renewed the sign-in at the same time, for example at the start of two Claude Code sessions, the identity provider could refuse one of them with `invalid_grant`. The user then had to sign in again. This happened with identity providers that give a new refresh token at each renewal and refuse the old one, for example Authentik. Now only one `toolgate` command at a time renews the sign-in. It holds a lock on the file `token.lock` in the toolgate configuration directory. The other commands wait, then use the new token. ([#492](https://github.com/solidDoWant/toolgate/pull/492))
+
+### Tool search
+
+- With `embeddings.server.scaleToZero.enabled`, the gateway now stops the embeddings server when nobody searched or started a session with tool search on for `idleTimeout`. Before, an open but idle Claude Code session kept the server running for about two hours more. ([#491](https://github.com/solidDoWant/toolgate/pull/491))
 
 ### Deployment
 
@@ -31,12 +33,13 @@ This release has no breaking changes. An install of 0.4.3 upgrades with no chang
 - The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should. ([#484](https://github.com/solidDoWant/toolgate/pull/484))
 - If the gateway has no secrets keyset, the web UI no longer shows the Secrets link in its navigation. Before, the link opened a page that returned 404. ([#485](https://github.com/solidDoWant/toolgate/pull/485))
 
-Internal work: design documents for MCP sessions that all gateway replicas share through PostgreSQL.
+Internal work: design documents and database storage for MCP sessions that all gateway replicas share through PostgreSQL ([#499](https://github.com/solidDoWant/toolgate/pull/499), [#510](https://github.com/solidDoWant/toolgate/pull/510)), and the first parts of remote MCP servers ([#501](https://github.com/solidDoWant/toolgate/pull/501), [#511](https://github.com/solidDoWant/toolgate/pull/511)).
 
 ### Known issues
 
 - Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
-- With more than one gateway replica, a request can fail with `404 session not found` when it reaches another replica right after the session starts. Claude Code then marks the `toolgate` server as failed. Until a later release fixes this, set `config.replicas` to `1`. ([#487](https://github.com/solidDoWant/toolgate/issues/487))
+- With more than one gateway replica, a request can fail with `404 session not found` when it reaches another replica right after the session starts. Claude Code then marks the `toolgate` server as failed. A later release fixes this. Until then, set `config.replicas` to `1`. ([#487](https://github.com/solidDoWant/toolgate/issues/487))
+- Remote MCP servers do not work yet. An MCPServerTemplate accepts the field `spec.remote`, and the gateway starts and health-checks remote instances. But the gateway does not send tool calls to remote servers yet.
 - `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.3
