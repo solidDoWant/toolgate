@@ -56,6 +56,25 @@ func TestCallEnables(t *testing.T) {
 		assert.Equal(t, []string{"github"}, fixture.enabledServers(t, "alice", "session-1"))
 	})
 
+	t.Run("a call of a remote server is refused as not supported and enables nothing", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		template := fixture.addRemoteTemplate("mail-archiver")
+
+		client := fixture.connect(t, alice())
+		result := callTool(t, client, "mail-archiver__echo", nil)
+
+		require.True(t, result.IsError)
+		assert.Equal(t, "Server `mail-archiver` is a remote server, and this gateway version can't connect to remote servers yet.", resultText(result))
+
+		decisions := fixture.auditRows(t, "tool.decision")
+		require.Len(t, decisions, 1)
+		assert.Equal(t, "refuse", decisions[0].Details["decision"])
+		assert.Equal(t, "remote-unsupported", decisions[0].Details["reason"])
+		assert.Empty(t, fixture.instancesOf(t, template))
+		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"))
+		assert.Empty(t, fixture.auditRows(t, "server.enable"))
+	})
+
 	t.Run("a missing secret refuses the call with missing-secret and enables nothing", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)

@@ -103,6 +103,17 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 		return nil, EnableResult{}, errors.New(decision.Reason)
 	}
 
+	if template.Spec.Remote != nil {
+		recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
+		if err := recorder.Record(ctx, auditEvent(current, "server.enable", template.Name, map[string]any{
+			"decision": "refuse", "reason": reasonRemote,
+		})); err != nil {
+			return nil, EnableResult{}, err
+		}
+
+		return nil, EnableResult{}, remoteUnsupported(template.Name)
+	}
+
 	// Step 2: every secret the template names must be set.
 	if err := m.checkSecrets(ctx, current, template); err != nil {
 		return nil, EnableResult{}, err
