@@ -953,20 +953,37 @@ func (q *Queries) QueryIsEmpty(ctx context.Context, query string) (bool, error) 
 }
 
 const searchTools = `-- name: SearchTools :many
-
-SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
-       tool_search.upstream_name, tool_search.exposed_name
-FROM tool_search, to_tsquery('english', $1::text) AS q, to_tsquery('english', $2::text) AS q0
-WHERE tool_search.template_uid = ANY($3::text[]) AND tool_search.document @@ q
-ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, $4::text)) DESC, tool_search.exposed_name
+WITH docs AS (
+    SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+           tool_search.upstream_name, tool_search.exposed_name, tool_search.name_text,
+           tool_search.document, tool_search.embedding, tool_search.embedding_model
+    FROM tool_search
+    WHERE tool_search.template_uid = ANY($4::text[])
+    UNION ALL
+    SELECT own.template_uid, own.template_ns, own.template_name, own.upstream_name, own.exposed_name, own.name_part,
+           setweight(to_tsvector('english', own.name_part), 'A')
+           || setweight(to_tsvector('english', own.description_part), 'B')
+           || setweight(to_tsvector('english', own.server_part), 'C')
+           || setweight(to_tsvector('english', own.input_part), 'C'),
+           NULL::vector, ''::text
+    FROM jsonb_to_recordset($5::jsonb)
+         AS own(template_uid text, template_ns text, template_name text, upstream_name text, exposed_name text,
+                name_part text, description_part text, server_part text, input_part text)
+)
+SELECT docs.template_uid, docs.template_ns, docs.template_name,
+       docs.upstream_name, docs.exposed_name
+FROM docs, to_tsquery('english', $1::text) AS q, to_tsquery('english', $2::text) AS q0
+WHERE docs.document @@ q
+ORDER BY (ts_rank_cd(docs.document, q0, 1) + 0.4 * ts_rank_cd(docs.document, q, 1) + 0.3 * word_similarity(docs.name_text, $3::text)) DESC, docs.exposed_name
 LIMIT 100
 `
 
 type SearchToolsParams struct {
 	Expanded     string
 	Query        string
-	TemplateUids []string
 	Plain        string
+	TemplateUids []string
+	OwnDocuments []byte
 }
 
 type SearchToolsRow struct {
@@ -977,15 +994,19 @@ type SearchToolsRow struct {
 	ExposedName  string
 }
 
-// Ranks the search rows of the candidate templates against a tsquery text:
-// cover density over the weighted document, plus a small trigram similarity
-// between the plain query and the name words.
+// Ranks the search rows of the candidate templates, and the caller's own
+// documents passed in own_documents, against a tsquery text: cover density
+// over the weighted document, plus a small trigram similarity between the
+// plain query and the name words. The own documents are the tools of the
+// caller's own remote servers, which have no shared rows; they are built
+// here with the same weights as InsertToolSearch.
 func (q *Queries) SearchTools(ctx context.Context, arg SearchToolsParams) ([]SearchToolsRow, error) {
 	rows, err := q.db.Query(ctx, searchTools,
 		arg.Expanded,
 		arg.Query,
-		arg.TemplateUids,
 		arg.Plain,
+		arg.TemplateUids,
+		arg.OwnDocuments,
 	)
 	if err != nil {
 		return nil, err
@@ -1012,31 +1033,47 @@ func (q *Queries) SearchTools(ctx context.Context, arg SearchToolsParams) ([]Sea
 }
 
 const searchToolsHybrid = `-- name: SearchToolsHybrid :many
-WITH words AS (
-    SELECT tool_search.template_uid, tool_search.upstream_name,
-           row_number() OVER (ORDER BY (ts_rank_cd(tool_search.document, q0, 1) + 0.4 * ts_rank_cd(tool_search.document, q, 1) + 0.3 * word_similarity(tool_search.name_text, $2::text)) DESC, tool_search.exposed_name) AS rank
-    FROM tool_search, to_tsquery('english', $3::text) AS q, to_tsquery('english', $4::text) AS q0
-    WHERE tool_search.template_uid = ANY($1::text[]) AND tool_search.document @@ q
-), vectors AS (
-    SELECT tool_search.template_uid, tool_search.upstream_name,
-           row_number() OVER (ORDER BY tool_search.embedding <=> CAST($5::text AS vector), tool_search.exposed_name) AS rank
+WITH docs AS (
+    SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
+           tool_search.upstream_name, tool_search.exposed_name, tool_search.name_text,
+           tool_search.document, tool_search.embedding, tool_search.embedding_model
     FROM tool_search
     WHERE tool_search.template_uid = ANY($1::text[])
-      AND tool_search.embedding_model = $6::text AND tool_search.embedding IS NOT NULL
-      AND vector_dims(tool_search.embedding) = $7::int
+    UNION ALL
+    SELECT own.template_uid, own.template_ns, own.template_name, own.upstream_name, own.exposed_name, own.name_part,
+           setweight(to_tsvector('english', own.name_part), 'A')
+           || setweight(to_tsvector('english', own.description_part), 'B')
+           || setweight(to_tsvector('english', own.server_part), 'C')
+           || setweight(to_tsvector('english', own.input_part), 'C'),
+           NULL::vector, ''::text
+    FROM jsonb_to_recordset($2::jsonb)
+         AS own(template_uid text, template_ns text, template_name text, upstream_name text, exposed_name text,
+                name_part text, description_part text, server_part text, input_part text)
+), words AS (
+    SELECT docs.template_uid, docs.upstream_name,
+           row_number() OVER (ORDER BY (ts_rank_cd(docs.document, q0, 1) + 0.4 * ts_rank_cd(docs.document, q, 1) + 0.3 * word_similarity(docs.name_text, $3::text)) DESC, docs.exposed_name) AS rank
+    FROM docs, to_tsquery('english', $4::text) AS q, to_tsquery('english', $5::text) AS q0
+    WHERE docs.document @@ q
+), vectors AS (
+    SELECT docs.template_uid, docs.upstream_name,
+           row_number() OVER (ORDER BY docs.embedding <=> CAST($6::text AS vector), docs.exposed_name) AS rank
+    FROM docs
+    WHERE docs.embedding_model = $7::text AND docs.embedding IS NOT NULL
+      AND vector_dims(docs.embedding) = $8::int
 )
-SELECT tool_search.template_uid, tool_search.template_ns, tool_search.template_name,
-       tool_search.upstream_name, tool_search.exposed_name
-FROM tool_search
+SELECT docs.template_uid, docs.template_ns, docs.template_name,
+       docs.upstream_name, docs.exposed_name
+FROM docs
 LEFT JOIN words USING (template_uid, upstream_name)
 LEFT JOIN vectors USING (template_uid, upstream_name)
-WHERE tool_search.template_uid = ANY($1::text[]) AND (words.rank IS NOT NULL OR vectors.rank IS NOT NULL)
-ORDER BY (COALESCE(1.0 / (60 + words.rank), 0) + COALESCE(1.0 / (60 + vectors.rank), 0)) DESC, tool_search.exposed_name
+WHERE words.rank IS NOT NULL OR vectors.rank IS NOT NULL
+ORDER BY (COALESCE(1.0 / (60 + words.rank), 0) + COALESCE(1.0 / (60 + vectors.rank), 0)) DESC, docs.exposed_name
 LIMIT 100
 `
 
 type SearchToolsHybridParams struct {
 	TemplateUids []string
+	OwnDocuments []byte
 	Plain        string
 	Expanded     string
 	Query        string
@@ -1055,10 +1092,12 @@ type SearchToolsHybridRow struct {
 
 // Like SearchTools, and also ranks the rows embedded with the given model by
 // cosine distance to the query vector. The two ranks are fused by reciprocal
-// rank fusion with constant 60: a row missing from a list gets nothing from it.
+// rank fusion with constant 60: a row missing from a list gets nothing from
+// it. The own documents have no vector, so they rank by words only.
 func (q *Queries) SearchToolsHybrid(ctx context.Context, arg SearchToolsHybridParams) ([]SearchToolsHybridRow, error) {
 	rows, err := q.db.Query(ctx, searchToolsHybrid,
 		arg.TemplateUids,
+		arg.OwnDocuments,
 		arg.Plain,
 		arg.Expanded,
 		arg.Query,
