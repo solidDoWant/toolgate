@@ -4,12 +4,15 @@
 package tokenstore
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/zalando/go-keyring"
 )
 
@@ -237,4 +240,56 @@ func (s *Store) Delete() error {
 	}
 
 	return nil
+}
+
+// LockFileName is the name of the lock file inside the store's directory. It
+// is there whatever the store's mode, so the refresh is serialized when the
+// token is in the keychain too.
+const LockFileName = "token.lock"
+
+// lockRetry is how often Lock tries the lock again while another process
+// holds it.
+const lockRetry = 20 * time.Millisecond
+
+// processLock serializes Lock between the goroutines of this process. The
+// file lock alone serializes them too, but the Go memory model, and so the
+// race detector, sees only this one.
+var processLock = make(chan struct{}, 1)
+
+// Lock takes an exclusive lock on LockFileName in the store's directory,
+// shared by every toolgate process of this user, and returns the function
+// that releases it. It waits for the holder until ctx ends.
+func (s *Store) Lock(ctx context.Context) (func(), error) {
+	select {
+	case processLock <- struct{}{}:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("lock the token store: %w", ctx.Err())
+	}
+
+	release := func() { <-processLock }
+
+	if err := os.MkdirAll(s.dir, dirMode); err != nil {
+		release()
+
+		return nil, fmt.Errorf("create token directory: %w", err)
+	}
+
+	lock := flock.New(filepath.Join(s.dir, LockFileName), flock.SetPermissions(fileMode))
+
+	locked, err := lock.TryLockContext(ctx, lockRetry)
+	if err == nil && !locked {
+		err = errors.New("not locked")
+	}
+
+	if err != nil {
+		release()
+
+		return nil, fmt.Errorf("lock the token store: %w", err)
+	}
+
+	return func() {
+		_ = lock.Close()
+
+		release()
+	}, nil
 }
