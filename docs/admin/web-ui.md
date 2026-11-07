@@ -101,7 +101,14 @@ The filters are links and menus. They are in the URL, so you can bookmark a view
 
 If there are no sessions, the page says that sessions appear when Claude Code connects through the toolgate plugin, and links to Quick setup.
 
-"Open" on the row of an open session shows `/ui/sessions/` followed by the session's number. The page shows the session's servers that are enabled and its 20 newest `tool.decision` events. Each event links to its audit page. A user who asks for another user's session, or for a session that has ended, gets 404. An admin can open any open session. You cannot end a session from the UI.
+"Open" on the row of an open session shows `/ui/sessions/` followed by the session's number. The page is read only. It has four parts:
+
+- **Header:** the same facts as the list row: who, where (with the verified or unverified badge), the client and its kind, the state, tool search, and the short session ID with a copy button.
+- **Servers:** each server that is enabled in the session, with its status (`ready`, `starting`, `failed`, `blocked`, `stopped`) and the reason, if any. The Instance column says `remote` for a remote server, or the namespace of its template. If the gateway can't show a status to the viewer, for example an admin who views a session of a user whose groups it doesn't know, the status is `unknown`.
+- **Effective scope:** what the session may use. It shows the list that applies (the list of the workspace or the matching default), the allow and deny entries of the workspace, and the servers, allow entries and deny entries that are for this session only. It links to the Workspaces and Servers pages, where you change them.
+- **Recent tool calls:** the newest 50 events of the session's calls, with time, server, tool, outcome, latency, and the reason for a refusal. Approval requests and approved calls show too. Each row links to its audit event. A link below the table opens the audit log filtered to the session.
+
+A user who asks for another user's session, or for a session that has ended, gets 404. An admin can open any open session. You cannot end a session from the UI.
 
 ## The Secrets page
 

@@ -49,6 +49,26 @@ WHERE type = 'tool.decision' AND principal = @principal AND session = @session
 ORDER BY occurred_at DESC, id DESC
 LIMIT @page_size;
 
+-- name: ListSessionCallEvents :many
+-- Lists the newest call events of one session: decisions, results and
+-- approval requests and expiries.
+SELECT id, occurred_at, type, server, tool, details
+FROM audit_events
+WHERE type IN ('tool.decision', 'tool.result', 'approval.request', 'approval.expire')
+  AND principal = @principal AND session = @session
+  AND occurred_at >= @since::timestamptz
+ORDER BY occurred_at DESC, id DESC
+LIMIT @page_size;
+
+-- name: GetSessionClient :one
+-- Returns the clientInfo of the session's newest MCP session, or no row.
+SELECT COALESCE(initialize_params -> 'clientInfo' ->> 'name', '')::text AS client_name,
+       COALESCE(initialize_params -> 'clientInfo' ->> 'version', '')::text AS client_version
+FROM mcp_sessions
+WHERE session_pk = @session_pk
+ORDER BY created_at DESC
+LIMIT 1;
+
 -- name: ListSessionsForUI :many
 -- Lists sessions for the Sessions page, newest activity first: open ones and
 -- those that ended after @ended_after (the start of the resume window). An

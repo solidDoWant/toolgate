@@ -32,6 +32,28 @@ func (q *Queries) DeleteUISession(ctx context.Context, idHash []byte) error {
 	return err
 }
 
+const getSessionClient = `-- name: GetSessionClient :one
+SELECT COALESCE(initialize_params -> 'clientInfo' ->> 'name', '')::text AS client_name,
+       COALESCE(initialize_params -> 'clientInfo' ->> 'version', '')::text AS client_version
+FROM mcp_sessions
+WHERE session_pk = $1
+ORDER BY created_at DESC
+LIMIT 1
+`
+
+type GetSessionClientRow struct {
+	ClientName    string
+	ClientVersion string
+}
+
+// Returns the clientInfo of the session's newest MCP session, or no row.
+func (q *Queries) GetSessionClient(ctx context.Context, sessionPk int64) (GetSessionClientRow, error) {
+	row := q.db.QueryRow(ctx, getSessionClient, sessionPk)
+	var i GetSessionClientRow
+	err := row.Scan(&i.ClientName, &i.ClientVersion)
+	return i, err
+}
+
 const getValidUISession = `-- name: GetValidUISession :one
 SELECT id_hash, principal, email, name, groups, csrf_token, auth_time, created_at, last_seen_at, expires_at FROM ui_sessions
 WHERE id_hash = $1 AND expires_at > now() AND last_seen_at > now() - interval '1 hour'
@@ -174,6 +196,66 @@ func (q *Queries) ListRecentDecisions(ctx context.Context, arg ListRecentDecisio
 			&i.Workspace,
 			&i.Session,
 			&i.Attestation,
+			&i.Server,
+			&i.Tool,
+			&i.Details,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionCallEvents = `-- name: ListSessionCallEvents :many
+SELECT id, occurred_at, type, server, tool, details
+FROM audit_events
+WHERE type IN ('tool.decision', 'tool.result', 'approval.request', 'approval.expire')
+  AND principal = $1 AND session = $2
+  AND occurred_at >= $3::timestamptz
+ORDER BY occurred_at DESC, id DESC
+LIMIT $4
+`
+
+type ListSessionCallEventsParams struct {
+	Principal string
+	Session   string
+	Since     pgtype.Timestamptz
+	PageSize  int32
+}
+
+type ListSessionCallEventsRow struct {
+	ID         int64
+	OccurredAt pgtype.Timestamptz
+	Type       string
+	Server     string
+	Tool       string
+	Details    []byte
+}
+
+// Lists the newest call events of one session: decisions, results and
+// approval requests and expiries.
+func (q *Queries) ListSessionCallEvents(ctx context.Context, arg ListSessionCallEventsParams) ([]ListSessionCallEventsRow, error) {
+	rows, err := q.db.Query(ctx, listSessionCallEvents,
+		arg.Principal,
+		arg.Session,
+		arg.Since,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionCallEventsRow{}
+	for rows.Next() {
+		var i ListSessionCallEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.Type,
 			&i.Server,
 			&i.Tool,
 			&i.Details,
