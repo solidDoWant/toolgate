@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- The gateway now tells the model which servers it can use: a short list in the MCP instructions, and the same names in the descriptions of `toolgate_find_tools` and `toolgate_list_servers`. Write each template's `description` for the model.
+
 ## 0.4.6
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes the database connection when the PostgreSQL client certificate changes. It also gives the web UI a new look.

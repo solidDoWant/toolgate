@@ -204,6 +204,10 @@ type mcpEndpoint struct {
 	// stateless binding.
 	newServer func(stateless bool) *mcp.Server
 	callTool  mcp.ToolHandler
+	// describeTools sets the descriptions of a session's discovery meta
+	// tools before the session connects, so the first set sends no
+	// list_changed.
+	describeTools func(ctx context.Context, target *sessionTools, identity auth.Identity)
 	// toolSearch is the setting that decides the mode of a request without
 	// the X-Toolgate-Tool-Search header.
 	toolSearch bool
@@ -341,6 +345,23 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 	}
 
 	endpoint.callTool = tools.callTool
+	endpoint.describeTools = func(ctx context.Context, target *sessionTools, identity auth.Identity) {
+		target.mu.Lock()
+		described := target.findDescription != ""
+		target.mu.Unlock()
+
+		if described {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(ctx, fanOutTimeout)
+		defer cancel()
+
+		// A failed read leaves the plain descriptions; the next sync retries.
+		if err := tools.syncMetaDescriptions(ctx, target, identity); err != nil {
+			endpoint.logger.WarnContext(ctx, "reading the catalog summary failed", "error", err)
+		}
+	}
 	endpoint.waiters = &tools.waiters
 	endpoint.sessions.restore = tools.restoreServers
 
@@ -385,7 +406,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 
 		server := mcp.NewServer(implementation, serverOptions)
 		tools.register(server)
-		server.AddReceivingMiddleware(tools.syncOnList, tools.routeProxiedCalls)
+		server.AddReceivingMiddleware(tools.syncOnList, tools.routeProxiedCalls, tools.describeCatalog)
 
 		// The row is written outermost, after the go-sdk made the
 		// initialize result, and before the result goes out.
@@ -402,6 +423,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		SetCacheable: privateToolLists,
 		GetSessionID: func() string { return "" },
 	})
+	endpoint.discoverServer.AddReceivingMiddleware(tools.describeCatalog)
 
 	// The go-sdk takes the request's identity from its TokenInfo. The token
 	// was already verified by auth.Middleware.
@@ -658,6 +680,8 @@ type mcpCopyCtxKey struct{}
 func (e *mcpEndpoint) serveStateless(writer http.ResponseWriter, request *http.Request, binding mcpBinding, current requestContext) {
 	held, current := e.acquireStateless(binding, current)
 	defer e.releaseStateless(binding, held)
+
+	e.describeTools(request.Context(), held.tools, current.identity)
 
 	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
 	ctx = context.WithValue(ctx, newServerCtxKey{}, held.tools.server)

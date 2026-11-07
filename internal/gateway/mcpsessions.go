@@ -117,6 +117,9 @@ func streamableAccepts(values []string) (jsonOK, streamOK bool) {
 // state starts a session that the client initializes on this request.
 func (e *mcpEndpoint) connectCopy(ctx context.Context, id string, binding mcpBinding, current requestContext, state *mcp.ServerSessionState) (*mcpSession, error) {
 	server := e.newServer(false)
+	tools := newSessionTools(server, e.callTool, current)
+	e.describeTools(ctx, tools, current.identity)
+
 	transport := &mcp.StreamableServerTransport{SessionID: id}
 
 	// The copy outlives the request that made it, so it keeps only that
@@ -131,7 +134,7 @@ func (e *mcpEndpoint) connectCopy(ctx context.Context, id string, binding mcpBin
 	}
 
 	held := &mcpSession{
-		binding: binding, tools: newSessionTools(server, e.callTool, current),
+		binding: binding, tools: tools,
 		transport: transport, serverSession: serverSession,
 	}
 

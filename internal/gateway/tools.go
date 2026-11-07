@@ -58,6 +58,9 @@ type sessionTools struct {
 	// once. A copy that another replica's session was adopted into starts
 	// unsynced.
 	synced bool
+	// findDescription and listDescription are the descriptions the discovery
+	// meta tools currently have.
+	findDescription, listDescription string
 }
 
 func newSessionTools(server *mcp.Server, call mcp.ToolHandler, current requestContext) *sessionTools {
@@ -300,6 +303,10 @@ func (m *metaTools) syncSession(ctx context.Context, session *mcp.ServerSession,
 	}
 
 	if err := offered.apply(tools); err != nil {
+		return nil, err
+	}
+
+	if err := m.syncMetaDescriptions(ctx, offered, current.identity); err != nil {
 		return nil, err
 	}
 
