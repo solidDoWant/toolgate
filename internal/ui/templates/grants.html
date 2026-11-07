@@ -1,22 +1,22 @@
 {{define "content"}}
-<p><a class="button" href="/ui/grants/new">New grant</a></p>
+<p><a class="button primary" href="/ui/grants/new">New grant</a></p>
 {{if .Data}}
-<table id="grants">
+<div class="table-wrap"><table id="grants">
 <thead><tr><th>Server</th><th>Tool</th><th>Session</th><th>Created</th><th>Expires</th><th>Status</th><th></th></tr></thead>
 <tbody>
 {{range .Data}}{{template "grant_row" .}}{{end}}</tbody>
-</table>
+</table></div>
 {{else}}
-<p>You have no grants.</p>
+<p class="empty">You have no grants.</p>
 {{end}}
 {{end}}
 {{define "grant_row"}}<tr id="grant-{{.ID}}">
 <td>{{.Server}}</td><td>{{if .Tool}}{{.Tool}}{{else}}whole server{{end}}</td><td>{{if .Session}}{{.Session}}{{else}}any session{{end}}</td>
 <td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
-<td class="status">{{.Status}}{{with .RevokedAt}} {{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td>
+<td class="status"><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .RevokedAt}} {{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td>
 <td>{{if .Live}}<form method="post" action="/ui/grants/{{.ID}}/revoke" hx-post="/ui/grants/{{.ID}}/revoke" hx-target="closest tr" hx-swap="outerHTML">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-<button type="submit">Revoke</button>
+<button type="submit" class="danger">Revoke</button>
 </form>{{end}}</td>
 </tr>
 {{end}}

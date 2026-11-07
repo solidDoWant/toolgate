@@ -1,7 +1,7 @@
 {{define "content"}}
 <h2>Temporary blocks</h2>
 {{if .Data.Blocks}}
-<table id="blocks">
+<div class="table-wrap"><table id="blocks">
 <thead><tr><th>ID</th><th>Match</th><th>Reason</th><th>Created by</th><th>Created</th><th>Ends</th></tr></thead>
 <tbody>
 {{range .Data.Blocks}}<tr>
@@ -9,12 +9,12 @@
 <td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
 </tr>
 {{end}}</tbody>
-</table>
+</table></div>
 {{else}}
-<p>No temporary blocks are live.</p>
+<p class="empty">No temporary blocks are live.</p>
 {{end}}
 <h3>Add a temporary block</h3>
-{{if .Data.Error}}<p class="error" role="alert">{{.Data.Error}}</p>{{end}}
+{{if .Data.Error}}<p class="flash error" role="alert">{{.Data.Error}}</p>{{end}}
 <form method="post" action="/ui/blocks" id="block-form">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 <p>Set at least one field. Write one item per line. Items are globs: <code>*</code> matches any run of characters.</p>
@@ -34,22 +34,22 @@
 <p><label>Duration in minutes (1 to 43200, which is 30 days)
 <input type="number" name="minutes" min="1" max="43200" value="{{.Data.Form.Minutes}}" required></label></p>
 <p>A block ends at its expiry. You can't end it early.</p>
-<button type="submit">Add block</button>
+<button type="submit" class="primary">Add block</button>
 </form>
 <h2>Standing rules</h2>
 <p>These <code>ToolgateRule</code> objects come from git. This page only shows them.</p>
 {{if .Data.Rules}}
-<table id="rules">
+<div class="table-wrap"><table id="rules">
 <thead><tr><th>Rule</th><th>Match</th><th>Reason</th><th>Expires</th><th>Valid</th></tr></thead>
 <tbody>
 {{range .Data.Rules}}<tr>
 <td>{{.Namespace}}/{{.Name}}</td><td>{{.Match}}</td><td>{{.Reason}}</td>
 <td>{{with .Expires}}{{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{else}}never{{end}}</td>
-<td>{{if .Valid}}valid{{else}}invalid: {{.Message}}{{end}}</td>
+<td>{{if .Valid}}<span class="badge badge-ok">valid</span>{{else}}<span class="badge badge-bad">invalid: {{.Message}}</span>{{end}}</td>
 </tr>
 {{end}}</tbody>
-</table>
+</table></div>
 {{else}}
-<p>There are no standing rules.</p>
+<p class="empty">There are no standing rules.</p>
 {{end}}
 {{end}}

@@ -2,6 +2,18 @@
 
 Tool search lets a session find tools by describing a task, instead of listing every tool of every server. Users turn it on with a header. You can also turn it on for all sessions with `config.toolSearch`. See [Tool search](../user/tool-search.md) for how users see it.
 
+## Enable and disable tools
+
+In search mode, a call to a tool of an allowed server turns the server on. The tools `toolgate_enable_server` and `toolgate_disable_server` add little there, so the gateway does not list them. The setting `config.metaTools.enableDisable` decides this:
+
+| Value | Meaning |
+|---|---|
+| `auto` | The default. The tools are listed when tool search is off, and hidden when it is on. |
+| `always` | The tools are listed in every mode. Use this to get the old behavior back. |
+| `never` | The tools are listed in no mode. |
+
+The mode is set for each session, so a session that changes mode gets a new tool list. A call to a hidden tool fails with a message that tells the model to call the tool it needs. If a server is not allowed in the workspace, a call to one of its tools asks the user for access. Search results never ask by themselves.
+
 By default, search matches words. It stems the words of the task, adds a short list of general synonyms (for example "folder" and "directory"), and ranks tools in PostgreSQL. You do not need to set up anything for this.
 
 ## Optional embeddings

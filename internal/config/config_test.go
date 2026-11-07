@@ -70,6 +70,7 @@ logLevel: debug
 		SessionIdleTimeout:          config.Duration(2 * time.Hour),
 		SessionResumeWindow:         config.Duration(24 * time.Hour),
 		ApprovalTimeout:             config.Duration(10 * time.Minute),
+		MetaToolsEnableDisable:      "auto",
 		PublicURL:                   "https://toolgate.example",
 		OIDCUIClientID:              "toolgate-ui",
 		OIDCUIScopes:                []string{"openid", "email", "profile"},
@@ -612,4 +613,26 @@ func TestMCPResourceURL(t *testing.T) {
 			assert.Equal(t, test.want, cfg.MCPResourceURL())
 		})
 	}
+}
+
+func TestLoadMetaToolsEnableDisable(t *testing.T) {
+	assert.Equal(t, "auto", config.Default().MetaToolsEnableDisable)
+
+	load := func(value string) (config.Config, error) {
+		return config.Load("", envFrom(map[string]string{
+			"TOOLGATE_DATABASE_URL":              validDatabaseURL,
+			"TOOLGATE_OIDC_ISSUER_URL":           "https://idp.example",
+			"TOOLGATE_OIDC_AUDIENCE":             "toolgate",
+			"TOOLGATE_META_TOOLS_ENABLE_DISABLE": value,
+		}))
+	}
+
+	for _, value := range []string{"auto", "always", "never"} {
+		cfg, err := load(value)
+		require.NoError(t, err, value)
+		assert.Equal(t, value, cfg.MetaToolsEnableDisable)
+	}
+
+	_, err := load("sometimes")
+	require.ErrorContains(t, err, "metaToolsEnableDisable: must be auto, always or never")
 }

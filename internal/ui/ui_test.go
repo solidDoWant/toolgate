@@ -203,3 +203,31 @@ func TestTemplatesNeedNoRelaxedContentSecurityPolicy(t *testing.T) {
 		assert.NotRegexp(t, forbidden, string(content), file)
 	}
 }
+
+func TestPagesLinkOnlySameOriginStylesheets(t *testing.T) {
+	files, err := filepath.Glob("templates/*.html")
+	require.NoError(t, err)
+
+	link := regexp.MustCompile(`(?i)<link[^>]*>`)
+	href := regexp.MustCompile(`(?i)href="([^"]*)"`)
+	external := regexp.MustCompile(`(?i)(https?:)?//|@import|url\(\s*["']?(https?:)?//`)
+
+	layout, err := os.ReadFile("templates/layout.html")
+	require.NoError(t, err)
+	require.Contains(t, string(layout), `href="/ui/static/toolgate.css"`)
+
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		require.NoError(t, err)
+
+		for _, tag := range link.FindAllString(string(content), -1) {
+			match := href.FindStringSubmatch(tag)
+			require.NotNil(t, match, tag)
+			assert.True(t, strings.HasPrefix(match[1], "/ui/static/"), "%s links %s", file, match[1])
+		}
+	}
+
+	css, err := os.ReadFile("static/toolgate.css")
+	require.NoError(t, err)
+	assert.NotRegexp(t, external, string(css))
+}

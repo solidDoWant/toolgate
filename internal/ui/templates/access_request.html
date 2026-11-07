@@ -10,21 +10,21 @@
 <dt>Expires</dt><dd>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
 </dl>
 {{with .Change}}<h2>Change</h2>
-{{if .Defaults}}<table id="change">
+{{if .Defaults}}<div class="table-wrap"><table id="change">
 <thead><tr><th>Default</th><th>Before</th><th>After</th></tr></thead>
 <tbody>
 <tr><td>Sessions in a verified workspace without a list</td><td>{{.BeforeVerified}}</td><td>{{.AfterVerified}}</td></tr>
 <tr><td>Sessions without a verified workspace</td><td>{{.BeforeUnverified}}</td><td>{{.AfterUnverified}}</td></tr>
 </tbody>
-</table>
+</table></div>
 {{else}}<p>Workspace {{.Workspace}}</p>
-<table id="change">
+<div class="table-wrap"><table id="change">
 <thead><tr><th>Before</th><th>After</th></tr></thead>
 <tbody><tr>
 <td id="change-before">{{template "list_state" .Before}}</td>
 <td id="change-after">{{template "list_state" .After}}</td>
 </tr></tbody>
-</table>
+</table></div>
 {{end}}{{end}}
 {{with .Scope}}<h2>Change</h2>
 <dl id="scope-target">
@@ -36,38 +36,38 @@
 {{else}}<dt>Target workspace</dt><dd>{{.Workspace}}</dd>
 {{end}}<dt>Asked by session</dt><dd>{{if .AskedBy}}{{.AskedBy}}{{else}}none (the CLI){{end}}</dd>
 </dl>
-<table id="change">
+<div class="table-wrap"><table id="change">
 <thead><tr><th>Before</th><th>After</th></tr></thead>
 <tbody><tr>
 <td id="change-before">{{template "scope_state" .Before}}</td>
 <td id="change-after">{{template "scope_state" .After}}</td>
 </tr></tbody>
-</table>
+</table></div>
 {{end}}
-{{with .Error}}<p class="error">{{.}}</p>
-{{end}}{{if .Message}}<p class="status">{{.Message}}</p>
+{{with .Error}}<p class="flash error">{{.}}</p>
+{{end}}{{if .Message}}<p class="flash status" role="status">{{.Message}}</p>
 {{else}}
 {{if or .Change .Scope}}{{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>
 <a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
 {{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit">Approve</button>
+<button type="submit" class="primary">Approve</button>
 </form>
 {{end}}{{else if eq .Kind "server"}}{{if .StepUpURL}}<p>Allowing needs a fresh sign-in.</p>
 <a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
 {{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="scope" value="session">
-<button type="submit" id="allow-session">Allow for this session</button>
+<button type="submit" id="allow-session" class="primary">Allow for this session</button>
 </form>
 <form method="post" action="/ui/approvals/{{.ID}}/approve">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="scope" value="workspace">
-<button type="submit" id="allow-workspace">Always allow in this workspace</button>
+<button type="submit" id="allow-workspace" class="secondary">Always allow in this workspace</button>
 </form>
 {{end}}{{end}}<form method="post" action="/ui/approvals/{{.ID}}/deny">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit">Deny</button>
+<button type="submit" class="danger">Deny</button>
 </form>
 {{end}}
 {{end}}

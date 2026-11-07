@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · toolgate</title>
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false}'>
@@ -10,22 +11,25 @@
 <script src="/ui/static/copy.js" defer></script>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
-<nav>
-<a href="/ui/servers">Servers</a>
-<a href="/ui/sessions">Sessions</a>
-<a href="/ui/grants">Grants</a>
-<a href="/ui/approvals">Approvals</a>
-<a href="/ui/workspaces">Workspaces</a>
-{{if .Secrets}}<a href="/ui/secrets">Secrets</a>
-{{end}}<a href="/ui/audit">Audit</a>
-<a href="/ui/setup">Setup</a>
-{{if .Admin}}<a href="/ui/blocks">Blocks</a>
-{{end}}<form method="post" action="/ui/logout" class="logout">
+<header class="site-header">
+<span class="brand">toolgate</span>
+<form method="post" action="/ui/logout" class="logout">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-<span>{{.User}}</span>
-<button type="submit">Sign out</button>
+<span class="user">{{.User}}</span>
+<button type="submit" class="secondary">Sign out</button>
 </form>
-</nav>
+</header>
+<nav aria-label="Main">
+<a href="/ui/servers"{{if eq .Section "servers"}} aria-current="page"{{end}}>Servers</a>
+<a href="/ui/sessions"{{if eq .Section "sessions"}} aria-current="page"{{end}}>Sessions</a>
+<a href="/ui/grants"{{if eq .Section "grants"}} aria-current="page"{{end}}>Grants</a>
+<a href="/ui/approvals"{{if eq .Section "approvals"}} aria-current="page"{{end}}>Approvals</a>
+<a href="/ui/workspaces"{{if eq .Section "workspaces"}} aria-current="page"{{end}}>Workspaces</a>
+{{if .Secrets}}<a href="/ui/secrets"{{if eq .Section "secrets"}} aria-current="page"{{end}}>Secrets</a>
+{{end}}<a href="/ui/audit"{{if eq .Section "audit"}} aria-current="page"{{end}}>Audit</a>
+<a href="/ui/setup"{{if eq .Section "setup"}} aria-current="page"{{end}}>Setup</a>
+{{if .Admin}}<a href="/ui/blocks"{{if eq .Section "blocks"}} aria-current="page"{{end}}>Blocks</a>
+{{end}}</nav>
 <main>
 <h1>{{.Title}}</h1>
 {{template "content" .}}
@@ -33,3 +37,8 @@
 </body>
 </html>
 {{end}}
+
+{{define "availability"}}<div>Verified workspace without a list: <span class="badge {{if .VerifiedDefault}}badge-ok{{else}}badge-bad{{end}}">{{if .VerifiedDefault}}allowed{{else}}blocked{{end}}</span></div>
+{{range .Lists}}<div>Workspace <code>{{.Workspace}}</code>: <span class="badge {{if .Allowed}}badge-ok{{else}}badge-bad{{end}}">{{if .Allowed}}allowed{{else}}blocked{{end}}</span></div>
+{{end}}<div>Unverified session: <span class="badge {{if .Unverified}}badge-ok{{else}}badge-bad{{end}}">{{if .Unverified}}allowed{{else}}blocked{{end}}</span></div>
+<div><a href="/ui/workspaces">Change on the Workspaces page</a></div>{{end}}

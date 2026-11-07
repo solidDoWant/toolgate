@@ -50,6 +50,47 @@ func (f *fakeServers) Servers(_ context.Context, identity auth.Identity) ([]gate
 	}, nil
 }
 
+// Catalog returns the same servers as Servers, with details.
+func (f *fakeServers) Catalog(ctx context.Context, identity auth.Identity) ([]gateway.ServerInfo, error) {
+	entries, err := f.Servers(ctx, identity)
+	if err != nil {
+		return nil, err
+	}
+
+	infos := make([]gateway.ServerInfo, 0, len(entries))
+	for _, entry := range entries {
+		info := gateway.ServerInfo{ServerEntry: entry, Environments: "opt-in", ToolCount: -1}
+
+		switch entry.Name {
+		case "github":
+			info.Environments, info.ToolCount = "any", 12
+		case "prod-db":
+			info.Environments = "attested"
+		}
+
+		infos = append(infos, info)
+	}
+
+	return infos, nil
+}
+
+// ServerDetail knows only "github" (with two tools) and "mail", a remote
+// server with a secret that is not set.
+func (f *fakeServers) ServerDetail(_ context.Context, _ auth.Identity, name string) (gateway.ServerInfo, []gateway.ToolInfo, bool, error) {
+	switch name {
+	case "github", "any-server":
+		return gateway.ServerInfo{ServerEntry: gateway.ServerEntry{Name: name, Scope: "per-user", Status: "ready"}, Environments: "any", ToolCount: 2},
+			[]gateway.ToolInfo{{Name: "create_issue", Description: "Create an issue."}, {Name: "delete_repo", Blocked: true}, {Name: "merge", ApprovalRequired: true}}, true, nil
+	case "mail":
+		return gateway.ServerInfo{
+			ServerEntry: gateway.ServerEntry{Name: "mail", Scope: "per-user", Status: "stopped"}, Environments: "opt-in", Remote: true, ToolCount: -1,
+			Secrets: []gateway.SecretStatus{{Name: "mail-archiver-api-key"}},
+		}, nil, true, nil
+	default:
+		return gateway.ServerInfo{}, nil, false, nil
+	}
+}
+
 func (f *fakeServers) LiveInstances(_ context.Context, principal string, includeShared bool) ([]gateway.InstanceEntry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -256,9 +297,9 @@ func TestServersPage(t *testing.T) {
 				"the catalog is the user's with `user` attestation and no workspace or session claim")
 			assert.Equal(t, test.wantShared, includeShared)
 
-			assert.Contains(t, body, "<td>github</td>")
+			assert.Contains(t, body, `<a href="/ui/servers/github">github</a>`)
 			assert.Contains(t, body, "Only from an attested environment.")
-			assert.Contains(t, body, "<td>outdated</td>")
+			assert.Contains(t, body, `<span class="badge badge-warn">outdated</span>`)
 			assert.Equal(t, test.wantShared, strings.Contains(body, "<td>wiki</td>"), "shared instances only for admins")
 			assert.Equal(t, test.wantShared, strings.Contains(body, `href="/ui/blocks"`), "the Blocks link only for admins")
 

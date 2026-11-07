@@ -7,10 +7,10 @@
 <label>Tool <input type="text" name="tool" value="{{.Data.Filter.Tool}}"></label>
 <label>From (UTC) <input type="datetime-local" name="from" value="{{.Data.FromInput}}"></label>
 <label>To (UTC) <input type="datetime-local" name="to" value="{{.Data.ToInput}}"></label>
-<button type="submit">Filter</button>
+<button type="submit" class="primary">Filter</button>
 </form>
 {{if .Data.Events}}
-<table id="events">
+<div class="table-wrap"><table id="events">
 <thead><tr><th>Time (UTC)</th><th>Type</th><th>Principal</th><th>Workspace</th><th>Session</th><th>Server</th><th>Tool</th><th></th></tr></thead>
 <tbody>
 {{range .Data.Events}}<tr>
@@ -18,9 +18,9 @@
 <td><a href="/ui/audit/events/{{.Key}}">Open</a></td>
 </tr>
 {{end}}</tbody>
-</table>
+</table></div>
 {{if .Data.NextURL}}<p><a id="next" href="{{.Data.NextURL}}">Older events</a></p>{{end}}
 {{else}}
-<p>No events match.</p>
+<p class="empty">No events match.</p>
 {{end}}
 {{end}}

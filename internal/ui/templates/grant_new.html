@@ -1,5 +1,5 @@
 {{define "content"}}
-{{with .Data.Error}}<p class="error" role="alert">{{.}}</p>
+{{with .Data.Error}}<p class="flash error" role="alert">{{.}}</p>
 {{end}}{{if .Data.Servers}}
 <form method="post" action="/ui/grants" id="grant-form">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -25,9 +25,9 @@
 {{range .Data.Sessions}}<option value="{{.}}"{{if eq . $.Data.Session}} selected{{end}}>{{.}}</option>
 {{end}}</select>
 </label>
-<button type="submit">Create grant</button>
+<button type="submit" class="primary">Create grant</button>
 </form>
 {{else}}
-<p>None of your servers needs a grant.</p>
+<p class="empty">None of your servers needs a grant.</p>
 {{end}}
 {{end}}

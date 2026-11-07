@@ -221,6 +221,12 @@ These are Helm hooks (`pre-install` and `pre-upgrade`). Helm and the Flux helm-c
 - **Mounts.** The Job mounts nothing from the release, because the release's ConfigMap and Secrets do not exist yet when it runs. If the Job needs a file, such as a client certificate for PostgreSQL, mount it with `resources.persistence.<name>.advancedMounts.migrate`. Mount files for the gateway, such as a resolver `caFile`, with `advancedMounts.gateway.gateway`. A `globalMounts` entry also mounts the file into the Job.
 - **No migration Secret.** If `migrateOnStart` is `false` and both `migrationSecret` and `migrationUrl` are empty, nothing migrates. The gateway refuses to start while the schema is older than it needs, and its log says so. Run `toolgate migrate` yourself.
 
+### Client certificates that change
+
+The gateway reads the files in `sslcert`, `sslkey` and `sslrootcert` again each time it opens a new database connection. If cert-manager or the kubelet replaces these files, new connections use the new certificate. You do not restart the gateway. Open connections keep the certificate that they started with, and they continue to work after it expires.
+
+The gateway closes each connection after a maximum lifetime and opens a new one. The default lifetime is one hour. To set it, add `pool_max_conn_lifetime` to the connection string, for example `&pool_max_conn_lifetime=30m`. Use a lifetime that is shorter than the validity of the certificate, so that all connections change to the new certificate before the old one expires. `pool_max_conn_idle_time` closes connections that are not in use (the default is 30 minutes).
+
 ## Network policies
 
 The chart creates no network policies. The cluster owner writes them. This is what each pod needs:

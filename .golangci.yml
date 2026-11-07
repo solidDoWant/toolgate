@@ -10,9 +10,31 @@ linters:
   default: none
   enable:
     - errcheck
+    - forbidigo
     - govet
     - staticcheck
     - wsl_v5
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        # store.Open is the one way to open the database: it re-reads the
+        # TLS client certificate files for every new connection, so rotated
+        # certificates work without a restart.
+        - pattern: ^pgxpool\.(New|NewWithConfig)$
+          pkg: ^github\.com/jackc/pgx/v5/pgxpool$
+          msg: open the database with store.Open, which reloads rotated TLS files
+        - pattern: ^pgx\.(Connect|ConnectConfig)$
+          pkg: ^github\.com/jackc/pgx/v5$
+          msg: open the database with store.Open, which reloads rotated TLS files
+  exclusions:
+    rules:
+      - path: ^internal/store/
+        linters: [forbidigo]
+      - path: ^internal/testutil/
+        linters: [forbidigo]
+      - path: _test\.go$
+        linters: [forbidigo]
 
 formatters:
   enable:
