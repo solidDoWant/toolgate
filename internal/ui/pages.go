@@ -7,6 +7,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
@@ -19,6 +20,12 @@ type ServerSource interface {
 	// Servers returns the catalog as toolgate_list_servers shows it to
 	// identity.
 	Servers(ctx context.Context, identity auth.Identity) ([]gateway.ServerEntry, error)
+	// Catalog is Servers with the details the page shows.
+	Catalog(ctx context.Context, identity auth.Identity) ([]gateway.ServerInfo, error)
+	// ServerDetail returns one server and the tools identity may see in it.
+	// found is false when the server doesn't exist or identity has no access
+	// to it.
+	ServerDetail(ctx context.Context, identity auth.Identity, name string) (gateway.ServerInfo, []gateway.ToolInfo, bool, error)
 	// LiveInstances returns principal's live instances and, with
 	// includeShared, the shared ones.
 	LiveInstances(ctx context.Context, principal string, includeShared bool) ([]gateway.InstanceEntry, error)
@@ -35,6 +42,7 @@ var templateFiles embed.FS
 // pageTemplates holds one template set per page, each with the layout.
 var pageTemplates = map[string]*template.Template{
 	"servers":        parsePage("servers"),
+	"server":         parsePage("server"),
 	"audit":          parsePage("audit"),
 	"blocks":         parsePage("blocks"),
 	"sessions":       parsePage("sessions"),
@@ -51,7 +59,7 @@ var pageTemplates = map[string]*template.Template{
 
 // parsePage parses the layout and one page's content template.
 func parsePage(file string) *template.Template {
-	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass}).
+	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp}).
 		ParseFS(templateFiles, "templates/layout.html", "templates/"+file+".html"))
 }
 
@@ -70,9 +78,50 @@ func badgeClass(status string) string {
 	}
 }
 
+// environmentBadge is the badge class of an access.environments value.
+func environmentBadge(environments string) string {
+	switch environments {
+	case "any":
+		return "badge-ok"
+	case "attested":
+		return "badge-warn"
+	default:
+		return "badge-neutral"
+	}
+}
+
+// environmentHelp says in plain words what an access.environments value
+// means for the user.
+func environmentHelp(environments string) string {
+	switch environments {
+	case "any":
+		return "Works from any signed-in machine."
+	case "attested":
+		return "Needs an attested workspace."
+	default:
+		return "Needs an attested workspace or a grant."
+	}
+}
+
+// scopeHelp says in plain words who shares an instance of a server.
+func scopeHelp(scope string) string {
+	switch scope {
+	case "per-session":
+		return "Each session gets its own instance."
+	case "per-user":
+		return "All your sessions share one instance."
+	case "shared":
+		return "Everyone shares one instance."
+	default:
+		return ""
+	}
+}
+
 // navSection names the nav link a page highlights.
 func navSection(name string) string {
 	switch name {
+	case "server":
+		return "servers"
 	case "session":
 		return "sessions"
 	case "audit_event":
@@ -142,8 +191,53 @@ func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, sta
 
 type serversPage struct {
 	Notice    string
-	Servers   []gateway.ServerEntry
+	Servers   []serverRow
 	Instances []gateway.InstanceEntry
+	// Workspaces is true when the page shows workspace availability.
+	Workspaces bool
+	Admin      bool
+}
+
+// serverRow is one server of the catalog table.
+type serverRow struct {
+	gateway.ServerInfo
+	Availability availability
+	// Instances is the number of live instances of the server; admins see it.
+	Instances int
+}
+
+// workspaceState is whether a list allows the server in one workspace.
+type workspaceState struct {
+	Workspace string
+	Allowed   bool
+}
+
+// availability says whether the user's defaults and lists allow a server.
+type availability struct {
+	// VerifiedDefault is for verified workspaces without a list.
+	VerifiedDefault bool
+	// Lists are the verified workspaces that have a list.
+	Lists      []workspaceState
+	Unverified bool
+}
+
+// availabilityOf reads the server's availability from the user's defaults
+// and lists.
+func availabilityOf(scopes gateway.WorkspaceScopes, server string) availability {
+	result := availability{VerifiedDefault: scopes.VerifiedDefault == gateway.ScopeAll}
+
+	for _, list := range scopes.Lists {
+		result.Lists = append(result.Lists, workspaceState{Workspace: list.Workspace, Allowed: slices.Contains(list.Servers, server)})
+	}
+
+	switch scopes.UnverifiedDefault {
+	case gateway.ScopeAll:
+		result.Unverified = true
+	case gateway.ScopeList:
+		result.Unverified = slices.Contains(scopes.UnverifiedServers, server)
+	}
+
+	return result
 }
 
 // Notices the Servers page shows after a restart request, by the value of
@@ -165,15 +259,7 @@ func (u *UI) servers(writer http.ResponseWriter, request *http.Request) {
 	session, _ := SessionFrom(request.Context())
 	ctx := request.Context()
 
-	identity := auth.Identity{
-		Principal:   session.Principal,
-		Email:       session.Email,
-		Groups:      session.Groups,
-		Kind:        auth.KindUser,
-		Attestation: auth.AttestationUser,
-	}
-
-	servers, err := u.options.Servers.Servers(ctx, identity)
+	infos, err := u.options.Servers.Catalog(ctx, sessionIdentity(session))
 	if err != nil {
 		u.logger.ErrorContext(ctx, "cannot list the catalog for the web UI", "error", err)
 		http.Error(writer, "The gateway can't read the catalog. Try again later.", http.StatusInternalServerError)
@@ -189,11 +275,82 @@ func (u *UI) servers(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	u.render(writer, request, "servers", "Servers", serversPage{
-		Notice:    serversNotices[request.URL.Query().Get("notice")],
-		Servers:   servers,
-		Instances: instances,
-	})
+	data := serversPage{
+		Notice:     serversNotices[request.URL.Query().Get("notice")],
+		Instances:  instances,
+		Workspaces: u.options.Workspaces != nil,
+		Admin:      session.Admin,
+	}
+
+	var scopes gateway.WorkspaceScopes
+
+	if data.Workspaces {
+		scopes, err = u.options.Workspaces.Scopes(ctx, session.Principal)
+		if err != nil {
+			u.logger.ErrorContext(ctx, "cannot read workspace lists for the web UI", "error", err)
+			http.Error(writer, "The gateway can't read your workspace lists. Try again later.", http.StatusInternalServerError)
+
+			return
+		}
+	}
+
+	for _, info := range infos {
+		row := serverRow{ServerInfo: info, Availability: availabilityOf(scopes, info.Name)}
+
+		for _, instance := range instances {
+			if instance.Server == info.Name {
+				row.Instances++
+			}
+		}
+
+		data.Servers = append(data.Servers, row)
+	}
+
+	u.render(writer, request, "servers", "Servers", data)
+}
+
+type serverPage struct {
+	Server     serverRow
+	Tools      []gateway.ToolInfo
+	Workspaces bool
+}
+
+// serverDetail shows one server and the tools the user may see in it. A
+// server the user has no access to gives 404, the same as one that doesn't
+// exist.
+func (u *UI) serverDetail(writer http.ResponseWriter, request *http.Request) {
+	session, _ := SessionFrom(request.Context())
+	ctx := request.Context()
+
+	info, tools, found, err := u.options.Servers.ServerDetail(ctx, sessionIdentity(session), request.PathValue("name"))
+	if err != nil {
+		u.logger.ErrorContext(ctx, "cannot read a server for the web UI", "error", err)
+		http.Error(writer, "The gateway can't read the server. Try again later.", http.StatusInternalServerError)
+
+		return
+	}
+
+	if !found {
+		http.NotFound(writer, request)
+
+		return
+	}
+
+	data := serverPage{Server: serverRow{ServerInfo: info}, Tools: tools, Workspaces: u.options.Workspaces != nil}
+
+	if data.Workspaces {
+		scopes, err := u.options.Workspaces.Scopes(ctx, session.Principal)
+		if err != nil {
+			u.logger.ErrorContext(ctx, "cannot read workspace lists for the web UI", "error", err)
+			http.Error(writer, "The gateway can't read your workspace lists. Try again later.", http.StatusInternalServerError)
+
+			return
+		}
+
+		data.Server.Availability = availabilityOf(scopes, info.Name)
+	}
+
+	u.render(writer, request, "server", info.Name, data)
 }
 
 // restartInstance requests the restart of an outdated instance.

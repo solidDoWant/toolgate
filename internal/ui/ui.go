@@ -234,6 +234,7 @@ func New(options Options, registrar Registrar) *UI {
 
 	if options.Servers != nil {
 		u.Handle("GET "+HomePath, User, http.HandlerFunc(u.servers))
+		u.Handle("GET "+HomePath+"/{name}", User, http.HandlerFunc(u.serverDetail))
 		u.Handle("POST "+RestartPath, User, http.HandlerFunc(u.restartInstance))
 	}
 
