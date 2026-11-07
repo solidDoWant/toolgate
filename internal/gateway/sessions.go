@@ -43,6 +43,11 @@ type sessionStore struct {
 	// inside the restart's transaction tx; nil
 	// restores nothing.
 	restore func(ctx context.Context, tx pgx.Tx, current requestContext, servers []db.SessionServer) error
+	// toolSearchStarted is called after a request starts or resumes a
+	// session with tool search on, so that a scaled-down embeddings server
+	// starts before the session's first search; nil does nothing. Requests
+	// to a session that is already live don't call it.
+	toolSearchStarted func(ctx context.Context)
 }
 
 // resolve returns the live session row for identity, creating it or
@@ -61,6 +66,8 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, sear
 		}
 
 		if found {
+			s.startedToolSearch(ctx, searchMode)
+
 			return created, nil
 		}
 
@@ -81,6 +88,8 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, sear
 		if err != nil {
 			return db.Session{}, err
 		}
+
+		s.startedToolSearch(ctx, searchMode)
 	}
 
 	if session.Workspace != identity.Workspace {
@@ -88,6 +97,14 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, sear
 	}
 
 	return s.refresh(ctx, session, identity, searchMode)
+}
+
+// startedToolSearch calls toolSearchStarted when the started or resumed
+// session has tool search on.
+func (s *sessionStore) startedToolSearch(ctx context.Context, searchMode bool) {
+	if searchMode && s.toolSearchStarted != nil {
+		s.toolSearchStarted(ctx)
+	}
 }
 
 // create inserts the session and writes session.start in one transaction.

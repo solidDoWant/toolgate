@@ -136,7 +136,8 @@ This test uses a fixed task set, not your own tools. To see how a model does in 
 With `embeddings.server.scaleToZero.enabled`, the gateway stops the bundled embeddings server when nobody uses tool search, and starts it again when someone does. The leader replica changes the replicas of the server's Deployment between 0 and 1. See [the chart page](chart.md) for the settings, the permissions and the note for Flux and Argo users.
 
 - The server starts when a session with tool search on starts or resumes, when a search runs while the server is down, and when the leader has tools to embed.
-- The server stops when no live session has tool search on and no replica needed embeddings for `idleTimeout`.
+- The server stops when no replica sent a request to it for `idleTimeout`, and no session with tool search on started or resumed in that time. A request to the server is a search or the embedding of tools in a sync.
+- Only these events count as use. Other requests of a session, for example the list of tools or a call that does not search, do not keep the server running. A Claude Code session that is open but idle therefore does not hold the server up, even though the session stays live for `sessionIdleTimeout`.
 - A session with tool search on usually starts the server before its first search. The server then needs some seconds to load its model. The time depends on your cluster and on the node.
 - While the server is stopped or starting, a search uses words only. The result has the `note` that tells the model the search used keywords only. The first search, or the first few searches, after a long idle time can therefore be word-only. The next searches use the server.
 - These searches count in `toolgate_tool_search_embedding_errors_total` with the reason `scaled_down`, not `error`. They do not open the 30-second circuit.

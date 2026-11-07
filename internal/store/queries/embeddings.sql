@@ -8,5 +8,3 @@ SELECT last_demand_at, state FROM embeddings_server;
 -- name: SetEmbeddingsServerState :exec
 UPDATE embeddings_server SET state = @state WHERE state <> @state;
 
--- name: LiveToolSearchSessionExists :one
-SELECT EXISTS (SELECT 1 FROM sessions WHERE ended_at IS NULL AND tool_search)::boolean;

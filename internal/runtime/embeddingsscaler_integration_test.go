@@ -121,6 +121,14 @@ func (f *scalerFixture) toolSearchSession(t *testing.T, sessionID string) db.Ses
 	return session
 }
 
+// demandAt records embeddings demand at the given time, as a replica does
+// for an embeddings request or a tool search session start.
+func (f *scalerFixture) demandAt(t *testing.T, at time.Time) {
+	t.Helper()
+
+	(&runtime.EmbeddingsDemand{Pool: f.pool, Now: func() time.Time { return at }}).Record(t.Context())
+}
+
 func (f *scalerFixture) scales(t *testing.T) int {
 	t.Helper()
 
@@ -142,17 +150,17 @@ func holdingLease() *fakeFence {
 	return fence
 }
 
-func TestEmbeddingsScalerStartsServerForToolSearchSession(t *testing.T) {
+func TestEmbeddingsScalerStartsServerOnDemandAndPublishesState(t *testing.T) {
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, desired := fixture.leader(&now, holdingLease())
 
 	require.NoError(t, scaler.Step(t.Context()))
-	assert.Equal(t, int32(0), fixture.replicas(t), "no session has tool search on")
+	assert.Equal(t, int32(0), fixture.replicas(t), "nothing needed embeddings")
 	assert.Equal(t, runtime.EmbeddingsServerDown, fixture.state(t))
 	assert.InDelta(t, 0, promtestutil.ToFloat64(desired.WithLabelValues()), 0)
 
-	fixture.toolSearchSession(t, "searching")
+	fixture.demandAt(t, now)
 
 	require.NoError(t, scaler.Step(t.Context()))
 	assert.Equal(t, int32(1), fixture.replicas(t))
@@ -215,38 +223,35 @@ func TestEmbeddingsScalerStopsServerAfterIdleTimeout(t *testing.T) {
 	assert.InDelta(t, 0, promtestutil.ToFloat64(desired.WithLabelValues()), 0)
 }
 
-func TestEmbeddingsScalerKeepsServerWhileToolSearchSessionLives(t *testing.T) {
-	fixture := newScalerFixture(t, 1)
+func TestEmbeddingsScalerStopsServerWhileIdleToolSearchSessionLives(t *testing.T) {
+	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, _ := fixture.leader(&now, holdingLease())
-	session := fixture.toolSearchSession(t, "long")
+
+	// The session started and recorded demand, then sent no embeddings
+	// request; a client never says when it exits, so its row stays live.
+	fixture.toolSearchSession(t, "open-but-idle")
+	fixture.demandAt(t, now)
 
 	require.NoError(t, scaler.Step(t.Context()))
+	require.Equal(t, int32(1), fixture.replicas(t))
 
-	now = fixture.start.Add(3 * embeddingsIdle)
-
-	require.NoError(t, scaler.Step(t.Context()))
-	assert.Equal(t, int32(1), fixture.replicas(t), "the session is still live")
-
-	// The idle time starts when the leader last saw the live session.
-	_, err := fixture.queries.EndLiveSession(t.Context(), session.ID)
-	require.NoError(t, err)
-
-	now = fixture.start.Add(4*embeddingsIdle - time.Second)
+	now = fixture.start.Add(embeddingsIdle - time.Second)
 
 	require.NoError(t, scaler.Step(t.Context()))
-	assert.Equal(t, int32(1), fixture.replicas(t))
+	assert.Equal(t, int32(1), fixture.replicas(t), "the idle timeout hasn't passed")
 
-	now = fixture.start.Add(4 * embeddingsIdle)
+	now = fixture.start.Add(embeddingsIdle)
 
 	require.NoError(t, scaler.Step(t.Context()))
-	assert.Equal(t, int32(0), fixture.replicas(t))
+	assert.Equal(t, int32(0), fixture.replicas(t), "a live session without embeddings requests doesn't hold the server up")
+	assert.Equal(t, runtime.EmbeddingsServerDown, fixture.state(t))
 }
 
 func TestEmbeddingsScalerLeaderFailoverKeepsIdleTimeout(t *testing.T) {
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
-	session := fixture.toolSearchSession(t, "failover")
+	fixture.demandAt(t, now)
 
 	first, _ := fixture.leader(&now, holdingLease())
 	require.NoError(t, first.Step(t.Context()))
@@ -254,11 +259,9 @@ func TestEmbeddingsScalerLeaderFailoverKeepsIdleTimeout(t *testing.T) {
 	fixture.setReady(t, 1)
 
 	now = fixture.start.Add(time.Minute)
+	fixture.demandAt(t, now)
 
 	require.NoError(t, first.Step(t.Context()))
-
-	_, err := fixture.queries.EndLiveSession(t.Context(), session.ID)
-	require.NoError(t, err)
 
 	// The first leader is gone; a new one starts with nothing in memory.
 	now = fixture.start.Add(2 * time.Minute)
@@ -272,7 +275,7 @@ func TestEmbeddingsScalerLeaderFailoverKeepsIdleTimeout(t *testing.T) {
 	now = fixture.start.Add(time.Minute + embeddingsIdle - time.Second)
 
 	require.NoError(t, second.Step(t.Context()))
-	assert.Equal(t, int32(1), fixture.replicas(t), "the idle timeout counts from the old leader's last sight of the session")
+	assert.Equal(t, int32(1), fixture.replicas(t), "the idle timeout counts from the last demand the database holds")
 
 	now = fixture.start.Add(time.Minute + embeddingsIdle)
 
@@ -284,7 +287,7 @@ func TestEmbeddingsScalerLeaderFailoverKeepsIdleTimeout(t *testing.T) {
 func TestEmbeddingsScalerDoesNothingWithoutLease(t *testing.T) {
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
-	fixture.toolSearchSession(t, "searching")
+	fixture.demandAt(t, now)
 
 	follower, _ := fixture.leader(&now, &fakeFence{})
 	require.NoError(t, follower.Step(t.Context()))
@@ -308,12 +311,9 @@ func TestEmbeddingsScalerOnlyGetsDeploymentAndPatchesScale(t *testing.T) {
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, _ := fixture.leader(&now, holdingLease())
-	session := fixture.toolSearchSession(t, "searching")
+	fixture.demandAt(t, now)
 
 	require.NoError(t, scaler.Step(t.Context()))
-
-	_, err := fixture.queries.EndLiveSession(t.Context(), session.ID)
-	require.NoError(t, err)
 
 	now = fixture.start.Add(embeddingsIdle)
 

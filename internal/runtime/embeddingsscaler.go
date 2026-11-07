@@ -28,9 +28,8 @@ const (
 
 // Reasons logged with a scale action of the embeddings server.
 const (
-	scaleReasonToolSearchSession = "a live session has tool search on"
-	scaleReasonDemand            = "embeddings were needed within the idle timeout"
-	scaleReasonIdle              = "tool search was idle for the idle timeout"
+	scaleReasonDemand = "embeddings were needed within the idle timeout"
+	scaleReasonIdle   = "tool search was idle for the idle timeout"
 )
 
 // DefaultEmbeddingsScaleInterval is how often the leader checks whether the
@@ -94,10 +93,13 @@ func (d KubeEmbeddingsDeployment) Scale(ctx context.Context, replicas int32) err
 
 // EmbeddingsScaler runs on the leader. It scales the bundled embeddings
 // server to one replica while tool search is in use, and to zero once it
-// has been idle for IdleTimeout. Tool search is in use while a live session
-// has it on, or when a replica needed embeddings less than IdleTimeout ago.
-// Every decision comes from the database and the Deployment, so a new
-// leader carries on where the old one stopped.
+// has been idle for IdleTimeout. Tool search is in use when a replica
+// recorded demand less than IdleTimeout ago: an embeddings request, or the
+// start or resume of a session with tool search on. A live session alone is
+// not demand, because a client never says when it exits and its session
+// stays live long after its last request. Every decision comes from the
+// database and the Deployment, so a new leader carries on where the old one
+// stopped.
 type EmbeddingsScaler struct {
 	Pool        *pgxpool.Pool
 	Deployment  EmbeddingsDeployment
@@ -154,19 +156,6 @@ func (s *EmbeddingsScaler) Step(ctx context.Context) error {
 	now := s.now()
 	queries := db.New(s.Pool)
 
-	live, err := queries.LiveToolSearchSessionExists(ctx)
-	if err != nil {
-		return fmt.Errorf("read live tool search sessions: %w", err)
-	}
-
-	// A live session counts as demand, so the idle time starts when the last
-	// such session ends, and a new leader reads it from the database.
-	if live {
-		if err := queries.RecordEmbeddingsDemand(ctx, pgtype.Timestamptz{Time: now, Valid: true}); err != nil {
-			return fmt.Errorf("record embeddings demand: %w", err)
-		}
-	}
-
 	server, err := queries.GetEmbeddingsServer(ctx)
 	if err != nil {
 		return fmt.Errorf("read embeddings server: %w", err)
@@ -178,11 +167,7 @@ func (s *EmbeddingsScaler) Step(ctx context.Context) error {
 	}
 
 	want, reason := int32(0), scaleReasonIdle
-
-	switch {
-	case live:
-		want, reason = 1, scaleReasonToolSearchSession
-	case now.Sub(server.LastDemandAt.Time) < s.IdleTimeout:
+	if now.Sub(server.LastDemandAt.Time) < s.IdleTimeout {
 		want, reason = 1, scaleReasonDemand
 	}
 
@@ -236,7 +221,8 @@ func (s *EmbeddingsScaler) now() time.Time {
 // writes of one replica.
 const DefaultEmbeddingsDemandInterval = 5 * time.Second
 
-// EmbeddingsDemand records, from any replica, that embeddings were needed.
+// EmbeddingsDemand records, from any replica, that embeddings were needed
+// or soon will be.
 // It writes at most once every Interval, so a busy replica adds few writes.
 type EmbeddingsDemand struct {
 	Pool *pgxpool.Pool
