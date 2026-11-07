@@ -579,15 +579,16 @@ Every replica serves every MCP session (phase 1 §3). Claude Code doesn't initia
 **Tests the implementation adds.**
 - Integration: two gateway replicas (two `serve` instances on one PostgreSQL) behind a round-robin balancer with no affinity. The client sends `initialize`, then 50 requests alternating between the replicas (`tools/list`, enable, a call, disable). All succeed, and none gets 404. The test passes `-count=50 -race`.
 - Integration: binding on adoption. A request with another principal's token, or another workspace or attestation, on a session that the replica doesn't hold gets 404, with the same body as an unknown ID (row 33).
-- Integration: `DELETE` on replica B of a session that A holds makes A's next request get 404 and closes A's GET stream. The leader's idle end does the same after 30 minutes with no touch, and an open GET stream prevents it.
+- Integration: `DELETE` on replica B of a session that A holds makes A's next request get 404 and closes A's GET stream. The leader's idle end does the same for an `mcp.` session after 30 minutes with no touch, and an open GET stream prevents it.
+- Integration: a helper session (with `X-Toolgate-Session`) with no GET stream and no requests for longer than the connector idle limit (a short test value) is still served afterwards, on the replica that holds it and on the other one (row 278).
 - Integration: an elicitation sent on replica A, answered with a POST to replica B, reaches the waiting call on A. Two calls on one session on two replicas, each with an elicitation, get distinct IDs and each gets its own answer.
 - Integration: a GET stream on replica A and a disable on replica B. A sends `list_changed` within 5 s. A GET stream that attaches gets one `list_changed` at once.
 - e2e: the kind deployment runs 2 replicas without affinity. A client that behaves like Claude Code (the helper headers, 2025-11-25, a GET stream, and a test failure on any 404) starts a session and enables a server. The test deletes the pod that holds the GET stream mid-session. The next request succeeds on the other replica, and after a tool-list change of the test server, `list_changed` still arrives on the reconnected stream.
 - Every timing-sensitive test passes `-count=50 -race`.
 
 **Implementation order.** Four issues. The second and third can run in parallel after the first.
-1. Store and migration: `mcp_sessions`, the sqlc queries, the leader's idle end and cleanup, and the end transaction with `mcpsession:<id>`.
-2. Adoption on a miss: the transport map in `mcpEndpoint`, the `initialize` and `initialized` middlewares, adoption with the binding check, memory release, `DELETE`, touches, shutdown, and the two-replica round-robin test.
+1. Store and migration: `mcp_sessions`, the sqlc queries, the leader's idle end of connector sessions and cleanup, the end of a helper session's MCP sessions in the toolgate session's end transaction, and the end transaction with `mcpsession:<id>`. The helper idle test (row 278) needs adoption, so it lands with the second issue.
+2. Adoption on a miss: the transport map in `mcpEndpoint`, the `initialize` and `initialized` middlewares, adoption with the binding check, memory release, `DELETE`, touches, shutdown, the two-replica round-robin test and the helper idle test.
 3. Cross-replica messages: `list_changed` only through notifications, the `list_changed` when a stream attaches, the ID-routing connection wrapper and `toolgate_mcp_replies`, and their tests.
 4. e2e and docs: the 2-replica e2e above, `docs/admin/connectors.md` (no affinity needed, sessions survive replica switches), the `config.service.sessionAffinity` description, and the CHANGELOG.
 
@@ -691,7 +692,7 @@ Phase 1's rows (phase 1 §4), phase 2's rows (phase 2 §10) and phase 3's rows (
 | 265 | Request for a session this replica doesn't hold, with another identity's token, workspace or attestation | — | 404 with the body of an unknown ID. No copy is built. | integration |
 | 266 | Concurrent requests for one unknown session on one replica | each other | One adoption builds one copy. The other request waits for it and uses it. | unit |
 | 267 | `DELETE` on replica B | requests and a GET stream on replica A | B sets `ended_at` and notifies `mcpsession:<id>`. A closes its copy. Requests already running finish. Later requests on any replica get 404. | integration |
-| 268 | Leader ends an idle MCP session | a request on a replica that touches `last_seen_at` | The end's `WHERE` needs `last_seen_at` older than 30 minutes, so a touch that commits first keeps the session. If the end commits first, the touch matches no live row and the request gets 404. | integration |
+| 268 | Leader ends an idle `mcp.` MCP session | a request on a replica that touches `last_seen_at` | The end's `WHERE` needs `last_seen_at` older than 30 minutes, so a touch that commits first keeps the session. If the end commits first, the touch matches no live row and the request gets 404. | integration |
 | 269 | Replica drops its copy after 30 minutes in memory | session still live | Nothing ends. The next request on any replica adopts the session again. | unit |
 | 270 | Replica holding the GET stream dies | changes for the session | The client reconnects its GET stream to any replica, which adopts the session and sends `list_changed` at once. Later changes reach it through the fan-out. | e2e |
 | 271 | Replica serving a request dies | that request | The client sees a transport error for that request only. The session lives on, and the next request succeeds on another replica. | e2e |
@@ -701,6 +702,7 @@ Phase 1's rows (phase 1 §4), phase 2's rows (phase 2 §10) and phase 3's rows (
 | 275 | Elicitation answer arrives | asking replica died | No live replica has the prefix. The answer is dropped. The approval stays pending, and a retry of the call finds it (phase 2 row 45). | unit |
 | 276 | `LISTEN` connection drops | copies of sessions that end meanwhile | On reconnect, the replica reads `ended_at` of every copy it holds and closes the ended ones. | integration |
 | 277 | Rolling upgrade from a version without `mcp_sessions` | open sessions | A session started on an old replica has no row, so a new replica answers 404, as before. After the rollout every session has a row. | unit |
+| 278 | Helper session has no GET stream and no requests for longer than the connector idle limit | — | Nothing ends: the idle end applies only to `mcp.` sessions. The next request is served on any replica, which adopts the session if it doesn't hold it. The MCP session ends only on a client `DELETE` or when its toolgate session ends (phase 1 §3). | integration |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
