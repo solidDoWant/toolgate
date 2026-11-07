@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.2
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release lets the Helm chart take the database connection strings inline, without a Secret.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.2`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.2`. Follow `docs/admin/quick-start.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+This release has no breaking changes. An install of 0.4.1 upgrades with no changes to its values.
+
+### Deployment
+
+- You can give the chart the PostgreSQL connection string of the gateway in the value `config.database.url`, and the string of the migration Job in `config.database.migrationUrl`. Before, each string had to be in a Secret. Use the inline values only for a string with no password, for example with client-certificate authentication or with token authentication. An inline string is a plain value in the Deployment and Job specs and in the Helm release, and anyone who can read those objects can read it. Keep a string with a password in a Secret, with `config.database.existingSecret` and `config.database.migrationSecret` as before. Set exactly one source for each string. If you set both, or no source for the gateway string, the chart fails when it renders. See `docs/admin/chart.md`. ([#477](https://github.com/solidDoWant/toolgate/pull/477))
+
+Internal work: chart tests for the sources of the connection strings.
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
+
 ## 0.4.1
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release lets the gateway stop the bundled embeddings server when nobody uses tool search. It also fixes the database setup SQL for split roles, and a chart bug that made `helm upgrade` fail.
