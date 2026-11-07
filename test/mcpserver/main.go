@@ -24,6 +24,11 @@
 // ?names=a,b for echo tools with no schema. A server in a mode other than
 // default and without -tools-file serves the names of -tools as echo tools.
 //
+// With -bearer-tokens a request to /mcp needs "Authorization: Bearer TOKEN"
+// for one of the configured tokens, and gets 401 otherwise. The whoami tool
+// returns the user of the token, so a test can check which key reached the
+// server.
+//
 // Configuration, by flag or environment variable:
 //
 //	-listen      MCPSERVER_LISTEN       listen address (default :8080)
@@ -31,6 +36,7 @@
 //	-secrets-dir MCPSERVER_SECRETS_DIR  directory the secrets tool reads (default /secrets)
 //	-mode        MCPSERVER_MODE        default, 2026-only, 2025-only or both
 //	-tools-file  MCPSERVER_TOOLS_FILE  file with the tool declarations
+//	-bearer-tokens MCPSERVER_BEARER_TOKENS  token=user pairs; /mcp answers 401 to any other bearer token
 //	-health      MCPSERVER_HEALTH       status /healthz answers at start (default 200)
 package main
 
@@ -47,6 +53,7 @@ import (
 	"os/signal"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -77,6 +84,7 @@ func run(args []string) error {
 	secretsDir := flags.String("secrets-dir", envOr("MCPSERVER_SECRETS_DIR", "/secrets"), "directory the secrets tool reads")
 	mode := flags.String("mode", envOr("MCPSERVER_MODE", modeDefault), "default, 2026-only, 2025-only or both")
 	toolsFile := flags.String("tools-file", envOr("MCPSERVER_TOOLS_FILE", ""), "file with the tool declarations")
+	bearerTokens := flags.String("bearer-tokens", envOr("MCPSERVER_BEARER_TOKENS", ""), "token=user pairs; /mcp refuses other tokens")
 	health := flags.String("health", envOr("MCPSERVER_HEALTH", "200"), "status /healthz answers at start")
 
 	if err := flags.Parse(args); err != nil {
@@ -84,7 +92,7 @@ func run(args []string) error {
 	}
 
 	mux, err := newHandler(handlerConfig{
-		Mode: *mode, Tools: *tools, ToolsFile: *toolsFile, SecretsDir: *secretsDir, Health: *health,
+		Mode: *mode, Tools: *tools, ToolsFile: *toolsFile, SecretsDir: *secretsDir, Health: *health, BearerTokens: *bearerTokens,
 	})
 	if err != nil {
 		return err
@@ -180,6 +188,10 @@ type handlerConfig struct {
 	ToolsFile  string
 	SecretsDir string
 	Health     string
+	// BearerTokens is a comma-separated list of token=user pairs. When it
+	// is set, /mcp answers 401 unless the request carries one of the tokens
+	// as a bearer token.
+	BearerTokens string
 }
 
 // newHandler returns the server's HTTP handler: /mcp, /calls, /tools,
@@ -195,10 +207,14 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 
 	calls := &callCounter{}
 
+	users, err := parseBearerTokens(config.BearerTokens)
+	if err != nil {
+		return nil, err
+	}
+
 	var (
 		server *mcp.Server
 		set    *toolSet
-		err    error
 	)
 
 	var versions []string
@@ -219,7 +235,7 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 
 		server, set, err = newToolListServer(specs, calls, versions)
 	} else {
-		server, err = newServer(options{Tools: parseTools(config.Tools), SecretsDir: config.SecretsDir, Environ: os.Environ, Calls: calls})
+		server, err = newServer(options{Tools: parseTools(config.Tools), SecretsDir: config.SecretsDir, Environ: os.Environ, Calls: calls, Users: users})
 	}
 
 	if err != nil {
@@ -231,6 +247,10 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 	handler := http.Handler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, handlerOptions))
 	if config.Mode == modeBoth {
 		handler = bothRevisions(server, handler)
+	}
+
+	if len(users) > 0 {
+		handler = requireBearer(users, handler)
 	}
 
 	mux.Handle("/mcp", handler)
@@ -301,5 +321,42 @@ func bothRevisions(server *mcp.Server, stateful http.Handler) http.Handler {
 		}
 
 		stateful.ServeHTTP(writer, request)
+	})
+}
+
+const bearerPrefix = "Bearer "
+
+// parseBearerTokens parses comma-separated token=user pairs.
+func parseBearerTokens(list string) (map[string]string, error) {
+	users := map[string]string{}
+
+	for pair := range strings.SplitSeq(list, ",") {
+		if pair = strings.TrimSpace(pair); pair == "" {
+			continue
+		}
+
+		token, user, found := strings.Cut(pair, "=")
+		if !found || token == "" || user == "" {
+			return nil, fmt.Errorf("bearer token entry %q is not token=user", pair)
+		}
+
+		users[token] = user
+	}
+
+	return users, nil
+}
+
+// requireBearer refuses a request without one of the users' tokens.
+func requireBearer(users map[string]string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		token, found := strings.CutPrefix(request.Header.Get("Authorization"), bearerPrefix)
+		if _, known := users[token]; !found || !known {
+			writer.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(writer, "unauthorized", http.StatusUnauthorized)
+
+			return
+		}
+
+		next.ServeHTTP(writer, request)
 	})
 }

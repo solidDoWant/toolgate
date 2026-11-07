@@ -18,6 +18,8 @@ import (
 const (
 	envTool     = "env"
 	secretsTool = "secrets"
+	// whoamiTool returns the user whose bearer token the request carried.
+	whoamiTool = "whoami"
 )
 
 // maxSecretFileSize bounds each file the secrets tool reads.
@@ -36,6 +38,8 @@ type options struct {
 	// ProtocolVersions, when set, restricts the protocol versions the
 	// server speaks.
 	ProtocolVersions []string
+	// Users maps a bearer token to its user, for the whoami tool.
+	Users map[string]string
 }
 
 // echoResult is the structured result of an echo tool.
@@ -73,6 +77,18 @@ func newServer(options options) (*mcp.Server, error) {
 					files, err := readSecrets(options.SecretsDir)
 
 					return nil, files, err
+				})
+		case whoamiTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns the user of the request's bearer token."},
+				func(_ context.Context, request *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, map[string]string, error) {
+					options.Calls.add(name)
+
+					var token string
+					if extra := request.GetExtra(); extra != nil {
+						token = strings.TrimPrefix(extra.Header.Get("Authorization"), bearerPrefix)
+					}
+
+					return nil, map[string]string{"user": options.Users[token]}, nil
 				})
 		default:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Echoes its arguments."},
