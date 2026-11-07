@@ -67,3 +67,26 @@ func TestCatalogListOrder(t *testing.T) {
 	_, found = catalogNames(t, at(1), nil)
 	assert.False(t, found, "no catalog list")
 }
+
+func TestCatalogListOfARemoteTemplateIsItsDeclaredToolsOnly(t *testing.T) {
+	learned := []toolcatalog.Learned{{Generation: 1, Tools: []byte(`[{"name":"learned"}]`)}}
+	remote := func(declared ...string) *v1alpha1.MCPServerTemplate {
+		result := template(func(spec *v1alpha1.MCPServerTemplateSpec) {
+			spec.Remote = &v1alpha1.RemoteServer{URL: "https://mail.example.com/mcp"}
+			for _, name := range declared {
+				spec.DeclaredTools = append(spec.DeclaredTools, v1alpha1.DeclaredTool{Name: name})
+			}
+		})
+		result.Generation = 1
+
+		return result
+	}
+
+	got, found := catalogNames(t, remote(), learned)
+	assert.False(t, found, "a learned list is never a remote template's catalog list")
+	assert.Empty(t, got)
+
+	got, found = catalogNames(t, remote("declared"), learned)
+	assert.True(t, found)
+	assert.Equal(t, []string{"declared"}, got)
+}
