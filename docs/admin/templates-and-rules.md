@@ -81,9 +81,10 @@ The name of the template is the name of the server. It has 31 characters at most
 - `toolFilter`: hides tools. Set exactly one of `allow` and `deny`. Each is a list of tool names, as the server gives them. There are 512 names at most, of 128 characters each. With `allow`, the server offers only the listed tools. With `deny`, it offers all tools except the listed ones.
 - `declaredTools`: your own list of the server's tools, with `name`, `description` and `inputSchema` (a JSON Schema object). There are 512 tools at most, and the list has 1 MiB at most. Names must be unique. The list follows the same checks as a list from a server, after the changes in `tools` and `toolFilter`.
 - `start`: when an instance starts. `onCall` (the default) or `onEnable`. With `onCall`, enabling a server starts nothing when the template has a tool list that toolgate knows (declared tools, or learned from an earlier instance). The first call that needs the server starts it and waits, with progress notifications, up to `startTimeout`. If the instance failed to start, calls are refused until the user enables the server again. With `onEnable`, or when toolgate knows no tool list yet, enabling the server starts the instance and waits for it.
-- `endpoint`: the Service, port and path where the instance serves MCP over HTTP.
+- `endpoint`: the Service, port and path where the instance serves MCP over HTTP. It is required, except in a remote template.
 - `resources`: the Kubernetes objects that toolgate applies for each instance.
 - `healthCheck`: an optional HTTP check of a running instance. See [Health checks](#health-checks).
+- `remote`: makes the template a remote server, which toolgate does not start. See [Remote servers](#remote-servers).
 
 **Upgrade note.** `toolFilter` and the `name`, `description` and `inputDescriptions` fields take effect only after every gateway pod runs this version. During a rolling upgrade, an older pod ignores them: it lists hidden tools, forwards calls to them and does not rename tools. Each call still gets a recorded decision. To hide a tool as a security control, use `tools.<name>.blocked`. It works on both versions.
 
@@ -203,6 +204,39 @@ The gateway puts the value only into the Secret of the instance. It does not sto
 With `namespace: per-instance`, toolgate makes a new namespace `tg-INSTANCE-ID` for each instance. The namespace has a network policy that denies all traffic, except DNS and connections from the gateway pods. Add a `NetworkPolicy` to the template if the server needs to connect to other places, for example the GitHub API.
 
 With `namespace: shared`, all instances go into the one namespace that `config.sharedNamespace.name` names. Only a `shared` template can use it. In this namespace, each object name and each selector must contain `${instance.id}`, so that two instances never use the same names. [The chart page](chart.md#the-shared-namespace) tells more.
+
+## Remote servers
+
+A remote server is an MCP server that already runs as part of another app. toolgate does not start it. The gateway connects to its URL and sends headers that it fills in for each user. The example is mail-archiver, which wants the API key of each user in the `Authorization` header:
+
+```yaml
+apiVersion: toolgate.soliddowant.dev/v1alpha1
+kind: MCPServerTemplate
+metadata:
+  name: mail-archiver
+  namespace: toolgate-catalog
+spec:
+  description: Search and read archived mail
+  scope: per-user
+  remote:
+    url: http://mail-archiver.email.svc.cluster.local:5000/mcp
+    headers:
+      Authorization: "Bearer ${secret:mail-archiver-api-key}"
+    timeout: 30s
+```
+
+A remote template has these rules:
+
+- It must have `scope: per-user`.
+- It cannot have `endpoint`, `resources` or `healthCheck`. A template without `remote` must have `endpoint`.
+- `remote.url` is the Streamable HTTP address of the server. It must start with `https://`. It can start with `http://` only when the host name ends in `.svc` or `.svc.cluster.local`, because that traffic stays inside the cluster. The URL cannot contain a user name or a password. Put credentials in `remote.headers`.
+- `remote.headers` has 32 headers at most. A header name has 256 characters at most, and a value has 4096 characters at most.
+- A header value can use only two kinds of variable: `${secret:NAME}`, a secret that the user stores with `toolgate secret set`, and `${principal.*}`, for example `${principal.email}`. Any other variable makes the template invalid. Each `${` must have a closing `}`. Write `$${` for a literal `${`.
+- `remote.timeout` is the time limit for each request to the server, from 1s to 5m. It is optional.
+
+The Kubernetes API server refuses a template that breaks the rules for `scope`, `endpoint`, `resources`, `healthCheck` or `remote.timeout`. The gateway checks the URL and the header values, and puts the reason for a problem in the `Valid` condition. The reason names the header, but it never shows the value. The gateway never writes header values into a status, an event or a log.
+
+This gateway version accepts valid remote templates, but it cannot connect to them yet. When a user enables a remote server, or calls one of its tools, the gateway refuses with a message that says so. It starts nothing.
 
 ## When a template is invalid
 

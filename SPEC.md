@@ -170,6 +170,20 @@ spec:
   resources: [ ... Kubernetes objects ... ]
 ```
 
+**Remote servers.** A remote template points at an MCP server that already runs elsewhere. toolgate starts nothing for it:
+
+```yaml
+spec:
+  scope: per-user          # required with remote
+  remote:
+    url: http://mail-archiver.email.svc.cluster.local:5000/mcp
+    headers:               # at most 32; names 256 characters, values 4096
+      Authorization: "Bearer ${secret:mail-archiver-api-key}"
+    timeout: 30s           # optional; per request, 1s-5m
+```
+
+`remote` cannot be set together with `endpoint`, `resources` or `healthCheck`, and needs `scope: per-user`. `endpoint` is required only without `remote`. The CRD checks these rules. The catalog checks that `remote.url` is `https://`, or `http://` only to a host ending in `.svc` or `.svc.cluster.local`, with no user name or password. It also checks that header values use only `${secret:<name>}` and `${principal.*}`. Each problem is reported in the `Valid` condition. Header values never appear in status, events, logs, audit events or metrics. Only header names may. Remote templates cover per-user static credentials only. OAuth to remote servers stays in the backlog. Until the gateway can connect to remote servers, enabling one, or calling one of its tools, is refused as not supported and starts nothing.
+
 **Tools and curation** (see `docs/design/phase-4.md`): `start` says when an instance starts. `declaredTools` (at most 512 tools, 1 MiB, unique names) is the admin's own tool list. `toolFilter.allow` or `toolFilter.deny` (exactly one; at most 512 names of 128 characters) hides tools. `tools.<name>` also sets the exposed `name` (`^[A-Za-z0-9_.-]{1,128}$`, at most 64 characters with the `<server>__` prefix), a `description` (4096 characters) and `inputDescriptions` (64 entries). A name that collides with another tool, or equals the name of a hidden tool, makes the template invalid. The server name `toolgate` is reserved for the built-in server: a template with it is invalid and counts as deleted.
 
 **Scopes:**
@@ -191,7 +205,7 @@ With `shared`, all instances go in one configured namespace and are told apart b
 1. Parse the YAML first. Substitute variables only inside string scalars of the parsed tree. A value never adds keys or changes structure.
 2. Variables: `${principal.id}`, `${principal.email}`, `${principal.name}`, `${workspace.id}`, `${session.id}`, `${instance.id}`, `${instance.namespace}`, `${template.name}`, `${secret:<name>}`, `${resolver:<name>}`. `$${` escapes a literal `${`. An unknown variable, or a variable that doesn't exist for this scope, fails the render.
 3. Claimed values (`workspace.id` on `user` attestation, `session.id`) are already pattern-checked (see "Protocols"). When rendered into an object name or label, they are hashed to fit Kubernetes length rules.
-4. `${secret:…}` and `${resolver:…}` are allowed only in `stringData` or `data` of a `Secret`. Anywhere else, the template fails validation.
+4. `${secret:…}` and `${resolver:…}` are allowed only in `stringData` or `data` of a `Secret`. The one other place for `${secret:…}` is a value of a remote template's `remote.headers`, where only `${secret:…}` and `${principal.*}` are allowed. Anywhere else, the template fails validation.
 5. Every rendered object gets the labels `toolgate.soliddowant.dev/instance`, `toolgate.soliddowant.dev/template` and `app.kubernetes.io/managed-by: toolgate`. Its namespace is forced to the instance namespace.
 6. Objects are applied with server-side apply, field manager `toolgate`.
 
@@ -362,7 +376,7 @@ Each phase ends with a release an admin can deploy: image `ghcr.io/soliddowant/t
 
 1. **Core gateway** (`docs/acceptance/phase-1.md`). Sign-in from Claude Code and pods, the meta tools, templates of plain Kubernetes objects, all three scopes, per-user secrets through the CLI, standing block rules, settings sync, audit log, gateway traces, chart and CLI release.
 2. **Security model and web UI** (`docs/acceptance/phase-2.md`). Web UI, grants with step-up, approvals through elicitation, temporary blocks, per-tool rules in full, HelmRelease templates, resolvers, S3 payloads, instance restart.
-3. **Telemetry, attestation and operations** (`docs/acceptance/phase-3.md`). OTLP ingest with identity stamping, SPIFFE JWT-SVID attestation, CLI audit and session commands, custom health checks for running instances, and an optional migration Job with a separate database credential. Remote MCP servers with per-user OAuth are deferred to the backlog.
+3. **Telemetry, attestation and operations** (`docs/acceptance/phase-3.md`). OTLP ingest with identity stamping, SPIFFE JWT-SVID attestation, CLI audit and session commands, custom health checks for running instances, and an optional migration Job with a separate database credential. Remote MCP servers with per-user OAuth are deferred to the backlog. Remote servers with per-user static credentials (see "Remote servers") narrow that backlog item to the OAuth flow.
 4. **Tool search, lazy start, delegated access, curation, MCP revisions and connectors** (`docs/acceptance/phase-4.md`). A `toolgate_find_tools` meta tool so sessions search and call tools with no enable step, a tool catalog with servers started on first call, access-management tools (allow with the user's approval, deny at once) for the user's other workspaces and sessions, governed like any server, template-level tool filtering and name and description overrides, MCP 2026-07-28 with peers that speak nothing older (preferring 2025-11-25), and standard MCP OAuth so claude.ai custom connectors can use toolgate.
 
 A phase's design (`docs/design/phase-N.md`, with its interaction table) is reviewed before its issues are filed.
