@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -194,4 +195,13 @@ func TestHookSignedOutTellsTheUserToSignIn(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join(runtimeDir, "toolgate", strconv.Itoa(4242)))
 	require.NoError(t, err, "the session file is written even when signed out")
 	assert.Equal(t, "session-1\n", string(content))
+}
+
+func TestFetchSettingsTreatsAGatewayWithoutTheRouteAsNoProfile(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	profile, err := fetchSettings(t.Context(), server.URL, "token", "")
+	require.NoError(t, err)
+	assert.Empty(t, profile)
 }

@@ -239,6 +239,11 @@ func fetchSettings(ctx context.Context, gateway, accessToken, attested string) (
 	}
 	defer func() { _ = response.Body.Close() }()
 
+	// A gateway from before the route existed has no profile to give.
+	if response.StatusCode == http.StatusNotFound {
+		return map[string]json.RawMessage{}, nil
+	}
+
 	if response.StatusCode != http.StatusOK {
 		err := fmt.Errorf("the gateway answered %s", response.Status)
 		if response.StatusCode == http.StatusUnauthorized {
