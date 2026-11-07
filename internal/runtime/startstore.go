@@ -218,7 +218,8 @@ func (s PostgresStartStore) change(ctx context.Context, id string, update func(*
 
 // changeAndLearn is change for a write of an instance's tool list. In the
 // same transaction it stores the list as the catalog row of the instance's
-// template generation, unless the template declares tools.
+// template generation, unless the template declares tools or the instance
+// is a remote server's.
 func (s PostgresStartStore) changeAndLearn(ctx context.Context, id string, tools []byte, update func(*db.Queries) (int64, error)) (bool, error) {
 	return s.changeWith(ctx, id, update, func(tx pgx.Tx, queries *db.Queries) error {
 		instance, err := queries.GetInstance(ctx, id)
@@ -226,7 +227,9 @@ func (s PostgresStartStore) changeAndLearn(ctx context.Context, id string, tools
 			return fmt.Errorf("get instance %s: %w", id, err)
 		}
 
-		if s.DeclaresTools != nil && s.DeclaresTools(instance) {
+		// A remote server's tool list comes from one user's credential, so
+		// it stays on that user's row and is never shared as the catalog's.
+		if IsRemote(instance) || (s.DeclaresTools != nil && s.DeclaresTools(instance)) {
 			return nil
 		}
 

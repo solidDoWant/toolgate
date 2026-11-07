@@ -78,8 +78,11 @@ type Monitor struct {
 	Interval time.Duration
 	// Probe makes the requests of custom health checks. Nil means
 	// HTTPHealthProbe.
-	Probe  HealthProbe
-	Logger *slog.Logger
+	Probe HealthProbe
+	// RemoteAuth fills a remote instance's headers for its owner
+	// (Starter.RemoteAuth). Nil fails remote instances.
+	RemoteAuth func(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*RemoteAuth, error)
+	Logger     *slog.Logger
 
 	mu       sync.Mutex
 	base     context.Context
@@ -142,10 +145,29 @@ func (m *Monitor) Step(_ context.Context, instance db.Instance) error {
 		defer m.running.Done()
 		defer m.forget(instance.ID)
 
+		if template.Spec.Remote != nil {
+			remote, err := m.remoteAuth(ctx, instance, template)
+			if err != nil {
+				m.fail(ctx, instance, remoteFailureReason(err))
+
+				return
+			}
+
+			ctx = WithRemoteAuth(ctx, remote)
+		}
+
 		m.watch(ctx, instance, EndpointURL(instance, template))
 	}(m.base)
 
 	return nil
+}
+
+func (m *Monitor) remoteAuth(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*RemoteAuth, error) {
+	if m.RemoteAuth == nil {
+		return nil, errors.New("the monitor can't fill remote headers")
+	}
+
+	return m.RemoteAuth(ctx, instance, template)
 }
 
 func (m *Monitor) forget(id string) {
@@ -413,7 +435,7 @@ func (m *Monitor) logger() *slog.Logger {
 // never answers it. When the listen request has ended, the next health
 // check connects the monitoring session again and re-lists once.
 func MCPMonitorConnector(ctx context.Context, endpoint, revision string, toolsChanged func()) (MonitorSession, error) {
-	session := &mcpMonitorSession{endpoint: endpoint, toolsChanged: toolsChanged}
+	session := &mcpMonitorSession{endpoint: endpoint, toolsChanged: toolsChanged, remote: remoteAuthFrom(ctx)}
 	if err := session.connect(ctx, revision); err != nil {
 		return nil, err
 	}
@@ -424,8 +446,10 @@ func MCPMonitorConnector(ctx context.Context, endpoint, revision string, toolsCh
 type mcpMonitorSession struct {
 	endpoint     string
 	toolsChanged func()
-	revision     string
-	session      *mcp.ClientSession
+	// remote holds a remote server's headers, sent on every connection.
+	remote   *RemoteAuth
+	revision string
+	session  *mcp.ClientSession
 	// listenEnded is set when the current session's listen request ends.
 	listenEnded *atomic.Bool
 }
@@ -434,7 +458,7 @@ func (s *mcpMonitorSession) connect(ctx context.Context, revision string) error 
 	ended := &atomic.Bool{}
 
 	session, negotiated, err := ConnectUpstream(ctx, s.endpoint, revision, UpstreamOptions{
-		HTTPClient: toolListHTTPClient,
+		HTTPClient: toolListHTTPClient, Remote: s.remote,
 		Client: &mcp.ClientOptions{
 			ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { s.toolsChanged() },
 		},
@@ -461,7 +485,7 @@ func (s *mcpMonitorSession) Ping(ctx context.Context) error {
 	}
 
 	discovered, _, err := ConnectUpstream(ctx, s.endpoint, RevisionStateless, UpstreamOptions{
-		HTTPClient: toolListHTTPClient, DisableStandaloneSSE: true,
+		HTTPClient: toolListHTTPClient, DisableStandaloneSSE: true, Remote: s.remote,
 	})
 	if err != nil {
 		return fmt.Errorf("server/discover: %w", err)
@@ -497,7 +521,7 @@ func (s *mcpMonitorSession) ListTools(ctx context.Context) ([]*mcp.Tool, error) 
 	}
 
 	fresh, _, err := ConnectUpstream(ctx, s.endpoint, RevisionStateless, UpstreamOptions{
-		HTTPClient: toolListHTTPClient, DisableStandaloneSSE: true,
+		HTTPClient: toolListHTTPClient, DisableStandaloneSSE: true, Remote: s.remote,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("tools/list: %w", toolListError(err, budget))

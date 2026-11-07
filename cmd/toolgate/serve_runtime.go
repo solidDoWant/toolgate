@@ -244,10 +244,11 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// The monitor runs only on the Lease holder, like every runnable that
 	// does not say otherwise.
 	monitor := &runtime.Monitor{
-		Store:    startStore,
-		Template: options.catalog.Running,
-		Connect:  runtime.MCPMonitorConnector,
-		Logger:   logger,
+		Store:      startStore,
+		Template:   options.catalog.Running,
+		Connect:    runtime.MCPMonitorConnector,
+		RemoteAuth: starter.RemoteAuth,
+		Logger:     logger,
 	}
 	if err := mgr.Add(manager.RunnableFunc(monitor.Run)); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

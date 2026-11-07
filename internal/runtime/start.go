@@ -169,6 +169,10 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return nil
 	}
 
+	if template.Spec.Remote != nil {
+		return s.startRemote(ctx, instance, template)
+	}
+
 	identity, err := s.identity(ctx, instance)
 	if err != nil {
 		return err
@@ -228,6 +232,10 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 	template, found := s.template(instance)
 	if !found {
 		return nil
+	}
+
+	if template.Spec.Remote != nil {
+		return s.checkRemote(ctx, instance, template)
 	}
 
 	if s.timedOut(instance, template) {
@@ -295,6 +303,11 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 func (s *Starter) checkReady(ctx context.Context, instance db.Instance) error {
 	template, found := s.template(instance)
 	if !found {
+		return nil
+	}
+
+	// A remote server has no objects; the health monitor alone judges it.
+	if template.Spec.Remote != nil {
 		return nil
 	}
 
@@ -847,8 +860,13 @@ func (s *Starter) fail(ctx context.Context, instance db.Instance, from, reason s
 }
 
 // EndpointURL returns the MCP URL of an instance started from template: the
-// template's endpoint Service in the instance's namespace.
+// template's endpoint Service in the instance's namespace, or a remote
+// server's URL.
 func EndpointURL(instance db.Instance, template *v1alpha1.MCPServerTemplate) string {
+	if template.Spec.Remote != nil {
+		return template.Spec.Remote.URL
+	}
+
 	endpoint := template.Spec.Endpoint
 
 	service, err := RenderEndpointService(template, Instance{ID: instance.ID, Namespace: instance.Namespace})
@@ -917,12 +935,13 @@ func (s *Starter) logger() *slog.Logger {
 // runs the revision probe of ConnectUpstream on a fresh session.
 func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, string, error) {
 	ctx, budget := upstreamlimit.WithBudget(ctx, toolListResponseBudget)
+	remote := remoteAuthFrom(ctx)
 
 	session, revision, err := ConnectUpstream(ctx, endpoint, "", UpstreamOptions{
-		DisableStandaloneSSE: true, HTTPClient: toolListHTTPClient,
+		DisableStandaloneSSE: true, HTTPClient: toolListHTTPClient, Remote: remote,
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("initialize %s: %w", endpoint, toolListError(err, budget))
+		return nil, "", fmt.Errorf("initialize %s: %w", endpoint, credentialError(toolListError(err, budget), remote))
 	}
 	defer func() { _ = session.Close() }()
 
@@ -932,7 +951,7 @@ func MCPToolLister(ctx context.Context, endpoint string) ([]*mcp.Tool, string, e
 
 	tools, err := listAll(ctx, session, budget)
 	if err != nil {
-		return nil, "", fmt.Errorf("tools/list %s: %w", endpoint, err)
+		return nil, "", fmt.Errorf("tools/list %s: %w", endpoint, credentialError(err, remote))
 	}
 
 	return tools, revision, nil
