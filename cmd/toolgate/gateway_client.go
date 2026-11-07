@@ -188,13 +188,18 @@ func spiffeGatewayURL() (string, error) {
 	if dir, err := configDir(); err == nil {
 		settings, err := login.LoadSettings(dir)
 		if err == nil && settings.Gateway != "" {
-			return strings.TrimRight(settings.Gateway, "/"), nil
+			return login.NormalizeGatewayURL(settings.Gateway)
 		}
 	}
 
-	gateway := strings.TrimRight(strings.TrimSpace(os.Getenv(spiffe.GatewayEnv)), "/")
+	gateway := strings.TrimSpace(os.Getenv(spiffe.GatewayEnv))
 	if gateway == "" {
 		return "", fmt.Errorf("no gateway URL: sign in with toolgate login, or set %s", spiffe.GatewayEnv)
+	}
+
+	gateway, err := login.NormalizeGatewayURL(gateway)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", spiffe.GatewayEnv, err)
 	}
 
 	return gateway, nil

@@ -5,6 +5,10 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -186,4 +190,46 @@ func TestStatusWithoutSignIn(t *testing.T) {
 
 	assert.Equal(t, 1, run([]string{"status"}, &stdout, &stderr))
 	assert.Contains(t, stdout.String(), "Not signed in. Run toolgate login.")
+}
+
+func TestLoginAcceptsBareHostAndPort(t *testing.T) {
+	dir := isolateUserConfig(t)
+
+	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
+	provider.AddUser(testutil.OIDCUser{Subject: "dave", Email: "dave@example.com", EmailVerified: true})
+	backend, err := url.Parse(startGateway(t, provider, provider.ClientID))
+	require.NoError(t, err)
+
+	front := httptest.NewTLSServer(httputil.NewSingleHostReverseProxy(backend))
+	t.Cleanup(front.Close)
+
+	original := http.DefaultTransport
+	http.DefaultTransport = front.Client().Transport
+
+	t.Cleanup(func() { http.DefaultTransport = original })
+
+	bare := strings.TrimPrefix(front.URL, "https://")
+
+	code, _, stderr := signInApproving(t, provider, "dave", "--gateway", bare)
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+
+	settingsFile, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(settingsFile), `"gateway": "https://`+bare+`"`)
+}
+
+func TestConfigureNormalisesGateway(t *testing.T) {
+	dir := isolateUserConfig(t)
+
+	var stdout, stderr strings.Builder
+
+	require.Equal(t, 0, run([]string{"configure", "--gateway", "Toolgate.Example.com:8443/"}, &stdout, &stderr), stderr.String())
+
+	settingsFile, err := os.ReadFile(filepath.Join(dir, "config.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(settingsFile), `"gateway": "https://toolgate.example.com:8443"`)
+
+	stderr.Reset()
+	assert.Equal(t, 2, run([]string{"configure", "--gateway", "toolgate.example.com/mcp"}, &stdout, &stderr))
+	assert.Contains(t, stderr.String(), "must not have a path")
 }

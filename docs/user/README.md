@@ -20,7 +20,7 @@ Before you start, install the `toolgate` command and make sure that it is on you
 
 1. In Claude Code, run `/plugin marketplace add solidDoWant/toolgate`.
 2. Run `/plugin install toolgate@toolgate`.
-3. When Claude Code asks for the "Gateway URL", type the URL of your gateway, for example `https://toolgate.example.com`. Do not add `/mcp` at the end.
+3. When Claude Code asks for the "Gateway URL", type the URL of your gateway, for example `https://toolgate.example.com`. Do not add `/mcp` at the end. The plugin setting needs the full address with `https://`; only the `toolgate` command accepts a short form.
 4. Restart Claude Code.
 
 You can also install the plugin from a shell, outside Claude Code:
@@ -102,6 +102,8 @@ toolgate login --gateway https://toolgate.example.com
 ```
 
 toolgate shows a web address and a code. Open the address in a browser, sign in with your identity provider, and make sure that the browser shows the same code. When you approve the sign-in, `toolgate login` shows "Signed in as" and your email address.
+
+You can also give only the host name, or the host name and port, for example `toolgate login --gateway toolgate.example.com:8443`. toolgate adds `https://` for you and saves the full address. Do not add a path such as `/mcp`. toolgate accepts plain `http://` only for `localhost` and other loopback addresses. `toolgate configure --gateway` and the `TOOLGATE_GATEWAY` variable work in the same way.
 
 toolgate saves the gateway URL in the file `toolgate/config.json` in your user configuration directory. If you sign in again later, you can leave out `--gateway`.
 

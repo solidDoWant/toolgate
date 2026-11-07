@@ -30,7 +30,7 @@ func configDir() (string, error) {
 func signIn(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("login", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	gateway := flags.String("gateway", "", "gateway URL (default: the gateway of the last sign-in)")
+	gateway := flags.String("gateway", "", "gateway URL or host[:port]; https:// is added when there is no scheme (default: the gateway of the last sign-in)")
 	issuer := flags.String("issuer", "", "IdP issuer URL, instead of the gateway's (for testing)")
 	clientID := flags.String("client-id", "", "IdP client ID, instead of the gateway's (for testing)")
 	scopes := flags.String("scopes", "", "space-separated scopes, instead of the gateway's (for testing)")
