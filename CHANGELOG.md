@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The gateway now serves `GET /api/v1/settings`, so settings profiles reach Claude Code. Before, every session start showed "the settings profile could not be fetched: the gateway answered 404 Not Found". The `toolgate` command now treats a 404 from an older gateway as "no profile".
+- The gateway connects to remote MCP servers, which run outside toolgate. It sends each user's own key in a header that the template fills in from the user's secrets. If the secret is missing, or the server refuses it, the user gets a message with the `toolgate secret set` command. See "Remote servers" in `docs/admin/templates-and-rules.md`.
 
 ## 0.4.4
 

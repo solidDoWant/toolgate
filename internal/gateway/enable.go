@@ -21,6 +21,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
@@ -101,17 +102,6 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 		}
 
 		return nil, EnableResult{}, errors.New(decision.Reason)
-	}
-
-	if template.Spec.Remote != nil {
-		recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
-		if err := recorder.Record(ctx, auditEvent(current, "server.enable", template.Name, map[string]any{
-			"decision": "refuse", "reason": reasonRemote,
-		})); err != nil {
-			return nil, EnableResult{}, err
-		}
-
-		return nil, EnableResult{}, remoteUnsupported(template.Name)
 	}
 
 	// Step 2: every secret the template names must be set.
@@ -260,6 +250,8 @@ func (m *metaTools) enabledTemplateNamed(ctx context.Context, current requestCon
 
 func (m *metaTools) checkSecrets(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) error {
 	needed := catalog.SecretNames(template)
+	needed = append(needed, runtime.SecretNamesInHeaders(template)...)
+
 	if len(needed) == 0 {
 		return nil
 	}
@@ -508,6 +500,11 @@ func (e *instanceLimitError) Error() string { return e.message }
 // Only the insert path calls
 // it, after the (template, scope key) lock.
 func (m *metaTools) checkInstanceLimits(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate) error {
+	// A remote server runs nothing, so it counts toward no limit.
+	if template.Spec.Remote != nil {
+		return nil
+	}
+
 	if err := queries.LockInstanceInsert(ctx); err != nil {
 		return fmt.Errorf("lock instance insert: %w", err)
 	}
@@ -554,8 +551,14 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 
 	// A `namespace: shared` template is valid only while the gateway has a
 	// shared namespace, so the catalog offers none without it.
+	// A remote server's instance has no namespace: toolgate starts
+	// nothing for it.
 	namespace := instanceNamespacePrefix + id
-	if template.Spec.Namespace == catalog.NamespaceShared {
+
+	switch {
+	case template.Spec.Remote != nil:
+		namespace = ""
+	case template.Spec.Namespace == catalog.NamespaceShared:
 		namespace = sharedNamespace
 	}
 

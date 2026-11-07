@@ -187,6 +187,14 @@ You can also manage your secrets in the web UI, on the Secrets page. Type a valu
 
 To delete a secret, run `toolgate secret delete github-token`. A server that is already running keeps the value that it started with.
 
+Some servers run outside toolgate, and toolgate sends your secret to them as your key. An example is mail-archiver. Create an API key in the web page of mail-archiver, and then set it:
+
+```sh
+toolgate secret set mail-archiver-api-key
+```
+
+If the server does not accept your key, Claude tells you that the server refused your credential. Make sure that the key is correct, and set it again with the same command. toolgate uses the new key at the next connection.
+
 ## Where toolgate keeps your sign-in
 
 When you sign in, toolgate gets a refresh token from your identity provider. A refresh token is a secret that lets toolgate get new access tokens without a new sign-in. toolgate keeps it in the keychain of your operating system: the macOS Keychain, the Windows Credential Manager, or the Secret Service on Linux.
@@ -363,6 +371,7 @@ toolgate checks each request. If it refuses a request, Claude gets a short messa
 | NAME needs a grant on a signed-in user's machine. Create one at URL, then try again. | Your admin marked the server or tool `opt-in`. | Create a grant. See [Grants](#grants). |
 | Tool `NAME` needs approval. Approve request `ID` at URL, then call the tool again with the same arguments. | Each call of this tool needs your approval. | See [Approve a tool call](#approve-a-tool-call). |
 | Secret `NAME` isn't set. Run `toolgate secret set NAME`. | The server needs a secret from you. | Run the command, and then turn on the server again. See [Set your secrets](#set-your-secrets). |
+| The remote server refused your credential (401 or 403). | The server did not accept the secret that you set. | Make sure that the key is correct, and set it again with the command in the message. See [Set your secrets](#set-your-secrets). |
 | You already have 20 servers running, the limit for each user. | You reached the number of servers that one user can run. | Turn off servers that you do not use, or wait until idle servers stop. |
 | The gateway is already running its limit of 200 servers. | The gateway runs as many servers as it can. | Try again later, or ask your admin. |
 | Server `NAME` isn't in the list for workspace `WORKSPACE`. Allow it in the Workspaces page or with `toolgate workspace allow NAME`. | The server is not on the effective list of this verified workspace. | Add the server to the list of the workspace. See [Servers in each workspace](#servers-in-each-workspace). |

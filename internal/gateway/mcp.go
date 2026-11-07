@@ -81,6 +81,10 @@ type MCPOptions struct {
 	// UpstreamHTTPClient carries forwarded calls. Nil means
 	// http.DefaultClient.
 	UpstreamHTTPClient *http.Client
+	// Secrets returns a principal's secrets, which fill the headers of a
+	// remote server's forwarding session. Nil means calls of remote servers
+	// fail to connect.
+	Secrets func(principal string) runtime.SecretSource
 	// MCPSessionIdleTimeout is how long an MCP session may go without a
 	// request in progress or an open stream before this replica releases
 	// it. Zero means 30 minutes.
@@ -271,7 +275,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 
 	tools := &metaTools{
 		metrics:      options.Metrics,
-		upstreams:    newUpstreams(upstreamEndpoint, upstreamlimit.NewClient(upstreamHTTPClient, upstreamResponseBudget)),
+		upstreams:    newUpstreams(upstreamEndpoint, upstreamlimit.NewClient(upstreamHTTPClient, upstreamResponseBudget), options.Secrets),
 		database:     options.Database,
 		catalog:      options.Catalog,
 		policy:       options.Policy,

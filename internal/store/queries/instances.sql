@@ -9,13 +9,15 @@ SELECT pg_advisory_xact_lock(hashtextextended(@template_ns::text || '/' || @temp
 SELECT pg_advisory_xact_lock(hashtextextended('toolgate-instance-insert', 0));
 
 -- name: CountLiveInstances :one
+-- Remote servers' instances (no namespace) run nothing and count toward no
+-- limit.
 SELECT count(*) FROM instances
-WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped');
+WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped') AND namespace <> '';
 
 -- name: CountLiveInstancesOfOwner :one
 SELECT count(*) FROM instances
 WHERE owner_principal = @owner_principal AND owner_principal <> ''
-  AND desired = 'running' AND status NOT IN ('stopping', 'stopped');
+  AND desired = 'running' AND status NOT IN ('stopping', 'stopped') AND namespace <> '';
 
 -- name: GetLiveInstance :one
 SELECT * FROM instances

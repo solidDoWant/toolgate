@@ -365,21 +365,16 @@ func TestEnableServer(t *testing.T) {
 		assert.Empty(t, fixture.auditEvents(t, "server.enable", "github"))
 	})
 
-	t.Run("a remote server is refused as not supported, starts nothing and is audited", func(t *testing.T) {
+	t.Run("a remote server with its header secret missing is refused with the set-secret message and starts nothing", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addRemoteTemplate("mail-archiver")
 
 		client := fixture.connectObserved(t, alice())
 		result := awaitEnable(t, startEnable(t, client.session, "mail-archiver"))
 
-		assert.Equal(t, "Server `mail-archiver` is a remote server, and this gateway version can't connect to remote servers yet.", result.err)
+		assert.Equal(t, "Secret `mail-archiver-api-key` isn't set. Run `toolgate secret set mail-archiver-api-key`.", result.err)
 		assert.Empty(t, fixture.instancesOf(t, template))
 		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"))
-
-		events := fixture.auditEvents(t, "server.enable", "mail-archiver")
-		require.Len(t, events, 1)
-		assert.Equal(t, "refuse", events[0]["decision"])
-		assert.Equal(t, "remote-unsupported", events[0]["reason"])
 	})
 
 	t.Run("a set secret lets the enable go ahead", func(t *testing.T) {
