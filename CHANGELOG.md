@@ -35,6 +35,7 @@ To install toolgate:
 ### Fixes
 
 - The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`. ([#525](https://github.com/solidDoWant/toolgate/pull/525))
+- Sessions without a verified workspace now show the servers that the workspace scope blocks as `blocked`, with the fix, in `toolgate_list_servers`, `toolgate_server_status` and `toolgate_find_tools`. Before, the list was empty and the status said "isn't in your catalog".
 
 ### Web UI
 
@@ -43,7 +44,6 @@ To install toolgate:
 ### Known issues
 
 - Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
-- Sessions that the gateway cannot verify do not show servers that the workspace blocks. They show an empty list, or say that the server is "not in your catalog". ([#532](https://github.com/solidDoWant/toolgate/issues/532))
 - The `/ui/approvals` page of the web UI does not list pending access requests for changes to workspaces and defaults. ([#533](https://github.com/solidDoWant/toolgate/issues/533))
 - `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 

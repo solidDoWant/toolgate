@@ -759,7 +759,7 @@ The step only refuses, so it never widens anything: a server on a list that the 
 **Calls waiting for approval.** Phase 2 §4 step 5 re-decides steps 1 to 3 on each wake. It now re-decides steps 1 to 4. So a server removed from the list, or a narrowed default, refuses a call that's waiting for approval on the next wake, with the step-4 message, and the approval isn't used.
 
 **Effects**, on the paths phase 1 §3 already decides:
-- `toolgate_list_servers`, in a verified workspace, shows servers the step refuses with status `blocked` and the reason "not allowed in this workspace; enable it to ask", so the model can find a name to enable (AC-3-19). In an unverified session it leaves them out, because enabling them can't ask.
+- `toolgate_list_servers`, in a verified workspace, shows servers the step refuses with status `blocked` and the reason "not allowed in this workspace; enable it to ask", so the model can find a name to enable (AC-3-19). In an unverified session it shows them as `blocked` too, with a reason that names the default for unverified sessions and its fix; enabling them still can't ask.
 - `tools/list` leaves out their tools.
 - A call is refused with "Server `k8s` isn't in the list for workspace `coder/alice/mail`. Allow it in the Workspaces page or with `toolgate workspace allow k8s`."
 - An enable starts a session addition in a verified workspace, and is refused in an unverified session (below).
