@@ -892,6 +892,10 @@ func EndpointURL(instance db.Instance, template *v1alpha1.MCPServerTemplate) str
 	host := net.JoinHostPort(service+"."+instance.Namespace+".svc", strconv.Itoa(int(endpoint.Port)))
 
 	path := endpoint.Path
+	if path == "" {
+		path = v1alpha1.DefaultEndpointPath
+	}
+
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
