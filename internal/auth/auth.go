@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
@@ -145,6 +146,12 @@ type Options struct {
 	// They share the issuer and its signing keys. A token is checked by the
 	// verifier of the first of them listed in its audience claim.
 	Audiences []string
+	// AdditionalIssuers are more issuers whose user access tokens are
+	// accepted, each with its own audiences, signing keys and discovery
+	// document. A token's issuer claim picks the issuer by exact match. They
+	// are discovered when a token first names them, so one that is down
+	// refuses only its own tokens.
+	AdditionalIssuers []IssuerOptions
 	// Claim names. Empty names take the defaults `email`, `email_verified`
 	// and `groups`.
 	EmailClaim         string
@@ -167,17 +174,36 @@ type Options struct {
 	ResourceMetadataURL string
 }
 
+// IssuerOptions is one additional issuer of user access tokens.
+type IssuerOptions struct {
+	// IssuerURL is the issuer, exactly as in its tokens' issuer claim.
+	IssuerURL string
+	// Audiences are the 1 to 8 audiences its tokens may be for.
+	Audiences []string
+}
+
+// Discovery limits of an additional issuer.
+const (
+	// issuerDiscoveryTimeout bounds one fetch of an issuer's discovery
+	// document.
+	issuerDiscoveryTimeout = 10 * time.Second
+	// issuerRetryInterval is how long a failed discovery is remembered, so
+	// tokens naming an unreachable issuer don't each wait for it.
+	issuerRetryInterval = 5 * time.Second
+)
+
 // Authenticator checks user access tokens and the identity headers.
 type Authenticator struct {
-	verifiers []audienceVerifier
-	issuer    string
-	accounts  *serviceAccountVerifier
-	spiffe    *spiffeVerifier
-	attest    *attestationVerifier
-	claims    claimNames
-	recorder  RefusalRecorder
-	limiter   *RateLimiter
-	dropped   prometheus.Counter
+	// issuers holds a verifier set for each configured issuer, keyed by the
+	// exact issuer URL.
+	issuers  map[string]*issuerVerifiers
+	accounts *serviceAccountVerifier
+	spiffe   *spiffeVerifier
+	attest   *attestationVerifier
+	claims   claimNames
+	recorder RefusalRecorder
+	limiter  *RateLimiter
+	dropped  prometheus.Counter
 	// metadata is Options.ResourceMetadataURL.
 	metadata string
 }
@@ -188,32 +214,129 @@ type audienceVerifier struct {
 	verifier *oidc.IDTokenVerifier
 }
 
+// issuerVerifiers verifies the user access tokens of one issuer. Its
+// verifiers are built from the issuer's discovery document, once, when
+// first needed; until then a failed discovery is retried at most every
+// issuerRetryInterval.
+type issuerVerifiers struct {
+	url       string
+	audiences []string
+	// ctx outlives requests: the verifiers fetch signing keys with it.
+	ctx context.Context
+
+	mutex     sync.Mutex
+	verifiers []audienceVerifier
+	failure   error
+	failedAt  time.Time
+}
+
+// get returns the issuer's verifiers, discovering the issuer first if no
+// earlier discovery succeeded.
+func (i *issuerVerifiers) get() ([]audienceVerifier, error) {
+	i.mutex.Lock()
+	defer i.mutex.Unlock()
+
+	if i.verifiers != nil {
+		return i.verifiers, nil
+	}
+
+	if i.failure != nil && time.Since(i.failedAt) < issuerRetryInterval {
+		return nil, i.failure
+	}
+
+	ctx, cancel := context.WithTimeout(i.ctx, issuerDiscoveryTimeout)
+	defer cancel()
+
+	if err := i.discover(ctx); err != nil {
+		i.failure, i.failedAt = err, time.Now()
+
+		return nil, err
+	}
+
+	return i.verifiers, nil
+}
+
+// discover fetches the issuer's discovery document and builds a verifier
+// for each audience. They share the provider, so they share its cached key
+// set.
+func (i *issuerVerifiers) discover(ctx context.Context) error {
+	provider, err := oidc.NewProvider(ctx, i.url)
+	if err != nil {
+		return fmt.Errorf("auth: discovering the IdP %s: %w", i.url, err)
+	}
+
+	verifiers := make([]audienceVerifier, 0, len(i.audiences))
+	for _, audience := range i.audiences {
+		verifiers = append(verifiers, audienceVerifier{
+			audience: audience,
+			verifier: provider.VerifierContext(i.ctx, &oidc.Config{ClientID: audience}),
+		})
+	}
+
+	i.verifiers = verifiers
+
+	return nil
+}
+
+// validateIssuer checks one issuer's URL and audiences.
+func validateIssuer(issuerURL string, audiences []string) error {
+	if issuerURL == "" {
+		return errors.New("auth: the issuer URL is required")
+	}
+
+	if len(audiences) == 0 {
+		return fmt.Errorf("auth: issuer %s: an audience is required", issuerURL)
+	}
+
+	for _, audience := range audiences {
+		if audience == "" {
+			return fmt.Errorf("auth: issuer %s: an audience must not be empty", issuerURL)
+		}
+	}
+
+	return nil
+}
+
 type claimNames struct {
 	email, emailVerified, groups string
 }
 
-// New builds an Authenticator. It fetches the IdP's discovery document, so
-// the IdP must be reachable. Signing keys are fetched when first needed and
-// cached; an unknown key ID fetches them again.
+// New builds an Authenticator. It fetches the primary IdP's discovery
+// document, so that IdP must be reachable; additional issuers are discovered
+// when first needed. Signing keys are fetched when first needed and cached;
+// an unknown key ID fetches them again.
 func New(ctx context.Context, options Options) (*Authenticator, error) {
-	if options.IssuerURL == "" {
-		return nil, errors.New("auth: the issuer URL is required")
+	if err := validateIssuer(options.IssuerURL, options.Audiences); err != nil {
+		return nil, err
 	}
 
-	if len(options.Audiences) == 0 {
-		return nil, errors.New("auth: an audience is required")
+	issuers := make(map[string]*issuerVerifiers, 1+len(options.AdditionalIssuers))
+	background := context.WithoutCancel(ctx)
+
+	primary := &issuerVerifiers{url: options.IssuerURL, audiences: options.Audiences, ctx: background}
+	if err := primary.discover(ctx); err != nil {
+		return nil, err
 	}
 
-	for _, audience := range options.Audiences {
-		if audience == "" {
-			return nil, errors.New("auth: an audience must not be empty")
+	issuers[primary.url] = primary
+
+	for _, additional := range options.AdditionalIssuers {
+		if err := validateIssuer(additional.IssuerURL, additional.Audiences); err != nil {
+			return nil, err
+		}
+
+		if issuers[additional.IssuerURL] != nil {
+			return nil, fmt.Errorf("auth: issuer %s is configured twice", additional.IssuerURL)
+		}
+
+		issuers[additional.IssuerURL] = &issuerVerifiers{
+			url:       additional.IssuerURL,
+			audiences: additional.Audiences,
+			ctx:       background,
 		}
 	}
 
-	provider, err := oidc.NewProvider(ctx, options.IssuerURL)
-	if err != nil {
-		return nil, fmt.Errorf("auth: discovering the IdP %s: %w", options.IssuerURL, err)
-	}
+	var err error
 
 	claims := claimNames{
 		email:         valueOr(options.EmailClaim, "email"),
@@ -249,26 +372,15 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		}
 	}
 
-	// One provider, so every audience's verifier shares the discovery
-	// document and the cached key set.
-	verifiers := make([]audienceVerifier, 0, len(options.Audiences))
-	for _, audience := range options.Audiences {
-		verifiers = append(verifiers, audienceVerifier{
-			audience: audience,
-			verifier: provider.VerifierContext(context.WithoutCancel(ctx), &oidc.Config{ClientID: audience}),
-		})
-	}
-
 	return &Authenticator{
-		attest:    attest,
-		verifiers: verifiers,
-		issuer:    options.IssuerURL,
-		accounts:  accounts,
-		spiffe:    spiffe,
-		claims:    claims,
-		recorder:  options.Recorder,
-		limiter:   NewRateLimiter(),
-		metadata:  options.ResourceMetadataURL,
+		attest:   attest,
+		issuers:  issuers,
+		accounts: accounts,
+		spiffe:   spiffe,
+		claims:   claims,
+		recorder: options.Recorder,
+		limiter:  NewRateLimiter(),
+		metadata: options.ResourceMetadataURL,
 		dropped: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "toolgate_auth_refusals_dropped_total",
 			Help: "Failed sign-ins not written to the audit log because their remote address passed 10 a minute.",
@@ -482,7 +594,9 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 		return identity, nil, refusal, opsmetrics.AuthSPIFFE
 	}
 
-	if a.accounts != nil && issuer != a.issuer {
+	tokenIssuer, known := a.issuers[issuer]
+
+	if a.accounts != nil && !known {
 		identity, refusal := a.accounts.verify(request.Context(), token)
 		if refusal == nil {
 			// TokenReview accepted the token, so its expiry claim is the
@@ -493,7 +607,23 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 		return identity, nil, refusal, opsmetrics.AuthServiceAccount
 	}
 
-	verifier := a.verifierFor(token)
+	// A token from an issuer that isn't configured is refused.
+	if !known {
+		refusal := unverifiedRefusal(token)
+		refusal.Reason = "invalid token"
+
+		return Identity{}, nil, &refusal, ""
+	}
+
+	verifiers, err := tokenIssuer.get()
+	if err != nil {
+		refusal := unverifiedRefusal(token)
+		refusal.Reason = "issuer unavailable"
+
+		return Identity{}, nil, &refusal, ""
+	}
+
+	verifier := verifierFor(verifiers, token)
 	if verifier == nil {
 		refusal := unverifiedRefusal(token)
 		refusal.Reason = "invalid token"
@@ -528,14 +658,14 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 	return identity, claims, nil, ""
 }
 
-// verifierFor returns the verifier of the first configured audience in the
-// token's unverified audience claim, or nil when the token names none of
+// verifierFor returns the verifier of the first of the issuer's audiences in
+// the token's unverified audience claim, or nil when the token names none of
 // them. The chosen verifier checks the signature, issuer, audience and expiry
-// itself, so a forged audience claim gains nothing.
-func (a *Authenticator) verifierFor(token string) *oidc.IDTokenVerifier {
+// itself, so a forged issuer or audience claim gains nothing.
+func verifierFor(verifiers []audienceVerifier, token string) *oidc.IDTokenVerifier {
 	audiences := unverifiedAudiences(token)
 
-	for _, candidate := range a.verifiers {
+	for _, candidate := range verifiers {
 		for _, audience := range audiences {
 			if audience == candidate.audience {
 				return candidate.verifier

@@ -396,6 +396,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 		options: auth.Options{
 			IssuerURL:          cfg.OIDCIssuerURL,
 			Audiences:          cfg.OIDCAudience,
+			AdditionalIssuers:  cfg.AdditionalIssuers(),
 			EmailClaim:         cfg.OIDCEmailClaim,
 			EmailVerifiedClaim: cfg.OIDCEmailVerifiedClaim,
 			GroupsClaim:        cfg.OIDCGroupsClaim,
