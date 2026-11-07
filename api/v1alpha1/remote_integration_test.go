@@ -97,3 +97,33 @@ func TestCRDValidatesRemoteTemplates(t *testing.T) {
 		})
 	}
 }
+
+func TestCRDDefaultsTheEndpointPath(t *testing.T) {
+	environment := testutil.StartEnvtest(t)
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "unset path becomes /mcp", path: "", want: "/mcp"},
+		{name: "explicit root is kept", path: "/", want: "/"},
+		{name: "explicit path is kept", path: "/other", want: "/other"},
+	}
+
+	for index, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			template := remoteTemplate(func(spec *v1alpha1.MCPServerTemplateSpec) {
+				spec.Remote = nil
+				spec.Endpoint = v1alpha1.Endpoint{Service: "mcp", Port: 8080, Path: test.path}
+			})
+			template.Name = "endpoint-path-" + string(rune('a'+index))
+
+			require.NoError(t, environment.Client.Create(t.Context(), template))
+
+			stored := &v1alpha1.MCPServerTemplate{}
+			require.NoError(t, environment.Client.Get(t.Context(), client.ObjectKeyFromObject(template), stored))
+			assert.Equal(t, test.want, stored.Spec.Endpoint.Path)
+		})
+	}
+}

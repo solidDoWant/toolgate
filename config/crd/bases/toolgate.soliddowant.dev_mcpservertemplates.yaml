@@ -137,7 +137,10 @@ spec:
                   Remote is set.
                 properties:
                   path:
-                    description: Path is the HTTP path of the MCP endpoint.
+                    default: /mcp
+                    description: |-
+                      Path is the HTTP path of the MCP endpoint. It defaults to /mcp; set / to
+                      use the server root.
                     maxLength: 1024
                     type: string
                   port:
