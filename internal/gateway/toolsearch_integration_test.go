@@ -119,7 +119,7 @@ func TestToolSearchMode(t *testing.T) {
 		assert.Equal(t, "Tool search is off for this session.", resultText(result))
 
 		on := fixture.connect(t, searching(alice()))
-		assert.ElementsMatch(t, append([]string{gateway.ToolFindTools}, metaToolNames...), toolNames(t, on))
+		assert.ElementsMatch(t, searchModeToolNames, toolNames(t, on))
 
 		explicitOff := alice()
 		explicitOff.search = "off"
@@ -129,7 +129,7 @@ func TestToolSearchMode(t *testing.T) {
 	t.Run("the setting turns search mode on when no header is sent, and the header wins", func(t *testing.T) {
 		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.ToolSearch = true })
 
-		assert.ElementsMatch(t, append([]string{gateway.ToolFindTools}, metaToolNames...), toolNames(t, fixture.connect(t, alice())))
+		assert.ElementsMatch(t, searchModeToolNames, toolNames(t, fixture.connect(t, alice())))
 
 		explicitOff := alice()
 		explicitOff.search = "off"
@@ -733,4 +733,85 @@ func TestSessionRecordsToolSearchMode(t *testing.T) {
 	fixture.connect(t, switched)
 
 	assert.False(t, stored("search-on"))
+}
+
+// searchModeToolNames are the tools of a search-mode session that has
+// enabled nothing: the enable and disable tools are not listed.
+var searchModeToolNames = []string{gateway.ToolFindTools, gateway.ToolListServers, gateway.ToolServerStatus}
+
+func TestEnableDisableToolList(t *testing.T) {
+	tests := []struct {
+		name    string
+		setting string
+		search  string
+		want    []string
+	}{
+		{"auto lists them outside search mode", "", "off", metaToolNames},
+		{"auto hides them in search mode", "auto", "on", searchModeToolNames},
+		{"always lists them in search mode", "always", "on", append([]string{gateway.ToolFindTools}, metaToolNames...)},
+		{"never hides them outside search mode", "never", "off", []string{gateway.ToolListServers, gateway.ToolServerStatus}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.MetaToolsEnableDisable = test.setting })
+
+			client := alice()
+			client.search = test.search
+
+			assert.ElementsMatch(t, test.want, toolNames(t, fixture.connect(t, client)))
+		})
+	}
+
+	t.Run("a call to a hidden tool is refused with a message and enables nothing", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		template := fixture.addEnableTemplate("github", "per-user", anyone)
+
+		session := fixture.connect(t, searching(alice()))
+
+		for _, tool := range []string{gateway.ToolEnableServer, gateway.ToolDisableServer} {
+			result := callTool(t, session, tool, map[string]any{"name": "github"})
+			require.True(t, result.IsError, tool)
+			assert.Contains(t, resultText(result), "isn't available in this session")
+			assert.Contains(t, resultText(result), gateway.ToolFindTools)
+		}
+
+		assert.Empty(t, fixture.instancesOf(t, template))
+	})
+
+	t.Run("a request that changes the mode of a session sends list_changed", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+
+		client := searching(alice())
+		observed := fixture.connectObserved(t, client)
+
+		off := client
+		off.search = "off"
+
+		response := fixture.post(t, off, observed.session.ID(), pingMessage())
+		_ = response.Body.Close()
+
+		require.Eventually(t, func() bool { return observed.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+
+		// A request that keeps the mode sends none.
+		response = fixture.post(t, off, observed.session.ID(), pingMessage())
+		_ = response.Body.Close()
+
+		assert.Equal(t, 1, observed.listChangedCount())
+	})
+}
+
+func TestBlockedServerReasonInSearchMode(t *testing.T) {
+	fixture, _ := newScopedFixture(t)
+	fixture.addEnableTemplate("github", "per-user", aliceAndBob)
+
+	client := fixture.connectObserved(t, searching(attestedAlice()))
+
+	entry, ok := entryNamed(listServers(t, client.session), "github")
+	require.True(t, ok)
+	assert.Equal(t, "blocked", entry.Status)
+	assert.Contains(t, entry.Reason, "call one of its tools to ask for access")
+	assert.Contains(t, entry.Reason, "toolgate_allow")
+	assert.NotContains(t, entry.Reason, "enable it to ask")
+	assert.Zero(t, fixture.accessRequestCount(t), "listing creates no request")
 }

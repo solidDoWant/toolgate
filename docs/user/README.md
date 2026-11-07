@@ -147,6 +147,8 @@ You do not call the gateway yourself. Ask Claude for what you need, and Claude u
 - `toolgate_disable_server` turns off a server in this session.
 - `toolgate_server_status` shows if a server is running, and why it failed.
 
+In tool search mode, Claude does not see `toolgate_enable_server` and `toolgate_disable_server`. It finds a tool with `toolgate_find_tools` and calls it. See [Tool search](tool-search.md).
+
 Claude can call a tool of a server that the rules allow without `toolgate_enable_server` first. The call turns on the server in this session. If the server is not running, the call starts it and waits. Claude shows the progress, so the first call can take longer. If the server cannot start, the call fails with the reason.
 
 The name of each tool of a server starts with the name of the server and two underscores, for example `github__list_issues`. One session can have 32 servers turned on at most.

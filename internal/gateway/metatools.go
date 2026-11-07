@@ -81,12 +81,14 @@ type metaTools struct {
 	// metrics counts calls and starts. Nil means none.
 	metrics *runtime.Metrics
 	// embedder embeds search queries; nil means words only.
-	embedder    *embeddings.Client
-	database    *pgxpool.Pool
-	catalog     *catalog.Catalog
-	policy      *policy.Engine
-	blocks      blockCache
-	auditOutput io.Writer
+	embedder *embeddings.Client
+	// enableDisable is the metaToolsEnableDisable setting.
+	enableDisable string
+	database      *pgxpool.Pool
+	catalog       *catalog.Catalog
+	policy        *policy.Engine
+	blocks        blockCache
+	auditOutput   io.Writer
 	// payloads stores call arguments and results; nil means off.
 	payloads  *audit.Payloads
 	subscribe func() (<-chan store.Event, func())
@@ -227,6 +229,10 @@ func (m *metaTools) serverStatus(ctx context.Context, request *mcp.CallToolReque
 // verified workspace's effective list.
 const notInWorkspaceReason = "not allowed in this workspace; enable it to ask"
 
+// notInWorkspaceSearchReason is the same reason in tool search mode, where
+// the enable tool isn't listed: a call asks.
+const notInWorkspaceSearchReason = "not allowed in this workspace; call one of its tools to ask for access, or call `toolgate_allow` to add it to your workspace scope"
+
 // deniedReasons are the list_servers reasons of a server with a deny entry,
 // which an enable never asks about.
 var deniedReasons = map[policy.DeniedIn]string{
@@ -269,6 +275,9 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 			}
 
 			entry.Reason = notInWorkspaceReason
+			if enableDisableHidden(current.searchMode, m.enableDisable) {
+				entry.Reason = notInWorkspaceSearchReason
+			}
 		}
 
 		return entry, true, nil
