@@ -116,15 +116,17 @@ func TestGrantEnablesOptInServer(t *testing.T) {
 		assert.Contains(t, awaitEnable(t, startEnable(t, client.session, "github")).err, "attested environment", "refused without a grant")
 
 		grant := page.create(t, fixture, "alice", url.Values{"server": {"github"}, "duration": {"1h"}})
+		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond,
+			"the grant makes the server usable, which changes the discovery tools' descriptions")
 
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
-		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, waitTimeout, 10*time.Millisecond)
 
 		revoked := time.Now()
 		response := page.post(t, "/ui/grants/"+grant+"/revoke", url.Values{})
 		require.Equal(t, http.StatusSeeOther, response.StatusCode)
 
-		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, policyChangeBound, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return client.listChangedCount() == 3 }, policyChangeBound, 10*time.Millisecond,
 			"no list_changed within 5 s of the revoke")
 		assert.Less(t, time.Since(revoked), policyChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session), "the server's tools are withdrawn")
@@ -148,15 +150,17 @@ func TestGrantEnablesOptInServer(t *testing.T) {
 
 		// The shortest grant the page offers.
 		grant := page.create(t, fixture, "alice", url.Values{"server": {"github"}, "duration": {"1m"}})
+		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond,
+			"the grant makes the server usable, which changes the discovery tools' descriptions")
 
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
-		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, waitTimeout, 10*time.Millisecond)
 
 		row, err := db.New(fixture.pool).GetGrant(t.Context(), grant)
 		require.NoError(t, err)
 
 		expiresAt := row.ExpiresAt.Time
-		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, time.Until(expiresAt)+policyChangeBound, 50*time.Millisecond,
+		require.Eventually(t, func() bool { return client.listChangedCount() == 3 }, time.Until(expiresAt)+policyChangeBound, 50*time.Millisecond,
 			"no list_changed within 5 s of the grant's expiry")
 		assert.Less(t, time.Since(expiresAt), policyChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session), "the server's tools are withdrawn")
