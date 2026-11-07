@@ -276,6 +276,7 @@ func (r *Repairer) reapply(ctx context.Context, instance db.Instance, now time.T
 		Instance:  Instance{ID: instance.ID, Namespace: instance.Namespace},
 		Secrets:   r.Starter.Secrets(identity.PrincipalID),
 		Resolvers: r.Starter.Resolvers,
+		Metadata:  r.Starter.metadata(instance, template, identity),
 	})
 	if err != nil {
 		return fmt.Errorf("reapply instance %s: render: %w", instance.ID, err)

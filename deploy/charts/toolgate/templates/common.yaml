@@ -83,6 +83,9 @@ settings from `config`.
 {{- with $config.ui.approvalTimeout }}
 {{- $env = append $env (dict "name" "TOOLGATE_APPROVAL_TIMEOUT" "value" .) }}
 {{- end }}
+{{- $ownerDetails := true -}}
+{{- if hasKey $config "instanceOwnerDetails" }}{{- $ownerDetails = $config.instanceOwnerDetails -}}{{- end }}
+{{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_OMIT_OWNER_DETAILS" "value" (toString (not $ownerDetails))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH" "value" (toString (default false $config.toolSearch))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_META_TOOLS_ENABLE_DISABLE" "value" (default "auto" (($config.metaTools | default dict).enableDisable))) -}}
 {{- with $config.toolSearchEmbeddings }}

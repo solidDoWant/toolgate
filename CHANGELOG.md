@@ -4,6 +4,8 @@
 
 ### Features
 
+- Instance namespaces and objects now carry labels and annotations for their owner, workspace, session and scope. See "Labels and annotations on instance objects" in `docs/admin/instances.md`.
+
 - The gateway now tells the model which servers it can use: a short list in the MCP instructions, and the same names in the descriptions of `toolgate_find_tools` and `toolgate_list_servers`. Write each template's `description` for the model.
 
 - The Sessions page of the web UI now shows who runs each session, where (with a verified or unverified badge), which client and version, and whether the session is active, idle, ended or resumable. You can filter by state, workspace and, as an admin, user.

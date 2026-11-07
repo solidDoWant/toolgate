@@ -85,6 +85,9 @@ type Input struct {
 	// Resolvers calls the resolvers ${resolver:…} names. Nil means none are
 	// configured.
 	Resolvers ResolverCaller
+	// Metadata is put on every rendered object, and on the pod template of
+	// the kinds that have one. Its keys win over the template's own.
+	Metadata InstanceMetadata
 }
 
 // Result is a rendered instance.
@@ -99,6 +102,9 @@ type Result struct {
 	// ResolvedExpiresAt is the earliest expiresAt of the resolver values
 	// the render used, or zero when it used none.
 	ResolvedExpiresAt time.Time
+	// Metadata is the labels and annotations the objects carry, for the
+	// objects toolgate adds around them.
+	Metadata InstanceMetadata
 }
 
 // VariableError is a variable that could not be rendered. Its message names
@@ -132,7 +138,7 @@ func (e *VariableError) Unwrap() error { return e.Err }
 func Render(ctx context.Context, input Input) (*Result, error) {
 	renderer := &renderer{ctx: ctx, input: input, secretsUsed: map[string]time.Time{}}
 
-	result := &Result{}
+	result := &Result{Metadata: input.Metadata}
 
 	for index, raw := range input.Template.Spec.Resources {
 		where := "resources[" + strconv.Itoa(index) + "]"
@@ -161,15 +167,17 @@ func Render(ctx context.Context, input Input) (*Result, error) {
 
 		decoded.SetNamespace(input.Instance.Namespace)
 
-		labels := decoded.GetLabels()
-		if labels == nil {
-			labels = map[string]string{}
-		}
-
+		labels := mergeKeys(decoded.GetLabels(), input.Metadata.Labels)
 		labels[LabelInstance] = input.Instance.ID
 		labels[LabelTemplate] = input.Template.Name
 		labels[LabelManagedBy] = ManagedByValue
 		decoded.SetLabels(labels)
+
+		if annotations := mergeKeys(decoded.GetAnnotations(), input.Metadata.Annotations); len(annotations) > 0 {
+			decoded.SetAnnotations(annotations)
+		}
+
+		stampPodTemplate(decoded, input.Metadata)
 
 		result.Objects = append(result.Objects, decoded)
 	}
@@ -511,4 +519,26 @@ func formatPath(path []string) string {
 	}
 
 	return out.String()
+}
+
+// stampPodTemplate puts the instance metadata on the pod template of a
+// workload object, so its pods carry it too. A template's own keys are kept
+// unless they are toolgate's. The instance, template and managed-by labels
+// stay off the pods: the reconciler judges every pod that carries the
+// instance label, and a pod that is not ready yet would fail the instance.
+func stampPodTemplate(object *unstructured.Unstructured, meta InstanceMetadata) {
+	if _, found, _ := unstructured.NestedMap(object.Object, "spec", "template"); !found {
+		return
+	}
+
+	labels, _, _ := unstructured.NestedStringMap(object.Object, "spec", "template", "metadata", "labels")
+	labels = mergeKeys(labels, meta.Labels)
+
+	annotations, _, _ := unstructured.NestedStringMap(object.Object, "spec", "template", "metadata", "annotations")
+	annotations = mergeKeys(annotations, meta.Annotations)
+
+	_ = unstructured.SetNestedStringMap(object.Object, labels, "spec", "template", "metadata", "labels")
+	if len(annotations) > 0 {
+		_ = unstructured.SetNestedStringMap(object.Object, annotations, "spec", "template", "metadata", "annotations")
+	}
 }

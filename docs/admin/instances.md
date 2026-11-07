@@ -31,6 +31,44 @@ Do not make a ConfigMap with a name that starts with `tg-` in the shared namespa
 
 A failed instance is removed at once. The database keeps the record of a stopped instance for 7 days, and then deletes it.
 
+## Labels and annotations on instance objects
+
+toolgate marks the namespace `tg-<instance id>` and every object it makes for an instance (pods, Deployments, Services, PVCs, network policies and the rest) with the keys below. In the shared namespace, the objects carry them too, because the namespace cannot say whose they are. Keys from the template are kept, but a template cannot change a key of toolgate.
+
+Labels (you can select on them):
+
+| Label | Value |
+| --- | --- |
+| `toolgate.soliddowant.dev/scope` | `per-session`, `per-user` or `shared`. |
+| `toolgate.soliddowant.dev/template-namespace` | The namespace of the template. |
+| `toolgate.soliddowant.dev/owner` | The first 16 hex characters of the SHA-256 of the owner's `sub`. Per-user and per-session only. |
+| `toolgate.soliddowant.dev/attestation` | `attested` or `user`. Per-session only. |
+
+Annotations (full values):
+
+| Annotation | Value |
+| --- | --- |
+| `toolgate.soliddowant.dev/owner-subject` | The full `sub` of the owner. Per-user and per-session only. |
+| `toolgate.soliddowant.dev/owner-email`, `toolgate.soliddowant.dev/owner-name` | The verified email and name of the owner, if the identity provider gives them. |
+| `toolgate.soliddowant.dev/workspace` | The workspace ID of the session. Per-session only. |
+| `toolgate.soliddowant.dev/workspace-verified` | `true` when the platform verified the workspace, `false` when the client only claimed it. |
+| `toolgate.soliddowant.dev/session` | The toolgate session ID. Per-session only. |
+| `toolgate.soliddowant.dev/template-generation`, `toolgate.soliddowant.dev/template-uid` | The generation and UID of the template that the instance started from. |
+| `toolgate.soliddowant.dev/created-by` | The version of the gateway. |
+
+Shared instances get only the scope and template keys. The values come from the verified identity of the session, never from a client header.
+
+To list the namespaces of one user, or of one scope:
+
+```sh
+kubectl get ns -l toolgate.soliddowant.dev/owner=<owner id>
+kubectl get ns -l toolgate.soliddowant.dev/scope=per-user
+```
+
+The owner ID is the same as the short owner ID that toolgate shows in its UI and CLI. To keep personal data off cluster objects, set the chart value `config.instanceOwnerDetails` to `false`. The gateway then leaves out the email and the name. The subject stays.
+
+toolgate sets these keys when it creates an object. Instances that were created before an upgrade get them when they start again.
+
 ## Recovery after a restart or a leader change
 
 The replica that holds the leader Lease compares Kubernetes with the database every 30 seconds. It does this also when it takes the Lease after a restart or after the previous holder stopped. It lists the instance namespaces first, and then reads the instance records:

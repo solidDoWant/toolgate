@@ -35,6 +35,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/testtime"
+	"github.com/solidDoWant/toolgate/internal/version"
 )
 
 // runtimeOptions are the dependencies of startRuntime.
@@ -246,6 +247,9 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		GatewayPodLabels: cfg.PodLabels(),
 		TracerProvider:   options.tracerProvider,
 		Logger:           logger,
+
+		GatewayVersion:   version.Get(),
+		OmitOwnerDetails: cfg.InstanceOmitOwnerDetails,
 	}
 
 	repairer := &runtime.Repairer{

@@ -125,6 +125,11 @@ type Starter struct {
 	GatewayNamespace string
 	// GatewayPodLabels select the gateway's pods in GatewayNamespace.
 	GatewayPodLabels map[string]string
+	// GatewayVersion is recorded on instance objects as the creator.
+	GatewayVersion string
+	// OmitOwnerDetails leaves the owner's email and name off instance
+	// objects.
+	OmitOwnerDetails bool
 	// TracerProvider makes the render and apply spans. Nil means no spans.
 	TracerProvider trace.TracerProvider
 	// Now is the clock. Nil means time.Now.
@@ -192,6 +197,7 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		Instance:  Instance{ID: instance.ID, Namespace: instance.Namespace},
 		Secrets:   s.Secrets(identity.PrincipalID),
 		Resolvers: s.Resolvers,
+		Metadata:  s.metadata(instance, template, identity),
 	})
 	if err != nil {
 		renderSpan.SetStatus(codes.Error, "render")
@@ -399,6 +405,11 @@ func (s *Starter) identity(ctx context.Context, instance db.Instance) (Identity,
 	}, nil
 }
 
+// metadata returns the labels and annotations of an instance's objects.
+func (s *Starter) metadata(instance db.Instance, template *v1alpha1.MCPServerTemplate, identity Identity) InstanceMetadata {
+	return NewInstanceMetadata(instance, template, identity, s.GatewayVersion, s.OmitOwnerDetails)
+}
+
 func (s *Starter) timedOut(instance db.Instance, template *v1alpha1.MCPServerTemplate) bool {
 	if !instance.AttemptStartedAt.Valid {
 		return false
@@ -419,22 +430,18 @@ func startTimeout(template *v1alpha1.MCPServerTemplate) time.Duration {
 // instance namespace holds before the template's objects. It reports false
 // when the instance has failed because the namespace exists without the
 // instance's label.
-func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (bool, error) {
-	objectLabels := map[string]string{
+func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, meta InstanceMetadata) (bool, error) {
+	objectLabels := mergeKeys(meta.Labels, map[string]string{
 		LabelManagedBy: ManagedByValue,
 		LabelInstance:  instance.ID,
 		LabelTemplate:  template.Name,
-	}
+	})
 
 	namespaceLabels := maps.Clone(objectLabels)
 	namespaceLabels[LabelWritable] = "true"
 	namespaceLabels["pod-security.kubernetes.io/enforce"] = "restricted"
 	namespaceLabels["pod-security.kubernetes.io/warn"] = "restricted"
 	namespaceLabels["pod-security.kubernetes.io/audit"] = "restricted"
-
-	if instance.OwnerPrincipal != "" {
-		namespaceLabels[LabelOwner] = hashClaimed(instance.OwnerPrincipal)
-	}
 
 	dnsPort := intstr.FromInt32(53)
 	udp, tcp := corev1.ProtocolUDP, corev1.ProtocolTCP
@@ -443,7 +450,9 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 	// namespace is created rather than applied. A new leader repeating the
 	// step finds it already there and goes on, but only when it carries the
 	// instance's label: toolgate never adopts a namespace it didn't create.
-	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: instance.Namespace, Labels: namespaceLabels}}
+	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+		Name: instance.Namespace, Labels: namespaceLabels, Annotations: maps.Clone(meta.Annotations),
+	}}
 	if err := s.Client.Create(ctx, namespace); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return false, fmt.Errorf("create Namespace %s: %w", instance.Namespace, err)
@@ -463,14 +472,17 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 
 	objects := []k8sruntime.Object{
 		&corev1.ServiceAccount{
-			TypeMeta:                     metav1.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"},
-			ObjectMeta:                   metav1.ObjectMeta{Name: "default", Namespace: instance.Namespace},
+			TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ServiceAccount"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "default", Namespace: instance.Namespace, Labels: objectLabels, Annotations: maps.Clone(meta.Annotations),
+			},
 			AutomountServiceAccountToken: ptr.To(false),
 		},
 		&networkingv1.NetworkPolicy{
 			TypeMeta: metav1.TypeMeta{APIVersion: "networking.k8s.io/v1", Kind: "NetworkPolicy"},
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "toolgate-default-deny", Namespace: instance.Namespace, Labels: objectLabels,
+				Annotations: maps.Clone(meta.Annotations),
 			},
 			Spec: networkingv1.NetworkPolicySpec{
 				PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress},
@@ -522,7 +534,7 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 	defer span.End()
 
 	if hasOwnNamespace(instance) {
-		prepared, err := s.prepareNamespace(ctx, instance, template)
+		prepared, err := s.prepareNamespace(ctx, instance, template, result.Metadata)
 		if err != nil {
 			span.SetStatus(codes.Error, "namespace")
 
@@ -537,7 +549,7 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 	var owner *metav1.OwnerReference
 
 	if !hasOwnNamespace(instance) {
-		anchor, err := s.prepareAnchor(ctx, instance, template)
+		anchor, err := s.prepareAnchor(ctx, instance, template, result.Metadata)
 		if err != nil {
 			span.SetStatus(codes.Error, "anchor")
 
@@ -580,15 +592,16 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 // the gateway reading Secrets. It returns nil,
 // with no error, when the instance has failed because a ConfigMap of that
 // name exists without the instance's label.
-func (s *Starter) prepareAnchor(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*metav1.OwnerReference, error) {
+func (s *Starter) prepareAnchor(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, meta InstanceMetadata) (*metav1.OwnerReference, error) {
 	anchor := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
 		Namespace: instance.Namespace,
 		Name:      AnchorName(instance.ID),
-		Labels: map[string]string{
+		Labels: mergeKeys(meta.Labels, map[string]string{
 			LabelManagedBy: ManagedByValue,
 			LabelInstance:  instance.ID,
 			LabelTemplate:  template.Name,
-		},
+		}),
+		Annotations: maps.Clone(meta.Annotations),
 	}}
 
 	if err := s.Client.Create(ctx, anchor); err != nil {

@@ -289,6 +289,13 @@ type Config struct {
 	// required. The chart sets it from `config.audit.payloads`.
 	AuditPayloads bool `json:"auditPayloads" env:"TOOLGATE_AUDIT_PAYLOADS"`
 
+	// If this is `true`, the gateway leaves the owner's email and name off the
+	// annotations of the namespaces and objects it makes for instances, so no
+	// personal data is stored on cluster objects. The owner's subject is still
+	// annotated. The chart sets it from `config.instanceOwnerDetails`, which is
+	// `true` by default.
+	InstanceOmitOwnerDetails bool `json:"instanceOmitOwnerDetails" env:"TOOLGATE_INSTANCE_OMIT_OWNER_DETAILS"`
+
 	// Whether tool search mode is on for sessions whose client sends no
 	// `X-Toolgate-Tool-Search` header. In search mode, a session lists the
 	// meta tools, `toolgate_find_tools`, the tools of its enabled servers and

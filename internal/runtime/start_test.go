@@ -738,6 +738,7 @@ func TestStarterOwnsSharedNamespaceObjectsByAnchor(t *testing.T) {
 		runtime.LabelManagedBy: runtime.ManagedByValue,
 		runtime.LabelInstance:  instanceID,
 		runtime.LabelTemplate:  template.Name,
+		runtime.LabelScope:     "shared", runtime.LabelTemplateNamespace: "catalog",
 	}, anchor.Labels)
 
 	want := []metav1.OwnerReference{{
