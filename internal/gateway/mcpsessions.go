@@ -125,7 +125,7 @@ func (e *mcpEndpoint) connectCopy(ctx context.Context, id string, binding mcpBin
 	// calls join the trace of the request that made the copy.
 	connectCtx := trace.ContextWithSpan(context.Background(), trace.SpanFromContext(ctx))
 
-	serverSession, err := server.Connect(connectCtx, transport, &mcp.ServerSessionOptions{State: state})
+	serverSession, err := server.Connect(connectCtx, e.router.transport(transport), &mcp.ServerSessionOptions{State: state})
 	if err != nil {
 		return nil, fmt.Errorf("connect MCP session: %w", err)
 	}

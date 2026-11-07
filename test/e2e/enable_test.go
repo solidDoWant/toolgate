@@ -334,6 +334,16 @@ func connectGatewayWithHeader(t *testing.T, endpoint, user, session string, extr
 
 	observed.session = connected
 
+	// The GET stream gets one list_changed when it attaches. Tests look at
+	// the events after it.
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		assert.Contains(collect, observed.recorded(), eventListChanged)
+	}, time.Minute, 100*time.Millisecond, "the GET stream gets list_changed when it attaches")
+
+	observed.mu.Lock()
+	observed.events = nil
+	observed.mu.Unlock()
+
 	return observed
 }
 

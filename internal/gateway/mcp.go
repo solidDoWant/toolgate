@@ -114,6 +114,11 @@ type MCPOptions struct {
 	// ToolSearchSessionStarted is called after a request starts or resumes
 	// a session with tool search on. Nil does nothing.
 	ToolSearchSessionStarted func(ctx context.Context)
+	// SubscribeReplies returns the payloads of store.RepliesChannel and a
+	// function that ends the subscription
+	// (store.Listener.SubscribeReplies). Nil means none: a client's answer
+	// to a request of this replica that reaches another replica is lost.
+	SubscribeReplies func() (<-chan []byte, func())
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -221,6 +226,9 @@ type mcpEndpoint struct {
 
 	// waiters counts the calls waiting for an approval.
 	waiters *approvalWaiters
+	// router gives the requests of this replica's copies the replica's ID
+	// and routes the client's answers back to them.
+	router *replyRouter
 
 	idleTimeout time.Duration
 
@@ -270,6 +278,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 			toolSearchStarted: options.ToolSearchSessionStarted,
 		},
 		logger:     logger,
+		router:     newReplyRouter(newReplicaID(), logger),
 		toolSearch: options.ToolSearch,
 		database:   options.Database,
 		endMCPSession: func(ctx context.Context, id string) error {
@@ -353,6 +362,17 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 	}
 
 	go endpoint.fanOut(tools, events, changed)
+
+	if options.SubscribeReplies != nil {
+		replies, _ := options.SubscribeReplies()
+
+		go func() {
+			for payload := range replies {
+				endpoint.router.deliver(payload)
+			}
+		}()
+	}
+
 	go endpoint.touchOpenSessions()
 
 	implementation := &mcp.Implementation{Name: "toolgate", Version: version.Get()}
@@ -533,6 +553,10 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 			return
 		}
+
+		if request.Method == http.MethodPost && e.routeReply(request.Context(), writer, mcpSessionID, body) {
+			return
+		}
 	}
 
 	searchMode := searchModeOf(request, e.toolSearch)
@@ -601,6 +625,12 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		ctx, cancel = context.WithCancel(ctx)
 		defer cancel()
 		defer e.trackStream(held, cancel)()
+
+		// A change made while the client had no stream isn't lost: the
+		// stream gets one list_changed as soon as it attaches.
+		writer = &streamAttachWriter{ResponseWriter: writer, attached: func() {
+			go e.router.notifyToolListChanged(mcpSessionID)
+		}}
 	}
 
 	e.statefulHandler.ServeHTTP(writer, request.WithContext(ctx))

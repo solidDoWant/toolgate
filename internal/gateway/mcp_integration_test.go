@@ -113,6 +113,8 @@ func newMCPFixtureWithAuth(t *testing.T, authOptions *auth.Options, configure ..
 			Catalog:   servers,
 			Policy:    &policy.Engine{Rules: rules},
 			Subscribe: listener.Subscribe,
+
+			SubscribeReplies: listener.SubscribeReplies,
 			UpstreamEndpoint: func(_ db.Instance, template *v1alpha1.MCPServerTemplate) string {
 				url, _ := upstreams.Load(template.Name)
 				endpoint, _ := url.(string)

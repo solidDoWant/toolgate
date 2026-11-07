@@ -6,14 +6,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/solidDoWant/toolgate/internal/store"
 )
 
 // replicaIDLength is the length of a replica ID: 8 random bytes in
@@ -23,14 +25,13 @@ const replicaIDLength = 16
 // replicaIDSeparator joins a replica ID and the ID a copy gave its request.
 const replicaIDSeparator = "-"
 
-// newReplicaID returns a new replica ID from crypto/rand.
-func newReplicaID() (string, error) {
+// newReplicaID returns a new replica ID from crypto/rand, which never
+// fails.
+func newReplicaID() string {
 	random := make([]byte, replicaIDLength/2)
-	if _, err := rand.Read(random); err != nil {
-		return "", fmt.Errorf("make a replica ID: %w", err)
-	}
+	_, _ = rand.Read(random)
 
-	return hex.EncodeToString(random), nil
+	return hex.EncodeToString(random)
 }
 
 // isReplicaID reports whether value has the form of a replica ID.
@@ -139,6 +140,27 @@ func (r *replyRouter) deliver(payload []byte) {
 
 	connection.route(response)
 }
+
+// notifyToolListChanged sends one tools list_changed notification on the
+// GET stream of the copy of the MCP session id, if this replica holds it.
+func (r *replyRouter) notifyToolListChanged(id string) {
+	r.mu.Lock()
+	connection, found := r.copies[id]
+	r.mu.Unlock()
+
+	if !found {
+		return
+	}
+
+	notification := &jsonrpc.Request{Method: toolListChangedMethod, Params: json.RawMessage(`{}`)}
+	if err := connection.Connection.Write(context.Background(), notification); err != nil {
+		r.logger.Warn("sending list_changed on an attached stream failed", slog.String("error", err.Error()))
+	}
+}
+
+// toolListChangedMethod is the notification that tells a client to list
+// tools again.
+const toolListChangedMethod = "notifications/tools/list_changed"
 
 func (r *replyRouter) register(connection *routedConnection) {
 	r.mu.Lock()
@@ -347,4 +369,75 @@ func (c *routedConnection) Close() error {
 	})
 
 	return c.Connection.Close()
+}
+
+// routeReply sends a POST that carries a client's response to a request of
+// another replica on to that replica, and answers 202 after the commit. A
+// response that names no replica, or one too large for a notification, is
+// dropped with a warning and also answered 202. It returns false for any
+// other body, and for a response to this replica's own request, which the
+// copy serves.
+func (e *mcpEndpoint) routeReply(ctx context.Context, writer http.ResponseWriter, mcpSessionID string, body []byte) bool {
+	message, err := jsonrpc.DecodeMessage(body)
+	if err != nil {
+		return false
+	}
+
+	replica, isResponse := replyTarget(message)
+	if !isResponse || replica == e.router.replica {
+		return false
+	}
+
+	if replica == "" {
+		e.logger.WarnContext(ctx, "dropping a response to a request no replica sent")
+		writer.WriteHeader(http.StatusAccepted)
+
+		return true
+	}
+
+	payload, err := json.Marshal(routedReply{Replica: replica, Session: mcpSessionID, Message: body})
+	if err == nil {
+		err = store.NotifyReply(ctx, e.database, payload)
+	}
+
+	switch {
+	case errors.Is(err, store.ErrReplyTooLarge):
+		e.logger.WarnContext(ctx, "dropping a response too large to send to another replica")
+	case err != nil:
+		e.logger.ErrorContext(ctx, "sending a response to another replica failed", slog.String("error", err.Error()))
+		http.Error(writer, "The gateway can't reach its database. Try again later.", http.StatusServiceUnavailable)
+
+		return true
+	}
+
+	writer.WriteHeader(http.StatusAccepted)
+
+	return true
+}
+
+// streamAttachWriter calls attached once when a GET stream starts, which is
+// when the go-sdk writes its 200 header with the stream registered.
+type streamAttachWriter struct {
+	http.ResponseWriter
+
+	attached func()
+	once     sync.Once
+}
+
+func (w *streamAttachWriter) WriteHeader(status int) {
+	if status == http.StatusOK {
+		w.once.Do(w.attached)
+	}
+
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *streamAttachWriter) Write(data []byte) (int, error) {
+	return w.ResponseWriter.Write(data)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer, so the
+// stream can be flushed.
+func (w *streamAttachWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
