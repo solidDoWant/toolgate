@@ -129,10 +129,42 @@ def listed_tests(ref):
     return tests
 
 
-def package_texts(ref, directory):
-    """The comment-masked text of each test file of a package directory at ref."""
-    names = git("ls-tree", "--name-only", ref, f"{directory}/", check=False).stdout.split()
-    return [mask_comments(git("show", f"{ref}:{name}").stdout) for name in sorted(names) if name.endswith("_test.go")]
+def test_files(ref):
+    """{package directory: [blob id, ...]} for the Go test files at ref."""
+    listing = git("ls-tree", "-r", ref).stdout
+    files = collections.defaultdict(list)
+    for line in listing.splitlines():
+        meta, _, name = line.partition("\t")
+        if name.endswith("_test.go"):
+            files[name.rpartition("/")[0]].append(meta.split()[2])
+    return files
+
+
+MASKED = {}
+
+
+def masked_blobs(blobs):
+    """Fills MASKED with the comment-masked text of each blob, using one git
+    process for all blobs not read yet."""
+    wanted = [blob for blob in dict.fromkeys(blobs) if blob not in MASKED]
+    if not wanted:
+        return
+    completed = subprocess.run(["git", "cat-file", "--batch"], input="".join(f"{blob}\n" for blob in wanted).encode(), capture_output=True)
+    if completed.returncode != 0:
+        raise SystemExit(f"test-guard: git cat-file failed: {completed.stderr.decode().strip()}")
+    data = completed.stdout
+    index = 0
+    for blob in wanted:
+        end = data.index(b"\n", index)
+        size = int(data[index:end].split()[2])
+        MASKED[blob] = mask_comments(data[end + 1 : end + 1 + size].decode("utf-8", errors="replace"))
+        index = end + 1 + size + 1
+
+
+def package_texts(files, directory):
+    """The comment-masked text of each test file of a package directory."""
+    masked_blobs(files.get(directory, []))
+    return [MASKED[blob] for blob in files.get(directory, [])]
 
 
 def locate(texts, name):
@@ -164,18 +196,18 @@ def locate(texts, name):
 
 def test_problems(base, head):
     problems = []
-    base_texts = {}
-    head_texts = {}
+    base_files = test_files(base)
+    head_files = test_files(head)
     listed_at_head = set(listed_tests(head))
     for test in listed_tests(base):
-        before = locate(base_texts.setdefault(test.directory, package_texts(base, test.directory)), test.name)
+        before = locate(package_texts(base_files, test.directory), test.name)
         if before is None:
             continue
         label = f"{test.scenario} {test.directory}: {test.name}"
         if test not in listed_at_head:
             problems.append(f"removed from the Tests line: {label}")
             continue
-        after = locate(head_texts.setdefault(test.directory, package_texts(head, test.directory)), test.name)
+        after = locate(package_texts(head_files, test.directory), test.name)
         if after is None:
             problems.append(f"deleted or renamed: {label}")
         elif after.skip_calls > before.skip_calls:
