@@ -231,6 +231,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		Embedder:             searchEmbedder,
 
 		ToolSearchSessionStarted: embeddingsDemand,
+		Secrets:                  runtime.BrokerSecrets(userSecrets(broker)),
 	})
 	server.Handle(gateway.MCPPath, authenticator.Middleware(mcpHandler, true))
 	// The GET streams end when shutdown starts, so their clients reconnect
