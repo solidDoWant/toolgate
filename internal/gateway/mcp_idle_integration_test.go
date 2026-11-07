@@ -90,15 +90,17 @@ func (f *mcpFixture) openStream(t *testing.T, client user, mcpSessionID string) 
 func TestMCPSessionIdleRelease(t *testing.T) {
 	const idleTimeout = 500 * time.Millisecond
 
-	t.Run("an idle MCP session is released and then gets 404", func(t *testing.T) {
+	t.Run("an idle MCP session's copy is released and the session is adopted again", func(t *testing.T) {
 		fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))
 
 		mcpSessionID := fixture.initializeRaw(t, alice())
 		require.Equal(t, http.StatusOK, fixture.pingStatus(t, alice(), mcpSessionID))
 
-		assert.Eventually(t, func() bool {
-			return fixture.pingStatus(t, alice(), mcpSessionID) == http.StatusNotFound
-		}, 30*idleTimeout, 3*idleTimeout, "a probe is itself a request, so probes are farther apart than the idle timeout")
+		require.Eventually(t, func() bool {
+			return gateway.HeldMCPSessions(fixture.handlers[0]) == 0
+		}, 30*idleTimeout, idleTimeout/5)
+
+		assert.Equal(t, http.StatusOK, fixture.pingStatus(t, alice(), mcpSessionID), "releasing the copy doesn't end the session")
 	})
 
 	t.Run("an open GET stream keeps the MCP session", func(t *testing.T) {
@@ -115,8 +117,8 @@ func TestMCPSessionIdleRelease(t *testing.T) {
 		closeStream()
 
 		assert.Eventually(t, func() bool {
-			return fixture.pingStatus(t, alice(), mcpSessionID) == http.StatusNotFound
-		}, 30*idleTimeout, 3*idleTimeout, "a probe is itself a request, so probes are farther apart than the idle timeout")
+			return gateway.HeldMCPSessions(fixture.handlers[0]) == 0
+		}, 30*idleTimeout, idleTimeout/5)
 	})
 
 	t.Run("regular requests keep the MCP session", func(t *testing.T) {
@@ -136,9 +138,10 @@ func TestMCPSessionIdleRelease(t *testing.T) {
 		// One session first, so lazily started goroutines and pools are
 		// part of the baseline.
 		warmUp := fixture.initializeRaw(t, alice())
+		require.NotEmpty(t, warmUp)
 		require.Eventually(t, func() bool {
-			return fixture.pingStatus(t, alice(), warmUp) == http.StatusNotFound
-		}, 30*idleTimeout, 3*idleTimeout, "a probe is itself a request, so probes are farther apart than the idle timeout")
+			return gateway.HeldMCPSessions(fixture.handlers[0]) == 0
+		}, 30*idleTimeout, idleTimeout/5)
 
 		baseGoroutines, baseHeap := goroutinesAndHeap()
 
@@ -159,8 +162,8 @@ func TestMCPSessionIdleRelease(t *testing.T) {
 		// Each abandoned session held about 80 KB, 40 MB in all.
 		assert.Less(t, heap, baseHeap+8<<20, "heap %d KiB, baseline %d KiB", heap>>10, baseHeap>>10)
 
-		assert.Equal(t, http.StatusNotFound, fixture.pingStatus(t, alice(), ids[0]))
-		assert.Equal(t, http.StatusNotFound, fixture.pingStatus(t, alice(), ids[abandoned-1]))
+		assert.Zero(t, gateway.HeldMCPSessions(fixture.handlers[0]), "every abandoned copy is released")
+		assert.Equal(t, http.StatusOK, fixture.pingStatus(t, alice(), ids[0]), "a released session is adopted again")
 	})
 }
 

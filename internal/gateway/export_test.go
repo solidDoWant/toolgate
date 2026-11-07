@@ -61,11 +61,22 @@ func WaitingCalls(handler http.Handler, principal string) int {
 	return handler.(*mcpEndpoint).waiters.count(principal)
 }
 
-// WrapEndSession wraps how the endpoint ends a session tied to an MCP
-// session, so a test can hold it after the end transaction commits.
-func WrapEndSession(handler http.Handler, wrap func(next func(ctx context.Context, id int64, reason string) error) func(ctx context.Context, id int64, reason string) error) {
+// WrapEndMCPSession wraps how the endpoint ends an MCP session at a
+// client's DELETE, so a test can hold it after the end transaction commits.
+func WrapEndMCPSession(handler http.Handler, wrap func(next func(ctx context.Context, id string) error) func(ctx context.Context, id string) error) {
 	endpoint := handler.(*mcpEndpoint)
-	endpoint.endSession = wrap(endpoint.endSession)
+	endpoint.endMCPSession = wrap(endpoint.endMCPSession)
+}
+
+// HeldMCPSessions returns how many MCP session copies the MCP handler
+// holds.
+func HeldMCPSessions(handler http.Handler) int {
+	endpoint := handler.(*mcpEndpoint)
+
+	endpoint.mu.Lock()
+	defer endpoint.mu.Unlock()
+
+	return len(endpoint.bindings)
 }
 
 // ResolveSession runs the endpoint's session lookup for identity, as a

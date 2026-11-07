@@ -109,7 +109,10 @@ func (e *mcpEndpoint) nextPolicyExpiry(tools *metaTools) (time.Duration, bool) {
 func (e *mcpEndpoint) handleEvent(tools *metaTools, event store.Event) {
 	switch {
 	case event.Missed:
+		e.closeEndedCopies()
 		e.resync(tools, func(requestContext) bool { return true })
+	case event.Kind == store.KindMCPSession:
+		e.closeCopy(event.ID)
 	case event.Kind == store.KindInstance:
 		tools.dropUnlessReady(event.ID)
 		e.resync(tools, func(requestContext) bool { return true })
@@ -253,8 +256,10 @@ func (e *mcpEndpoint) resync(tools *metaTools, matches func(requestContext) bool
 	e.mu.Unlock()
 
 	for _, target := range targets {
+		// A copy adopted from its row has no request yet. Its first
+		// request syncs it.
 		current := target.currentRequest()
-		if !matches(current) {
+		if current.session.ID == 0 || !matches(current) {
 			continue
 		}
 

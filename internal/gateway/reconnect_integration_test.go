@@ -61,11 +61,11 @@ func TestReplicaLossKeepsTheSession(t *testing.T) {
 		fixture.server.Close()
 		assert.NotEmpty(t, awaitEnable(t, waiting).err, "the enable on the lost replica fails")
 
-		// The other replica doesn't know the old MCP session: 404, so the
-		// client initializes again.
+		// The other replica adopts the old MCP session from its row, so the
+		// client goes on without initializing again.
 		listTools := map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
 		fixture.server = other
-		require.Equal(t, http.StatusNotFound, fixture.post(t, alice(), oldMCPSession, listTools).StatusCode)
+		require.Equal(t, http.StatusOK, fixture.post(t, alice(), oldMCPSession, listTools).StatusCode)
 
 		again := fixture.connectObservedTo(t, other.URL, alice())
 		assert.Equal(t, []string{"github"}, enabledIn(t, again.session), "the session's servers stay enabled")

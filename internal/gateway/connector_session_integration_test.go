@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"regexp"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
@@ -137,29 +136,11 @@ func TestConnectorSessions(t *testing.T) {
 		assert.Equal(t, 0, fixture.sessionCount(t))
 	})
 
-	t.Run("an Mcp-Session-Id this replica doesn't know gets 404 and makes no session", func(t *testing.T) {
+	t.Run("an Mcp-Session-Id no replica stored gets 404 and makes no session", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		assert.Equal(t, http.StatusNotFound, fixture.pingStatus(t, connectorClient(), "0123456789abcdef0123456789abcdef"))
 		assert.Equal(t, 0, fixture.sessionCount(t))
-
-		mcpSessionID := fixture.initializeRaw(t, connectorClient())
-		other := fixture.replica(t)
-
-		request, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, other.URL, nil)
-		require.NoError(t, err)
-
-		request.Header = fixture.headers(t, connectorClient())
-		request.Header.Set("Mcp-Session-Id", mcpSessionID)
-
-		response, err := http.DefaultClient.Do(request)
-		require.NoError(t, err)
-
-		_ = response.Body.Close()
-
-		assert.Equal(t, http.StatusNotFound, response.StatusCode, "another replica doesn't know the MCP session")
-		assert.False(t, fixture.sessionRow(t, "alice", auth.MCPSessionPrefix+mcpSessionID).EndedAt.Valid,
-			"the other replica's 404 doesn't end the session")
 	})
 
 	t.Run("a client can't pick another MCP session's session by sending its ID", func(t *testing.T) {
@@ -225,17 +206,13 @@ func TestConnectorSessions(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "session.end"))
 	})
 
-	t.Run("the idle release of the MCP session ends the session with session.end", func(t *testing.T) {
-		const idleTimeout = 500 * time.Millisecond
-
-		fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))
+	t.Run("the leader's idle end of the MCP session ends the session with session.end", func(t *testing.T) {
+		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
 		session := auth.MCPSessionPrefix + mcpSessionID
 
-		require.Eventually(t, func() bool {
-			return fixture.sessionRow(t, "alice", session).EndedAt.Valid
-		}, 30*idleTimeout, idleTimeout/5)
+		fixture.endIdleMCPSessions(t)
 
 		events := fixture.endedSessionEvents(t, session)
 		require.Len(t, events, 1)

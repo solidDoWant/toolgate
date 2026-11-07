@@ -38,9 +38,9 @@ func TestConnectorSessionEndRaces(t *testing.T) {
 		// Hold the DELETE after its end transaction commits, while its MCP
 		// session is still bound, so a second request passes the binding
 		// check and finds the session ended.
-		gateway.WrapEndSession(fixture.handlers[0], func(next func(context.Context, int64, string) error) func(context.Context, int64, string) error {
-			return func(ctx context.Context, id int64, reason string) error {
-				err := next(ctx, id, reason)
+		gateway.WrapEndMCPSession(fixture.handlers[0], func(next func(context.Context, string) error) func(context.Context, string) error {
+			return func(ctx context.Context, id string) error {
+				err := next(ctx, id)
 
 				close(ended)
 				<-proceed
@@ -79,10 +79,8 @@ func TestConnectorSessionEndRaces(t *testing.T) {
 		assert.Zero(t, fixture.runningInstances(t, session), "its per-session instances stop")
 	})
 
-	t.Run("a request racing the idle release of the MCP session doesn't resume the ended mcp. session", func(t *testing.T) {
-		const idleTimeout = 500 * time.Millisecond
-
-		fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))
+	t.Run("a request racing the leader's idle end of the MCP session doesn't resume the ended mcp. session", func(t *testing.T) {
+		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-session", anyone)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
@@ -93,12 +91,11 @@ func TestConnectorSessionEndRaces(t *testing.T) {
 			SessionPk: row.ID, TemplateNs: templateNamespace, TemplateName: "github",
 		}))
 
-		require.Eventually(t, func() bool {
-			return fixture.sessionRow(t, "alice", session).EndedAt.Valid
-		}, 30*idleTimeout, idleTimeout/5)
+		fixture.endIdleMCPSessions(t)
+		require.True(t, fixture.sessionRow(t, "alice", session).EndedAt.Valid, "the idle end ended the session")
 
-		// A request that passed the binding check before the release looks
-		// its session up after the end committed.
+		// A request that passed the binding check before the end looks its
+		// session up after the end committed.
 		_, err := gateway.ResolveSession(t.Context(), fixture.handlers[0], auth.Identity{
 			Principal: "alice", Session: session, Workspace: row.Workspace, Attestation: row.Attestation, Kind: row.Kind,
 		})
