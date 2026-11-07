@@ -42,7 +42,9 @@ func DeclaredTools(template *v1alpha1.MCPServerTemplate) []*mcp.Tool {
 // whether the template has one: the first of its declared tools, the learned
 // list of its current generation, and the learned list of the newest older
 // generation. Learned holds the stored lists in
-// any order. Curate the result before showing it.
+// any order. A remote template's list is its declared tools only: its live
+// list comes from one user's credential, so it is never shared. Curate the
+// result before showing it.
 func CatalogList(template *v1alpha1.MCPServerTemplate, learned []Learned) ([]*mcp.Tool, bool, error) {
 	tools, _, found, err := CatalogListGeneration(template, learned)
 
@@ -54,6 +56,10 @@ func CatalogList(template *v1alpha1.MCPServerTemplate, learned []Learned) ([]*mc
 func CatalogListGeneration(template *v1alpha1.MCPServerTemplate, learned []Learned) ([]*mcp.Tool, int64, bool, error) {
 	if len(template.Spec.DeclaredTools) > 0 {
 		return DeclaredTools(template), template.Generation, true, nil
+	}
+
+	if template.Spec.Remote != nil {
+		return nil, 0, false, nil
 	}
 
 	var best *Learned

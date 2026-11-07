@@ -244,6 +244,13 @@ If the server answers 401 or 403, the user gets the message that the server refu
 
 The gateway pods open the connection to the remote server. If the cluster has network policies, the cluster owner must allow traffic from the gateway pods to the remote host.
 
+A remote server can give a different tool list to each user, because each user sends their own credential. For this reason, the gateway never shares the tool list that one user gets with other users:
+
+- The catalog and tool search show the tools in `declaredTools` to every user who can use the server, before anyone enables it.
+- If the template has no `declaredTools`, tool search shows no tools for the server until a user enables it. After that, the user finds the tools that the server listed for their own credential. Other users never see them.
+
+Add `declaredTools` to a remote template if users must find its tools before they enable it.
+
 ## When a template is invalid
 
 The gateway checks each template when you apply it and when it reads it. The result is in the `Valid` condition of the template:

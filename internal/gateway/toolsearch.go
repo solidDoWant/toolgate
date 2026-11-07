@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -120,10 +121,22 @@ func asksForTool(current requestContext, decision policy.Decision) bool {
 		VerifiedWorkspace(current.identity) != ""
 }
 
-// curatedList returns the template's curated catalog list keyed by upstream
-// name, and false when it has no list.
-func (m *metaTools) curatedList(ctx context.Context, template *v1alpha1.MCPServerTemplate) (map[string]toolcatalog.Tool, bool, error) {
-	upstream, found, err := m.catalogList(ctx, template)
+// curatedList returns the template's curated list keyed by upstream name,
+// and false when it has no list: the catalog list, or for a remote server
+// without declared tools, the list of the caller's own ready instance.
+func (m *metaTools) curatedList(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) (map[string]toolcatalog.Tool, bool, error) {
+	var (
+		upstream []*mcp.Tool
+		found    bool
+		err      error
+	)
+
+	if ownListOnly(template) {
+		upstream, found, err = m.ownReadyTools(ctx, current, template)
+	} else {
+		upstream, found, err = m.catalogList(ctx, template)
+	}
+
 	if err != nil || !found {
 		return nil, false, err
 	}
@@ -136,6 +149,85 @@ func (m *metaTools) curatedList(ctx context.Context, template *v1alpha1.MCPServe
 	}
 
 	return byUpstream, true, nil
+}
+
+// ownListOnly reports whether the template's tools are searchable only from
+// each user's own instance: a remote server without declared tools, whose
+// list depends on the user's credential and so has no shared search rows.
+func ownListOnly(template *v1alpha1.MCPServerTemplate) bool {
+	return template.Spec.Remote != nil && len(template.Spec.DeclaredTools) == 0
+}
+
+// ownReadyTools returns the upstream tools of the caller's own live instance
+// of template when it is ready and healthy, and false otherwise.
+func (m *metaTools) ownReadyTools(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate) ([]*mcp.Tool, bool, error) {
+	instance, err := db.New(m.database).GetLiveInstance(ctx, db.GetLiveInstanceParams{
+		TemplateNs: template.Namespace, TemplateName: template.Name,
+		ScopeKey: scopeKey(template.Spec.Scope, current.identity),
+	})
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return nil, false, nil
+	case err != nil:
+		return nil, false, fmt.Errorf("read live instance: %w", err)
+	}
+
+	if instance.Status != statusReady || instance.UnhealthySince.Valid || instance.TemplateUid != string(template.UID) {
+		return nil, false, nil
+	}
+
+	var upstream []*mcp.Tool
+	if err := json.Unmarshal(instance.Tools, &upstream); err != nil {
+		return nil, false, fmt.Errorf("decode tools of instance %s: %w", instance.ID, err)
+	}
+
+	return upstream, true, nil
+}
+
+// ownDocument is one search document of a tool of the caller's own remote
+// server, in the form the ranking query reads.
+type ownDocument struct {
+	TemplateUID     string `json:"template_uid"`
+	TemplateNs      string `json:"template_ns"`
+	TemplateName    string `json:"template_name"`
+	UpstreamName    string `json:"upstream_name"`
+	ExposedName     string `json:"exposed_name"`
+	NamePart        string `json:"name_part"`
+	DescriptionPart string `json:"description_part"`
+	ServerPart      string `json:"server_part"`
+	InputPart       string `json:"input_part"`
+}
+
+// ownDocuments returns the search documents of the caller's own ready
+// instances of the candidate templates that have no shared search rows, and
+// keeps each template's list in lists.
+func (m *metaTools) ownDocuments(ctx context.Context, current requestContext, candidates map[string]*v1alpha1.MCPServerTemplate, lists map[string]map[string]toolcatalog.Tool) ([]ownDocument, error) {
+	documents := []ownDocument{}
+
+	for uid, template := range candidates {
+		if !ownListOnly(template) {
+			continue
+		}
+
+		list, _, err := m.curatedList(ctx, current, template)
+		if err != nil {
+			return nil, err
+		}
+
+		lists[uid] = list
+
+		for _, tool := range list {
+			parts := toolcatalog.SearchPartsOf(template, tool)
+			documents = append(documents, ownDocument{
+				TemplateUID: uid, TemplateNs: template.Namespace, TemplateName: template.Name,
+				UpstreamName: tool.UpstreamName, ExposedName: tool.ExposedName,
+				NamePart: parts.Name, DescriptionPart: parts.Description, ServerPart: parts.Server, InputPart: parts.Input,
+			})
+		}
+	}
+
+	return documents, nil
 }
 
 func proxiedFrom(template *v1alpha1.MCPServerTemplate, curated toolcatalog.Tool) *mcp.Tool {
@@ -198,7 +290,14 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 		}
 	}
 
-	rows, stopWordsOnly, degraded, err := m.searchRows(ctx, uids, input.Query, tsQuery(words), tsQuery(expandWords(words)), strings.Join(words, " "))
+	lists := map[string]map[string]toolcatalog.Tool{}
+
+	own, err := m.ownDocuments(ctx, current, candidates, lists)
+	if err != nil {
+		return nil, FindToolsResult{}, err
+	}
+
+	rows, stopWordsOnly, degraded, err := m.searchRows(ctx, uids, own, input.Query, tsQuery(words), tsQuery(expandWords(words)), strings.Join(words, " "))
 	if err != nil {
 		return nil, FindToolsResult{}, err
 	}
@@ -207,7 +306,6 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 		return noWords, empty, nil
 	}
 
-	lists := map[string]map[string]toolcatalog.Tool{}
 	result := FindToolsResult{Tools: []FoundTool{}}
 	kept := []db.SearchToolsRow{}
 
@@ -223,7 +321,7 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 
 		list, loaded := lists[row.TemplateUid]
 		if !loaded {
-			list, _, err = m.curatedList(ctx, template)
+			list, _, err = m.curatedList(ctx, current, template)
 			if err != nil {
 				return nil, FindToolsResult{}, err
 			}
@@ -274,12 +372,18 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 }
 
 // searchRows runs the ranking query in a read-only transaction with a
-// statement timeout. degraded is true when an embeddings endpoint is set but
+// statement timeout. own are the caller's own documents, ranked with the
+// rows of uids. degraded is true when an embeddings endpoint is set but
 // its call failed or was skipped. stopWordsOnly is true when every word of the query is a
 // stop word, so the query is empty and matches nothing.
-func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, query, expanded, plain string) (rows []db.SearchToolsRow, stopWordsOnly, degraded bool, err error) {
+func (m *metaTools) searchRows(ctx context.Context, uids []string, own []ownDocument, rawQuery, query, expanded, plain string) (rows []db.SearchToolsRow, stopWordsOnly, degraded bool, err error) {
 	// The query vector is fetched before the transaction. A failure means
 	// words only; the query text is never logged.
+	ownDocuments, err := json.Marshal(own)
+	if err != nil {
+		return nil, false, false, fmt.Errorf("encode the own search documents: %w", err)
+	}
+
 	var queryVector []float32
 
 	if m.embedder != nil && len(uids) > 0 {
@@ -311,7 +415,7 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 			return nil
 		}
 
-		if len(uids) == 0 {
+		if len(uids) == 0 && len(own) == 0 {
 			return nil
 		}
 
@@ -331,7 +435,7 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 			}
 
 			hybrid, err := queries.SearchToolsHybrid(ctx, db.SearchToolsHybridParams{
-				Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids,
+				Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids, OwnDocuments: ownDocuments,
 				QueryVector: embeddings.FormatVector(queryVector), Model: m.embedder.Model(), Dimensions: int32(len(queryVector)),
 			})
 			if err != nil {
@@ -346,7 +450,7 @@ func (m *metaTools) searchRows(ctx context.Context, uids []string, rawQuery, que
 			return nil
 		}
 
-		rows, err = queries.SearchTools(ctx, db.SearchToolsParams{Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids})
+		rows, err = queries.SearchTools(ctx, db.SearchToolsParams{Query: query, Expanded: expanded, Plain: plain, TemplateUids: uids, OwnDocuments: ownDocuments})
 		if err != nil {
 			return fmt.Errorf("search the tools: %w", err)
 		}
@@ -488,7 +592,7 @@ func (m *metaTools) addFoundTools(ctx context.Context, current requestContext, t
 
 		list, loaded := lists[key]
 		if !loaded {
-			list, _, err = m.curatedList(ctx, template)
+			list, _, err = m.curatedList(ctx, current, template)
 			if err != nil {
 				return err
 			}
