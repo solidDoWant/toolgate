@@ -173,6 +173,8 @@ func TestTemplateCannotOverrideToolgateMetadata(t *testing.T) {
 	pod := deployment.Spec.Template
 	assert.Equal(t, ownerIDAlice, pod.Labels[runtime.LabelOwner], "pods carry the owner too")
 	assert.Equal(t, "alice", pod.Annotations[runtime.AnnotationOwnerSubject])
+	assert.NotContains(t, pod.Labels, runtime.LabelInstance,
+		"a pod without the instance label is not judged by the readiness check, so a pod that is still starting doesn't fail the instance")
 }
 
 func TestOwnerIDIsALabelSafeHash(t *testing.T) {
