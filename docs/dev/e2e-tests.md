@@ -9,7 +9,7 @@ End-to-end (e2e) tests are Go tests with the `//go:build e2e` tag. They run agai
 You need Docker and the dev shell. The dev shell gives `kind`, `kubectl`, `helm` and `flux`.
 
 - `make test-e2e` runs every e2e test.
-- `make acceptance` runs every acceptance test and prints the scoreboard for the phase checklist. An acceptance test is a test with a scenario tag such as `[AC-1-07]` in its name. The last line of the scoreboard gives the number of passing scenarios, for example `passing 3/30`.
+- `make acceptance` runs every acceptance test and prints the scoreboard for the phase checklist. An acceptance test is a test that a scenario names on its `Tests:` line in the checklist (`docs/acceptance/phase-N.md`). The line holds the package directory and the test name, for example `` `test/e2e: TestDenyAppliesAtOnce/workspace deny withdraws the tools` ``. To tie a test to a scenario, add it to the scenario's `Tests:` line. The scoreboard fails if a line names a test that does not exist, or if a scenario that is not manual or a release has no `Tests:` line. The test names in Go code carry no scenario IDs. The last line of the scoreboard gives the number of passing scenarios, for example `passing 3/30`.
 
 Both targets use `scripts/e2e/run.sh`. The script does these steps:
 
