@@ -79,6 +79,31 @@ For a KubeVirt virtual machine, a guest cannot get a projected token with its ow
 
 The API server binds a token only to a pod that runs as that service account. If several virtual machines share one service account, a guest can bind a token to the pod of another virtual machine. That pod names its own owner, so the guest gets nothing without the user token of that owner. One service account for each workspace removes the case.
 
+### Claude Code plugin helpers
+
+Claude Code runs the `headersHelper` of the toolgate plugin with a reduced environment. It removes each variable whose name looks like a credential, for example a name that contains `_TOKEN_`. The SessionStart hook of the plugin keeps the full environment, but the helper does not.
+
+Claude Code 2.1.318 removes these variables from the helper:
+
+- `TOOLGATE_TOKEN_COMMAND`
+- `TOOLGATE_TOKEN_STORE`
+- `TOOLGATE_ATTESTATION_TOKEN_FILE`
+- `TOOLGATE_ATTESTATION_TOKEN_REQUEST`
+- `CODER_AGENT_TOKEN`
+
+It keeps `TOOLGATE_GATEWAY`, `TOOLGATE_SESSION`, `TOOLGATE_WORKSPACE`, `TOOLGATE_TOOL_SEARCH`, `TOOLGATE_SPIFFE_SOCKET`, `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`, `TOOLGATE_KUBE_API` and `XDG_RUNTIME_DIR`.
+
+So save the token command and the attestation source in the toolgate configuration file. Run `toolgate configure` as the workspace user, for example in the startup script of the workspace:
+
+```sh
+toolgate configure \
+  --gateway https://toolgate.example.com \
+  --token-command 'my-token-command' \
+  --attestation-token-file /var/run/secrets/toolgate/token
+```
+
+Use `--attestation-token-request DIR` in place of `--attestation-token-file` for a KubeVirt guest. The command writes `config.json` in the toolgate configuration directory with mode 0600. It changes only the settings that you give. An empty value removes a setting. If a variable is set, the client uses the variable and not the file. The file holds a command line and paths, not a token.
+
 ## KubeVirt virtual machines
 
 A token from a KubeVirt guest is bound to the `virt-launcher` pod of the virtual machine. KubeVirt copies the labels of the virtual machine template to that pod. So set the keys in `spec.template.metadata` of the `VirtualMachine`, not in its own `metadata`. The gateway does not read virtual machine objects.

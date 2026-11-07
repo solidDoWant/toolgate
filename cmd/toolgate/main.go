@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/solidDoWant/toolgate/internal/client/attestation"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
 	"github.com/solidDoWant/toolgate/internal/client/tokencommand"
 	"github.com/solidDoWant/toolgate/internal/version"
@@ -18,6 +17,7 @@ const usage = `Usage: toolgate <command>
 
 Commands:
   login     Sign in (login [--gateway URL])
+  configure Save client settings in config.json (configure [--gateway URL] [--token-command CMD] [--attestation-token-file PATH] [--attestation-token-request DIR])
   headers   Print the request headers for Claude Code's headersHelper
   otel-headers  Print the request headers for Claude Code's otelHeadersHelper
   hook      Run a Claude Code hook (hook session-start)
@@ -67,6 +67,8 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return 0
 	case "login":
 		return signIn(args[1:], stdout, stderr)
+	case "configure":
+		return configure(args[1:], stdout, stderr)
 	case "status":
 		return status(stdout, stderr)
 	case "headers":
@@ -107,11 +109,11 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 // checkCredentialChoice refuses a setup that names two sources for the user
 // token.
 func checkCredentialChoice() error {
-	if spiffe.Socket() != "" && tokencommand.Command() != "" {
+	if spiffe.Socket() != "" && tokenCommandSource().Command != "" {
 		return fmt.Errorf("Set only one of %s and %s.", spiffe.SocketEnv, tokencommand.Env) //nolint:staticcheck // user-facing sentence
 	}
 
-	source := attestation.FromEnv()
+	source := attestationSource()
 	if err := source.Validate(); err != nil {
 		return err
 	}

@@ -67,6 +67,25 @@ type Settings struct {
 	// before this field existed has none, and keeps the keychain-then-file
 	// behaviour.
 	TokenStore string `json:"tokenStore,omitempty"`
+
+	// TokenCommand, AttestationTokenFile and AttestationTokenRequest are the
+	// file forms of TOOLGATE_TOKEN_COMMAND, TOOLGATE_ATTESTATION_TOKEN_FILE
+	// and TOOLGATE_ATTESTATION_TOKEN_REQUEST, set by `toolgate configure`.
+	// Claude Code removes variables with credential-like names from the
+	// environment of a plugin's headersHelper, so the helper reads them
+	// here. A set environment variable wins. They hold a command line and
+	// paths, never a token.
+	TokenCommand            string `json:"tokenCommand,omitempty"`
+	AttestationTokenFile    string `json:"attestationTokenFile,omitempty"`
+	AttestationTokenRequest string `json:"attestationTokenRequest,omitempty"`
+}
+
+// KeepConfigured copies the fields set by `toolgate configure` from previous
+// into settings, so that a new sign-in does not drop them.
+func (settings *Settings) KeepConfigured(previous Settings) {
+	settings.TokenCommand = previous.TokenCommand
+	settings.AttestationTokenFile = previous.AttestationTokenFile
+	settings.AttestationTokenRequest = previous.AttestationTokenRequest
 }
 
 // Options configures Run.

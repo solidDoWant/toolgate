@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The toolgate plugin did not connect in workspaces that sign in with `TOOLGATE_TOKEN_COMMAND`, or that use `TOOLGATE_ATTESTATION_TOKEN_FILE` or `TOOLGATE_ATTESTATION_TOKEN_REQUEST`. Claude Code removes these variables from the plugin's `headersHelper`. The new command `toolgate configure` saves these settings in the toolgate configuration file, and the client reads them from there when the variables are not set. Coder templates must run `toolgate configure` and give the token command `--agent-token-file`. See `docs/admin/coder.md`.
 - The gateway now serves `GET /api/v1/settings`, so settings profiles reach Claude Code. Before, every session start showed "the settings profile could not be fetched: the gateway answered 404 Not Found". The `toolgate` command now treats a 404 from an older gateway as "no profile".
 - The gateway connects to remote MCP servers, which run outside toolgate. It sends each user's own key in a header that the template fills in from the user's secrets. If the secret is missing, or the server refuses it, the user gets a message with the `toolgate secret set` command. See "Remote servers" in `docs/admin/templates-and-rules.md`.
 

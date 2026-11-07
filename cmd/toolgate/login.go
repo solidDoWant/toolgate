@@ -74,12 +74,12 @@ func runSignIn(gateway, issuer, clientID string, scopes []string, mode tokenstor
 		return err
 	}
 
-	if gateway == "" {
-		previous, err := login.LoadSettings(dir)
-		if err != nil && !errors.Is(err, login.ErrNotSignedIn) {
-			return err
-		}
+	previous, err := login.LoadSettings(dir)
+	if err != nil && !errors.Is(err, login.ErrNotSignedIn) {
+		return err
+	}
 
+	if gateway == "" {
 		gateway = previous.Gateway
 	}
 
@@ -99,6 +99,8 @@ func runSignIn(gateway, issuer, clientID string, scopes []string, mode tokenstor
 	if err != nil {
 		return err
 	}
+
+	settings.KeepConfigured(previous)
 
 	if err := login.SaveSettings(dir, settings); err != nil {
 		return err
