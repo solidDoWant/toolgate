@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -217,4 +218,61 @@ func TestEmbedReportsDemandEvenWithCircuitOpen(t *testing.T) {
 	_, err = client.EmbedFor(t.Context(), embeddings.OperationDocument, []string{"a"})
 	require.ErrorIs(t, err, embeddings.ErrCircuitOpen)
 	assert.Equal(t, int32(2), demands.Load())
+}
+
+func TestEmbedWhileServerScaledDownSkipsCallWithoutOpeningCircuit(t *testing.T) {
+	var requests, demands atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"index": 0, "embedding": []float32{1}}}})
+	}))
+	defer server.Close()
+
+	var scaledDown atomic.Bool
+
+	scaledDown.Store(true)
+
+	metrics := embeddings.NewMetrics()
+	client, err := embeddings.New(embeddings.Options{
+		URL: server.URL, Model: "m",
+		OnDemand:   func(context.Context) { demands.Add(1) },
+		ScaledDown: func(context.Context) bool { return scaledDown.Load() },
+	}, metrics)
+	require.NoError(t, err)
+
+	_, err = client.Embed(t.Context(), []string{"a"})
+	require.ErrorIs(t, err, embeddings.ErrScaledDown)
+	client.CountError("query", err)
+
+	assert.Zero(t, requests.Load(), "no request goes out while the server is scaled down")
+	assert.EqualValues(t, 1, demands.Load(), "the skipped call still records demand")
+	assert.InDelta(t, 1, testutil.ToFloat64(metrics.Counter("query", "scaled_down")), 0)
+	assert.Zero(t, testutil.ToFloat64(metrics.Counter("query", "error")))
+
+	scaledDown.Store(false)
+
+	_, err = client.Embed(t.Context(), []string{"a"})
+	require.NoError(t, err, "the circuit stays closed once the server is ready")
+}
+
+func TestEmbedWithoutDemandContextDoesNotReportDemand(t *testing.T) {
+	var demands atomic.Int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"index": 0, "embedding": []float32{1}}}})
+	}))
+	defer server.Close()
+
+	client, err := embeddings.New(embeddings.Options{URL: server.URL, Model: "m", OnDemand: func(context.Context) { demands.Add(1) }})
+	require.NoError(t, err)
+
+	_, err = client.Embed(embeddings.WithoutDemand(t.Context()), []string{"a"})
+	require.NoError(t, err)
+	assert.Zero(t, demands.Load())
+
+	_, err = client.Embed(t.Context(), []string{"a"})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, demands.Load())
 }

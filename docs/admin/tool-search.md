@@ -19,7 +19,7 @@ How it works:
 
 - The leader gateway embeds each tool when it rebuilds the search rows. If you change `model`, it embeds all tools again.
 - Each search embeds the task text once.
-- If the endpoint is down, slow or returns an error, the search uses words only and still answers. The result then has a `note` that tells the model the search used keywords only, and how to reword the request. The metric `toolgate_tool_search_embedding_errors_total` counts the failures. Its `use` label is `query` or `document`, and its `reason` label is `error`, `circuit_open` or `dimension_mismatch`. The last one means stored vectors have another length than the query vector, for example after the model behind the endpoint changed. Those rows match by words only, and the leader re-embeds them on its next sync.
+- If the endpoint is down, slow or returns an error, the search uses words only and still answers. The result then has a `note` that tells the model the search used keywords only, and how to reword the request. The metric `toolgate_tool_search_embedding_errors_total` counts the failures. Its `use` label is `query` or `document`, and its `reason` label is `error`, `circuit_open`, `scaled_down` or `dimension_mismatch`. The last one means stored vectors have another length than the query vector, for example after the model behind the endpoint changed. Those rows match by words only, and the leader re-embeds them on its next sync.
 - After a call fails, the gateway skips that endpoint for 30 seconds and then tries it again. One server outage does not add the timeout to every search. A skipped call counts with the reason `circuit_open`.
 - A search that finds nothing returns an empty list and a `note` that asks for a specific action and object. This is a normal result, not an error.
 - A tool that could not be embedded is tried again at the next sync.
@@ -130,3 +130,14 @@ It prints:
 Run the command once for each model and compare the numbers. The command never changes the task set, and it does not fail on a low score. The bar for the default model is 59 of 66.
 
 This test uses a fixed task set, not your own tools. To see how a model does in real sessions, use the hit rates from the metrics. See [Metrics](metrics.md).
+
+## Scale the embeddings server to zero
+
+With `embeddings.server.scaleToZero.enabled`, the gateway stops the bundled embeddings server when nobody uses tool search, and starts it again when someone does. The leader replica changes the replicas of the server's Deployment between 0 and 1. See [the chart page](chart.md) for the settings, the permissions and the note for Flux and Argo users.
+
+- The server starts when a session with tool search on starts or resumes, when a search runs while the server is down, and when the leader has tools to embed.
+- The server stops when no live session has tool search on and no replica needed embeddings for `idleTimeout`.
+- A session with tool search on usually starts the server before its first search. The server then needs some seconds to load its model. The time depends on your cluster and on the node.
+- While the server is stopped or starting, a search uses words only. The result has the `note` that tells the model the search used keywords only. The first search, or the first few searches, after a long idle time can therefore be word-only. The next searches use the server.
+- These searches count in `toolgate_tool_search_embedding_errors_total` with the reason `scaled_down`, not `error`. They do not open the 30-second circuit.
+- A tool whose embedding was skipped gets embedded on the next sync after the server is ready.

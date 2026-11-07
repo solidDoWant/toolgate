@@ -12,6 +12,10 @@ const CircuitOpenFor = 30 * time.Second
 // ErrCircuitOpen means the endpoint failed lately and the call was skipped.
 var ErrCircuitOpen = errors.New("the endpoint failed lately and is skipped for a while")
 
+// ErrScaledDown means the bundled embeddings server is scaled down or still
+// starting, so the call was skipped.
+var ErrScaledDown = errors.New("the embeddings server is scaled down or starting")
+
 // ErrDimensionMismatch means stored vectors have another length than the
 // vectors the endpoint returns now.
 var ErrDimensionMismatch = errors.New("stored vectors differ in length from the query vector")

@@ -272,7 +272,7 @@ func (r *SearchRebuilder) embedStale(ctx context.Context, current map[string]*v1
 	// fails, the rows are compared by model only.
 	dimensions := int32(-1)
 
-	if vectors, probeErr := r.Embedder.EmbedFor(ctx, embeddings.OperationDocument, []string{"dimension probe"}); probeErr == nil && len(vectors) == 1 {
+	if vectors, probeErr := r.Embedder.EmbedFor(embeddings.WithoutDemand(ctx), embeddings.OperationDocument, []string{"dimension probe"}); probeErr == nil && len(vectors) == 1 {
 		dimensions = int32(len(vectors[0]))
 	}
 
