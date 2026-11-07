@@ -5,6 +5,22 @@ description: How to use the toolgate gateway's MCP servers. Use when a task need
 
 # Using toolgate
 
+First check which tools you have. If you have `toolgate_find_tools`, tool search
+is on: follow "Tool search mode". Otherwise follow "Enable mode".
+
+## Tool search mode
+
+1. **Find.** Call `toolgate_find_tools` with a short description of the task.
+   It returns tools you can call now.
+2. **Call.** Call the tool you need. Its server starts on the first call; wait
+   for the call to return. There is no enable or disable step.
+3. **Blocked servers.** If a server shows `blocked` in `toolgate_list_servers`
+   or `toolgate_server_status`, or a search result has access `ask`, call one
+   of its tools to ask the user for access, or use `toolgate_allow`. Do not
+   ask in a loop.
+
+## Enable mode
+
 The `toolgate` MCP server is a gateway. At the start it offers only four tools.
 The other MCP servers are off until you turn them on in this session.
 

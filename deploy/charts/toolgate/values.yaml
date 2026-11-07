@@ -152,6 +152,14 @@ config:
   # with that header. It only changes which tools a session lists.
   toolSearch: false
 
+  metaTools:
+    # -- Whether sessions list the `toolgate_enable_server` and
+    # `toolgate_disable_server` tools. `auto` lists them when tool search
+    # mode is off and hides them when it is on, because a call to a tool of
+    # an allowed server turns the server on. `always` lists them in every
+    # mode. `never` lists them in none.
+    enableDisable: auto
+
   # Optional embeddings for tool search. With `url` set, search ranks by
   # meaning as well as by words. The gateway sends the search query and the
   # tool descriptions to this endpoint, so run it in the cluster. Allow egress

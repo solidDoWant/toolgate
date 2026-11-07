@@ -15,10 +15,8 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -306,19 +304,9 @@ func FetchClientMetadata(ctx context.Context, httpClient *http.Client, gateway s
 	return metadata, nil
 }
 
-// gatewayURL checks that raw is an http or https URL and removes a trailing
-// slash.
+// gatewayURL normalises the user's gateway value.
 func gatewayURL(raw string) (string, error) {
-	if raw == "" {
-		return "", errors.New("no gateway URL; pass --gateway")
-	}
-
-	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-		return "", fmt.Errorf("gateway URL %q is not an http or https URL", raw)
-	}
-
-	return strings.TrimSuffix(raw, "/"), nil
+	return NormalizeGatewayURL(raw)
 }
 
 // SaveSettings writes settings to dir/config.json with mode 0600.

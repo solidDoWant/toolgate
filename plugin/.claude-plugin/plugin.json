@@ -1,6 +1,6 @@
 {
   "name": "toolgate",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Connects Claude Code to a toolgate MCP gateway, which starts MCP servers on demand and checks every tool call against policy.",
   "author": {
     "name": "solidDoWant"
@@ -12,7 +12,7 @@
     "gateway_url": {
       "type": "string",
       "title": "Gateway URL",
-      "description": "The URL of your toolgate gateway, for example https://toolgate.example.com. Your admin gives it to you.",
+      "description": "The full URL of your toolgate gateway, starting with https://, for example https://toolgate.example.com. A bare host name does not work here. Your admin gives it to you.",
       "required": true
     }
   }

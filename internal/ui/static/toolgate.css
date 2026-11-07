@@ -173,3 +173,7 @@ button.danger:hover { background: var(--danger); filter: brightness(1.1); }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+.command { user-select: all; cursor: copy; padding: 0.5rem 0.75rem; background: var(--code-bg); border-radius: 6px; overflow-x: auto; }
+.legend { display: grid; grid-template-columns: max-content 1fr; gap: 0.2rem 1rem; color: var(--muted); font-size: 0.9rem; }
+.legend dt { font-weight: 600; }
+.legend dd { margin: 0; }
