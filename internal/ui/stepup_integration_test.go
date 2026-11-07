@@ -95,7 +95,7 @@ func TestStepUpRedirectAsksForAFreshSignIn(t *testing.T) {
 
 	stepUp := location(t, response)
 	assert.Equal(t, "login", stepUp.Query().Get("prompt"))
-	assert.Equal(t, "0", stepUp.Query().Get("max_age"))
+	assert.Equal(t, "60", stepUp.Query().Get("max_age"), "0 is ignored by some IdPs")
 }
 
 func TestStepUpUpdatesTheSession(t *testing.T) {
@@ -191,17 +191,17 @@ func TestStepUpRestartsOnceWhenTheSignInIsNotFresh(t *testing.T) {
 	restart := location(t, response)
 	assert.NotEqual(t, first.Query().Get("state"), restart.Query().Get("state"), "a new sign-in")
 	assert.Equal(t, "login", restart.Query().Get("prompt"))
-	assert.Equal(t, "0", restart.Query().Get("max_age"))
+	assert.Equal(t, "60", restart.Query().Get("max_age"))
 
 	var returnTo string
 	require.NoError(t, env.pool.QueryRow(t.Context(), "SELECT return_to FROM ui_logins").Scan(&returnTo))
 	assert.Equal(t, stepUpFormPath, returnTo)
 
 	response = notFresh(restart)
-	require.Equal(t, http.StatusForbidden, response.StatusCode)
-	assert.Contains(t, body(t, response),
-		"Your identity provider signed you in with your existing session instead of asking for your password again. "+
-			"Sign out of the identity provider and try again, or ask your admin to make the provider honour `prompt=login`.")
+	page := signInFailedPage(t, response, ui.StepUpURL(stepUpFormPath))
+	assert.Contains(t, page,
+		"Your identity provider signed you in with your existing session instead of asking for your password again.")
+	assert.Contains(t, page, "Sign out of the identity provider, then sign in again.")
 	assert.Nil(t, setCookie(response, ui.SessionCookie))
 	assert.Equal(t, 0, env.countRows(t, "ui_sessions"))
 	assert.Equal(t, 0, env.countRows(t, "ui_logins"), "no new sign-in")
@@ -223,10 +223,10 @@ func TestStepUpFailsClosedWithoutAuthTime(t *testing.T) {
 	require.NotNil(t, cookie)
 
 	response = env.signIn(t, browser, ui.StepUpURL(stepUpFormPath), alice)
-	require.Equal(t, http.StatusForbidden, response.StatusCode)
-	assert.Contains(t, body(t, response),
-		"Your identity provider didn't say when you signed in, so toolgate can't confirm a fresh sign-in. "+
-			"Ask an admin to make it send `auth_time`.")
+	page := signInFailedPage(t, response, ui.StepUpURL(stepUpFormPath))
+	assert.Contains(t, page,
+		"Your identity provider didn't say when you signed in, so toolgate can't confirm a fresh sign-in.")
+	assert.Contains(t, page, "Ask an admin to make it send auth_time.")
 	assert.False(t, env.sessionRow(t, cookie.Value).AuthTime.Valid, "the session is not marked fresh")
 
 	// The rest of the UI keeps working, but the form asks for a step-up.

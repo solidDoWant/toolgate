@@ -4,7 +4,7 @@
 
 ### Web UI
 
-- When a sign-in fails because the IdP did not ask for a fresh sign-in, or because the browser lost the sign-in cookie, the web UI now starts a new sign-in one time instead of showing an error page.
+- When a sign-in fails because the IdP did not ask for a fresh sign-in, or because the browser lost the sign-in cookie, the web UI now starts a new sign-in one time instead of showing an error page. A fresh sign-in now sends `max_age=60` instead of `max_age=0`, so Authentik asks the user to sign in again. A failed sign-in now shows a web UI page with a "Sign in again" button.
 
 ## 0.4.7
 

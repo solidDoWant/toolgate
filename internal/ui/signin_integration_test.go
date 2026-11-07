@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -336,6 +337,24 @@ func (e *uiEnv) countRows(t *testing.T, table string) int {
 	return count
 }
 
+// signInFailedPage requires response to be the page of a failed sign-in in
+// the web UI layout, without the signed-in navigation, whose "Sign in again"
+// button goes to retry. It returns the page's text, unescaped.
+func signInFailedPage(t *testing.T, response *http.Response, retry string) string {
+	t.Helper()
+
+	require.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Equal(t, "text/html; charset=utf-8", response.Header.Get("Content-Type"))
+
+	page := html.UnescapeString(body(t, response))
+	assert.Contains(t, page, "<h1>Sign-in failed</h1>")
+	assert.Contains(t, page, `<link rel="stylesheet" href="/ui/static/toolgate.css">`)
+	assert.Contains(t, page, `<a class="button" href="`+retry+`">Sign in again</a>`)
+	assert.NotContains(t, page, `aria-label="Main"`, "a signed-out page has no navigation")
+
+	return page
+}
+
 // A sign-in started on one replica completes on another.
 func TestSignInCompletesOnAnotherReplica(t *testing.T) {
 	env := startUIEnv(t, "toolgate-admins")
@@ -494,14 +513,14 @@ func TestSignInRestartsOnceAfterAStateMismatch(t *testing.T) {
 
 	restart := location(t, response)
 	assert.Equal(t, "login", restart.Query().Get("prompt"), "the restart keeps the step-up")
-	assert.Equal(t, "0", restart.Query().Get("max_age"))
+	assert.Equal(t, "60", restart.Query().Get("max_age"))
 
 	callback = env.signInAtIdP(t, browser, restart, alice)
 
 	response = get(t, env.browser(t), callback.String())
-	require.Equal(t, http.StatusForbidden, response.StatusCode)
-	assert.Contains(t, body(t, response), "Your browser didn't keep the cookie of this sign-in, so toolgate can't finish it. "+
-		"Allow cookies for this site, sign in from one tab only, and start again at /ui/login.")
+	page := signInFailedPage(t, response, ui.StepUpURL(stepUpFormPath))
+	assert.Contains(t, page, "Your browser didn't keep the cookie of this sign-in, so toolgate can't finish it.")
+	assert.Contains(t, page, "Allow cookies for this site, sign in from one tab only, then sign in again.")
 	assert.Nil(t, setCookie(response, ui.SessionCookie))
 	assert.Equal(t, 0, env.countRows(t, "ui_sessions"))
 	assert.Equal(t, 0, env.countRows(t, "ui_logins"), "no new sign-in")
@@ -531,7 +550,9 @@ func TestSignInStateWorksOnce(t *testing.T) {
 	replay.Jar.SetCookies(serverURL, []*http.Cookie{{Name: loginCookie.Name, Value: loginCookie.Value, Path: "/", Secure: true}})
 
 	response = get(t, replay, callback.String())
-	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	page := signInFailedPage(t, response, ui.LoginPath)
+	assert.Contains(t, page, "toolgate couldn't finish your sign-in.")
+	assert.NotContains(t, page, "already used", "the technical reason is only in the audit event")
 	assert.Nil(t, setCookie(response, ui.SessionCookie))
 	assert.Equal(t, []string{"web UI sign-in: the sign-in is unknown, already used or expired"}, env.refusals.reasons())
 }

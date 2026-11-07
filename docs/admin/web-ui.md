@@ -54,7 +54,9 @@ A failed sign-in writes an `auth.refuse` event to the audit log. The gateway wri
 
 ## Fresh sign-in
 
-Two actions in the UI give more access: creating a grant and approving a tool call. They need a fresh sign-in, which is a sign-in less than 5 minutes old. When the sign-in is older, the UI sends the user back to the IdP with `prompt=login` and `max_age=0`. The IdP then asks the user to sign in again.
+Two actions in the UI give more access: creating a grant and approving a tool call. They need a fresh sign-in, which is a sign-in less than 5 minutes old. When the sign-in is older, the UI sends the user back to the IdP with `prompt=login` and `max_age=60`. The IdP then asks the user to sign in again.
+
+`max_age=60` tells the IdP to ask again when its own sign-in is more than 60 seconds old. The gateway does not send `max_age=0`, because some IdPs ignore the value 0. Authentik is an example. Authentik also obeys `prompt=login` only one time in each browser session. Thus, with Authentik, only `max_age` makes the user sign in again. You do not have to change a setting in Authentik for this.
 
 The IdP must put `auth_time` in the ID token. `auth_time` is the time when the user signed in. The gateway accepts a fresh sign-in only when `auth_time` meets all of these conditions:
 
@@ -62,7 +64,7 @@ The IdP must put `auth_time` in the ID token. `auth_time` is the time when the u
 - It is at most 60 seconds in the future.
 - It is not earlier than 60 seconds before the sign-in started.
 
-If `auth_time` is too old, the gateway starts a new fresh sign-in one time. If that sign-in is also too old, the user sees an error page. This happens when the IdP signs the user in with the existing IdP session and ignores `prompt=login`. Then make sure that your IdP asks for the password or passkey again when it gets `prompt=login`.
+If `auth_time` is too old, the gateway starts a new fresh sign-in one time. If that sign-in is also too old, the user sees an error page. This happens when the IdP signs the user in with the existing IdP session and ignores both `prompt=login` and `max_age`. Then make sure that your IdP asks for the password or passkey again when it gets one of them.
 
 If the IdP does not send `auth_time`, the fresh sign-in fails. The other pages of the UI keep working, but nobody can create a grant or approve a call. If the user signs in again as a different user, the gateway refuses the sign-in and signs the user out.
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -70,8 +71,14 @@ func (u *UI) beginSignIn(writer http.ResponseWriter, request *http.Request, retu
 	var sessionHash []byte
 
 	if stepUp {
+		// max_age is the clock skew, not 0: some IdPs read max_age=0 as "no
+		// limit" (Authentik tests it for truth), and Authentik honours
+		// prompt=login only once per browser session. A max_age of 60 seconds
+		// still forces a new sign-in there, and checkStepUpAuthTime accepts an
+		// auth_time up to that skew before the sign-in started.
 		authOptions = append(authOptions,
-			oauth2.SetAuthURLParam("prompt", "login"), oauth2.SetAuthURLParam("max_age", "0"))
+			oauth2.SetAuthURLParam("prompt", "login"),
+			oauth2.SetAuthURLParam("max_age", strconv.Itoa(int(StepUpClockSkew/time.Second))))
 
 		sessionHash, err = u.sessionHash(request)
 		if err != nil {
@@ -144,22 +151,68 @@ func ReturnTo(raw string) string {
 	return raw
 }
 
-// stateMismatchMessage is the page of a restarted sign-in whose state
-// again does not match this browser's sign-in.
-const stateMismatchMessage = "Your browser didn't keep the cookie of this sign-in, so toolgate can't finish it. " +
-	"Allow cookies for this site, sign in from one tab only, and start again at " + LoginPath + "."
+// The page of a restarted sign-in whose state again does not match this
+// browser's sign-in.
+const (
+	stateMismatchHappened = "Your browser didn't keep the cookie of this sign-in, so toolgate can't finish it."
+	stateMismatchToDo     = "Allow cookies for this site, sign in from one tab only, then sign in again."
+)
+
+// The page of any other failed sign-in. The technical reason is in the
+// audit event, not on the page.
+const (
+	signInFailedHappened = "toolgate couldn't finish your sign-in."
+	signInFailedToDo     = "Sign in again. If it fails again, ask your admin to look at the gateway's audit log."
+)
+
+// signInFailedPage is the content of the page of a failed sign-in.
+type signInFailedPage struct {
+	Happened string
+	ToDo     string
+	Retry    string
+}
+
+// renderSignInFailure writes the page of a failed sign-in in the web UI
+// layout, with a button that starts a new sign-in.
+func (u *UI) renderSignInFailure(writer http.ResponseWriter, request *http.Request, failed *signInFailure) {
+	content := signInFailedPage{Happened: failed.happened, ToDo: failed.todo, Retry: failed.retry}
+	if content.Happened == "" {
+		content.Happened, content.ToDo = signInFailedHappened, signInFailedToDo
+	}
+
+	if content.Retry == "" {
+		content.Retry = LoginPath
+	}
+
+	u.writePage(writer, request, http.StatusForbidden, "signin_failed",
+		page{Title: "Sign-in failed", SignedOut: true, Data: content})
+}
+
+// signInURL is the sign-in that returns to returnTo, as a step-up when
+// stepUp is set.
+func signInURL(returnTo string, stepUp bool) string {
+	if stepUp {
+		return StepUpURL(returnTo)
+	}
+
+	return LoginPath + "?" + url.Values{"return_to": {ReturnTo(returnTo)}}.Encode()
+}
 
 func loginCookieName(stateHash []byte) string {
 	return LoginCookiePrefix + hex.EncodeToString(stateHash)[:8]
 }
 
 // signInFailure is a failed sign-in: its reason goes into the auth.refuse
-// event and, unless message is set, the page.
+// event, and happened and todo onto the page.
 type signInFailure struct {
 	reason string
-	// message, if set, is the whole text of the page.
-	message string
-	err     error
+	// happened says in plain words what went wrong, and todo what the user
+	// can do. Empty fields get a general text.
+	happened string
+	todo     string
+	// retry is where the page's "Sign in again" button goes.
+	retry string
+	err   error
 	// restart, if set, replaces the page with a new sign-in.
 	restart *signInRestart
 }
@@ -194,12 +247,7 @@ func (u *UI) callback(writer http.ResponseWriter, request *http.Request) {
 			return
 		}
 
-		message := failed.message
-		if message == "" {
-			message = "Sign-in failed: " + failed.reason + ". Start again at " + LoginPath + "."
-		}
-
-		http.Error(writer, message, http.StatusForbidden)
+		u.renderSignInFailure(writer, request, failed)
 
 		return
 	}
@@ -241,54 +289,63 @@ func (u *UI) completeSignIn(writer http.ResponseWriter, request *http.Request) (
 		return "", failure("the gateway can't load the sign-in", err)
 	}
 
+	if failed := u.finishSignIn(writer, request, login); failed != nil {
+		if failed.retry == "" {
+			failed.retry = signInURL(login.ReturnTo, login.StepUp)
+		}
+
+		return "", failed
+	}
+
+	return login.ReturnTo, nil
+}
+
+// finishSignIn completes the sign-in of a matching state: it checks the
+// IdP's answer and starts or updates the session.
+func (u *UI) finishSignIn(writer http.ResponseWriter, request *http.Request, login db.UiLogin) *signInFailure {
+	ctx := request.Context()
+	query := request.URL.Query()
+
 	if idpError := query.Get("error"); idpError != "" {
-		return "", failure("the identity provider returned an error", errors.New(truncate(idpError)))
+		return failure("the identity provider returned an error", errors.New(truncate(idpError)))
 	}
 
 	provider, err := u.oidcProvider(ctx)
 	if err != nil {
-		return "", failure("the gateway can't reach its identity provider", err)
+		return failure("the gateway can't reach its identity provider", err)
 	}
 
 	clientCtx := u.clientContext(ctx)
 
 	token, err := u.oauthConfig(provider).Exchange(clientCtx, query.Get("code"), oauth2.VerifierOption(login.PkceVerifier))
 	if err != nil {
-		return "", failure("the code exchange failed", err)
+		return failure("the code exchange failed", err)
 	}
 
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok || rawIDToken == "" {
-		return "", failure("the identity provider returned no ID token", nil)
+		return failure("the identity provider returned no ID token", nil)
 	}
 
 	idToken, err := provider.VerifierContext(clientCtx, &oidc.Config{ClientID: u.options.ClientID}).Verify(clientCtx, rawIDToken)
 	if err != nil {
-		return "", failure("the ID token is not valid", err)
+		return failure("the ID token is not valid", err)
 	}
 
 	if subtle.ConstantTimeCompare([]byte(idToken.Nonce), []byte(login.Nonce)) != 1 {
-		return "", failure("the ID token's nonce does not match", nil)
+		return failure("the ID token's nonce does not match", nil)
 	}
 
 	identity, err := u.identityFromIDToken(idToken)
 	if err != nil {
-		return "", failure("the ID token's claims are not valid", err)
+		return failure("the ID token's claims are not valid", err)
 	}
 
 	if login.StepUp {
-		if failed := u.completeStepUp(writer, request, login, identity); failed != nil {
-			return "", failed
-		}
-
-		return login.ReturnTo, nil
+		return u.completeStepUp(writer, request, login, identity)
 	}
 
-	if failed := u.startSession(writer, request, identity); failed != nil {
-		return "", failed
-	}
-
-	return login.ReturnTo, nil
+	return u.startSession(writer, request, identity)
 }
 
 // stateMismatch is the failure of a callback whose state is not this
@@ -308,7 +365,8 @@ func (u *UI) stateMismatch(ctx context.Context, stateHash []byte) *signInFailure
 	case err != nil:
 		failed.err = err
 	case login.Restarted:
-		failed.message = stateMismatchMessage
+		failed.happened, failed.todo = stateMismatchHappened, stateMismatchToDo
+		failed.retry = signInURL(login.ReturnTo, login.StepUp)
 	default:
 		failed.restart = &signInRestart{known: true, returnTo: ReturnTo(login.ReturnTo), stepUp: login.StepUp}
 	}
@@ -334,13 +392,13 @@ func (u *UI) completeStepUp(writer http.ResponseWriter, request *http.Request, l
 	ctx := request.Context()
 
 	if !identity.authTime.Valid {
-		return &signInFailure{reason: "the ID token has no auth_time", message: missingAuthTimeMessage}
+		return &signInFailure{reason: "the ID token has no auth_time", happened: missingAuthTimeHappened, todo: missingAuthTimeToDo}
 	}
 
 	if err := checkStepUpAuthTime(identity.authTime.Time, login.CreatedAt.Time, time.Now()); err != nil {
 		failed := failure("the step-up sign-in is not fresh", err)
 		if login.Restarted {
-			failed.message = notFreshMessage
+			failed.happened, failed.todo = notFreshHappened, notFreshToDo
 		} else {
 			failed.restart = &signInRestart{known: true, returnTo: ReturnTo(login.ReturnTo), stepUp: true}
 		}
@@ -369,7 +427,7 @@ func (u *UI) completeStepUp(writer http.ResponseWriter, request *http.Request, l
 
 		http.SetCookie(writer, sessionCookie("", -1))
 
-		return &signInFailure{reason: "the step-up signed in as a different user", message: differentUserMessage}
+		return &signInFailure{reason: "the step-up signed in as a different user", happened: differentUserHappened, todo: differentUserToDo}
 	}
 
 	updated, err := u.queries.UpdateUISessionSignIn(ctx, db.UpdateUISessionSignInParams{
