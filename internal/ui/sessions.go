@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -22,6 +23,8 @@ const (
 	DecisionsShown = 20
 	// maxSessionsShown bounds the list of sessions.
 	maxSessionsShown = 500
+	// ActivityWindow is how far back the activity counts of the list look.
+	ActivityWindow = time.Hour
 )
 
 // Session states and the filters of the list.
@@ -100,6 +103,34 @@ type sessionRow struct {
 	State      sessionState
 	CreatedAt  time.Time
 	LastSeenAt time.Time
+	// Servers are the enabled servers, as namespace/name. The list page fills
+	// Servers and Activity.
+	Servers  []string
+	Activity sessionActivity
+}
+
+// sessionActivity is the counts the list shows for a session.
+type sessionActivity struct {
+	RunningInstances int64
+	// ToolCalls and Refusals count the last ActivityWindow.
+	ToolCalls int64
+	Refusals  int64
+	// PendingApprovals counts the approvals that wait for a decision.
+	PendingApprovals int64
+	// AuditURL lists the session's audit events of the last ActivityWindow.
+	AuditURL string
+}
+
+// auditLinkFor links to the audit page filtered to one session and its
+// principal, from the start of the activity window.
+func auditLinkFor(row sessionRow, now time.Time) string {
+	values := url.Values{
+		"principal": {row.Principal},
+		"session":   {row.SessionID},
+		"from":      {now.Add(-ActivityWindow).UTC().Truncate(time.Microsecond).Format(time.RFC3339Nano)},
+	}
+
+	return "/ui/audit?" + values.Encode()
 }
 
 type sessionsPage struct {
@@ -243,6 +274,8 @@ func (u *UI) sessions(writer http.ResponseWriter, request *http.Request) {
 		principals = append(principals, row.Principal)
 	}
 
+	u.fillSessionActivity(ctx, data.Sessions, now)
+
 	workspaces, err := u.queries.ListSessionWorkspaces(ctx, db.ListSessionWorkspacesParams{EndedAfter: endedAfter, Principal: owner})
 	if err != nil {
 		u.logger.WarnContext(ctx, "cannot list session workspaces for the web UI", "error", err)
@@ -273,6 +306,50 @@ func (u *UI) sessions(writer http.ResponseWriter, request *http.Request) {
 	data.Links = filterLinks(data)
 
 	u.render(writer, request, "sessions", "Sessions", data)
+}
+
+// fillSessionActivity adds the servers and activity counts to the listed
+// sessions with two queries for the whole page. A failed query leaves the
+// page without those columns' data and is logged.
+func (u *UI) fillSessionActivity(ctx context.Context, sessions []sessionRow, now time.Time) {
+	if len(sessions) == 0 {
+		return
+	}
+
+	ids := make([]int64, 0, len(sessions))
+	positions := make(map[int64]int, len(sessions))
+
+	for index, each := range sessions {
+		ids = append(ids, each.ID)
+		positions[each.ID] = index
+		sessions[index].Activity.AuditURL = auditLinkFor(each, now)
+	}
+
+	servers, err := u.queries.ListServersForSessions(ctx, ids)
+	if err != nil {
+		u.logger.WarnContext(ctx, "cannot list session servers for the web UI", "error", err)
+	}
+
+	for _, server := range servers {
+		index := positions[server.SessionPk]
+		sessions[index].Servers = append(sessions[index].Servers, server.TemplateNs+"/"+server.TemplateName)
+	}
+
+	counts, err := u.queries.CountSessionActivity(ctx, db.CountSessionActivityParams{
+		Since:      pgtype.Timestamptz{Time: now.Add(-ActivityWindow), Valid: true},
+		SessionPks: ids,
+	})
+	if err != nil {
+		u.logger.WarnContext(ctx, "cannot count session activity for the web UI", "error", err)
+	}
+
+	for _, count := range counts {
+		activity := &sessions[positions[count.SessionPk]].Activity
+		activity.RunningInstances = count.RunningInstances
+		activity.ToolCalls = count.ToolCalls
+		activity.Refusals = count.Refusals
+		activity.PendingApprovals = count.PendingApprovals
+	}
 }
 
 // filterLinks builds the links of the state filter. They keep the workspace

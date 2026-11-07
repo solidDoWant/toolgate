@@ -88,3 +88,35 @@ SELECT DISTINCT principal FROM sessions
 WHERE ended_at IS NULL OR ended_at > @ended_after::timestamptz
 ORDER BY principal
 LIMIT 200;
+
+-- name: ListServersForSessions :many
+-- Lists the enabled servers of the given sessions, for the Sessions page.
+SELECT session_pk, template_ns, template_name FROM session_servers
+WHERE session_pk = ANY(@session_pks::bigint[])
+ORDER BY session_pk, template_ns, template_name;
+
+-- name: CountSessionActivity :many
+-- Counts, for each of the given sessions: the ready instances of its enabled
+-- servers that it uses (shared ones, its owner's per-user ones and its own
+-- per-session ones), the tool decisions and refusals recorded for it since
+-- @since, and its unexpired pending approvals. Audit events only count for
+-- the session's own principal.
+SELECT s.id AS session_pk,
+       (SELECT count(*) FROM session_servers ss
+        JOIN instances i ON i.template_ns = ss.template_ns AND i.template_name = ss.template_name
+        WHERE ss.session_pk = s.id AND i.desired = 'running' AND i.status = 'ready'
+          AND (i.scope = 'shared'
+               OR (i.scope = 'per-user' AND i.owner_principal = s.principal)
+               OR (i.scope = 'per-session' AND i.scope_key = 'session:' || s.principal || ':' || s.session_id)))::bigint AS running_instances,
+       (SELECT count(*) FROM audit_events a
+        WHERE a.type = 'tool.decision' AND a.principal = s.principal AND a.session = s.session_id
+          AND a.occurred_at >= @since::timestamptz)::bigint AS tool_calls,
+       (SELECT count(*) FROM audit_events a
+        WHERE a.type = 'tool.decision' AND a.principal = s.principal AND a.session = s.session_id
+          AND a.occurred_at >= @since::timestamptz
+          AND a.details ->> 'decision' IN ('deny', 'refuse'))::bigint AS refusals,
+       (SELECT count(*) FROM approvals p
+        WHERE p.session_pk = s.id AND p.principal = s.principal AND p.status = 'pending'
+          AND p.expires_at > now())::bigint AS pending_approvals
+FROM sessions s
+WHERE s.id = ANY(@session_pks::bigint[]);
