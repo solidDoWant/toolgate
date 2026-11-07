@@ -195,6 +195,8 @@ If your computer has no keychain, toolgate writes the token to the file `toolgat
 
 To remove the token from the keychain and from the file, run `toolgate logout`.
 
+Claude Code can start several `toolgate` commands at the same time, for example at the start of a session. Only one of them gets a new access token at a time. The others wait for it, and then use the newest refresh token. Some identity providers give a new refresh token on each use and refuse the old one. Without the wait, such a provider would end your sign-in. To make the commands wait, toolgate uses the file `toolgate/token.lock` in your user configuration directory. toolgate uses this file also when the token is in the keychain.
+
 ### Choose the store
 
 Run `toolgate login --token-store auto|keychain|file` to choose where toolgate keeps the token. You can also set the `TOOLGATE_TOKEN_STORE` environment variable. The default is `auto`: toolgate tries the keychain and uses the file if the keychain does not work.

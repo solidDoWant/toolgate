@@ -93,10 +93,21 @@ const SignInAgainMessage = "Sign in again: run `toolgate login`."
 // AccessToken uses the stored refresh token to get a new access token from
 // the IdP the CLI signed in with. When the IdP rotates the refresh token, the
 // new one is stored.
+//
+// Loading, refreshing and storing run under the store's lock, and the
+// refresh token is loaded only once the lock is held. An IdP that rotates
+// refresh tokens refuses the old one, so two processes that refreshed with
+// the same token would end the sign-in.
 func AccessToken(ctx context.Context, httpClient *http.Client, settings login.Settings, tokens *tokenstore.Store) (string, error) {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+
+	unlock, err := tokens.Lock(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 
 	refreshToken, err := tokens.Load()
 	if err != nil {
