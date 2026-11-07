@@ -9,7 +9,7 @@ VERSION ?= 0.0.0-dev
 LDFLAGS := -s -w -X github.com/solidDoWant/toolgate/internal/version.version=$(VERSION)
 
 # The phase whose checklist `make acceptance` scores (docs/acceptance/phase-$(PHASE).md).
-PHASE ?= 1
+PHASE ?= 4
 
 ##@ General
 
