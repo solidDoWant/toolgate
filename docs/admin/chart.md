@@ -47,6 +47,46 @@ The ClusterRole, the Role, their bindings and the admission policy are not in `r
 
 Every gateway pod serves requests. Only one pod at a time runs the reconciler, the part of the gateway that creates and deletes the objects of MCP servers. The pods decide which pod that is with a Kubernetes Lease named `toolgate-runtime` in the release namespace. If that pod stops or loses the Lease, another pod takes it over within about 15 seconds.
 
+## Session affinity with more than one replica
+
+The chart runs two gateway pods by default (`config.replicas`). Each pod keeps the MCP sessions that it started in memory. An MCP session is the connection that Claude Code opens with `initialize`. Only the pod that started a session can serve it. If a request of the session goes to another pod, that pod answers HTTP 404 `session not found`. Claude Code does not connect again after this error. It marks the `toolgate` server as failed, and the user must start a new Claude Code session.
+
+So if you run more than one replica, the proxy in front of the gateway must send all requests of one session to the same pod. Session affinity is this behavior of the proxy. Configure it on the `X-Toolgate-Session` header. The toolgate plugin sends this header on every request, `initialize` included, with one value for each Claude Code session.
+
+Do not use the `Mcp-Session-Id` header for affinity. The `initialize` request has no `Mcp-Session-Id`, so the proxy sends it to a random pod. The later requests carry the header, and the proxy can send them to a different pod. That pod does not know the session.
+
+The chart does not create the proxy configuration, because the ingress and the service mesh belong to the cluster owner. The examples use the release `toolgate` in the namespace `toolgate-system`. Change the names for your cluster.
+
+With Istio, add a `DestinationRule` for the gateway Service:
+
+```yaml
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: toolgate
+  namespace: toolgate-system
+spec:
+  host: toolgate.toolgate-system.svc.cluster.local
+  trafficPolicy:
+    loadBalancer:
+      consistentHash:
+        httpHeaderName: X-Toolgate-Session
+```
+
+With ingress-nginx, add this annotation to the `Ingress` of the gateway:
+
+```yaml
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$http_x_toolgate_session"
+```
+
+The value `ClientIP` of `config.service.sessionAffinity` works only when the clients connect to the Service directly. Behind an ingress or a mesh, the Service sees the address of the proxy, or the proxy sends requests to the pods without the Service.
+
+Affinity does not keep a session when its pod stops. A gateway rollout or a pod restart ends the open Claude Code sessions on that pod, and Claude Code does not recover from this by itself. Tell your users to restart Claude Code after an upgrade. If they resume the same Claude Code session, its enabled servers come back (see [the user guide](../user/README.md)).
+
+A connector, such as claude.ai, does not send `X-Toolgate-Session`. Header affinity cannot keep its session on one pod. Run one replica for connectors, or use a client that connects again after HTTP 404 (see [connectors](connectors.md#5-sessions-and-session-affinity)).
+
 ## Why the gateway has a ClusterRole
 
 toolgate starts each MCP server in its own namespace, named `tg-` and an instance ID. It creates these namespaces when a user enables a server. A Role works only in one namespace that exists already, so the gateway needs a ClusterRole.

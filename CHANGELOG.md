@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- With more than one gateway replica, the proxy in front of the gateway must send each session to one replica. Otherwise, Claude Code gets HTTP 404 `session not found` and marks the `toolgate` server as failed. The section "Session affinity with more than one replica" in `docs/admin/chart.md` shows how to configure this with Istio and ingress-nginx.
 - The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should.
 
 ## 0.4.3

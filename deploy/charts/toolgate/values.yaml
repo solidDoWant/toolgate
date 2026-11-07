@@ -228,8 +228,10 @@ config:
 
   service:
     # -- Session affinity of the gateway's Service: `None` or `ClientIP`.
-    # toolgate does not need affinity to be correct. `ClientIP` makes replica
-    # switches rare.
+    # `ClientIP` works only for clients that connect to the Service directly.
+    # With more than one replica behind an ingress or a mesh, configure
+    # affinity on the `X-Toolgate-Session` header there instead. See
+    # `docs/admin/chart.md`.
     sessionAffinity: None
 
   serviceMonitor:
