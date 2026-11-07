@@ -18,7 +18,7 @@ metadata:
   namespace: toolgate-catalog
 spec:
   description: GitHub issues, pull requests and repositories
-  scope: per-session
+  scope: per-session  # narrower than the per-user that the variables need
   startTimeout: 5m
   access:
     groups: [dev]
@@ -66,7 +66,7 @@ The name of the template is the name of the server. It has 31 characters at most
 ## The fields of a template
 
 - `description`: the text that users and the model see in the list of servers. The gateway also puts it in the instructions it sends to the model at the start of every session, for each server the user can use. Write it for the model: what the server is for and when to use it, in one or two sentences. The gateway cuts it to 120 characters and removes line breaks and control characters, so put the key words first. The model sees at most 20 servers.
-- `scope`: who shares one instance. An instance is one running copy of the server.
+- `scope`: who shares one instance. An instance is one running copy of the server. The field is optional. See [Scope](#scope).
   - `per-session`: one instance for each Claude Code session.
   - `per-user`: one instance for each user, shared by the sessions of that user.
   - `shared`: one instance for all users.
@@ -89,6 +89,22 @@ The name of the template is the name of the server. It has 31 characters at most
 **Upgrade note.** `toolFilter` and the `name`, `description` and `inputDescriptions` fields take effect only after every gateway pod runs this version. During a rolling upgrade, an older pod ignores them: it lists hidden tools, forwards calls to them and does not rename tools. Each call still gets a recorded decision. To hide a tool as a security control, use `tools.<name>.blocked`. It works on both versions.
 
 A call of a hidden tool, or of a renamed tool by its own name, is refused with the reason `not-offered`. The gateway records the refusal and does not forward the call. Rules and approvals use the tool's own name. A rule's `tools` pattern matches both the tool's own name and its new name. The audit log shows the new name in `exposedTool` when it differs.
+
+## Scope
+
+The scope of a template must be as narrow as the variables that the template uses, or narrower. `shared` is the broadest scope and `per-session` is the narrowest. toolgate looks at the variables in `resources`, `endpoint.service`, `healthCheck.http.service` and `remote.headers`:
+
+| The template uses | Broadest scope it can have |
+|---|---|
+| no variable, or only `${instance.*}` and `${template.name}` | `shared` |
+| `${principal.*}`, `${secret:…}` or `${resolver:…}` | `per-user` |
+| `${session.id}` or `${workspace.id}` | `per-session` |
+
+If you do not set `scope`, toolgate uses the broadest scope that the table allows. For example, a template without variables is `shared`, and a template with `${secret:…}` is `per-user`.
+
+You can set a narrower scope than the table gives. For example, set `per-user` to keep the files of each user apart on disk, or `per-session` to give each session its own copy. If you set a broader scope, the template is invalid. The reason in the `Valid` condition names the field and the variable, for example: `` `scope: shared`, but `remote.headers.Authorization` uses `${secret:…}`, which needs `per-user` or narrower``. The reason never shows a header value or a secret name.
+
+When a template is valid, the message of its `Valid` condition gives the scope that toolgate uses and the cause, for example ``Scope per-user: `remote.headers.Authorization` uses `${secret:…}`.`` The list of servers in Claude Code and on the Servers page show this scope.
 
 ## Health checks
 
@@ -217,7 +233,6 @@ metadata:
   namespace: toolgate-catalog
 spec:
   description: Search and read archived mail
-  scope: per-user
   remote:
     url: http://mail-archiver.email.svc.cluster.local:5000/mcp
     headers:
@@ -227,18 +242,18 @@ spec:
 
 A remote template has these rules:
 
-- It must have `scope: per-user`.
+- Its scope follows the same rules as other templates. See [Scope](#scope). With `${secret:…}` or `${principal.*}` in a header, it is `per-user` or narrower. With no header, or only fixed header values, it can be `shared`.
 - It cannot have `endpoint`, `resources` or `healthCheck`. A template without `remote` must have `endpoint`.
 - `remote.url` is the Streamable HTTP address of the server. It must start with `https://`. It can start with `http://` only when the host name ends in `.svc` or `.svc.cluster.local`, because that traffic stays inside the cluster. The URL cannot contain a user name or a password. Put credentials in `remote.headers`.
 - `remote.headers` has 32 headers at most. A header name has 256 characters at most, and a value has 4096 characters at most.
 - A header value can use only two kinds of variable: `${secret:NAME}`, a secret that the user stores with `toolgate secret set`, and `${principal.*}`, for example `${principal.email}`. Any other variable makes the template invalid. Each `${` must have a closing `}`. Write `$${` for a literal `${`.
 - `remote.timeout` is the time limit for each request to the server, from 1s to 5m. It is optional.
 
-The Kubernetes API server refuses a template that breaks the rules for `scope`, `endpoint`, `resources`, `healthCheck` or `remote.timeout`. The gateway checks the URL and the header values, and puts the reason for a problem in the `Valid` condition. The reason names the header, but it never shows the value. The gateway never writes header values into a status, an event or a log.
+The Kubernetes API server refuses a template that breaks the rules for `endpoint`, `resources`, `healthCheck` or `remote.timeout`. The gateway checks the URL and the header values, and puts the reason for a problem in the `Valid` condition. The reason names the header, but it never shows the value. The gateway never writes header values into a status, an event or a log.
 
 When a user enables a remote server, the gateway first makes sure that the user set each secret that the headers name. If a secret is missing, the user gets the message `Secret NAME isn't set. Run toolgate secret set NAME.`, and nothing starts. A missing secret is not a server error.
 
-Then the gateway connects to the URL with the headers of that user and lists the tools. Each user gets an own connection, which uses only the secrets of that user. One user's headers never go with a call of another user. The tool list is also kept for each user. Tool names, `tools:` overrides, rules, grants, the audit log and access lists work as for servers that toolgate starts.
+Then the gateway connects to the URL with the headers of that user and lists the tools. For a `per-user` template, each user gets an own connection, which uses only the secrets of that user. One user's headers never go with a call of another user. The tool list is also kept for each user. For a `shared` template, all users use one connection and one tool list, because its headers contain nothing that belongs to one user. Tool names, `tools:` overrides, rules, grants, the audit log and access lists work as for servers that toolgate starts.
 
 If the server answers 401 or 403, the user gets the message that the server refused the credential, with the `toolgate secret set` command to set the secret again. A new secret value takes effect at the next connection. A remote server counts toward no instance limit, and it gets no namespace. The connection closes when no session of the user has the server turned on and `idleStop` has passed, or when the template changes.
 

@@ -18,13 +18,14 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/templatescope"
 )
 
 // Scope and namespace values of a template.
 const (
-	ScopePerSession = "per-session"
-	ScopePerUser    = "per-user"
-	ScopeShared     = "shared"
+	ScopePerSession = templatescope.PerSession
+	ScopePerUser    = templatescope.PerUser
+	ScopeShared     = templatescope.Shared
 
 	NamespacePerInstance = "per-instance"
 	NamespaceShared      = "shared"
@@ -78,15 +79,23 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 
 	spec := template.Spec
 
-	if !slices.Contains([]string{ScopePerSession, ScopePerUser, ScopeShared}, spec.Scope) {
+	scope := templatescope.Decide(spec)
+	remoteProblems := validateRemote(spec.Remote)
+
+	switch {
+	case spec.Scope != "" && !templatescope.Valid(spec.Scope):
 		problems = append(problems, fmt.Sprintf("scope %q must be one of per-session, per-user, shared", spec.Scope))
+	case scope.Problem != "" && len(remoteProblems) == 0:
+		// A header that uses a variable headers don't allow is already
+		// reported, and no scope makes it valid.
+		problems = append(problems, scope.Problem)
 	}
 
 	switch spec.Namespace {
 	case "", NamespacePerInstance:
 	case NamespaceShared:
-		if spec.Scope != ScopeShared {
-			problems = append(problems, "namespace: shared is allowed only with scope: shared")
+		if scope.Scope != ScopeShared {
+			problems = append(problems, "namespace: shared is allowed only with scope: shared, and this template's scope is "+scope.Scope)
 		}
 
 		if v.SharedNamespace == "" {
@@ -105,11 +114,11 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 	}
 
 	for index, raw := range spec.Resources {
-		problems = append(problems, v.validateResource(spec.Scope, index, raw.Raw)...)
+		problems = append(problems, v.validateResource(index, raw.Raw)...)
 	}
 
 	problems = append(problems, validateHealthCheck(spec)...)
-	problems = append(problems, validateRemote(spec.Remote)...)
+	problems = append(problems, remoteProblems...)
 
 	return problems
 }
@@ -201,7 +210,7 @@ func Reason(problems []string) string {
 	return reason
 }
 
-func (v Validator) validateResource(scope string, index int, raw []byte) []string {
+func (v Validator) validateResource(index int, raw []byte) []string {
 	where := "resources[" + strconv.Itoa(index) + "]"
 
 	var object map[string]any
@@ -247,10 +256,6 @@ func (v Validator) validateResource(scope string, index int, raw []byte) []strin
 
 			if name, found := strings.CutPrefix(variable, "resolver:"); found && !slices.Contains(v.Resolvers, name) {
 				variableProblems = append(variableProblems, fmt.Sprintf("%s: resolver `%s` isn't configured", location, name))
-			}
-
-			if scope == ScopeShared && isPerUserVariable(variable) {
-				variableProblems = append(variableProblems, fmt.Sprintf("%s: a shared template may not use ${%s}", location, variable))
 			}
 		}
 	})
@@ -383,23 +388,6 @@ func isSecretDataValue(path []string) bool {
 
 func isSecretVariable(variable string) bool {
 	return strings.HasPrefix(variable, "secret:") || strings.HasPrefix(variable, "resolver:")
-}
-
-// isPerUserVariable reports whether variable depends on a principal, a
-// workspace, a session or a user's secret, none of which a shared instance
-// has.
-func isPerUserVariable(variable string) bool {
-	if isSecretVariable(variable) {
-		return true
-	}
-
-	for _, prefix := range []string{"principal.", "workspace.", "session."} {
-		if strings.HasPrefix(variable, prefix) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // variables returns the names of the ${…} variables in text. `$${` is an

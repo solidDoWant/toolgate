@@ -10,9 +10,12 @@
 
 - The Sessions page of the web UI now shows who runs each session, where (with a verified or unverified badge), which client and version, and whether the session is active, idle, ended or resumable. You can filter by state, workspace and, as an admin, user.
 
+- A template's `scope` is now optional. Without it, toolgate uses the broadest scope that the template's variables allow, and the `Valid` condition says which scope and why. A remote server no longer has to be `per-user`: one with no headers, or with fixed headers, can be `shared`, and all users then share one connection. See "Scope" in `docs/admin/templates-and-rules.md`.
+
 ### Upgrade notes for admins
 
 - `endpoint.path` of a template now defaults to `/mcp`. Before, an unset path meant the server root. If a template left `path` unset and its server serves MCP at the root, set `path: /`.
+- Breaking change: a `per-user` template that uses `${session.id}` or `${workspace.id}` is now invalid. Set `scope: per-session` on it.
 - Sessions in tool search mode no longer list `toolgate_enable_server` and `toolgate_disable_server`. A call to a tool of an allowed server already turns the server on. A call to a tool of a server that the workspace blocks asks the user for access. To list the two tools in every mode, as before, set `config.metaTools.enableDisable` to `always`. See `docs/admin/tool-search.md`.
 - The web UI and `toolgate status` now show people by name and email instead of their long OIDC user ID. The full ID stays on hover.
 

@@ -266,6 +266,8 @@ func TestRenderUndefinedVariablesFail(t *testing.T) {
 		{name: "session in shared", scope: "shared", value: "${session.id}", variable: "session.id"},
 		{name: "secret in shared", scope: "shared", value: "${secret:github-token}", variable: "secret:github-token"},
 		{name: "resolver in shared", scope: "shared", value: "${resolver:app-token}", variable: "resolver:app-token"},
+		{name: "workspace in per-user", scope: "per-user", value: "${workspace.id}", variable: "workspace.id"},
+		{name: "session in per-user", scope: "per-user", value: "${session.id}", variable: "session.id"},
 		{name: "missing secret", scope: "per-user", value: "${secret:absent}", variable: "secret:absent"},
 		{name: "missing resolver", scope: "per-user", value: "${resolver:absent}", variable: "resolver:absent"},
 		{

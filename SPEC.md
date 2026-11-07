@@ -142,7 +142,7 @@ kind: MCPServerTemplate
 metadata: {name: github, namespace: toolgate-catalog}
 spec:
   description: GitHub issues, PRs and repositories
-  scope: per-session            # per-session | per-user | shared
+  scope: per-session            # optional: per-session | per-user | shared
   namespace: per-instance       # per-instance | shared
   idleStop: 30m
   startTimeout: 5m
@@ -176,22 +176,31 @@ spec:
 
 ```yaml
 spec:
-  scope: per-user          # required with remote
-  remote:
+  remote:                  # scope derived: per-user, because a header uses a secret
     url: http://mail-archiver.email.svc.cluster.local:5000/mcp
     headers:               # at most 32; names 256 characters, values 4096
       Authorization: "Bearer ${secret:mail-archiver-api-key}"
     timeout: 30s           # optional; per request, 1s-5m
 ```
 
-`remote` cannot be set together with `endpoint`, `resources` or `healthCheck`, and needs `scope: per-user`. `endpoint` is required only without `remote`. The CRD checks these rules. The catalog checks that `remote.url` is `https://`, or `http://` only to a host ending in `.svc` or `.svc.cluster.local`, with no user name or password. It also checks that header values use only `${secret:<name>}` and `${principal.*}`. Each problem is reported in the `Valid` condition. Header values never appear in status, events, logs, audit events or metrics. Only header names may. Remote templates cover per-user static credentials only. OAuth to remote servers stays in the backlog. Enabling a remote server first checks that the user set each secret its headers name, with the same message as for a launched server. A remote server has a per-user instance row with no namespace and no Kubernetes objects, and it counts toward no instance limit. The replica that serves a call connects to the URL with headers filled in from the instance owner's secrets at connect time, and keeps that connection only for that instance, so one user's headers never serve another user's call. A 401 or 403 from the server gives the user "the remote server refused your credential" with the `toolgate secret set` command. The connection closes when the instance stops (no live session has the server enabled and `idleStop` passed) or the template changes. Tool naming, `tools:` overrides, rules, grants, audit and access lists work as for launched servers. The gateway's pods make the connection, so the cluster owner must allow their egress to the remote host.
+`remote` cannot be set together with `endpoint`, `resources` or `healthCheck`. Its scope follows the rule under "Scopes": a remote server whose headers use `${secret:…}` or `${principal.*}` is `per-user` or narrower, and one with no headers or fixed header values can be `shared`. `endpoint` is required only without `remote`. The CRD checks these rules. The catalog checks that `remote.url` is `https://`, or `http://` only to a host ending in `.svc` or `.svc.cluster.local`, with no user name or password. It also checks that header values use only `${secret:<name>}` and `${principal.*}`. Each problem is reported in the `Valid` condition. Header values never appear in status, events, logs, audit events or metrics. Only header names may. Remote templates cover static credentials only. OAuth to remote servers stays in the backlog. Enabling a remote server first checks that the user set each secret its headers name, with the same message as for a launched server. A remote server has an instance row of its scope with no namespace and no Kubernetes objects, and it counts toward no instance limit. The replica that serves a call connects to the URL with headers filled in from the instance owner's secrets at connect time, and keeps that connection only for that instance. A per-user or per-session instance serves only its owner's calls, so one user's headers never serve another user's call. A shared instance has no owner and its headers hold nothing per-user, so one connection serves every user. A 401 or 403 from the server gives the user "the remote server refused your credential" with the `toolgate secret set` command. The connection closes when the instance stops (no live session has the server enabled and `idleStop` passed) or the template changes. Tool naming, `tools:` overrides, rules, grants, audit and access lists work as for launched servers. The gateway's pods make the connection, so the cluster owner must allow their egress to the remote host.
 
 **Tools and curation** (see `docs/design/phase-4.md`): `start` says when an instance starts. `declaredTools` (at most 512 tools, 1 MiB, unique names) is the admin's own tool list. `toolFilter.allow` or `toolFilter.deny` (exactly one; at most 512 names of 128 characters) hides tools. `tools.<name>` also sets the exposed `name` (`^[A-Za-z0-9_.-]{1,128}$`, at most 64 characters with the `<server>__` prefix), a `description` (4096 characters) and `inputDescriptions` (64 entries). A name that collides with another tool, or equals the name of a hidden tool, makes the template invalid. The server name `toolgate` is reserved for the built-in server: a template with it is invalid and counts as deleted.
 
 **Scopes:**
 - `per-session`: one instance per session.
 - `per-user`: one instance per principal, shared by that principal's sessions.
-- `shared`: one instance for everyone. A shared template must not use `${secret:…}`, `${resolver:…}`, `${principal.*}`, `${workspace.*}` or `${session.*}`. That is a validation error.
+- `shared`: one instance for everyone.
+
+A template's scope must be at least as narrow as the variables it uses in `resources`, `endpoint.service`, `healthCheck.http.service` and `remote.headers`:
+
+| The template uses | Broadest scope allowed |
+|---|---|
+| nothing per-identity (only `${instance.*}`, `${template.name}`, or no variables) | `shared` |
+| `${principal.*}`, `${secret:…}` or `${resolver:…}` | `per-user` |
+| `${session.id}` or `${workspace.id}` | `per-session` |
+
+`scope` is optional. Without it, the effective scope is the broadest one the table allows. An admin may set a narrower scope, for example `per-user` for per-user state on disk. A broader one makes the template invalid, with a reason that names the field and the variable but never a header value. The `Valid` condition of a valid template gives the effective scope and why, and every part of the gateway (the catalog, the renderer, instances, the server list and the web UI) uses the effective scope. One function decides it, so they can't disagree.
 
 **Instance namespaces.** With `per-instance`, toolgate creates the namespace `tg-<instance id>` and prepares it before applying the template:
 - Pod Security `restricted` enforced;
@@ -199,7 +208,7 @@ spec:
 - the default service account with `automountServiceAccountToken: false`;
 - labels naming the template, instance and owner principal (hashed).
 
-With `shared`, all instances go in one configured namespace and are told apart by labels and by `${instance.id}` in their names and selectors. toolgate never renames objects: the catalog refuses a template that doesn't tell its instances apart, and every `shared` template when no shared namespace is configured. Only `scope: shared` templates may use it; for other scopes it is a validation error, so an instance holding one user's secrets always has its own namespace. Deleting a per-instance namespace is the teardown.
+With `shared`, all instances go in one configured namespace and are told apart by labels and by `${instance.id}` in their names and selectors. toolgate never renames objects: the catalog refuses a template that doesn't tell its instances apart, and every `shared` template when no shared namespace is configured. Only templates whose effective scope is `shared` may use it; for other scopes it is a validation error, so an instance holding one user's secrets always has its own namespace. Deleting a per-instance namespace is the teardown.
 
 **Resources** is a list of Kubernetes objects. The chart grants these kinds by default: `Pod`, `Deployment`, `StatefulSet`, `Service`, `ConfigMap`, `Secret`, `ServiceAccount`, `NetworkPolicy`, `PersistentVolumeClaim`, and `CiliumNetworkPolicy` when that CRD exists. A template may contain any namespaced kind, such as Flux's `HelmRelease` and `OCIRepository`, and toolgate has no special handling for them. What the gateway can create is decided by the RBAC the cluster admin grants its service account. The chart's default ClusterRole covers the kinds above, the chart value `rbac.extraRules` adds more, and an apply that RBAC refuses fails the instance with the API server's message. Cluster-scoped kinds are a validation error, because teardown deletes the instance namespace and such an object would leak. The gateway needs a ClusterRole, because instance namespaces are created on the fly, and it never reads Secrets. The chart also installs a ValidatingAdmissionPolicy that applies to every write by the gateway's service account: it denies any write outside namespaces labelled as toolgate's, so a compromised gateway is confined to those namespaces whatever RBAC it holds there. Kinds like `HelmRelease`, whose controllers act with their own permissions rather than the gateway's, can do whatever that controller can; allowing them is the admin's trust decision. The exact rules are in `docs/design/phase-1.md` and `docs/design/phase-2.md`.
 

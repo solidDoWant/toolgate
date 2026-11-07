@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/templatescope"
 )
 
 // Labels every rendered object carries.
@@ -353,10 +354,10 @@ func (r *renderer) variable(variable string, path []string) (string, error) {
 	}
 
 	identity := r.input.Identity
-	shared := r.input.Template.Spec.Scope == scopeShared
+	scope := templatescope.Effective(r.input.Template.Spec)
 
-	if shared && isPerIdentityVariable(variable) {
-		return "", fail("is not defined for a shared template", nil)
+	if needed := templatescope.ForVariable(variable); !templatescope.Allows(scope, needed) {
+		return "", fail("is not defined for a "+scope+" template; it needs "+needed+" or narrower", nil)
 	}
 
 	switch variable {
@@ -447,19 +448,6 @@ func (r *renderer) resolve(name string) (Resolved, error) {
 	r.resolved[name] = resolved
 
 	return resolved, nil
-}
-
-// isPerIdentityVariable reports whether variable depends on a principal, a
-// workspace, a session or a user's secret, none of which a shared instance
-// has.
-func isPerIdentityVariable(variable string) bool {
-	for _, prefix := range []string{"principal.", "workspace.", "session.", "secret:", "resolver:"} {
-		if strings.HasPrefix(variable, prefix) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // claimed returns a claimed value as it renders at path: hashed when path is

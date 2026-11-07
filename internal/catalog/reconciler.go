@@ -194,7 +194,7 @@ func (r *Reconciler) writeStatus(ctx context.Context, key types.NamespacedName) 
 		Type:               ConditionValid,
 		Status:             metav1.ConditionTrue,
 		Reason:             ReasonValid,
-		Message:            "The template is valid and offered.",
+		Message:            "The template is valid and offered. Scope " + status.Scope + ".",
 		ObservedGeneration: status.Generation,
 	}
 

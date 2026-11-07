@@ -93,7 +93,7 @@ func TestReconcilerReportsInvalidTemplates(t *testing.T) {
 		{
 			name:     "shared template using a principal",
 			template: newTemplate("github", catalog.ScopeShared, podWithEnv("${principal.id}")),
-			reason:   "a shared template may not use ${principal.id}",
+			reason:   "`scope: shared`, but `resources[0].spec.containers[0].env[0].value` uses `${principal.id}`, which needs `per-user` or narrower",
 		},
 	}
 
