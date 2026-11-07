@@ -20,11 +20,11 @@ so two releases in different namespaces don't collide.
 {{- end -}}
 
 {{/*
-"true" when the migration hook Job renders: a migration Secret is set and the
+"true" when the migration hook Job renders: a migration Secret or inline URL is set and the
 gateway doesn't migrate on start. Empty otherwise.
 */}}
 {{- define "toolgate.migrateJobEnabled" -}}
-{{- if and .Values.config.database.migrationSecret (not .Values.config.database.migrateOnStart) -}}true{{- end -}}
+{{- if and (or .Values.config.database.migrationUrl .Values.config.database.migrationSecret) (not .Values.config.database.migrateOnStart) -}}true{{- end -}}
 {{- end -}}
 
 {{- define "toolgate.selectorLabels" -}}
