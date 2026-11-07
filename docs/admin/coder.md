@@ -2,7 +2,7 @@
 
 For: admins who run Coder workspaces and want each user's workspace to sign in to toolgate without `toolgate login`.
 
-Coder can hold the user's consent to an identity provider (IdP) and give the workspace an access token. This is Coder's external auth. toolgate reads that token with the `TOOLGATE_TOKEN_COMMAND` variable. The sessions in the workspace then act as the user. If you also bind the workspace with an attestation, the sessions are the user's, attested, in a workspace such as `coder/alice/dev`.
+Coder can hold the user's consent to an identity provider (IdP) and give the workspace an access token. This is Coder's external auth. toolgate reads that token with a token command, which `toolgate configure --token-command` saves. The sessions in the workspace then act as the user. If you also bind the workspace with an attestation, the sessions are the user's, attested, in a workspace such as `coder/alice/dev`.
 
 This page uses Authentik as the IdP. The names below come from the Coder and Authentik documentation. Check them against the versions that you run.
 
@@ -73,16 +73,23 @@ data "coder_external_auth" "toolgate" {
 }
 ```
 
-Set these variables in the `env` of the `coder_agent` resource:
+Claude Code removes environment variables with credential-like names from the toolgate plugin's helpers. It removes `TOOLGATE_TOKEN_COMMAND` and `CODER_AGENT_TOKEN`, for example. For the list, see [Claude Code plugin helpers](workspace-attestation.md#claude-code-plugin-helpers). Because of this, the template saves the settings in the toolgate configuration file with `toolgate configure`, and the command reads the agent token from a file.
+
+Add these lines to the `startup_script` of the `coder_agent` resource. Put the toolgate CLI on the `PATH` before these lines.
 
 ```hcl
-env = {
-  TOOLGATE_TOKEN_COMMAND = "coder external-auth access-token toolgate"
-  TOOLGATE_GATEWAY       = "https://toolgate.example.com"
-}
+startup_script = <<-EOT
+  install -d -m 700 "$HOME/.config/coder"
+  (umask 077 && printf '%s' "$CODER_AGENT_TOKEN" > "$HOME/.config/coder/agent-token")
+  toolgate configure \
+    --gateway https://toolgate.example.com \
+    --token-command "coder external-auth access-token toolgate --agent-token-file $HOME/.config/coder/agent-token"
+EOT
 ```
 
-To attest the workspace as well, set the attestation variables from the user documentation next to these two.
+The agent token file has mode 0600. The command does not need the `CODER_AGENT_TOKEN` variable. `CODER_AGENT_URL` stays in the environment of the helpers, so the command can use it.
+
+To attest the workspace as well, add `--attestation-token-file` or `--attestation-token-request` to the `toolgate configure` command. See [workspace attestation](workspace-attestation.md).
 
 ## What the user sees
 

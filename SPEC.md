@@ -293,6 +293,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 | `toolgate secret set/list/delete` | See "Secrets" |
 | `toolgate servers` | List the catalog as the CLI user sees it |
 | `TOOLGATE_TOKEN_COMMAND` (variable) | Every command that needs a user token runs it instead of reading the stored sign-in (see "Identity and attestation") |
+| `toolgate configure` | Save `--gateway`, `--token-command`, `--attestation-token-file` and `--attestation-token-request` in `config.json` (mode 0600), keeping the other fields; an empty value removes one. They are the file forms of `TOOLGATE_GATEWAY`, `TOOLGATE_TOKEN_COMMAND`, `TOOLGATE_ATTESTATION_TOKEN_FILE` and `TOOLGATE_ATTESTATION_TOKEN_REQUEST`, for the plugin's `headersHelper`, whose environment Claude Code strips of credential-like names. A set variable wins over the file; `toolgate login` keeps these fields |
 | `toolgate otel-headers` | `otelHeadersHelper` output |
 | `toolgate admin rewrap` | See "Secrets" |
 | `toolgate sessions` | List the caller's open sessions and their enabled servers (`GET /api/v1/sessions`). It also prints each session's `allowed` and `denied` entries |

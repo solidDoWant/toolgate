@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/solidDoWant/toolgate/internal/client/attestation"
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/settingssync"
@@ -91,12 +90,12 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 
 	// A failed attestation sends nothing: the request would change the
 	// session's attestation.
-	attested, err := attestation.FromEnv().Token(ctx)
+	attested, err := attestationSource().Token(ctx)
 	if err != nil {
 		return strings.Join(append(notes, "toolgate: the attestation failed, so the settings profile was not fetched ("+err.Error()+")."), "\n")
 	}
 
-	if source := tokencommand.FromEnv(); source.Command != "" {
+	if source := tokenCommandSource(); source.Command != "" {
 		return strings.Join(append(notes, tokenCommandSettingsNotes(ctx, source, attested)...), "\n")
 	}
 

@@ -40,7 +40,7 @@ docs/admin/
   README.md                The list of admin pages.
   configuration.md         The gateway configuration reference (generated).
   pod-sign-in.md           How pods sign in with service-account tokens, and the permissions it needs.
-  coder.md                 Sign in Coder workspaces with Coder's external auth and TOOLGATE_TOKEN_COMMAND.
+  coder.md                 Sign in Coder workspaces with Coder's external auth and toolgate configure.
   spiffe-sign-in.md        How workloads sign in with SPIFFE JWT-SVIDs, and access.spiffeIDs.
   workspace-attestation.md How a user session proves its workspace with a workload token.
   web-ui.md                How to turn on the web UI: its OIDC client, sessions and admins.

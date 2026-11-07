@@ -312,7 +312,7 @@ If you have not signed in with `toolgate login`, set `TOOLGATE_GATEWAY` to the g
 
 ### Sign in through another service (token command)
 
-Use this when another service already holds your consent and can print your access token. An example is Coder's external auth. Set the variable `TOOLGATE_TOKEN_COMMAND` to the command, for example `coder external-auth access-token toolgate`, and `TOOLGATE_GATEWAY` to the gateway URL. You do not run `toolgate login`.
+Use this when another service already holds your consent and can print your access token. An example is Coder's external auth. Save the command and the gateway URL with `toolgate configure`, for example `toolgate configure --token-command 'coder external-auth access-token toolgate' --gateway https://toolgate.example.com`. You do not run `toolgate login`. You can also set the variables `TOOLGATE_TOKEN_COMMAND` and `TOOLGATE_GATEWAY`. If a variable is set, toolgate uses it and not the saved setting. Claude Code removes `TOOLGATE_TOKEN_COMMAND` from the environment of the toolgate plugin helper, so the plugin needs the saved setting.
 
 Every command that needs your token runs the command with `/bin/sh -c` (`cmd.exe /d /c` on Windows) and uses its output instead of your stored sign-in. The command gets no standard input and has 5 seconds to finish. It must print one line with the token and at most 16 KiB. The command's own standard error reaches you, cut at 4 KiB.
 

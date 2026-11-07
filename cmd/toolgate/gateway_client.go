@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
-	"github.com/solidDoWant/toolgate/internal/client/attestation"
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 	"github.com/solidDoWant/toolgate/internal/client/login"
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
@@ -54,7 +53,7 @@ func signedInGateway(ctx context.Context) (gatewayAccess, error) {
 		return gatewayAccess{}, err
 	}
 
-	access.attestation, err = attestation.FromEnv().Token(ctx)
+	access.attestation, err = attestationSource().Token(ctx)
 	if err != nil {
 		return gatewayAccess{}, err
 	}
@@ -64,7 +63,7 @@ func signedInGateway(ctx context.Context) (gatewayAccess, error) {
 
 // userGateway gets the gateway URL and the user's token.
 func userGateway(ctx context.Context) (gatewayAccess, error) {
-	if source := tokencommand.FromEnv(); source.Command != "" {
+	if source := tokenCommandSource(); source.Command != "" {
 		return tokenCommandGateway(ctx, source)
 	}
 
@@ -171,7 +170,7 @@ func withAccess(ctx context.Context, call func(gatewayAccess) error) error {
 // refreshedToken deletes the cached command token and runs the command
 // again. It fails when TOOLGATE_TOKEN_COMMAND is not in use.
 func refreshedToken(ctx context.Context) (string, error) {
-	source := tokencommand.FromEnv()
+	source := tokenCommandSource()
 	if source.Command == "" {
 		return "", errors.New("no token command")
 	}
