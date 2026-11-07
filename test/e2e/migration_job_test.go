@@ -189,12 +189,6 @@ func TestSeparateMigrationCredential(t *testing.T) {
 		"existingSecret":  "toolgate-split-app",
 		"migrateOnStart":  false,
 		"migrationSecret": "toolgate-split-migrator",
-		"migrationEgress": []any{map[string]any{
-			"to": []any{map[string]any{"namespaceSelector": map[string]any{
-				"matchLabels": map[string]any{"kubernetes.io/metadata.name": postgresNamespace},
-			}}},
-			"ports": []any{map[string]any{"protocol": "TCP", "port": 5432}},
-		}},
 	}}}
 	splitFile := filepath.Join(t.TempDir(), "split.yaml")
 	raw, err := yaml.Marshal(splitValues)

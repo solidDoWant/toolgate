@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.3
+
+### Upgrade notes for admins
+
+- Breaking: the chart value `config.database.migrationEgress` is gone, and the migration Job no longer gets a NetworkPolicy. The chart now renders no network policies. Write your own, see `docs/admin/chart.md`.
+
 ## 0.4.2
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release lets the Helm chart take the database connection strings inline, without a Secret.

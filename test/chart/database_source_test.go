@@ -101,7 +101,7 @@ func TestGatewayDatabaseURLSource(t *testing.T) {
 }
 
 func TestMigrationJobDatabaseURLSource(t *testing.T) {
-	base := []string{"config.database.migrateOnStart=false", "config.database.migrationEgress[0].ports[0].port=5432"}
+	base := []string{"config.database.migrateOnStart=false"}
 
 	tests := map[string]struct {
 		set       []string
