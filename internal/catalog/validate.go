@@ -472,3 +472,24 @@ func SecretNames(template *v1alpha1.MCPServerTemplate) []string {
 
 	return slices.Compact(names)
 }
+
+// RequiredSecretNames returns the names of the user secrets the template
+// needs: the ones its resources use and the ones its remote headers use,
+// sorted and without duplicates.
+func RequiredSecretNames(template *v1alpha1.MCPServerTemplate) []string {
+	names := SecretNames(template)
+
+	if template.Spec.Remote != nil {
+		for _, value := range template.Spec.Remote.Headers {
+			for _, variable := range variables(value) {
+				if name, found := strings.CutPrefix(variable, "secret:"); found {
+					names = append(names, name)
+				}
+			}
+		}
+	}
+
+	slices.Sort(names)
+
+	return slices.Compact(names)
+}

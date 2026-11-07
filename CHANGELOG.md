@@ -1,16 +1,42 @@
 # Changelog
 
+## Unreleased
+
+### Upgrade notes for admins
+
+- Sessions in tool search mode no longer list `toolgate_enable_server` and `toolgate_disable_server`. A call to a tool of an allowed server already turns the server on. A call to a tool of a server that the workspace blocks asks the user for access. To list the two tools in every mode, as before, set `config.metaTools.enableDisable` to `always`. See `docs/admin/tool-search.md`.
+
 ## 0.4.6
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes the database connection when the PostgreSQL client certificate changes. It also gives the web UI a new look.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.6`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.6`. Follow `docs/admin/quick-start.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
 
 ### Upgrade notes for admins
 
 - If the gateway connects to PostgreSQL with a client certificate that expires after a short time, for example a cert-manager certificate that is valid for one hour, upgrade to this version. Versions 0.4.0 to 0.4.5 stop working when that certificate expires.
 
+### New
+
+- The Servers page of the web UI now shows the scope, the environments, the secrets that are needed and the workspace availability of each server you can use, and a detail page with its tools.
+
 ### Fixes
 
-- The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`.
+- The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`. ([#525](https://github.com/solidDoWant/toolgate/pull/525))
 - Sessions without a verified workspace now show the servers that the workspace scope blocks as `blocked`, with the fix, in `toolgate_list_servers`, `toolgate_server_status` and `toolgate_find_tools`. Before, the list was empty and the status said "isn't in your catalog".
 
+### Web UI
+
+- The web UI has a new look, with a light theme and a dark theme. It uses the theme of your system. The pages also work on small screens. See `docs/admin/web-ui.md`. ([#527](https://github.com/solidDoWant/toolgate/pull/527))
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- The `/ui/approvals` page of the web UI does not list pending access requests for changes to workspaces and defaults. ([#533](https://github.com/solidDoWant/toolgate/issues/533))
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.5
 

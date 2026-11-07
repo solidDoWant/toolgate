@@ -81,12 +81,14 @@ type metaTools struct {
 	// metrics counts calls and starts. Nil means none.
 	metrics *runtime.Metrics
 	// embedder embeds search queries; nil means words only.
-	embedder    *embeddings.Client
-	database    *pgxpool.Pool
-	catalog     *catalog.Catalog
-	policy      *policy.Engine
-	blocks      blockCache
-	auditOutput io.Writer
+	embedder *embeddings.Client
+	// enableDisable is the metaToolsEnableDisable setting.
+	enableDisable string
+	database      *pgxpool.Pool
+	catalog       *catalog.Catalog
+	policy        *policy.Engine
+	blocks        blockCache
+	auditOutput   io.Writer
 	// payloads stores call arguments and results; nil means off.
 	payloads  *audit.Payloads
 	subscribe func() (<-chan store.Event, func())
@@ -231,6 +233,10 @@ const notInWorkspaceReason = "not allowed in this workspace; enable it to ask"
 // default for unverified sessions doesn't allow.
 const notInUnverifiedReason = "not allowed in sessions without a verified workspace; set the default for unverified sessions (Workspaces page, or `toolgate workspace defaults --unverified …`), or allow it with `toolgate workspace allow --unverified <server>`"
 
+// notInWorkspaceSearchReason is the same reason in tool search mode, where
+// the enable tool isn't listed: a call asks.
+const notInWorkspaceSearchReason = "not allowed in this workspace; call one of its tools to ask for access, or call `toolgate_allow` to add it to your workspace scope"
+
 // deniedReasons are the list_servers reasons of a server with a deny entry,
 // which an enable never asks about.
 var deniedReasons = map[policy.DeniedIn]string{
@@ -268,8 +274,11 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 
 		if decision.Step == policy.StepWorkspaceScope {
 			entry.Reason = notInWorkspaceReason
-			if current.identity.Attestation != auth.AttestationAttested {
+			switch {
+			case current.identity.Attestation != auth.AttestationAttested:
 				entry.Reason = notInUnverifiedReason
+			case enableDisableHidden(current.searchMode, m.enableDisable):
+				entry.Reason = notInWorkspaceSearchReason
 			}
 		}
 

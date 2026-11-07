@@ -20,7 +20,7 @@ Before you start, install the `toolgate` command and make sure that it is on you
 
 1. In Claude Code, run `/plugin marketplace add solidDoWant/toolgate`.
 2. Run `/plugin install toolgate@toolgate`.
-3. When Claude Code asks for the "Gateway URL", type the URL of your gateway, for example `https://toolgate.example.com`. Do not add `/mcp` at the end.
+3. When Claude Code asks for the "Gateway URL", type the URL of your gateway, for example `https://toolgate.example.com`. Do not add `/mcp` at the end. The plugin setting needs the full address with `https://`; only the `toolgate` command accepts a short form.
 4. Restart Claude Code.
 
 You can also install the plugin from a shell, outside Claude Code:
@@ -103,6 +103,8 @@ toolgate login --gateway https://toolgate.example.com
 
 toolgate shows a web address and a code. Open the address in a browser, sign in with your identity provider, and make sure that the browser shows the same code. When you approve the sign-in, `toolgate login` shows "Signed in as" and your email address.
 
+You can also give only the host name, or the host name and port, for example `toolgate login --gateway toolgate.example.com:8443`. toolgate adds `https://` for you and saves the full address. Do not add a path such as `/mcp`. toolgate accepts plain `http://` only for `localhost` and other loopback addresses. `toolgate configure --gateway` and the `TOOLGATE_GATEWAY` variable work in the same way.
+
 toolgate saves the gateway URL in the file `toolgate/config.json` in your user configuration directory. If you sign in again later, you can leave out `--gateway`.
 
 To see who is signed in, run `toolgate status`. It shows the gateway URL, your principal (your user ID at the identity provider) and your email address. If your identity provider did not verify the email address, "(unverified)" follows it. The gateway decides what you can use. `toolgate status` only shows information.
@@ -112,6 +114,18 @@ To see who is signed in, run `toolgate status`. It shows the gateway URL, your p
 To see the servers that you can use, run `toolgate servers`. It shows the same list that Claude gets from `toolgate_list_servers`: the name, the scope, the status, whether the server is enabled, and a description. If a server is blocked for you, the status also shows the reason.
 
 The list depends on the workspace. `toolgate servers` sends the same workspace that Claude Code sends from the current directory. If you set `TOOLGATE_SESSION`, the command uses that session, and the `ENABLED` column shows the servers that are enabled in it.
+
+## See the servers in the web UI
+
+The Servers page of the web UI (`/ui/servers`) shows the servers that you can use, and only those. For each server it shows:
+
+- the scope: `per-session` (each session has its own instance), `per-user` (all your sessions share one instance) or `shared` (everyone shares one instance);
+- the environments: `any` (works from any signed-in machine), `attested` (needs an attested workspace) or `opt-in` (needs an attested workspace or a grant);
+- whether the server is remote, and which user secrets it needs and whether you set them (the page never shows a value);
+- the status of your instance and the number of tools, when known;
+- whether your workspace defaults and lists allow the server in verified workspaces and in unverified sessions, with a link to the Workspaces page to change them.
+
+Select a server name to see its tools. Blocked tools and tools that need approval are marked. The page also shows the `toolgate workspace allow` commands for the server. Click a command to select it, then copy it.
 
 ## See your open sessions
 
@@ -146,6 +160,8 @@ You do not call the gateway yourself. Ask Claude for what you need, and Claude u
 - `toolgate_enable_server` turns on a server in this session. If the server is not running, toolgate starts it, and Claude shows the progress. Then the tools of the server become available.
 - `toolgate_disable_server` turns off a server in this session.
 - `toolgate_server_status` shows if a server is running, and why it failed.
+
+In tool search mode, Claude does not see `toolgate_enable_server` and `toolgate_disable_server`. It finds a tool with `toolgate_find_tools` and calls it. See [Tool search](tool-search.md).
 
 Claude can call a tool of a server that the rules allow without `toolgate_enable_server` first. The call turns on the server in this session. If the server is not running, the call starts it and waits. Claude shows the progress, so the first call can take longer. If the server cannot start, the call fails with the reason.
 
