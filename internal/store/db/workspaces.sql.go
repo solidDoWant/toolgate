@@ -829,6 +829,112 @@ func (q *Queries) ListOverdueAccessRequests(ctx context.Context, grace pgtype.In
 	return items, nil
 }
 
+const listPendingAccessRequestsOfPrincipal = `-- name: ListPendingAccessRequestsOfPrincipal :many
+SELECT access_requests.id, access_requests.principal, access_requests.kind, access_requests.session_pk, access_requests.workspace, access_requests.verified, access_requests.server, access_requests.change, access_requests.status, access_requests.created_at, access_requests.expires_at, access_requests.decided_at, access_requests.decided_by, access_requests.decided_scope, s.session_id AS client_session_id
+FROM access_requests
+LEFT JOIN sessions s ON s.id = access_requests.session_pk
+WHERE access_requests.principal = $1 AND access_requests.status = 'pending' AND access_requests.expires_at > now()
+ORDER BY access_requests.created_at DESC, access_requests.id DESC
+LIMIT 100
+`
+
+type ListPendingAccessRequestsOfPrincipalRow struct {
+	AccessRequest   AccessRequest
+	ClientSessionID pgtype.Text
+}
+
+// Lists a principal's pending access requests that haven't expired, newest
+// first, with the client session ID of their session, for the Approvals
+// page.
+func (q *Queries) ListPendingAccessRequestsOfPrincipal(ctx context.Context, principal string) ([]ListPendingAccessRequestsOfPrincipalRow, error) {
+	rows, err := q.db.Query(ctx, listPendingAccessRequestsOfPrincipal, principal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPendingAccessRequestsOfPrincipalRow{}
+	for rows.Next() {
+		var i ListPendingAccessRequestsOfPrincipalRow
+		if err := rows.Scan(
+			&i.AccessRequest.ID,
+			&i.AccessRequest.Principal,
+			&i.AccessRequest.Kind,
+			&i.AccessRequest.SessionPk,
+			&i.AccessRequest.Workspace,
+			&i.AccessRequest.Verified,
+			&i.AccessRequest.Server,
+			&i.AccessRequest.Change,
+			&i.AccessRequest.Status,
+			&i.AccessRequest.CreatedAt,
+			&i.AccessRequest.ExpiresAt,
+			&i.AccessRequest.DecidedAt,
+			&i.AccessRequest.DecidedBy,
+			&i.AccessRequest.DecidedScope,
+			&i.ClientSessionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentDecidedAccessRequestsOfPrincipal = `-- name: ListRecentDecidedAccessRequestsOfPrincipal :many
+SELECT access_requests.id, access_requests.principal, access_requests.kind, access_requests.session_pk, access_requests.workspace, access_requests.verified, access_requests.server, access_requests.change, access_requests.status, access_requests.created_at, access_requests.expires_at, access_requests.decided_at, access_requests.decided_by, access_requests.decided_scope, s.session_id AS client_session_id
+FROM access_requests
+LEFT JOIN sessions s ON s.id = access_requests.session_pk
+WHERE access_requests.principal = $1
+  AND (access_requests.status <> 'pending' OR access_requests.expires_at <= now())
+ORDER BY coalesce(access_requests.decided_at, access_requests.expires_at) DESC, access_requests.id DESC
+LIMIT 5
+`
+
+type ListRecentDecidedAccessRequestsOfPrincipalRow struct {
+	AccessRequest   AccessRequest
+	ClientSessionID pgtype.Text
+}
+
+// Lists the last few access requests of a principal that were decided or
+// have expired, most recent first, for the Approvals page.
+func (q *Queries) ListRecentDecidedAccessRequestsOfPrincipal(ctx context.Context, principal string) ([]ListRecentDecidedAccessRequestsOfPrincipalRow, error) {
+	rows, err := q.db.Query(ctx, listRecentDecidedAccessRequestsOfPrincipal, principal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRecentDecidedAccessRequestsOfPrincipalRow{}
+	for rows.Next() {
+		var i ListRecentDecidedAccessRequestsOfPrincipalRow
+		if err := rows.Scan(
+			&i.AccessRequest.ID,
+			&i.AccessRequest.Principal,
+			&i.AccessRequest.Kind,
+			&i.AccessRequest.SessionPk,
+			&i.AccessRequest.Workspace,
+			&i.AccessRequest.Verified,
+			&i.AccessRequest.Server,
+			&i.AccessRequest.Change,
+			&i.AccessRequest.Status,
+			&i.AccessRequest.CreatedAt,
+			&i.AccessRequest.ExpiresAt,
+			&i.AccessRequest.DecidedAt,
+			&i.AccessRequest.DecidedBy,
+			&i.AccessRequest.DecidedScope,
+			&i.ClientSessionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWorkspaceListServerNames = `-- name: ListWorkspaceListServerNames :many
 SELECT server FROM workspace_list_servers WHERE list_id = $1 ORDER BY server
 `

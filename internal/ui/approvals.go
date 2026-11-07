@@ -101,7 +101,19 @@ func (u *UI) approvalsList(writer http.ResponseWriter, request *http.Request) {
 		approvals = append(approvals, newApprovalRow(row.Approval, row.SessionID))
 	}
 
-	u.render(writer, request, "approvals", "Approvals", approvals)
+	page := approvalsPage{Approvals: approvals}
+
+	if u.options.Workspaces != nil {
+		page.AccessRequests, page.Recent, err = u.accessRequestRows(ctx, session.Principal)
+		if err != nil {
+			u.logger.ErrorContext(ctx, "cannot list access requests for the web UI", "error", err)
+			http.Error(writer, "The gateway can't read your access requests. Try again later.", http.StatusInternalServerError)
+
+			return
+		}
+	}
+
+	u.render(writer, request, "approvals", "Approvals", page)
 }
 
 type approvalPage struct {

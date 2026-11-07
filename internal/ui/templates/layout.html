@@ -8,6 +8,7 @@
 <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false}'>
 <link rel="stylesheet" href="/ui/static/toolgate.css">
 <script src="/ui/static/htmx-2.0.7.min.js" defer></script>
+<script src="/ui/static/copy.js" defer></script>
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
 <header class="site-header">
@@ -26,6 +27,7 @@
 <a href="/ui/workspaces"{{if eq .Section "workspaces"}} aria-current="page"{{end}}>Workspaces</a>
 {{if .Secrets}}<a href="/ui/secrets"{{if eq .Section "secrets"}} aria-current="page"{{end}}>Secrets</a>
 {{end}}<a href="/ui/audit"{{if eq .Section "audit"}} aria-current="page"{{end}}>Audit</a>
+<a href="/ui/setup"{{if eq .Section "setup"}} aria-current="page"{{end}}>Setup</a>
 {{if .Admin}}<a href="/ui/blocks"{{if eq .Section "blocks"}} aria-current="page"{{end}}>Blocks</a>
 {{end}}</nav>
 <main>
