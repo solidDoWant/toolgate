@@ -33,13 +33,17 @@ This release has no breaking changes. An install of 0.4.3 upgrades with no chang
 - The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should. ([#484](https://github.com/solidDoWant/toolgate/pull/484))
 - If the gateway has no secrets keyset, the web UI no longer shows the Secrets link in its navigation. Before, the link opened a page that returned 404. ([#485](https://github.com/solidDoWant/toolgate/pull/485))
 
-Internal work: design documents and database storage for MCP sessions that all gateway replicas share through PostgreSQL ([#499](https://github.com/solidDoWant/toolgate/pull/499), [#510](https://github.com/solidDoWant/toolgate/pull/510)), and the first parts of remote MCP servers ([#501](https://github.com/solidDoWant/toolgate/pull/501), [#511](https://github.com/solidDoWant/toolgate/pull/511)).
+### In progress: not usable yet
+
+- Remote MCP servers. An MCPServerTemplate accepts the field `spec.remote`, and the gateway starts remote instances. But the gateway does not send tool calls to remote servers. The next release fixes this. ([#501](https://github.com/solidDoWant/toolgate/pull/501), [#511](https://github.com/solidDoWant/toolgate/pull/511))
+- MCP sessions shared by all gateway replicas. The database has the new table `mcp_sessions`. But the gateway replicas do not share MCP sessions through it. The next release fixes this. ([#510](https://github.com/solidDoWant/toolgate/pull/510))
+
+Internal work: design documents for MCP sessions that all gateway replicas share ([#499](https://github.com/solidDoWant/toolgate/pull/499)).
 
 ### Known issues
 
 - Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
-- With more than one gateway replica, a request can fail with `404 session not found` when it reaches another replica right after the session starts. Claude Code then marks the `toolgate` server as failed. A later release fixes this. Until then, set `config.replicas` to `1`. ([#487](https://github.com/solidDoWant/toolgate/issues/487))
-- Remote MCP servers do not work yet. An MCPServerTemplate accepts the field `spec.remote`, and the gateway starts and health-checks remote instances. But the gateway does not send tool calls to remote servers yet.
+- With more than one gateway replica, a request can fail with `404 session not found` when it reaches another replica right after the session starts. Claude Code then marks the `toolgate` server as failed. The next release fixes this. Until then, set `config.replicas` to `1`. ([#487](https://github.com/solidDoWant/toolgate/issues/487))
 - `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.3
