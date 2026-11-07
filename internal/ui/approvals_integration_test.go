@@ -16,6 +16,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/ui"
@@ -293,5 +295,63 @@ func TestDecisionsShowTheRealStatus(t *testing.T) {
 		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", token)
 		assert.Equal(t, http.StatusConflict, response.StatusCode)
 		assert.Contains(t, readBody(t, response), "This approval expired.")
+	})
+}
+
+func TestApprovalsListShowsAccessRequests(t *testing.T) {
+	env := startUIEnv(t, "")
+	env.addGrantTemplates()
+	browser := env.insertSession(t, "ar-list-session", nil)
+
+	read := func(t *testing.T) string {
+		t.Helper()
+
+		response := get(t, browser, env.server.URL+ui.ApprovalsPath)
+		require.Equal(t, http.StatusOK, response.StatusCode)
+
+		return readBody(t, response)
+	}
+
+	t.Run("an empty list says nothing is waiting", func(t *testing.T) {
+		page := read(t)
+		assert.Contains(t, page, "No approvals are waiting for you.")
+		assert.NotContains(t, page, "Access changes")
+	})
+
+	erin := auth.Identity{Principal: "erin", Groups: []string{"dev"}, Kind: auth.KindUser, Attestation: auth.AttestationUser}
+	result, err := env.workspaces.Request(t.Context(), erin, gateway.WorkspaceChange{Action: gateway.WorkspaceDefaults, Verified: gateway.ScopeAll})
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Request)
+
+	t.Run("another user's request is not listed", func(t *testing.T) {
+		assert.NotContains(t, read(t), result.Request)
+	})
+
+	defaultsID := env.requestChange(t, gateway.WorkspaceChange{Action: gateway.WorkspaceDefaults, Verified: gateway.ScopeAll})
+
+	t.Run("a pending access request shows without tool approvals", func(t *testing.T) {
+		page := read(t)
+		assert.Contains(t, page, "Access changes")
+		assert.Contains(t, page, ui.ApprovalPath(defaultsID))
+		assert.Contains(t, page, "default for verified sessions: all")
+		assert.NotContains(t, page, "No approvals are waiting for you.")
+	})
+
+	t.Run("both sections render together", func(t *testing.T) {
+		env.insertApproval(t, approvalID(5), "dave", approvalTimeout)
+
+		page := read(t)
+		assert.Contains(t, page, ui.ApprovalPath(approvalID(5)))
+		assert.Contains(t, page, ui.ApprovalPath(defaultsID))
+	})
+
+	t.Run("a denied request moves to the recent list", func(t *testing.T) {
+		_, err := db.New(env.pool).DenyAccessRequest(t.Context(), db.DenyAccessRequestParams{ID: defaultsID, Principal: "dave", DecidedBy: pgtype.Text{String: "dave", Valid: true}})
+		require.NoError(t, err)
+
+		page := read(t)
+		assert.Contains(t, page, "Recent access changes")
+		assert.Contains(t, page, "recent-access-request-"+defaultsID)
+		assert.NotContains(t, page, `id="access-request-`+defaultsID)
 	})
 }

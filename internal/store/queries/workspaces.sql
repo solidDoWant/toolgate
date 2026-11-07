@@ -228,3 +228,25 @@ FROM sessions s
 WHERE r.kind = 'scope' AND r.status = 'pending' AND r.session_pk = s.id
   AND s.ended_at IS NOT NULL AND s.ended_at > r.created_at
 RETURNING r.*, s.session_id;
+
+-- name: ListPendingAccessRequestsOfPrincipal :many
+-- Lists a principal's pending access requests that haven't expired, newest
+-- first, with the client session ID of their session, for the Approvals
+-- page.
+SELECT sqlc.embed(access_requests), s.session_id AS client_session_id
+FROM access_requests
+LEFT JOIN sessions s ON s.id = access_requests.session_pk
+WHERE access_requests.principal = @principal AND access_requests.status = 'pending' AND access_requests.expires_at > now()
+ORDER BY access_requests.created_at DESC, access_requests.id DESC
+LIMIT 100;
+
+-- name: ListRecentDecidedAccessRequestsOfPrincipal :many
+-- Lists the last few access requests of a principal that were decided or
+-- have expired, most recent first, for the Approvals page.
+SELECT sqlc.embed(access_requests), s.session_id AS client_session_id
+FROM access_requests
+LEFT JOIN sessions s ON s.id = access_requests.session_pk
+WHERE access_requests.principal = @principal
+  AND (access_requests.status <> 'pending' OR access_requests.expires_at <= now())
+ORDER BY coalesce(access_requests.decided_at, access_requests.expires_at) DESC, access_requests.id DESC
+LIMIT 5;
