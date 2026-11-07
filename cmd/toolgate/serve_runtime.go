@@ -200,6 +200,15 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Metrics:      metrics,
 	}
 
+	// Idle connector MCP sessions end with their toolgate sessions before
+	// the idle sessions are judged.
+	mcpSessionEnder := &runtime.MCPSessionEnder{
+		Pool:        pool,
+		IdleTimeout: testtime.Scale(runtime.DefaultMCPSessionIdleTimeout),
+		AuditOutput: options.auditOutput,
+		Log:         logger,
+	}
+
 	approvalExpirer := &runtime.ApprovalExpirer{Pool: pool, AuditOutput: options.auditOutput}
 
 	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger}
@@ -244,10 +253,11 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// The monitor runs only on the Lease holder, like every runnable that
 	// does not say otherwise.
 	monitor := &runtime.Monitor{
-		Store:    startStore,
-		Template: options.catalog.Running,
-		Connect:  runtime.MCPMonitorConnector,
-		Logger:   logger,
+		Store:      startStore,
+		Template:   options.catalog.Running,
+		Connect:    runtime.MCPMonitorConnector,
+		RemoteAuth: starter.RemoteAuth,
+		Logger:     logger,
 	}
 	if err := mgr.Add(manager.RunnableFunc(monitor.Run)); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
@@ -259,8 +269,8 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	queries := db.New(pool)
 	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
-		runtime.RowCleanup(queries, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, repairer.Step, teardown.Step, starter.Step, monitor.Step))))))))
+		runtime.RowCleanup(queries, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, repairer.Step, teardown.Step, starter.Step, monitor.Step)))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

@@ -248,6 +248,15 @@ func (t *Teardown) Advance(ctx context.Context, instance db.Instance) (bool, err
 		return false, nil
 	}
 
+	// A remote server's instance has no Kubernetes objects to delete.
+	if IsRemote(instance) {
+		_, err := t.write(ctx, instance.ID, func(queries *db.Queries) (int64, error) {
+			return queries.SetInstanceStopped(ctx, instance.ID)
+		})
+
+		return false, err
+	}
+
 	if !hasOwnNamespace(instance) {
 		return false, t.deleteSharedObjects(ctx, instance)
 	}

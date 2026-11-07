@@ -8,9 +8,9 @@ This page uses Authentik as the IdP. The names below come from the Coder and Aut
 
 ## Security note
 
-The gateway accepts the access tokens of every client in `oidcAudience`. Make a provider for toolgate in Authentik. Never use the provider that Coder uses for its own sign-in.
+The gateway accepts the access tokens of every client in its audiences. Make a provider for toolgate in Authentik. Never use the provider that Coder uses for its own sign-in.
 
-The IdP must give every client the same `sub` for one person. Without it, the same person has two identities in toolgate. See [Web UI](web-ui.md) for the same rule for the web UI.
+The IdP must give every client the same `sub` for one person. Without it, the same person has two identities in toolgate. This rule also applies when each client has its own issuer. In Authentik, set the subject mode of every provider to `Based on the User's hashed ID` (`hashed_user_id`). That mode gives one user the same `sub` in every provider. See [Web UI](web-ui.md) for the same rule for the web UI.
 
 ## 1. Authentik
 
@@ -20,20 +20,30 @@ Create an OAuth2/OpenID provider for Coder with these settings:
 - Redirect URI: `https://coder.example.com/external-auth/toolgate/callback`.
 - Scope mappings: `openid`, `email`, `profile` and `offline_access`.
 - Signing key: select one. Access tokens must be JWTs that the JWKS of the provider can verify.
-- Subject mode: the same as the provider of the toolgate CLI.
+- Subject mode: the same as the provider of the toolgate CLI, for example `Based on the User's hashed ID`.
 - Access token validity: at least 5 minutes.
 
 Bind the provider to an application. Give the application the same access policy as the application of toolgate.
 
 ## 2. The gateway
 
-Add the client ID of the new provider to the audiences. The first item is the audience that the CLI already uses.
+Authentik gives every provider its own issuer (the URL that the IdP writes in the `iss` claim of its tokens). The issuer of a provider is `https://auth.example.com/application/o/<application slug>/`. For example, the provider of the CLI has the issuer `https://auth.example.com/application/o/toolgate/`, and the provider for Coder has the issuer `https://auth.example.com/application/o/coder-toolgate/`.
+
+Add the issuer of the new provider to `config.oidc.additionalIssuers`, with its client ID as the audience. Keep `config.oidc.issuerURL` on the provider of the CLI and the web UI. The gateway gives that issuer to `toolgate login`.
 
 ```yaml
 config:
   oidc:
-    audience: [toolgate, coder-toolgate]
+    issuerURL: https://auth.example.com/application/o/toolgate/
+    audience: toolgate
+    additionalIssuers:
+      - issuerURL: https://auth.example.com/application/o/coder-toolgate/
+        audience: coder-toolgate
 ```
+
+The gateway selects the issuer by the `iss` claim of the token. Then it checks the token with the signing keys and the audiences of that issuer only. The gateway refuses a token from an issuer that is not in this configuration. If one issuer is down, the gateway still accepts the tokens of the other issuers. The gateway must reach `config.oidc.issuerURL` when it starts.
+
+If your IdP gives all clients one issuer (Keycloak and Okta do), do not add an issuer. Add the client ID to the audiences instead: `audience: [toolgate, coder-toolgate]`.
 
 ## 3. Coder
 

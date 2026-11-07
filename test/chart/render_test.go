@@ -726,3 +726,49 @@ func TestWorkspaceAttestationSetting(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "namespaces is required")
 }
+
+func TestOIDCAdditionalIssuersSetting(t *testing.T) {
+	issuerValues := filepath.Join(t.TempDir(), "issuers.yaml")
+	require.NoError(t, os.WriteFile(issuerValues, []byte(`config:
+  oidc:
+    additionalIssuers:
+      - issuerURL: https://idp.example.com/application/o/coder-toolgate/
+        audience: coder-toolgate
+`), 0o600))
+
+	t.Run("additional issuers go in the configuration file", func(t *testing.T) {
+		manifests := renderQuickStart(t, "--values", issuerValues)
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		assert.Equal(t, []string{"serve", "--config", "/etc/toolgate/config.yaml"}, deployment.Spec.Template.Spec.Containers[0].Args)
+
+		configMap := find[corev1.ConfigMap](t, manifests, "ConfigMap")
+
+		var file struct {
+			OIDCAdditionalIssuers []map[string]string `json:"oidcAdditionalIssuers"`
+		}
+		require.NoError(t, yaml.UnmarshalStrict([]byte(configMap.Data["config.yaml"]), &file))
+		assert.Equal(t, []map[string]string{{
+			"issuerURL": "https://idp.example.com/application/o/coder-toolgate/", "audience": "coder-toolgate",
+		}}, file.OIDCAdditionalIssuers)
+	})
+
+	t.Run("without additional issuers there is no configuration file", func(t *testing.T) {
+		manifests := renderQuickStart(t)
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		assert.NotContains(t, deployment.Spec.Template.Spec.Containers[0].Args, "--config")
+	})
+
+	t.Run("an issuer without an audience is rejected", func(t *testing.T) {
+		_, err := render(t, append(append([]string{}, quickStartValues...),
+			"config.oidc.additionalIssuers[0].issuerURL=https://idp.example.com/application/o/coder-toolgate/"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "needs an audience")
+	})
+
+	t.Run("an issuer without an issuer URL is rejected", func(t *testing.T) {
+		_, err := render(t, append(append([]string{}, quickStartValues...),
+			"config.oidc.additionalIssuers[0].audience=coder-toolgate"))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "needs an issuerURL")
+	})
+}

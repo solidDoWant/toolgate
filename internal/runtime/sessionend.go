@@ -148,56 +148,76 @@ func endSession(ctx context.Context, pool *pgxpool.Pool, auditOutput io.Writer, 
 	update func(queries *db.Queries) (db.Session, error),
 ) (ended bool, err error) {
 	err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
-		queries := db.New(tx)
+		ended, err = endSessionInTx(ctx, tx, auditOutput, id, reason, update)
 
-		if _, err := queries.LockSession(ctx, id); err != nil {
-			return fmt.Errorf("lock session: %w", err)
-		}
-
-		session, err := update(queries)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
-
-		if err != nil {
-			return fmt.Errorf("end session: %w", err)
-		}
-
-		servers, err := enabledServerNames(ctx, queries, id)
-		if err != nil {
-			return err
-		}
-
-		err = audit.NewRecorder(auditOutput, queries).Record(ctx, audit.Event{
-			Type:        "session.end",
-			Principal:   session.Principal,
-			Workspace:   session.Workspace,
-			Session:     session.SessionID,
-			Attestation: session.Attestation,
-			Details:     map[string]any{"reason": reason, "servers": servers},
-		})
-		if err != nil {
-			return err
-		}
-
-		if err := endSessionAdditions(ctx, tx, auditOutput, session); err != nil {
-			return err
-		}
-
-		if err := queries.DeleteSessionFoundTools(ctx, id); err != nil {
-			return fmt.Errorf("delete found tools: %w", err)
-		}
-
-		if err := store.Notify(ctx, tx, store.KindSession, fmt.Sprint(id)); err != nil {
-			return err
-		}
-
-		ended = true
-
-		return nil
+		return err
 	})
 
 	return ended, err
+}
+
+// endSessionInTx is endSession inside the caller's transaction. It also ends
+// the session's live MCP sessions and notifies mcpsession:<id> for each, so
+// an MCP session never outlives its toolgate session.
+func endSessionInTx(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, id int64, reason string,
+	update func(queries *db.Queries) (db.Session, error),
+) (bool, error) {
+	queries := db.New(tx)
+
+	if _, err := queries.LockSession(ctx, id); err != nil {
+		return false, fmt.Errorf("lock session: %w", err)
+	}
+
+	session, err := update(queries)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("end session: %w", err)
+	}
+
+	servers, err := enabledServerNames(ctx, queries, id)
+	if err != nil {
+		return false, err
+	}
+
+	err = audit.NewRecorder(auditOutput, queries).Record(ctx, audit.Event{
+		Type:        "session.end",
+		Principal:   session.Principal,
+		Workspace:   session.Workspace,
+		Session:     session.SessionID,
+		Attestation: session.Attestation,
+		Details:     map[string]any{"reason": reason, "servers": servers},
+	})
+	if err != nil {
+		return false, err
+	}
+
+	if err := endSessionAdditions(ctx, tx, auditOutput, session); err != nil {
+		return false, err
+	}
+
+	if err := queries.DeleteSessionFoundTools(ctx, id); err != nil {
+		return false, fmt.Errorf("delete found tools: %w", err)
+	}
+
+	mcpSessions, err := queries.EndSessionMCPSessions(ctx, id)
+	if err != nil {
+		return false, fmt.Errorf("end MCP sessions: %w", err)
+	}
+
+	for _, mcpSession := range mcpSessions {
+		if err := store.Notify(ctx, tx, store.KindMCPSession, mcpSession); err != nil {
+			return false, err
+		}
+	}
+
+	if err := store.Notify(ctx, tx, store.KindSession, fmt.Sprint(id)); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // endSessionAdditions deletes the session additions of a session that is
