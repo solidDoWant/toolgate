@@ -77,7 +77,9 @@ func TestUnverifiedSessionShowsBlockedServers(t *testing.T) {
 		assert.Contains(t, found.Note, "blocked in sessions without a verified workspace")
 		assert.Contains(t, found.Note, "toolgate workspace allow --unverified")
 
-		refused := callTool(t, session, gateway.ToolEnableServer, map[string]any{"name": "github"})
+		// Tool-search mode hides the enable tool, so the enable runs in a
+		// session without it.
+		refused := callTool(t, fixture.connect(t, alice()), gateway.ToolEnableServer, map[string]any{"name": "github"})
 		require.True(t, refused.IsError)
 		assert.Equal(t, unverifiedRefusal("github"), resultText(refused))
 		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"))
@@ -113,7 +115,9 @@ func TestUnverifiedSessionShowsBlockedServers(t *testing.T) {
 		assert.Equal(t, []string{"github__zebra_read"}, foundNames(found))
 		assert.Empty(t, found.Note)
 
-		refused := callTool(t, session, gateway.ToolEnableServer, map[string]any{"name": "other"})
+		// Tool-search mode hides the enable tool, so the enable runs in a
+		// session without it.
+		refused := callTool(t, fixture.connect(t, alice()), gateway.ToolEnableServer, map[string]any{"name": "other"})
 		require.True(t, refused.IsError)
 		assert.Equal(t, unverifiedRefusal("other"), resultText(refused))
 	})
