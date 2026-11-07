@@ -513,6 +513,16 @@ embeddings:
       storageClassName: ""
       # -- Access modes of the claim the chart creates.
       accessModes: [ReadWriteMany]
+    scaleToZero:
+      # -- Let the gateway scale the embeddings server to zero replicas when
+      # tool search is idle, and back to one when it is needed. The
+      # Deployment then has no `replicas` field. Can't be used with
+      # `config.toolSearchEmbeddings.url`. See `docs/admin/chart.md`.
+      enabled: false
+      # -- How long tool search must be idle before the gateway scales the
+      # server to zero. A duration in hours, minutes and seconds, such as
+      # `15m` or `1h30m`, from `1m` to `24h`.
+      idleTimeout: 15m
   downloader:
     image:
       # -- Image that runs the model download Job: a pinned `uv`, which runs

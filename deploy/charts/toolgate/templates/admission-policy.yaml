@@ -43,6 +43,16 @@ spec:
     # The status of toolgate's own custom resources, in the namespaces it watches.
     - name: isCatalogStatus
       expression: request.resource.group == "toolgate.soliddowant.dev" && variables.subResource == "status"
+    {{- if include "toolgate.embeddingsScaleToZero" . }}
+    # The scale of the embeddings server's Deployment, which the gateway
+    # scales between 0 and 1. Not the Deployment itself.
+    - name: isEmbeddingsScale
+      expression: >-
+        request.resource.group == "apps" && request.resource.resource == "deployments" &&
+        variables.subResource == "scale" && request.operation == "UPDATE" &&
+        variables.requestNamespace == "{{ .Release.Namespace }}" &&
+        request.name == "{{ include "toolgate.embeddingsName" . }}"
+    {{- end }}
     - name: inToolgateNamespace
       expression: >-
         namespaceObject != null && has(namespaceObject.metadata.labels) &&
@@ -54,12 +64,12 @@ spec:
         namespaceObject != null && has(namespaceObject.metadata.labels) &&
         namespaceObject.metadata.labels[?"pod-security.kubernetes.io/enforce"].orValue("") == "restricted"
   validations:
-    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inToolgateNamespace
+    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inToolgateNamespace{{ if include "toolgate.embeddingsScaleToZero" . }} || variables.isEmbeddingsScale{{ end }}
       messageExpression: >-
         "toolgate's service account may write only in namespaces labelled toolgate.soliddowant.dev/writable=true, not in " +
         (variables.requestNamespace != "" ? variables.requestNamespace : "the cluster scope")
       reason: Forbidden
-    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inRestrictedNamespace
+    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inRestrictedNamespace{{ if include "toolgate.embeddingsScaleToZero" . }} || variables.isEmbeddingsScale{{ end }}
       messageExpression: >-
         "toolgate's service account may write only in namespaces labelled pod-security.kubernetes.io/enforce=restricted, not in " +
         (variables.requestNamespace != "" ? variables.requestNamespace : "the cluster scope")

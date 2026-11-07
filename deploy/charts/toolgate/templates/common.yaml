@@ -87,6 +87,10 @@ settings from `config`.
 {{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_URL" "value" (printf "http://%s-embeddings.%s.svc:80" (include "toolgate.fullname" .) .Release.Namespace)) }}
 {{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_MODEL" "value" .Values.embeddings.server.model) }}
 {{- end }}
+{{- if include "toolgate.embeddingsScaleToZero" . }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_DEPLOYMENT" "value" (include "toolgate.embeddingsName" .)) }}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_IDLE_TIMEOUT" "value" (toString .Values.embeddings.server.scaleToZero.idleTimeout)) }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

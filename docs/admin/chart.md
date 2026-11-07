@@ -14,7 +14,7 @@ The chart installs these objects:
 - A PodDisruptionBudget that keeps at least one gateway pod running when Kubernetes drains a node. A PodDisruptionBudget is a limit on how many pods Kubernetes can evict at the same time.
 - A ServiceMonitor for the metrics Service, if you set `config.serviceMonitor.enabled` to `true`. The Prometheus Operator must be installed.
 - A ServiceAccount for the gateway.
-- A ClusterRole and a Role for that service account.
+- A ClusterRole and a Role for that service account, and a second Role if the gateway scales the embeddings server (see below).
 - A ValidatingAdmissionPolicy and its binding. An admission policy is a set of rules that the Kubernetes API server applies to each write before it stores the object.
 - The shared namespace for instances, if you set `config.sharedNamespace.name`.
 
@@ -107,6 +107,8 @@ The policy has two exceptions, because the gateway needs them to work:
 - The Lease objects in the release namespace.
 - The `status` of the toolgate custom resources, in the namespaces where you keep them.
 
+If you set `embeddings.server.scaleToZero.enabled`, the policy has a third exception: the `scale` of the Deployment `<release>-toolgate-embeddings` in the release namespace. The `scale` is a part of a Deployment that holds only the number of replicas. The gateway cannot change any other field of that Deployment, and it cannot scale any other Deployment. See [Scale the embeddings server to zero](#scale-the-embeddings-server-to-zero).
+
 The policy refuses a write when it cannot evaluate its rules (`failurePolicy: Fail`).
 
 Pod Security admission is a part of Kubernetes. It checks each pod in a namespace against the level in the namespace's `pod-security.kubernetes.io/enforce` label. The level `restricted` refuses privileged pods, pods in the node's network or process namespaces, and `hostPath` volumes. Every namespace that the gateway can write in has this level. So the gateway cannot start a pod that gets access to the node. This also applies to pods that a Deployment or a StatefulSet creates.
@@ -128,6 +130,29 @@ toolgate does not rename the objects of a template. Several instances share this
 - Each `metadata.name` contains `${instance.id}`, and `endpoint.service` contains it too.
 - The selectors contain `toolgate.soliddowant.dev/instance: ${instance.id}`. This applies to `spec.selector` of a Service, `spec.selector.matchLabels` and `spec.template.metadata.labels` of a Deployment or StatefulSet, and `spec.podSelector.matchLabels` of a NetworkPolicy.
 - The template contains only these kinds: Pod, Deployment, StatefulSet, Service, ConfigMap, Secret, ServiceAccount, NetworkPolicy and PersistentVolumeClaim. toolgate cannot check the names and selectors of other kinds, such as `CiliumNetworkPolicy` or `HelmRelease`.
+
+## Scale the embeddings server to zero
+
+The chart can run the embeddings server of tool search (see [Tool search](tool-search.md)). The server holds its memory all the time. If you set `embeddings.server.scaleToZero.enabled` to `true`, the gateway scales the server to zero replicas when tool search is not in use. It scales the server back to one replica when tool search is needed again.
+
+| Value | Meaning |
+|---|---|
+| `embeddings.server.scaleToZero.enabled` | Let the gateway scale the embeddings server. The default is `false`. It has no effect if `embeddings.server.enabled` is `false`. |
+| `embeddings.server.scaleToZero.idleTimeout` | How long tool search must be idle before the gateway scales the server to zero. The default is `15m`. Use hours (`h`), minutes (`m`) and seconds (`s`), for example `1h30m`. The value must be from `1m` to `24h`. |
+
+The chart refuses to render if one of these is true:
+
+- `idleTimeout` is not in this format, or it is outside `1m` to `24h`.
+- `config.toolSearchEmbeddings.url` has a value. toolgate scales only the server that the chart runs, and never a server at a URL that you set.
+
+The chart gives the name of the Deployment and the idle timeout to the gateway in the settings `toolSearchEmbeddingsScaleToZeroDeployment` and `toolSearchEmbeddingsScaleToZeroIdleTimeout` (see [Configuration](configuration.md)).
+
+When the value is `true`, the chart adds these rights for the gateway's service account:
+
+- A Role and a RoleBinding in the release namespace. The Role allows `get` and `patch` on `deployments/scale`, and `get` on `deployments`. Both rules apply only to the Deployment `<release>-toolgate-embeddings`. The Role does not allow `list` or `watch`.
+- One exception in the admission policy, for the `scale` of that Deployment (see [What the admission policy prevents](#what-the-admission-policy-prevents)).
+
+When the value is `true`, the Deployment of the embeddings server has no `replicas` field. So `helm upgrade` does not reset the number of replicas that the gateway set. If you use Flux or Argo CD, their drift detection also compares the replicas only when the chart sets them. So they do not undo a scale by the gateway. Do not add `replicas` to the Deployment in a patch or a post-renderer. A sync then resets the scale of the gateway.
 
 ## Database rights and the migration Job
 

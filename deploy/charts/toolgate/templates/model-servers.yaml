@@ -109,7 +109,12 @@ metadata:
   labels: {{- include "toolgate.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $entry.name }}
 spec:
+  {{- if not (include "toolgate.embeddingsScaleToZero" $) }}
   replicas: 1
+  {{- else }}
+  # No replicas: the gateway scales this Deployment between 0 and 1, and an
+  # upgrade must not reset what it set.
+  {{- end }}
   strategy:
     type: Recreate
   selector:
