@@ -30,6 +30,9 @@ const unverifiedDefaultNote = "A workspace's list limits a process holding your 
 type WorkspaceSource interface {
 	// Scopes returns principal's defaults and lists.
 	Scopes(ctx context.Context, principal string) (gateway.WorkspaceScopes, error)
+	// SessionEntries returns the scope entries of the sessions, by sessions
+	// row ID.
+	SessionEntries(ctx context.Context, sessionPKs []int64) (map[int64]gateway.ScopeEntries, error)
 	// AccessibleServers returns the servers identity has access to.
 	AccessibleServers(identity auth.Identity) []string
 	// OpenWorkspaces returns the verified workspaces of principal's open

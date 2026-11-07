@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -13,14 +14,16 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/principal"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
 // Sessions page bounds.
 const (
-	// DecisionsShown is the number of tool.decision events on a session's page.
-	DecisionsShown = 20
+	// CallsShown is the number of call events on a session's page.
+	CallsShown = 50
 	// maxSessionsShown bounds the list of sessions.
 	maxSessionsShown = 500
 	// ActivityWindow is how far back the activity counts of the list look.
@@ -159,18 +162,57 @@ type filterLink struct {
 	Current bool
 }
 
-type decisionRow struct {
+// callRow is one call event on the session page.
+type callRow struct {
 	Key        string
 	OccurredAt time.Time
 	Server     string
 	Tool       string
-	Outcome    string
+	// Outcome is the word for the outcome badge.
+	Outcome string
+	// Reason is why a call was refused or denied.
+	Reason string
+	// LatencyMS is the upstream duration of a result, or -1 when unknown.
+	LatencyMS int64
+}
+
+// sessionServerRow is one enabled server of the session page.
+type sessionServerRow struct {
+	// Template is namespace/name of the template.
+	Template string
+	Name     string
+	// Namespace is the namespace of the template.
+	Namespace string
+	Status    string
+	Reason    string
+	Remote    bool
+}
+
+// scopeView is what a session may use, from the workspace, the defaults and
+// the session's own additions.
+type scopeView struct {
+	// Known is false when the scope can't be shown (workspace lists are off).
+	Known bool
+	// Verified is true for a session in an attested workspace.
+	Verified bool
+	// Base says where the base list comes from, in words.
+	Base string
+	// BaseServers are the servers of the list that applies, when it is a list.
+	BaseServers []string
+	// WorkspaceAllowed and WorkspaceDenied are the workspace's scope entries.
+	WorkspaceAllowed, WorkspaceDenied []string
+	// SessionAdded are servers added for this session only; SessionAllowed
+	// and SessionDenied are its scope entries.
+	SessionAdded                  []string
+	SessionAllowed, SessionDenied []string
 }
 
 type sessionPage struct {
-	Session   sessionRow
-	Servers   []string
-	Decisions []decisionRow
+	Session  sessionRow
+	Servers  []sessionServerRow
+	Scope    scopeView
+	Calls    []callRow
+	AuditURL string
 }
 
 func clientText(name, version string) string {
@@ -402,57 +444,204 @@ func (u *UI) sessionPageHandler(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	servers, err := u.queries.ListSessionServers(ctx, id)
+	data, err := u.buildSessionPage(ctx, session, row)
 	if err != nil {
-		u.logger.ErrorContext(ctx, "cannot read a session's servers for the web UI", "error", err)
+		u.logger.ErrorContext(ctx, "cannot read a session's details for the web UI", "error", err)
 		http.Error(writer, "The gateway can't read the session. Try again later.", http.StatusInternalServerError)
 
 		return
 	}
 
-	events, err := u.queries.ListRecentDecisions(ctx, db.ListRecentDecisionsParams{
-		Principal: row.Principal,
-		Session:   row.SessionID,
-		Since:     row.CreatedAt,
-		PageSize:  DecisionsShown,
-	})
-	if err != nil {
-		u.logger.ErrorContext(ctx, "cannot read a session's decisions for the web UI", "error", err)
-		http.Error(writer, "The gateway can't read the audit log. Try again later.", http.StatusInternalServerError)
-
-		return
-	}
-
-	data := sessionPage{Session: toSessionRow(row, time.Now(), u.resumeWindow()), Servers: make([]string, 0, len(servers)), Decisions: make([]decisionRow, 0, len(events))}
-
-	data.Session.Who = u.namesFor(ctx, session.Principal, row.Principal).show(row.Principal)
-
-	for _, server := range servers {
-		data.Servers = append(data.Servers, server.TemplateNs+"/"+server.TemplateName)
-	}
-
-	for _, event := range events {
-		data.Decisions = append(data.Decisions, decisionRow{
-			Key:        eventKey(event.OccurredAt.Time, event.ID),
-			OccurredAt: event.OccurredAt.Time.UTC(),
-			Server:     event.Server,
-			Tool:       event.Tool,
-			Outcome:    decisionOutcome(event.Details),
-		})
-	}
-
 	u.render(writer, request, "session", "Session", data)
 }
 
-// decisionOutcome reads the decision ("allow" or "deny") from an event's details.
-func decisionOutcome(details []byte) string {
-	var parsed struct {
-		Decision string `json:"decision"`
+func (u *UI) buildSessionPage(ctx context.Context, viewer Session, row db.Session) (sessionPage, error) {
+	data := sessionPage{
+		Session:  toSessionRow(row, time.Now(), u.resumeWindow()),
+		AuditURL: "/ui/audit?" + url.Values{"session": {row.SessionID}}.Encode(),
 	}
 
-	if err := json.Unmarshal(details, &parsed); err != nil {
-		return ""
+	data.Session.Who = u.namesFor(ctx, viewer.Principal, row.Principal).show(row.Principal)
+
+	client, err := u.queries.GetSessionClient(ctx, row.ID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return sessionPage{}, fmt.Errorf("read client: %w", err)
 	}
 
-	return parsed.Decision
+	data.Session.Client = clientText(client.ClientName, client.ClientVersion)
+
+	if data.Servers, err = u.sessionServers(ctx, viewer, row); err != nil {
+		return sessionPage{}, err
+	}
+
+	if data.Scope, err = u.sessionScope(ctx, row); err != nil {
+		return sessionPage{}, err
+	}
+
+	events, err := u.queries.ListSessionCallEvents(ctx, db.ListSessionCallEventsParams{
+		Principal: row.Principal,
+		Session:   row.SessionID,
+		Since:     row.CreatedAt,
+		PageSize:  CallsShown,
+	})
+	if err != nil {
+		return sessionPage{}, fmt.Errorf("read calls: %w", err)
+	}
+
+	data.Calls = make([]callRow, 0, len(events))
+
+	for _, event := range events {
+		data.Calls = append(data.Calls, callRowOf(event))
+	}
+
+	return data, nil
+}
+
+// sessionServers lists the session's enabled servers with the status the
+// session's own identity would see.
+func (u *UI) sessionServers(ctx context.Context, viewer Session, row db.Session) ([]sessionServerRow, error) {
+	enabled, err := u.queries.ListSessionServers(ctx, row.ID)
+	if err != nil {
+		return nil, fmt.Errorf("read servers: %w", err)
+	}
+
+	servers := make([]sessionServerRow, 0, len(enabled))
+	if len(enabled) == 0 {
+		return servers, nil
+	}
+
+	known := map[string]gateway.ServerInfo{}
+
+	if u.options.Servers != nil {
+		identity := auth.Identity{
+			Principal: row.Principal, Kind: auth.KindUser, Attestation: row.Attestation, Workspace: row.Workspace,
+		}
+		// Only the owner's groups are known; they decide catalog access.
+		if viewer.Principal == row.Principal {
+			identity.Email, identity.Groups = viewer.Email, viewer.Groups
+		}
+
+		infos, err := u.options.Servers.Catalog(ctx, identity)
+		if err != nil {
+			return nil, fmt.Errorf("read the catalog: %w", err)
+		}
+
+		for _, info := range infos {
+			known[info.Name] = info
+		}
+	}
+
+	for _, server := range enabled {
+		each := sessionServerRow{Template: server.TemplateNs + "/" + server.TemplateName, Name: server.TemplateName, Namespace: server.TemplateNs, Status: "unknown"}
+		if info, found := known[server.TemplateName]; found {
+			each.Status, each.Reason, each.Remote = info.Status, info.Reason, info.Remote
+		}
+
+		servers = append(servers, each)
+	}
+
+	return servers, nil
+}
+
+// sessionScope reads what the session's workspace, the owner's defaults and
+// the session's additions allow and deny.
+func (u *UI) sessionScope(ctx context.Context, row db.Session) (scopeView, error) {
+	if u.options.Workspaces == nil {
+		return scopeView{}, nil
+	}
+
+	scopes, err := u.options.Workspaces.Scopes(ctx, row.Principal)
+	if err != nil {
+		return scopeView{}, fmt.Errorf("read workspace lists: %w", err)
+	}
+
+	view := scopeView{Known: true, Verified: row.Attestation == "attested" && row.Workspace != ""}
+
+	if view.Verified {
+		view.Base = "the default for verified workspaces: " + scopeDefaultText(scopes.VerifiedDefault)
+
+		for _, list := range scopes.Lists {
+			if list.Workspace == row.Workspace {
+				view.Base, view.BaseServers = "the list of this workspace", list.Servers
+			}
+		}
+
+		entries := scopes.Entries[row.Workspace]
+		view.WorkspaceAllowed, view.WorkspaceDenied = entries.Allowed, entries.Denied
+	} else {
+		view.Base = "the default for sessions without a verified workspace: " + scopeDefaultText(scopes.UnverifiedDefault)
+		if scopes.UnverifiedDefault == gateway.ScopeList {
+			view.BaseServers = scopes.UnverifiedServers
+		}
+	}
+
+	if view.SessionAdded, err = u.queries.ListSessionAdditions(ctx, db.ListSessionAdditionsParams{Principal: row.Principal, SessionID: row.SessionID}); err != nil {
+		return scopeView{}, fmt.Errorf("read session additions: %w", err)
+	}
+
+	entries, err := u.options.Workspaces.SessionEntries(ctx, []int64{row.ID})
+	if err != nil {
+		return scopeView{}, fmt.Errorf("read session scope entries: %w", err)
+	}
+
+	view.SessionAllowed, view.SessionDenied = entries[row.ID].Allowed, entries[row.ID].Denied
+
+	return view, nil
+}
+
+func scopeDefaultText(value string) string {
+	switch value {
+	case gateway.ScopeAll:
+		return "all servers"
+	case gateway.ScopeList:
+		return "a list of servers"
+	default:
+		return "no servers"
+	}
+}
+
+// callRowOf maps a call event to a row. A decision shows its decision, a
+// result its outcome with the latency, and an approval event its state.
+func callRowOf(event db.ListSessionCallEventsRow) callRow {
+	var details struct {
+		Decision   string `json:"decision"`
+		Outcome    string `json:"outcome"`
+		Reason     string `json:"reason"`
+		Approval   string `json:"approval"`
+		DurationMS *int64 `json:"duration_ms"`
+	}
+
+	_ = json.Unmarshal(event.Details, &details)
+
+	row := callRow{
+		Key:        eventKey(event.OccurredAt.Time, event.ID),
+		OccurredAt: event.OccurredAt.Time.UTC(),
+		Server:     event.Server,
+		Tool:       event.Tool,
+		Reason:     details.Reason,
+		LatencyMS:  -1,
+	}
+
+	switch event.Type {
+	case "tool.result":
+		row.Outcome = details.Outcome
+		if details.DurationMS != nil {
+			row.LatencyMS = *details.DurationMS
+		}
+	case "approval.request":
+		row.Outcome = "pending"
+	case "approval.expire":
+		row.Outcome = "expired"
+	default:
+		switch {
+		case details.Decision == "allow" && details.Approval != "":
+			row.Outcome = "approved"
+		case details.Decision == "refuse":
+			row.Outcome = "refused"
+		default:
+			row.Outcome = details.Decision
+		}
+	}
+
+	return row
 }

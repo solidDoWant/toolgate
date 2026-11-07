@@ -1,31 +1,54 @@
 {{define "content"}}
-<dl id="session">
-<dt>Principal</dt><dd>{{template "who" .Data.Session.Who}}</dd>
-<dt>Session</dt><dd>{{.Data.Session.SessionID}}</dd>
-<dt>Workspace</dt><dd>{{template "ws" .Data.Session.WorkspaceLabel}}</dd>
-<dt>Attestation</dt><dd><span class="badge {{badge .Data.Session.Attestation}}">{{.Data.Session.Attestation}}</span></dd>
-<dt>Started (UTC)</dt><dd>{{.Data.Session.CreatedAt.Format "2006-01-02 15:04:05"}}</dd>
-<dt>Last seen (UTC)</dt><dd>{{.Data.Session.LastSeenAt.Format "2006-01-02 15:04:05"}}</dd>
-</dl>
-<h2>Enabled servers</h2>
+{{with .Data.Session}}<dl id="session">
+<dt>Who</dt><dd>{{template "who" .Who}}</dd>
+<dt>Where</dt><dd>{{template "ws" .WorkspaceLabel}} {{if .Verified}}<span class="badge badge-ok">verified</span>{{else}}<span class="badge badge-warn">unverified</span>{{end}}</dd>
+<dt>Client</dt><dd>{{if .Client}}{{.Client}}{{else}}unknown client{{end}} <span class="badge badge-neutral">{{if .Connector}}connector{{else}}helper{{end}}</span></dd>
+<dt>State</dt><dd>{{if eq .State.Name "resumable"}}<span class="badge badge-neutral">resumable until {{.State.Until.UTC}}</span>{{else}}<span class="badge {{if eq .State.Name "active"}}badge-ok{{else}}badge-neutral{{end}}">{{.State.Name}}</span>{{end}}</dd>
+<dt>Tool search</dt><dd>{{if .ToolSearch}}on{{else}}off{{end}}</dd>
+<dt>Session</dt><dd><span title="{{.SessionID}}">{{.ShortID}}</span> <details class="copy-id"><summary>Copy</summary><input readonly size="24" aria-label="Full session ID" value="{{.SessionID}}"></details></dd>
+<dt>Started</dt><dd>{{template "reltime" (since .CreatedAt)}}</dd>
+<dt>Last activity</dt><dd>{{template "reltime" (since .LastSeenAt)}}</dd>
+</dl>{{end}}
+<h2>Servers</h2>
 {{if .Data.Servers}}
-<ul id="servers">
-{{range .Data.Servers}}<li>{{.}}</li>
-{{end}}</ul>
+<div class="table-wrap"><table id="servers">
+<thead><tr><th>Server</th><th>Status</th><th>Instance</th></tr></thead>
+<tbody>
+{{range .Data.Servers}}<tr>
+<td><a href="/ui/servers/{{.Name}}">{{.Template}}</a></td>
+<td><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</td>
+<td>{{if .Remote}}remote{{else}}namespace {{.Namespace}}{{end}}</td>
+</tr>
+{{end}}</tbody>
+</table></div>
 {{else}}
 <p class="empty">No servers are enabled.</p>
 {{end}}
-<h2>Last {{len .Data.Decisions}} decisions</h2>
-{{if .Data.Decisions}}
+<h2>Effective scope</h2>
+{{with .Data.Scope}}{{if .Known}}
+<div id="scope">
+<p>Base: {{.Base}}.{{if .BaseServers}}</p>
+<ul class="allowed">{{range .BaseServers}}<li>{{.}}</li>{{end}}</ul>{{else}}</p>{{end}}
+{{if .Verified}}<p>This workspace: allows {{if .WorkspaceAllowed}}{{range .WorkspaceAllowed}}<code>{{.}}</code> {{end}}{{else}}nothing by name{{end}}; denies {{if .WorkspaceDenied}}{{range .WorkspaceDenied}}<code>{{.}}</code> {{end}}{{else}}nothing{{end}}.</p>{{end}}
+<p>This session only: adds {{if .SessionAdded}}{{range .SessionAdded}}<code>{{.}}</code> {{end}}{{else}}no servers{{end}}; allows {{if .SessionAllowed}}{{range .SessionAllowed}}<code>{{.}}</code> {{end}}{{else}}nothing by name{{end}}; denies {{if .SessionDenied}}{{range .SessionDenied}}<code>{{.}}</code> {{end}}{{else}}nothing{{end}}.</p>
+<p>Change this on the <a href="/ui/workspaces">Workspaces page</a>. See the catalog on the <a href="/ui/servers">Servers page</a>.</p>
+</div>
+{{else}}
+<p class="empty">The scope isn't available on this gateway.</p>
+{{end}}{{end}}
+<h2>Recent tool calls</h2>
+{{if .Data.Calls}}
 <div class="table-wrap"><table id="decisions">
-<thead><tr><th>Time (UTC)</th><th>Server</th><th>Tool</th><th>Decision</th><th></th></tr></thead>
+<thead><tr><th>Time</th><th>Server</th><th>Tool</th><th>Outcome</th><th>Latency</th><th>Reason</th><th></th></tr></thead>
 <tbody>
-{{range .Data.Decisions}}<tr>
-<td>{{.OccurredAt.Format "2006-01-02 15:04:05.000000"}}</td><td>{{.Server}}</td><td>{{.Tool}}</td><td><span class="badge {{badge .Outcome}}">{{.Outcome}}</span></td>
+{{range .Data.Calls}}<tr>
+<td>{{template "reltime" (since .OccurredAt)}}</td><td>{{.Server}}</td><td>{{.Tool}}</td><td>{{template "outcome" (outcome .Outcome)}}</td>
+<td>{{if ge .LatencyMS 0}}{{.LatencyMS}} ms{{end}}</td><td>{{.Reason}}</td>
 <td><a href="/ui/audit/events/{{.Key}}">Open</a></td>
 </tr>
 {{end}}</tbody>
 </table></div>
+<p><a href="{{.Data.AuditURL}}">All events of this session in the audit log</a></p>
 {{else}}
 <p class="empty">No tool calls yet.</p>
 {{end}}

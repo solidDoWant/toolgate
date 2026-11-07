@@ -68,8 +68,9 @@ func decisionTools(page string) []string {
 
 	for _, row := range strings.Split(page[start:], "<tr>")[1:] {
 		cells := cellOfRow.FindAllStringSubmatch(row, -1)
-		if len(cells) >= 3 {
-			tools = append(tools, cells[2][1])
+		// The time and outcome cells hold tags, so only plain cells match.
+		if len(cells) >= 2 {
+			tools = append(tools, cells[1][1])
 		}
 	}
 
@@ -86,9 +87,9 @@ func TestSessionPages(t *testing.T) {
 	other := env.insertGatewaySession(t, "erin", "theirs", false, "jira")
 	ended := env.insertGatewaySession(t, "dave", "gone", true)
 
-	// 21 decisions: the page shows the newest 20.
-	for index := range 21 {
-		env.insertDecision(t, "tool.decision", "dave", "mine", fmt.Sprintf("tool-%02d", index), now.Add(-time.Duration(30-index)*time.Minute))
+	// 51 decisions: the page shows the newest 50.
+	for index := range 51 {
+		env.insertDecision(t, "tool.decision", "dave", "mine", fmt.Sprintf("tool-%02d", index), now.Add(-time.Duration(60-index)*time.Minute))
 	}
 
 	env.insertDecision(t, "tool.call", "dave", "mine", "not-a-decision", now.Add(-time.Minute))
@@ -116,16 +117,16 @@ func TestSessionPages(t *testing.T) {
 		assert.NotContains(t, page, fmt.Sprintf("/ui/sessions/%d\"", ended))
 	})
 
-	t.Run("a session shows its servers and last 20 decisions", func(t *testing.T) {
+	t.Run("a session shows its servers and last 50 calls", func(t *testing.T) {
 		response := get(t, user, fmt.Sprintf("%s/ui/sessions/%d", env.server.URL, mine))
 		require.Equal(t, http.StatusOK, response.StatusCode)
 
 		page := readBody(t, response)
-		assert.Contains(t, page, "<li>default/github</li>")
-		assert.Contains(t, page, "<li>default/wiki</li>")
+		assert.Contains(t, page, ">default/github</a>")
+		assert.Contains(t, page, ">default/wiki</a>")
 
 		var want []string
-		for index := 20; index >= 1; index-- {
+		for index := 50; index >= 1; index-- {
 			want = append(want, fmt.Sprintf("tool-%02d", index))
 		}
 
@@ -217,4 +218,76 @@ func TestSessionsPage(t *testing.T) {
 	require.Equal(t, int64(200), open(t, "/ui/sessions?user=all"))
 	assert.ElementsMatch(t, []string{mineURL, otherURL}, links())
 	assert.Equal(t, int64(200), open(t, otherURL))
+}
+
+// insertCallEvent stores an audit event of a session with details.
+func (e *uiEnv) insertCallEvent(t *testing.T, eventType, principal, sessionID, server, tool, details string, at time.Time) {
+	t.Helper()
+
+	require.NoError(t, store.CreateAuditPartitions(t.Context(), e.pool, at))
+
+	_, err := e.pool.Exec(t.Context(),
+		`INSERT INTO audit_events (occurred_at, type, principal, session, server, tool, details)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+		at, eventType, principal, sessionID, server, tool, details)
+	require.NoError(t, err)
+}
+
+func TestSessionPageSections(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	user := env.insertSession(t, "sections-user", nil)
+
+	id := env.insertGatewaySession(t, "dave", "sections", false, "github", "prod-db")
+	now := time.Now().UTC()
+
+	_, err := env.pool.Exec(t.Context(),
+		`UPDATE sessions SET workspace = 'coder/dave/ws', attestation = 'attested', tool_search = true WHERE id = $1`, id)
+	require.NoError(t, err)
+	_, err = env.pool.Exec(t.Context(),
+		`INSERT INTO mcp_sessions (id, session_pk, principal, session_id, workspace, attestation, protocol_version, initialize_params)
+		 VALUES ('m1', $1, 'dave', 'sections', 'coder/dave/ws', 'attested', '2025-06-18', '{"clientInfo":{"name":"Claude Code","version":"2.1.319"}}'::jsonb)`, id)
+	require.NoError(t, err)
+	_, err = env.pool.Exec(t.Context(), `INSERT INTO session_additions (session_pk, server, request_id) VALUES ($1, 'extra-server', 'r1')`, id)
+	require.NoError(t, err)
+
+	env.insertCallEvent(t, "tool.decision", "dave", "sections", "github", "refused-tool", `{"decision":"refuse","reason":"no grant for this tool"}`, now.Add(-5*time.Minute))
+	env.insertCallEvent(t, "tool.result", "dave", "sections", "github", "slow-tool", `{"outcome":"ok","duration_ms":1234}`, now.Add(-4*time.Minute))
+	env.insertCallEvent(t, "approval.request", "dave", "sections", "github", "needs-approval", `{"approval":"a1"}`, now.Add(-3*time.Minute))
+	env.insertCallEvent(t, "tool.decision", "dave", "sections", "github", "approved-tool", `{"decision":"allow","approval":"a1"}`, now.Add(-2*time.Minute))
+	env.insertCallEvent(t, "tool.search", "dave", "sections", "", "", `{}`, now.Add(-time.Minute))
+
+	response := get(t, user, fmt.Sprintf("%s/ui/sessions/%d", env.server.URL, id))
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	page := readBody(t, response)
+
+	t.Run("the header shows where, client and tool search", func(t *testing.T) {
+		assert.Contains(t, page, "Coder workspace ws")
+		assert.Contains(t, page, "verified")
+		assert.Contains(t, page, "Claude Code 2.1.319")
+		assert.Contains(t, page, "helper")
+		assert.Contains(t, page, "<dt>Tool search</dt><dd>on</dd>")
+	})
+
+	t.Run("servers show their status and instance", func(t *testing.T) {
+		assert.Regexp(t, `default/github</a></td>\s*<td><span class="badge badge-ok">ready</span>`, page)
+		assert.Regexp(t, `<span class="badge badge-bad">blocked</span> Only from an attested environment`, page)
+		assert.Contains(t, page, "namespace default")
+	})
+
+	t.Run("the effective scope shows additions and links to the changing pages", func(t *testing.T) {
+		assert.Contains(t, page, `id="scope"`)
+		assert.Contains(t, page, "<code>extra-server</code>")
+		assert.Contains(t, page, `href="/ui/workspaces"`)
+	})
+
+	t.Run("recent calls show outcome, latency, reason and approvals", func(t *testing.T) {
+		assert.Contains(t, page, "no grant for this tool")
+		assert.Contains(t, page, "1234 ms")
+		assert.Contains(t, page, `badge badge-bad">refused`)
+		assert.Contains(t, page, `badge badge-warn">pending`)
+		assert.Contains(t, page, `badge badge-ok">approved`)
+		assert.NotContains(t, page, "tool.search")
+		assert.Contains(t, page, `href="/ui/audit?session=sections"`)
+	})
 }
