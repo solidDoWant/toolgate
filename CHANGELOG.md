@@ -2,9 +2,27 @@
 
 ## 0.4.3
 
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. In this patch release, the Helm chart creates no network policies. The cluster owner writes them.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.3`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.3`. Follow `docs/admin/quick-start.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
 ### Upgrade notes for admins
 
-- Breaking: the chart value `config.database.migrationEgress` is gone, and the migration Job no longer gets a NetworkPolicy. The chart now renders no network policies. Write your own, see `docs/admin/chart.md`.
+- Breaking: the chart value `config.database.migrationEgress` is removed, and the migration Job no longer gets a NetworkPolicy. ([#480](https://github.com/solidDoWant/toolgate/pull/480))
+
+### Deployment
+
+- The Helm chart creates no NetworkPolicy objects. Network policy is the job of the cluster owner. The section "Network policies" in `docs/admin/chart.md` lists the traffic that each pod of the chart needs. The NetworkPolicy objects that the gateway creates in the `tg-*` instance namespaces did not change. They still isolate the MCP servers. ([#480](https://github.com/solidDoWant/toolgate/pull/480))
+
+Internal work: a chart test that makes sure that the chart renders no network policies.
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.2
 
