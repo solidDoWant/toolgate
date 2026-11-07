@@ -128,7 +128,7 @@ func auditEventLinks(t *testing.T, browser context.Context, publicURL, server st
 	require.NoError(t, err)
 
 	rows, err := chromedp.Run(browser, chromedp.Evaluate[[]map[string]string](
-		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => ({type: row.cells[1].innerText, href: row.querySelector('a').getAttribute('href')}))`))
+		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => ({type: row.cells[2].querySelector('a').getAttribute('title'), href: row.querySelector('a[href^="/ui/audit/events/"]').getAttribute('href')}))`))
 	require.NoError(t, err)
 
 	links := map[string]string{}

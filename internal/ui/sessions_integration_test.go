@@ -194,7 +194,7 @@ func TestSessionsPage(t *testing.T) {
 
 	links := func() []string {
 		hrefs, err := chromedp.Run(ctx, chromedp.Evaluate[[]string](
-			`Array.from(document.querySelectorAll('#sessions tbody a')).map(a => a.getAttribute('href'))`))
+			`Array.from(document.querySelectorAll('#sessions tbody a[href^="/ui/sessions/"]')).map(a => a.getAttribute('href'))`))
 		require.NoError(t, err)
 
 		return hrefs

@@ -11,6 +11,72 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countSessionActivity = `-- name: CountSessionActivity :many
+SELECT s.id AS session_pk,
+       (SELECT count(*) FROM session_servers ss
+        JOIN instances i ON i.template_ns = ss.template_ns AND i.template_name = ss.template_name
+        WHERE ss.session_pk = s.id AND i.desired = 'running' AND i.status = 'ready'
+          AND (i.scope = 'shared'
+               OR (i.scope = 'per-user' AND i.owner_principal = s.principal)
+               OR (i.scope = 'per-session' AND i.scope_key = 'session:' || s.principal || ':' || s.session_id)))::bigint AS running_instances,
+       (SELECT count(*) FROM audit_events a
+        WHERE a.type = 'tool.decision' AND a.principal = s.principal AND a.session = s.session_id
+          AND a.occurred_at >= $1::timestamptz)::bigint AS tool_calls,
+       (SELECT count(*) FROM audit_events a
+        WHERE a.type = 'tool.decision' AND a.principal = s.principal AND a.session = s.session_id
+          AND a.occurred_at >= $1::timestamptz
+          AND a.details ->> 'decision' IN ('deny', 'refuse'))::bigint AS refusals,
+       (SELECT count(*) FROM approvals p
+        WHERE p.session_pk = s.id AND p.principal = s.principal AND p.status = 'pending'
+          AND p.expires_at > now())::bigint AS pending_approvals
+FROM sessions s
+WHERE s.id = ANY($2::bigint[])
+`
+
+type CountSessionActivityParams struct {
+	Since      pgtype.Timestamptz
+	SessionPks []int64
+}
+
+type CountSessionActivityRow struct {
+	SessionPk        int64
+	RunningInstances int64
+	ToolCalls        int64
+	Refusals         int64
+	PendingApprovals int64
+}
+
+// Counts, for each of the given sessions: the ready instances of its enabled
+// servers that it uses (shared ones, its owner's per-user ones and its own
+// per-session ones), the tool decisions and refusals recorded for it since
+// @since, and its unexpired pending approvals. Audit events only count for
+// the session's own principal.
+func (q *Queries) CountSessionActivity(ctx context.Context, arg CountSessionActivityParams) ([]CountSessionActivityRow, error) {
+	rows, err := q.db.Query(ctx, countSessionActivity, arg.Since, arg.SessionPks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountSessionActivityRow{}
+	for rows.Next() {
+		var i CountSessionActivityRow
+		if err := rows.Scan(
+			&i.SessionPk,
+			&i.RunningInstances,
+			&i.ToolCalls,
+			&i.Refusals,
+			&i.PendingApprovals,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countUILogins = `-- name: CountUILogins :one
 SELECT count(*) FROM ui_logins
 `
@@ -200,6 +266,39 @@ func (q *Queries) ListRecentDecisions(ctx context.Context, arg ListRecentDecisio
 			&i.Tool,
 			&i.Details,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listServersForSessions = `-- name: ListServersForSessions :many
+SELECT session_pk, template_ns, template_name FROM session_servers
+WHERE session_pk = ANY($1::bigint[])
+ORDER BY session_pk, template_ns, template_name
+`
+
+type ListServersForSessionsRow struct {
+	SessionPk    int64
+	TemplateNs   string
+	TemplateName string
+}
+
+// Lists the enabled servers of the given sessions, for the Sessions page.
+func (q *Queries) ListServersForSessions(ctx context.Context, sessionPks []int64) ([]ListServersForSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listServersForSessions, sessionPks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListServersForSessionsRow{}
+	for rows.Next() {
+		var i ListServersForSessionsRow
+		if err := rows.Scan(&i.SessionPk, &i.TemplateNs, &i.TemplateName); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

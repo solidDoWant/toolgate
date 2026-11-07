@@ -1,21 +1,33 @@
 {{define "content"}}
 <form method="get" action="/ui/audit" id="filter">
-{{if .Data.CanFilterPrincipal}}<label>Principal <input type="text" name="principal" value="{{.Data.Filter.Principal}}"></label>
-{{end}}<label>Workspace <input type="text" name="workspace" value="{{.Data.Filter.Workspace}}"></label>
-<label>Session <input type="text" name="session" value="{{.Data.Filter.Session}}"></label>
-<label>Server <input type="text" name="server" value="{{.Data.Filter.Server}}"></label>
-<label>Tool <input type="text" name="tool" value="{{.Data.Filter.Tool}}"></label>
+<label>Time <select name="range">{{range .Data.Ranges}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
 <label>From (UTC) <input type="datetime-local" name="from" value="{{.Data.FromInput}}"></label>
 <label>To (UTC) <input type="datetime-local" name="to" value="{{.Data.ToInput}}"></label>
+<label>Category <select name="category">{{range .Data.Categories}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<label>Event types <select name="type" multiple size="4">{{range .Data.EventTypes}}<option value="{{.Value}}" title="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+<label>Outcome <select name="outcome">{{range .Data.Outcomes}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></label>
+{{if .Data.CanFilterPrincipal}}<label>User <select name="principal">{{range .Data.Principals}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Everyone{{end}}</option>{{end}}</select></label>
+{{end}}<label>Workspace <select name="workspace">{{range .Data.Workspaces}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Any workspace{{end}}</option>{{end}}</select></label>
+<label>Session <select name="session">{{range .Data.Sessions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Any session{{end}}</option>{{end}}</select></label>
+<label>Server <select name="server">{{range .Data.Servers}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Any server{{end}}</option>{{end}}</select></label>
+<label>Tool <select name="tool">{{range .Data.Tools}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Any tool{{end}}</option>{{end}}</select></label>
 <button type="submit" class="primary">Filter</button>
 </form>
+<p id="count">{{.Data.Count}} matching event{{if ne .Data.Count 1}}s{{end}}. <a id="export" href="{{.Data.ExportURL}}">Export as JSON Lines</a></p>
 {{if .Data.Events}}
 <div class="table-wrap"><table id="events">
-<thead><tr><th>Time (UTC)</th><th>Type</th><th>Principal</th><th>Workspace</th><th>Session</th><th>Server</th><th>Tool</th><th></th></tr></thead>
+<thead><tr><th>When</th><th>Outcome</th><th>What</th><th>Who</th><th>Where</th><th>Session</th><th>Server</th><th>Tool</th><th></th></tr></thead>
 <tbody>
 {{range .Data.Events}}<tr>
-<td>{{.OccurredAt.Format "2006-01-02 15:04:05.000000"}}</td><td>{{.Type}}</td><td>{{template "who" .Who}}</td><td>{{template "ws" .WorkspaceLabel}}</td><td>{{.Session}}</td><td>{{.Server}}</td><td>{{.Tool}}</td>
-<td><a href="/ui/audit/events/{{.Key}}">Open</a></td>
+<td>{{template "reltime" .Time}}</td>
+<td>{{if .Summary.Outcome}}{{template "outcome" (outcome .Summary.Outcome)}}{{end}}</td>
+<td><a href="{{.TypeURL}}" title="{{.Type}}">{{.Summary.Prefix}}</a>{{if .Summary.Subject}}<code>{{.Summary.Subject}}</code>{{end}}{{.Summary.Suffix}}</td>
+<td>{{if .WhoURL}}<a href="{{.WhoURL}}">{{template "who" .Who}}</a>{{else}}{{template "who" .Who}}{{end}}</td>
+<td>{{if .Workspace}}<a href="{{.WhereURL}}">{{template "ws" .WorkspaceLabel}}</a>{{if .Verified}} <span class="badge badge-ok">verified</span>{{end}}{{end}}</td>
+<td>{{if .Session}}{{if .SessionPage}}<a href="{{.SessionPage}}" title="{{.Session}}">{{.ShortSess}}</a>{{else}}<span title="{{.Session}}">{{.ShortSess}}</span>{{end}} <a href="{{.SessionURL}}" title="Show events of this session">filter</a>{{end}}</td>
+<td>{{if .Server}}<a href="{{.ServerURL}}">{{.Server}}</a>{{end}}</td>
+<td>{{if .Tool}}<a href="{{.ToolURL}}">{{.Tool}}</a>{{end}}</td>
+<td><a href="/ui/audit/events/{{.Key}}">Details</a></td>
 </tr>
 {{end}}</tbody>
 </table></div>

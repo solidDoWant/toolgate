@@ -16,13 +16,15 @@
 </nav>
 {{if .Data.Sessions}}
 <div class="table-wrap"><table id="sessions">
-<thead><tr><th>Who</th><th>Where</th><th>Client</th><th>State</th><th>Tool search</th><th>Last activity</th><th>Session</th><th></th></tr></thead>
+<thead><tr><th>Who</th><th>Where</th><th>Client</th><th>State</th><th>Servers</th><th>Activity (last hour)</th><th>Tool search</th><th>Last activity</th><th>Session</th><th></th></tr></thead>
 <tbody>
 {{range .Data.Sessions}}<tr>
 <td>{{template "who" .Who}}</td>
 <td>{{template "ws" .WorkspaceLabel}} {{if .Verified}}<span class="badge badge-ok">verified</span>{{else}}<span class="badge badge-warn">unverified</span>{{end}}</td>
 <td>{{if .Client}}{{.Client}}{{else}}unknown client{{end}} <span class="badge badge-neutral">{{if .Connector}}connector{{else}}helper{{end}}</span></td>
 <td>{{if eq .State.Name "resumable"}}<span class="badge badge-neutral">resumable until {{.State.Until.UTC}}</span>{{else}}<span class="badge {{if eq .State.Name "active"}}badge-ok{{else}}badge-neutral{{end}}">{{.State.Name}}</span>{{end}}</td>
+<td>{{range .Servers}}<span class="badge badge-neutral">{{.}}</span> {{end}}<span class="running-instances">{{.Activity.RunningInstances}} running</span></td>
+<td><a href="{{.Activity.AuditURL}}">{{.Activity.ToolCalls}} calls</a>, <a href="{{.Activity.AuditURL}}">{{.Activity.Refusals}} refused</a>, <a href="/ui/approvals">{{.Activity.PendingApprovals}} pending</a></td>
 <td>{{if .ToolSearch}}on{{else}}off{{end}}</td>
 <td>{{template "reltime" (since .LastSeenAt)}}</td>
 <td><span title="{{.SessionID}}">{{.ShortID}}</span> <details class="copy-id"><summary>Copy</summary><input readonly size="24" aria-label="Full session ID" value="{{.SessionID}}"></details></td>

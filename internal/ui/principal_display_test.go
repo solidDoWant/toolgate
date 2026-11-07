@@ -42,8 +42,8 @@ func TestNoPageShowsARawSubjectAsVisibleText(t *testing.T) {
 		},
 		"sessions":    sessionsPage{ShowPrincipal: true, Sessions: []sessionRow{row}},
 		"session":     sessionPage{Session: row},
-		"audit":       auditPage{Events: []auditEvent{event}},
-		"audit_event": event,
+		"audit":       auditPage{Events: []auditRow{{auditEvent: event, Summary: summarize(event)}}},
+		"audit_event": eventPage{auditEvent: event, Summary: summarize(event)},
 		"blocks":      blocksPage{Blocks: []blockRow{{ID: "b", CreatedBy: hashedSubject, Who: unknown, CreatedAt: now, ExpiresAt: now}}},
 	}
 

@@ -30,6 +30,9 @@ type auditRow struct {
 	session   string
 	server    string
 	tool      string
+	// eventType and details default to tool.call and an allow outcome.
+	eventType string
+	details   string
 }
 
 // insertAudit stores an event and returns its page key.
@@ -40,16 +43,24 @@ func (e *uiEnv) insertAudit(t *testing.T, row auditRow) string {
 
 	var id int64
 
+	if row.eventType == "" {
+		row.eventType = "tool.call"
+	}
+
+	if row.details == "" {
+		row.details = `{"outcome":"allow"}`
+	}
+
 	err := e.pool.QueryRow(t.Context(),
 		`INSERT INTO audit_events (occurred_at, type, principal, workspace, session, server, tool, details)
-		 VALUES ($1, 'tool.call', $2, $3, $4, $5, $6, '{"outcome":"allow"}') RETURNING id`,
-		row.at, row.principal, row.workspace, row.session, row.server, row.tool).Scan(&id)
+		 VALUES ($1, $7, $2, $3, $4, $5, $6, $8::jsonb) RETURNING id`,
+		row.at, row.principal, row.workspace, row.session, row.server, row.tool, row.eventType, row.details).Scan(&id)
 	require.NoError(t, err)
 
 	return fmt.Sprintf("%d-%d", row.at.UnixMicro(), id)
 }
 
-var toolCell = regexp.MustCompile(`(?s)<tr>(?:<td>(?:[^<]|<span[^>]*>[^<]*</span>|<details.*?</details>)*</td>){6}<td>([^<]*)</td>`)
+var toolCell = regexp.MustCompile(`<td>(?:<a [^>]*>)?([^<]*)(?:</a>)?</td><td><a href="/ui/audit/events/`)
 
 // toolsOn lists the tool column of the events a page shows, in order.
 func toolsOn(page string) []string {
@@ -233,7 +244,7 @@ func TestAuditPagesNeedASession(t *testing.T) {
 // toolsInBrowser lists the tool column of the events the browser shows.
 func toolsInBrowser(ctx context.Context) []string {
 	tools, err := chromedp.Run(ctx, chromedp.Evaluate[[]string](
-		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => row.cells[6].innerText)`))
+		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => row.cells[7].innerText)`))
 	if err != nil {
 		return nil
 	}
@@ -300,7 +311,7 @@ func TestAuditFilters(t *testing.T) {
 			// Set every field, so values from an earlier case don't stay.
 			for _, field := range fields {
 				_, err := chromedp.Run(ctx, chromedp.Evaluate[any](fmt.Sprintf(
-					`document.querySelector('#filter input[name=%q]').value = %q`, field, test.fields[field])))
+					`document.querySelector('#filter [name=%q]').value = %q`, field, test.fields[field])))
 				require.NoError(t, err)
 			}
 
@@ -332,4 +343,125 @@ func TestAuditFilters(t *testing.T) {
 			}, time.Minute, 100*time.Millisecond, "the browser shows exactly %v", test.want)
 		})
 	}
+}
+
+func TestAuditPageOutcomeAndCategoryFilters(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	env.insertAudit(t, auditRow{at: now.Add(-1 * time.Hour), principal: "dave", server: "s", tool: "ok-call", eventType: "tool.result", details: `{"outcome":"ok","duration_ms":5}`})
+	env.insertAudit(t, auditRow{at: now.Add(-2 * time.Hour), principal: "dave", server: "s", tool: "refused-call", eventType: "tool.decision", details: `{"decision":"refuse","rule":"no-deletes"}`})
+	env.insertAudit(t, auditRow{at: now.Add(-3 * time.Hour), principal: "dave", server: "s", tool: "failed-call", eventType: "tool.result", details: `{"outcome":"error"}`})
+	env.insertAudit(t, auditRow{at: now.Add(-4 * time.Hour), principal: "dave", server: "s", tool: "approval-call", eventType: "approval.request", details: `{}`})
+	env.insertAudit(t, auditRow{at: now.Add(-5 * time.Hour), principal: "dave", server: "s", tool: "enable", eventType: "server.enable", details: `{}`})
+
+	admin := env.insertSession(t, "outcome-admin", []string{"admins"})
+
+	tests := []struct {
+		name  string
+		query url.Values
+		want  []string
+	}{
+		{"refused only", url.Values{"outcome": {"refused"}}, []string{"refused-call"}},
+		{"errors only", url.Values{"outcome": {"error"}}, []string{"failed-call"}},
+		{"approvals only", url.Values{"outcome": {"approval"}}, []string{"approval-call"}},
+		{"tool calls", url.Values{"category": {"calls"}}, []string{"ok-call", "refused-call", "failed-call"}},
+		{"server lifecycle", url.Values{"category": {"servers"}}, []string{"enable"}},
+		{"category and outcome", url.Values{"category": {"calls"}, "outcome": {"error"}}, []string{"failed-call"}},
+		{"last hour preset", url.Values{"range": {"1h"}}, nil},
+		{"7 day preset", url.Values{"range": {"7d"}, "category": {"servers"}}, []string{"enable"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status, page := auditPageOf(t, admin, env.server.URL, test.query)
+			require.Equal(t, http.StatusOK, status)
+			assert.Equal(t, test.want, toolsOn(page))
+		})
+	}
+
+	status, page := auditPageOf(t, admin, env.server.URL, url.Values{"category": {"calls"}})
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, page, "3 matching events")
+	assert.Contains(t, page, "Refused </a><code>s__refused-call</code>: blocked by rule *no-deletes*")
+	assert.Contains(t, page, "badge-bad")
+
+	status, _ = auditPageOf(t, admin, env.server.URL, url.Values{"outcome": {"bogus"}})
+	assert.Equal(t, http.StatusBadRequest, status)
+}
+
+func TestAuditPageShowsPeopleNotRawSubjects(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	hash := strings.Repeat("ab", 32)
+	session := "0b8f3b7e-1f0e-4d4e-9b52-3a1d0c6a9e11"
+
+	env.insertAudit(t, auditRow{at: now.Add(-time.Hour), principal: hash, session: session, workspace: "claimed/dev", server: "s", tool: "t"})
+
+	admin := env.insertSession(t, "people-admin", []string{"admins"})
+
+	status, page := auditPageOf(t, admin, env.server.URL, nil)
+	require.Equal(t, http.StatusOK, status)
+
+	body := regexp.MustCompile(`<[^>]*>`).ReplaceAllString(page, "")
+	assert.NotContains(t, body, hash, "the raw subject is never visible text")
+	assert.NotContains(t, body, session, "the session ID is shortened")
+	assert.Contains(t, body, "0b8f3b7e…")
+	assert.Contains(t, body, "user abababab…")
+	assert.Contains(t, body, "unverified: dev")
+}
+
+func TestAuditExportScopesToTheViewer(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	env.insertAudit(t, auditRow{at: now.Add(-time.Hour), principal: "dave", tool: "mine"})
+	env.insertAudit(t, auditRow{at: now.Add(-time.Hour), principal: "erin", tool: "hers"})
+
+	user := env.insertSession(t, "export-user", nil)
+	admin := env.insertSession(t, "export-admin", []string{"admins"})
+
+	userExport := readBody(t, get(t, user, env.server.URL+"/ui/audit/export?principal=erin"))
+	assert.Contains(t, userExport, `"tool":"mine"`)
+	assert.NotContains(t, userExport, `"tool":"hers"`)
+
+	adminExport := readBody(t, get(t, admin, env.server.URL+"/ui/audit/export"))
+	assert.Contains(t, adminExport, `"tool":"mine"`)
+	assert.Contains(t, adminExport, `"tool":"hers"`)
+}
+
+func TestAuditPageFiltersByEventType(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	env.insertAudit(t, auditRow{at: now.Add(-1 * time.Hour), principal: "dave", tool: "a", eventType: "tool.result", details: `{"outcome":"ok"}`})
+	env.insertAudit(t, auditRow{at: now.Add(-2 * time.Hour), principal: "dave", tool: "b", eventType: "secret.set", details: `{}`})
+	env.insertAudit(t, auditRow{at: now.Add(-3 * time.Hour), principal: "dave", tool: "c", eventType: "auth.refuse", details: `{}`})
+
+	admin := env.insertSession(t, "type-admin", []string{"admins"})
+
+	tests := []struct {
+		name  string
+		query url.Values
+		want  []string
+	}{
+		{"one type", url.Values{"type": {"secret.set"}}, []string{"b"}},
+		{"two types", url.Values{"type": {"secret.set", "auth.refuse"}}, []string{"b", "c"}},
+		{"types narrow a category", url.Values{"type": {"secret.set", "tool.result"}, "category": {"calls"}}, []string{"a"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status, page := auditPageOf(t, admin, env.server.URL, test.query)
+			require.Equal(t, http.StatusOK, status)
+			assert.Equal(t, test.want, toolsOn(page))
+		})
+	}
+
+	status, page := auditPageOf(t, admin, env.server.URL, nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.Contains(t, page, `<option value="tool.decision" title="tool.decision">Tool call decision</option>`)
+
+	status, _ = auditPageOf(t, admin, env.server.URL, url.Values{"type": {"bogus.type"}})
+	assert.Equal(t, http.StatusBadRequest, status)
 }
