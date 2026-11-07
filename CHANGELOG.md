@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The Helm chart has the new values `config.oidc.cliClientID` and `config.oidc.cliScopes`. With `cliClientID` set, `toolgate login` needs no `--client-id`.
+- The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should.
 
 ## 0.4.3
 
