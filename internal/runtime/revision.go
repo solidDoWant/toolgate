@@ -14,8 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// MCP protocol revisions toolgate chooses between for an upstream
-// (docs/design/phase-4.md §8).
+// MCP protocol revisions toolgate chooses between for an upstream.
 const (
 	// RevisionStateful is the revision toolgate tries first.
 	RevisionStateful = "2025-11-25"
@@ -58,7 +57,7 @@ type UpstreamOptions struct {
 
 // ConnectUpstream opens an MCP session to an upstream instance on revision,
 // and returns it with the revision it speaks. An empty revision, for a row
-// that has none yet, runs the probe of docs/design/phase-4.md §8: it
+// that has none yet, runs a probe: it
 // connects on 2025-11-25 and runs `tools/list`, and tries 2026-07-28 only
 // after a version answer.
 func ConnectUpstream(ctx context.Context, endpoint, revision string, options UpstreamOptions) (*mcp.ClientSession, string, error) {

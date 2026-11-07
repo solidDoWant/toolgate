@@ -536,7 +536,7 @@ type InsertToolSearchParams struct {
 	InputPart        string
 }
 
-// The document has weighted parts (docs/design/phase-4.md §5); name_text
+// The document has weighted parts; name_text
 // feeds the trigram term of the ranking.
 func (q *Queries) InsertToolSearch(ctx context.Context, arg InsertToolSearchParams) error {
 	_, err := q.db.Exec(ctx, insertToolSearch,

@@ -17,7 +17,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
-// Custom health check defaults and limits (docs/design/phase-3.md §6). The
+// Custom health check defaults and limits. The
 // CRD sets the defaults; these cover a stored check that lacks them.
 const (
 	defaultCheckInterval         = 30 * time.Second

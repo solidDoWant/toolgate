@@ -17,7 +17,7 @@ SELECT * FROM tool_catalog WHERE template_uid = @template_uid ORDER BY generatio
 DELETE FROM tool_catalog WHERE template_uid = @template_uid AND generation < @generation;
 
 -- name: InsertToolSearch :exec
--- The document has weighted parts (docs/design/phase-4.md §5); name_text
+-- The document has weighted parts; name_text
 -- feeds the trigram term of the ranking.
 INSERT INTO tool_search (template_uid, template_ns, template_name, source_generation, upstream_name, exposed_name, name_text, embedding, embedding_model, document)
 VALUES (@template_uid, @template_ns, @template_name, @source_generation, @upstream_name, @exposed_name, @name_part::text, CAST(NULLIF(@embedding::text, '') AS vector), @embedding_model::text,

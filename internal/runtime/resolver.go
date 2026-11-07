@@ -18,7 +18,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
-// Resolver limits (docs/design/phase-2.md §6).
+// Resolver limits.
 const (
 	// MaxResolverResponseBytes bounds the body a resolver answers with.
 	MaxResolverResponseBytes = 1 << 20

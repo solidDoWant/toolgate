@@ -10,9 +10,8 @@ import (
 
 // DeleteStaleRows deletes web UI sessions that are no longer valid, web UI
 // sign-ins older than 10 minutes, and grants, temporary blocks, approvals
-// and access requests 7 days after they stopped being live (docs/design/phase-2.md
-// §2, "Row cleanup"), and the allow entries and found tools of ended sessions
-// (docs/design/phase-4.md §2). The audit log keeps their history. A failed delete
+// and access requests 7 days after they stopped being live, and the allow entries and found tools of ended sessions.
+// The audit log keeps their history. A failed delete
 // doesn't keep the others from running.
 func DeleteStaleRows(ctx context.Context, queries *db.Queries) error {
 	deletes := []struct {
@@ -25,8 +24,9 @@ func DeleteStaleRows(ctx context.Context, queries *db.Queries) error {
 		{"temporary blocks", queries.DeleteStaleTemporaryBlocks},
 		{"approvals", queries.DeleteStaleApprovals},
 		{"access requests", queries.DeleteStaleAccessRequests},
-		// A 0.4 end transaction already deletes these; this catches sessions
-		// a 0.3 leader ended (docs/design/phase-4.md §2, "Cleanup").
+		// The end transaction already deletes these; this also catches sessions
+		// that an older gateway ended during a rolling upgrade, which didn't
+		// delete them.
 		{"allow entries of ended sessions", queries.DeleteEndedSessionAllowEntries},
 		{"found tools of ended sessions", queries.DeleteEndedSessionFoundTools},
 	}

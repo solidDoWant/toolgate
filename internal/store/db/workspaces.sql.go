@@ -1045,7 +1045,7 @@ type SetUserScopeDefaultsParams struct {
 
 // Sets both defaults. The default list is stored as unverified_default none
 // with unverified_list true; a write of none or all sets unverified_list
-// false (docs/design/phase-4.md §2).
+// false.
 func (q *Queries) SetUserScopeDefaults(ctx context.Context, arg SetUserScopeDefaultsParams) error {
 	_, err := q.db.Exec(ctx, setUserScopeDefaults,
 		arg.VerifiedDefault,

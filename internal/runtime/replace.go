@@ -30,11 +30,11 @@ const (
 )
 
 // Replacer replaces live instances with new pending rows at the template's
-// current generation (docs/design/phase-2.md §6, "Restart"). Only the
+// current generation. Only the
 // reconciler runs it.
 type Replacer struct {
 	Pool *pgxpool.Pool
-	// Stops judges phase 1's stop conditions, which win over a replacement,
+	// Stops judges the stop conditions, which win over a replacement,
 	// and gives the templates.
 	Stops *StopDecider
 	// AuditOutput receives the instance.stop events as JSON lines. Nil
@@ -87,7 +87,7 @@ func (r *Replacer) now() time.Time {
 
 // Replace replaces one live instance in one transaction: it takes the
 // advisory lock of the instance's template and scope key and re-reads the
-// row. If the row isn't live any more, it does nothing. If one of phase 1's
+// row. If the row isn't live any more, it does nothing. If one of the
 // stop conditions holds, it stops the instance instead. Otherwise it sets
 // desired = stopped, inserts a pending row with the same scope, owner and
 // render session at the template's current generation, writes instance.stop

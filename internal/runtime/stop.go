@@ -42,8 +42,7 @@ type Templates interface {
 	IsLoaded() bool
 }
 
-// StopDecider decides which live instances stop (docs/design/phase-1.md §2,
-// "Who sets desired = stopped"). Only the reconciler runs it.
+// StopDecider decides which live instances stop. Only the reconciler runs it.
 type StopDecider struct {
 	Pool *pgxpool.Pool
 	// Templates must hold every watched template before the first pass.

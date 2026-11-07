@@ -58,7 +58,7 @@ const DefaultToolListTimeout = 10 * time.Second
 // NamespacePrefix starts the name of every per-instance namespace.
 const NamespacePrefix = "tg-"
 
-// Tool list limits (docs/design/phase-1.md §3).
+// Tool list limits.
 const (
 	MaxToolNameLength = toolcatalog.MaxToolNameLength
 	MaxTools          = toolcatalog.MaxTools
@@ -547,8 +547,7 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 			span.SetStatus(codes.Error, "apply")
 
 			// RBAC (or the admission policy) refusing an object won't change
-			// on a retry: the instance fails with the API server's message
-			// (docs/design/phase-2.md §7).
+			// on a retry: the instance fails with the API server's message.
 			if apierrors.IsForbidden(err) {
 				return false, s.fail(ctx, instance, StatusPending, "The API server refused "+object.GetKind()+" "+
 					object.GetName()+": "+apiServerMessage(err))
@@ -565,7 +564,7 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 // namespace and returns an owner reference to it. Every object applied for
 // the instance is owned by the anchor, so deleting the anchor lets
 // Kubernetes' garbage collector delete them all, Secrets included, without
-// the gateway reading Secrets (docs/design/phase-1.md §7). It returns nil,
+// the gateway reading Secrets. It returns nil,
 // with no error, when the instance has failed because a ConfigMap of that
 // name exists without the instance's label.
 func (s *Starter) prepareAnchor(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*metav1.OwnerReference, error) {

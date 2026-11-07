@@ -20,7 +20,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
-// How an unhealthy instance is repaired (docs/design/phase-3.md §6).
+// How an unhealthy instance is repaired.
 const (
 	OnFailureReplace = "replace"
 	OnFailureReapply = "reapply"
@@ -162,7 +162,7 @@ func GiveUpReason(repairs int, lastReason string) string {
 	return fmt.Sprintf("Health check still failing after %d repairs in 30 minutes: %s", repairs, lastReason)
 }
 
-// giveUp fails the ready row, as phase 1 fails an instance, and writes
+// giveUp fails the ready row, as any other failing instance is failed, and writes
 // instance.fail. The teardown removes its objects.
 func (r *Repairer) giveUp(ctx context.Context, instance db.Instance, repairs int) error {
 	reason := truncate(GiveUpReason(repairs, instance.UnhealthyReason), maxReasonBytes)

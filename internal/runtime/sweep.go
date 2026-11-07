@@ -19,8 +19,7 @@ import (
 )
 
 // Sweep reconciles the instance objects in Kubernetes with the instance
-// rows after a leader change or a gateway restart (docs/design/phase-1.md
-// §4, row 17). It works on instance namespaces (`tg-<id>`): deleting one
+// rows after a leader change or a gateway restart. It works on instance namespaces (`tg-<id>`): deleting one
 // deletes all of its instance's objects. In the shared namespace it works on
 // the labelled objects of each instance instead.
 //

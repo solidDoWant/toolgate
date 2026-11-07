@@ -20,8 +20,7 @@ import (
 )
 
 // ApprovalExpirer marks pending approvals and access requests expired once
-// their expires_at is more than 1 minute past (docs/design/phase-2.md §2,
-// "Approvals"; docs/design/phase-3.md §10, "State"). Only the
+// their expires_at is more than 1 minute past. Only the
 // reconciler runs it, on its full passes. The minute leaves a waiting call
 // time to expire its own approval first.
 type ApprovalExpirer struct {
@@ -84,8 +83,8 @@ func (e *ApprovalExpirer) Run(ctx context.Context) error {
 
 // expireEndedSessionScopeRequests expires, with access.expire, the pending
 // scope requests whose target session ended after the request was created.
-// A 0.4 end transaction already does this; the pass catches sessions a 0.3
-// leader ended (docs/design/phase-4.md §2, "Cleanup").
+// The end transaction already does this; the pass also catches sessions that
+// an older gateway ended during a rolling upgrade, which didn't do it.
 func (e *ApprovalExpirer) expireEndedSessionScopeRequests(ctx context.Context) error {
 	var cancelled int
 

@@ -1,5 +1,5 @@
 // Package runtime renders MCPServerTemplate resources into the Kubernetes
-// objects of one instance (SPEC.md §9).
+// objects of one instance.
 package runtime
 
 import (

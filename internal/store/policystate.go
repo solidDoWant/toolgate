@@ -69,8 +69,7 @@ type ScopeQuery struct {
 	// session ID. When Workspace is empty, the list, the workspace's
 	// entries, the session's additions and its allow entries aren't read:
 	// an unverified session has none of them. It reads the unverified allow
-	// list and the session's deny entries instead
-	// (docs/design/phase-4.md §7).
+	// list and the session's deny entries instead.
 	Workspace string
 	Session   string
 }
@@ -85,7 +84,7 @@ type PolicyRows struct {
 }
 
 // LoadPolicyState reads the policy state of one request in one round trip,
-// a pgx.Batch (docs/design/phase-2.md §3, "Loading grants and blocks").
+// a pgx.Batch.
 // withGrants false skips the grant query: grants never change the decisions
 // of attested identities.
 func LoadPolicyState(ctx context.Context, conn interface {
@@ -124,8 +123,7 @@ func LoadPolicyState(ctx context.Context, conn interface {
 	return rows, nil
 }
 
-// queueScopeQueries adds the scoping queries of docs/design/phase-3.md §10
-// ("Policy order") to batch, writing their results to rows. A missing
+// queueScopeQueries adds the scoping queries to batch, writing their results to rows. A missing
 // user_scopes row leaves both defaults empty, which means none.
 func queueScopeQueries(batch *pgx.Batch, principal string, scope ScopeQuery, rows *policy.ScopeRows) {
 	batch.Queue(userScopeSQL, principal).Query(func(result pgx.Rows) error {
