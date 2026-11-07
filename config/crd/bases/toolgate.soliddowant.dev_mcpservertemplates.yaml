@@ -264,7 +264,8 @@ spec:
                 default: per-instance
                 description: |-
                   Namespace says where instances run: per-instance (each in its own
-                  namespace) or shared (one configured namespace, scope: shared only).
+                  namespace) or shared (one configured namespace, effective scope
+                  shared only).
                 type: string
                 x-kubernetes-validations:
                 - message: namespace must be one of per-instance, shared
@@ -272,8 +273,8 @@ spec:
               remote:
                 description: |-
                   Remote makes the template a remote server: toolgate starts nothing
-                  and connects to an MCP server that already runs elsewhere. It needs
-                  scope: per-user and excludes endpoint, resources and healthCheck.
+                  and connects to an MCP server that already runs elsewhere. It
+                  excludes endpoint, resources and healthCheck.
                 properties:
                   headers:
                     additionalProperties:
@@ -315,8 +316,10 @@ spec:
                 maxItems: 64
                 type: array
               scope:
-                description: 'Scope says who shares an instance: per-session, per-user
-                  or shared.'
+                description: |-
+                  Scope says who shares an instance: per-session, per-user or shared.
+                  When it is unset, toolgate uses the broadest scope the template's
+                  variables allow. When it is set, it must be that scope or narrower.
                 type: string
                 x-kubernetes-validations:
                 - message: scope must be one of per-session, per-user, shared
@@ -406,18 +409,14 @@ spec:
                   name.
                 maxProperties: 256
                 type: object
-            required:
-            - scope
             type: object
             x-kubernetes-validations:
             - message: 'namespace: shared is allowed only with scope: shared'
               rule: '!has(self.__namespace__) || self.__namespace__ != ''shared''
-                || self.scope == ''shared'''
+                || !has(self.scope) || self.scope == ''shared'''
             - message: remote cannot be set together with endpoint, resources or healthCheck
               rule: '!has(self.remote) || (!has(self.endpoint) && !has(self.resources)
                 && !has(self.healthCheck))'
-            - message: 'remote requires scope: per-user'
-              rule: '!has(self.remote) || self.scope == ''per-user'''
             - message: endpoint is required unless remote is set
               rule: has(self.remote) || has(self.endpoint)
           status:

@@ -26,6 +26,13 @@ func newRemoteTemplate(url string, headers map[string]string) *v1alpha1.MCPServe
 	}
 }
 
+// withScope sets template's scope and returns it.
+func withScope(template *v1alpha1.MCPServerTemplate, scope string) *v1alpha1.MCPServerTemplate {
+	template.Spec.Scope = scope
+
+	return template
+}
+
 const clusterURL = "http://mail-archiver.email.svc.cluster.local:5000/mcp"
 
 func TestValidateRemoteURL(t *testing.T) {
@@ -155,6 +162,11 @@ func TestReconcilerReportsInvalidRemoteTemplates(t *testing.T) {
 			reason:   "`remote.url` may use http:// only for a cluster-internal host ending in .svc or .svc.cluster.local",
 		},
 		{
+			name:     "a shared remote template whose header uses a secret",
+			template: withScope(newRemoteTemplate(clusterURL, map[string]string{"Authorization": "Bearer ${secret:mail-archiver-api-key}"}), catalog.ScopeShared),
+			reason:   "`scope: shared`, but `remote.headers.Authorization` uses `${secret:…}`, which needs `per-user` or narrower",
+		},
+		{
 			name:     "a header value using a workspace field",
 			template: newRemoteTemplate(clusterURL, map[string]string{"X-Workspace": "${workspace.id}"}),
 			reason:   "The value of header `X-Workspace` in `remote.headers` may use only ${secret:NAME} and ${principal.*}",
@@ -225,6 +237,63 @@ func TestRemoteHeaderValuesStayOutOfStatusAndLog(t *testing.T) {
 			var invalid *catalog.InvalidError
 			require.ErrorAs(t, err, &invalid)
 			assert.NotContains(t, invalid.Reason, marker)
+		})
+	}
+}
+
+func TestReconcilerReportsTheEffectiveScope(t *testing.T) {
+	tests := []struct {
+		name      string
+		template  *v1alpha1.MCPServerTemplate
+		wantScope string
+		message   string
+	}{
+		{
+			name:      "a remote template without headers and without a scope is shared",
+			template:  withScope(newRemoteTemplate(clusterURL, nil), ""),
+			wantScope: catalog.ScopeShared,
+			message:   "Scope shared: references nothing per-user.",
+		},
+		{
+			name:      "a remote template whose header uses a secret and without a scope is per-user",
+			template:  withScope(newRemoteTemplate(clusterURL, map[string]string{"Authorization": "Bearer ${secret:mail-archiver-api-key}"}), ""),
+			wantScope: catalog.ScopePerUser,
+			message:   "Scope per-user: `remote.headers.Authorization` uses `${secret:…}`.",
+		},
+		{
+			name:      "a launched template using a session and without a scope is per-session",
+			template:  newTemplate("github", "", podWithEnv("${session.id}")),
+			wantScope: catalog.ScopePerSession,
+			message:   "Scope per-session: `resources[0].spec.containers[0].env[0].value` uses `${session.id}`.",
+		},
+		{
+			name:      "an explicit narrower scope is kept",
+			template:  withScope(newRemoteTemplate(clusterURL, nil), catalog.ScopePerUser),
+			wantScope: catalog.ScopePerUser,
+			message:   "Scope per-user: set by `scope`.",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newReconcilerFixture(t, test.template)
+			key := keyOf(test.template)
+
+			fixture.reconcile(t, key)
+
+			condition := fixture.condition(t, key)
+			require.NotNil(t, condition)
+			assert.Equal(t, metav1.ConditionTrue, condition.Status, condition.Message)
+			assert.Contains(t, condition.Message, test.message)
+
+			offered, err := fixture.catalog.Offered(test.template.Name)
+			require.NoError(t, err)
+			assert.Equal(t, test.wantScope, offered.Spec.Scope)
+
+			// The effective scope is not written back to the spec.
+			var stored v1alpha1.MCPServerTemplate
+			require.NoError(t, fixture.client.Get(t.Context(), key, &stored))
+			assert.Equal(t, test.template.Spec.Scope, stored.Spec.Scope)
 		})
 	}
 }

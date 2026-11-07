@@ -20,6 +20,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -102,9 +103,12 @@ var errNoSecretSource = errors.New("the gateway can't read user secrets")
 // from the secrets of the instance's owner, who must be caller; it is
 // returned with them.
 func (u *upstreams) session(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, caller runtime.Identity) (*mcp.ClientSession, *runtime.RemoteAuth, error) {
-	// An instance is keyed by its ID, and a remote server's instance
-	// belongs to one user: only that user's calls may use its headers.
-	if template.Spec.Remote != nil && (instance.OwnerPrincipal == "" || caller.PrincipalID != instance.OwnerPrincipal) {
+	// An instance is keyed by its ID. A per-user or per-session remote
+	// server's instance belongs to one user: only that user's calls may use
+	// its headers. A shared one's headers hold nothing per-user, so it
+	// serves everyone.
+	if template.Spec.Remote != nil && instance.Scope != catalog.ScopeShared &&
+		(instance.OwnerPrincipal == "" || caller.PrincipalID != instance.OwnerPrincipal) {
 		return nil, nil, errRemoteNotOwner
 	}
 
@@ -128,13 +132,20 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 	var remote *runtime.RemoteAuth
 
 	if template.Spec.Remote != nil {
-		if u.secrets == nil {
+		// A shared remote server's headers use no secret, so it needs no
+		// secret source.
+		var source runtime.SecretSource
+
+		switch {
+		case u.secrets != nil:
+			source = u.secrets(instance.OwnerPrincipal)
+		case instance.Scope != catalog.ScopeShared:
 			return nil, nil, errNoSecretSource
 		}
 
 		// The headers are filled in at each connect, so a secret set
 		// again takes effect at the next connect.
-		header, _, err := runtime.RemoteHeaders(ctx, template, caller, u.secrets(instance.OwnerPrincipal))
+		header, _, err := runtime.RemoteHeaders(ctx, template, caller, source)
 		if err != nil {
 			return nil, nil, err
 		}

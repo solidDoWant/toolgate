@@ -230,27 +230,27 @@ func TestValidate(t *testing.T) {
 		{
 			name:        "a shared template using a secret is invalid",
 			template:    newTemplate("github", catalog.ScopeShared, secretWith("stringData", "${secret:github-token}")),
-			wantProblem: "a shared template may not use ${secret:github-token}",
+			wantProblem: "`scope: shared`, but `resources[0].stringData.TOKEN` uses `${secret:…}`, which needs `per-user` or narrower",
 		},
 		{
 			name:        "a shared template using a resolver is invalid",
 			template:    newTemplate("github", catalog.ScopeShared, secretWith("stringData", "${resolver:vault}")),
-			wantProblem: "a shared template may not use ${resolver:vault}",
+			wantProblem: "`scope: shared`, but `resources[0].stringData.TOKEN` uses `${resolver:…}`, which needs `per-user` or narrower",
 		},
 		{
 			name:        "a shared template using a principal is invalid",
 			template:    newTemplate("github", catalog.ScopeShared, podWithEnv("${principal.email}")),
-			wantProblem: "a shared template may not use ${principal.email}",
+			wantProblem: "`scope: shared`, but `resources[0].spec.containers[0].env[0].value` uses `${principal.email}`, which needs `per-user` or narrower",
 		},
 		{
 			name:        "a shared template using a workspace is invalid",
 			template:    newTemplate("github", catalog.ScopeShared, podWithEnv("ws-${workspace.id}")),
-			wantProblem: "a shared template may not use ${workspace.id}",
+			wantProblem: "`scope: shared`, but `resources[0].spec.containers[0].env[0].value` uses `${workspace.id}`, which needs `per-session` or narrower",
 		},
 		{
 			name:        "a shared template using a session is invalid",
 			template:    newTemplate("github", catalog.ScopeShared, `{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"c","labels":{"s":"${session.id}"}}}`),
-			wantProblem: "a shared template may not use ${session.id}",
+			wantProblem: "`scope: shared`, but `resources[0].metadata.labels.s` uses `${session.id}`, which needs `per-session` or narrower",
 		},
 		{
 			name:     "a shared template using instance and template variables is valid",
@@ -265,6 +265,33 @@ func TestValidate(t *testing.T) {
 				return template
 			}(),
 			wantProblem: "namespace: shared is allowed only with scope: shared",
+		},
+		{
+			name:      "namespace shared without a scope and with nothing per-user is valid",
+			template:  withScope(sharedNamespaceTemplate(), ""),
+			validator: catalog.Validator{SharedNamespace: "toolgate-shared"},
+		},
+		{
+			name: "namespace shared without a scope and with a principal is invalid",
+			template: withScope(sharedNamespaceTemplate(func(resources []string) []string {
+				return append(resources, `{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"user-${instance.id}","labels":{"p":"${principal.id}"}}}`)
+			}), ""),
+			validator:   catalog.Validator{SharedNamespace: "toolgate-shared"},
+			wantProblem: "namespace: shared is allowed only with scope: shared, and this template's scope is per-user",
+		},
+		{
+			name:        "a per-user template using a session is invalid",
+			template:    newTemplate("github", catalog.ScopePerUser, podWithEnv("${session.id}")),
+			wantProblem: "`scope: per-user`, but `resources[0].spec.containers[0].env[0].value` uses `${session.id}`, which needs `per-session` or narrower",
+		},
+		{
+			name:        "a per-user template using a workspace is invalid",
+			template:    newTemplate("github", catalog.ScopePerUser, podWithEnv("${workspace.id}")),
+			wantProblem: "`scope: per-user`, but `resources[0].spec.containers[0].env[0].value` uses `${workspace.id}`, which needs `per-session` or narrower",
+		},
+		{
+			name:     "a per-session template using a principal is valid",
+			template: newTemplate("github", catalog.ScopePerSession, podWithEnv("${principal.id}")),
 		},
 		{
 			name:      "a shared-namespace template that tells its instances apart is valid",

@@ -57,12 +57,15 @@ func TestCRDValidatesRemoteTemplates(t *testing.T) {
 		{name: "remote with a health check is refused", change: func(spec *v1alpha1.MCPServerTemplateSpec) {
 			spec.HealthCheck = &v1alpha1.HealthCheck{HTTP: v1alpha1.HealthCheckHTTP{Service: "mcp", Port: 8080, Path: "/healthz"}}
 		}, message: "remote cannot be set together with endpoint, resources or healthCheck"},
-		{name: "remote with scope per-session is refused", change: func(spec *v1alpha1.MCPServerTemplateSpec) {
+		{name: "remote with scope per-session is accepted", change: func(spec *v1alpha1.MCPServerTemplateSpec) {
 			spec.Scope = "per-session"
-		}, message: "remote requires scope: per-user"},
-		{name: "remote with scope shared is refused", change: func(spec *v1alpha1.MCPServerTemplateSpec) {
+		}},
+		{name: "remote with scope shared is accepted", change: func(spec *v1alpha1.MCPServerTemplateSpec) {
 			spec.Scope = "shared"
-		}, message: "remote requires scope: per-user"},
+		}},
+		{name: "remote without a scope is accepted", change: func(spec *v1alpha1.MCPServerTemplateSpec) {
+			spec.Scope = ""
+		}},
 		{name: "neither remote nor an endpoint is refused", change: func(spec *v1alpha1.MCPServerTemplateSpec) {
 			spec.Remote = nil
 		}, message: "endpoint is required unless remote is set"},

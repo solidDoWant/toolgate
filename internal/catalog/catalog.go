@@ -11,6 +11,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/changes"
+	"github.com/solidDoWant/toolgate/internal/templatescope"
 )
 
 // ErrNotFound is returned for a server name no watched template has.
@@ -39,6 +40,9 @@ type Status struct {
 	Valid bool
 	// Reason says why the template is invalid. It is empty when Valid.
 	Reason string
+	// Scope is the template's effective scope and why, for example
+	// "shared: references nothing per-user". It is empty when invalid.
+	Scope string
 }
 
 // Catalog holds the templates read from the watched namespaces. It offers only
@@ -64,6 +68,8 @@ type entry struct {
 	// problems are current's own validation problems, without the
 	// duplicate-name check.
 	problems []string
+	// scopeReason says what current's effective scope is and why.
+	scopeReason string
 	// lastValid is the latest generation that was valid, or nil.
 	lastValid *v1alpha1.MCPServerTemplate
 }
@@ -117,6 +123,12 @@ func (c *Catalog) Set(template *v1alpha1.MCPServerTemplate, problems []string) [
 
 	current.current = template.DeepCopy()
 	current.problems = slices.Clone(problems)
+
+	// Every reader of the catalog sees the effective scope in spec.scope,
+	// so none of them derives it on its own.
+	decision := templatescope.Decide(template.Spec)
+	current.current.Spec.Scope = decision.Scope
+	current.scopeReason = decision.Reason
 
 	return c.refresh(template.Name)
 }
@@ -218,6 +230,7 @@ func (c *Catalog) statusLocked(key types.NamespacedName, current *entry) Status 
 	}
 
 	status.Valid = true
+	status.Scope = current.scopeReason
 
 	return status
 }

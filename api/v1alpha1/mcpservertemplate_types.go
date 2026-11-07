@@ -26,9 +26,8 @@ type MCPServerTemplate struct {
 
 // MCPServerTemplateSpec describes the server and who may use it.
 //
-// +kubebuilder:validation:XValidation:rule="!has(self.__namespace__) || self.__namespace__ != 'shared' || self.scope == 'shared'",message="namespace: shared is allowed only with scope: shared"
+// +kubebuilder:validation:XValidation:rule="!has(self.__namespace__) || self.__namespace__ != 'shared' || !has(self.scope) || self.scope == 'shared'",message="namespace: shared is allowed only with scope: shared"
 // +kubebuilder:validation:XValidation:rule="!has(self.remote) || (!has(self.endpoint) && !has(self.resources) && !has(self.healthCheck))",message="remote cannot be set together with endpoint, resources or healthCheck"
-// +kubebuilder:validation:XValidation:rule="!has(self.remote) || self.scope == 'per-user'",message="remote requires scope: per-user"
 // +kubebuilder:validation:XValidation:rule="has(self.remote) || has(self.endpoint)",message="endpoint is required unless remote is set"
 type MCPServerTemplateSpec struct {
 	// Description is shown to users and the model in the catalog.
@@ -37,12 +36,15 @@ type MCPServerTemplateSpec struct {
 	Description string `json:"description,omitempty"`
 
 	// Scope says who shares an instance: per-session, per-user or shared.
-	// +required
+	// When it is unset, toolgate uses the broadest scope the template's
+	// variables allow. When it is set, it must be that scope or narrower.
+	// +optional
 	// +kubebuilder:validation:XValidation:rule="self in ['per-session', 'per-user', 'shared']",message="scope must be one of per-session, per-user, shared"
-	Scope string `json:"scope"`
+	Scope string `json:"scope,omitempty"`
 
 	// Namespace says where instances run: per-instance (each in its own
-	// namespace) or shared (one configured namespace, scope: shared only).
+	// namespace) or shared (one configured namespace, effective scope
+	// shared only).
 	// +optional
 	// +kubebuilder:default=per-instance
 	// +kubebuilder:validation:XValidation:rule="self in ['per-instance', 'shared']",message="namespace must be one of per-instance, shared"
@@ -104,8 +106,8 @@ type MCPServerTemplateSpec struct {
 	HealthCheck *HealthCheck `json:"healthCheck,omitempty"`
 
 	// Remote makes the template a remote server: toolgate starts nothing
-	// and connects to an MCP server that already runs elsewhere. It needs
-	// scope: per-user and excludes endpoint, resources and healthCheck.
+	// and connects to an MCP server that already runs elsewhere. It
+	// excludes endpoint, resources and healthCheck.
 	// +optional
 	Remote *RemoteServer `json:"remote,omitempty"`
 }

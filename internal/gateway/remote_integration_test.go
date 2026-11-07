@@ -89,7 +89,16 @@ type remoteUpstream struct {
 	mu       sync.Mutex
 	accepted map[string]bool
 	calls    []string
+	sessions []string
 	closed   int
+}
+
+// callSessions returns the upstream MCP session ID of each tool call.
+func (u *remoteUpstream) callSessions() []string {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	return append([]string(nil), u.sessions...)
 }
 
 func (u *remoteUpstream) callAuthorizations() []string {
@@ -164,6 +173,7 @@ func (f *remoteFixture) startRemoteUpstream(t *testing.T, accepted ...string) *r
 
 			upstream.mu.Lock()
 			upstream.calls = append(upstream.calls, request.Extra.Header.Get("Authorization"))
+			upstream.sessions = append(upstream.sessions, request.Session.ID())
 			upstream.mu.Unlock()
 
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: arguments.Text}}}, nil
@@ -316,6 +326,33 @@ func TestRemoteServers(t *testing.T) {
 		require.False(t, callTool(t, first.session, "mail-archiver__echo", map[string]any{"text": "a"}).IsError)
 
 		assert.Equal(t, []string{"Bearer alice-key", "Bearer bob-key", "Bearer alice-key"}, fixture.upstream.callAuthorizations())
+	})
+
+	t.Run("a remote server without per-user headers is shared: two users use one upstream session", func(t *testing.T) {
+		fixture := newRemoteFixture(t, "static-key")
+
+		template := fixture.catalogTemplate(t, remoteServer).DeepCopy()
+		template.Spec.Scope = ""
+		template.Spec.Remote.Headers = map[string]string{"Authorization": "Bearer static-key"}
+		fixture.catalog.Set(template, nil)
+		require.Equal(t, "shared", fixture.catalogTemplate(t, remoteServer).Spec.Scope)
+
+		first := fixture.connectObserved(t, alice())
+		instance := fixture.enableWithTools(t, first, remoteServer, "shared", "echo")
+		assert.Empty(t, instance.OwnerPrincipal)
+
+		second := fixture.connectObserved(t, bob())
+		require.Empty(t, awaitEnable(t, startEnable(t, second.session, remoteServer)).err)
+		assert.Len(t, fixture.instancesOf(t, fixture.catalogTemplate(t, remoteServer)), 1)
+
+		for _, client := range []*observedClient{first, second} {
+			result := callTool(t, client.session, "mail-archiver__echo", map[string]any{"text": "hi"})
+			require.False(t, result.IsError, resultText(result))
+		}
+
+		sessions := fixture.upstream.callSessions()
+		require.Len(t, sessions, 2)
+		assert.Equal(t, sessions[0], sessions[1], "both users' calls use one upstream session")
 	})
 
 	t.Run("a remote server's instance counts toward no instance limit", func(t *testing.T) {
