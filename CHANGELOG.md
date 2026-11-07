@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.4.1
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release lets the gateway stop the bundled embeddings server when nobody uses tool search. It also fixes the database setup SQL for split roles, and a chart bug that made `helm upgrade` fail.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.1`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.1`. Follow `docs/admin/quick-start.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+This release has no breaking changes. An install of 0.4.0 upgrades with no changes to its values.
+
+### Tool search
+
+- The gateway can stop the embeddings server that the chart runs when tool search is idle, and start it again when a search needs it. This saves the memory that the server holds. Set `embeddings.server.scaleToZero.enabled` to `true`. The server stops after `embeddings.server.scaleToZero.idleTimeout` with no use. The default is `15m`. The chart then gives the gateway the right to change only the number of replicas of that one Deployment, and adds one exception for it to the admission policy. The setting is off by default. See `docs/admin/chart.md` and `docs/admin/tool-search.md`. ([#470](https://github.com/solidDoWant/toolgate/pull/470), [#471](https://github.com/solidDoWant/toolgate/pull/471), [#474](https://github.com/solidDoWant/toolgate/pull/474))
+- While the embeddings server is stopped or starts, a search uses words only. The result tells the model that the search used keywords only. The metric `toolgate_tool_search_embedding_errors_total` counts these searches with the reason `scaled_down`. ([#474](https://github.com/solidDoWant/toolgate/pull/474))
+
+### Fixes
+
+- With the embeddings server on and no `embeddings.server.cache.existingClaim`, `helm upgrade` from 0.4.0 deleted the volume claim for the models while the server still used it, and the upgrade failed. The chart now creates the claim only when it does not exist, and an upgrade never deletes it. The image digests of the embeddings server and of the model download Job are now optional. ([#474](https://github.com/solidDoWant/toolgate/pull/474))
+- The database setup SQL for split roles in `docs/admin/chart.md` now installs the `vector` and `pg_trgm` extensions in the `toolgate` schema. Before, the migrations failed with `type "vector" does not exist` when a superuser with another name than `toolgate` ran the SQL, for example `postgres` on CloudNativePG. The page also shows how to do this with a CloudNativePG `Database`. If the `vector` type is not visible, `toolgate migrate` now stops with an error that names the `search_path` and the schema of the extension. ([#473](https://github.com/solidDoWant/toolgate/pull/473))
+
+Internal work: the acceptance tests have names that tell their behaviour, the checklist maps each scenario to its tests, and the code and docs have no tracking IDs, which a lint check now enforces.
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
+
 ## 0.4.0
 
 > [!WARNING]
