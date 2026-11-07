@@ -125,7 +125,8 @@ settings from `config`.
 {{- $_ := set $gateway "env" (concat $env ($gateway.env | default list) ($config.extraEnv | default list)) -}}
 
 {{- /*
-Resolvers and SPIFFE trust domains are set in the configuration file only.
+Additional OIDC issuers, resolvers and SPIFFE trust domains are set in the
+configuration file only.
 The file is a ConfigMap mounted at /etc/toolgate/config.yaml, and each
 resolver gets its own projected service-account token with its audience.
 */ -}}
@@ -140,6 +141,17 @@ resolver gets its own projected service-account token with its audience.
 {{- end }}
 {{- end }}
 {{- $_ := set $file "resolvers" . }}
+{{- end }}
+{{- with $config.oidc.additionalIssuers }}
+{{- range $issuer := . }}
+{{- if not $issuer.issuerURL }}
+{{- fail "config.oidc.additionalIssuers: every issuer needs an issuerURL" }}
+{{- end }}
+{{- if not $issuer.audience }}
+{{- fail (printf "config.oidc.additionalIssuers: issuer %q needs an audience" (toString $issuer.issuerURL)) }}
+{{- end }}
+{{- end }}
+{{- $_ := set $file "oidcAdditionalIssuers" . }}
 {{- end }}
 {{- with (($config.spiffe | default dict).trustDomains) }}
 {{- range $domain := . }}

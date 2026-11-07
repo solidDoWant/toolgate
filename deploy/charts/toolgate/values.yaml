@@ -60,6 +60,13 @@ config:
     # Required. The gateway accepts access tokens of every listed client, so
     # list only clients made for toolgate.
     audience: ""
+    # -- More issuers whose access tokens the gateway accepts, for an
+    # identity provider that gives each client its own issuer (Authentik
+    # does). At most 8. Each item has an `issuerURL`, exactly as in its
+    # tokens' `iss` claim, and an `audience`, one value or a list of 1 to 8.
+    # Every issuer must give one person the same `sub` claim. The CLI and the
+    # web UI still use `config.oidc.issuerURL`.
+    additionalIssuers: []
     # -- OIDC client ID that `toolgate login` signs in with, such as
     # `toolgate-cli`. It must be a public client with the device
     # authorization grant. The gateway publishes it, so users need no

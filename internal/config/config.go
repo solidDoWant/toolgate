@@ -115,6 +115,22 @@ type Config struct {
 	// gateway accepts, so list only clients made for toolgate.
 	OIDCAudience Audiences `json:"oidcAudience" env:"TOOLGATE_OIDC_AUDIENCE"`
 
+	// More OIDC issuers whose access tokens the gateway accepts, for an IdP
+	// that gives each client its own issuer (Authentik does). Set it in the
+	// YAML file only; the chart sets it from `config.oidc.additionalIssuers`.
+	// At most 8 items. Each has an `issuerURL` (an http or https URL,
+	// exactly as in its tokens' `iss` claim, different from `oidcIssuerURL`
+	// and from the other items) and an `audience` (one value or a list of 1
+	// to 8, with the same rules as `oidcAudience`). The gateway picks the
+	// issuer by the token's `iss` claim and checks the token with that
+	// issuer's signing keys and audiences. The claim settings below apply to
+	// every issuer, and the user is the token's `sub` claim, so every issuer
+	// must give one person the same `sub`. `oidcIssuerURL` stays the issuer
+	// that `toolgate login` and the web UI use. The gateway reads each
+	// additional issuer's discovery document when a token first names it,
+	// so an issuer that is down refuses only its own tokens.
+	OIDCAdditionalIssuers []OIDCIssuer `json:"oidcAdditionalIssuers"`
+
 	// The access token claim that holds the user's email address.
 	OIDCEmailClaim string `json:"oidcEmailClaim" env:"TOOLGATE_OIDC_EMAIL_CLAIM"`
 
@@ -630,6 +646,61 @@ const (
 	maxAudienceLength = 256
 )
 
+// maxAdditionalIssuers bounds oidcAdditionalIssuers.
+const maxAdditionalIssuers = 8
+
+// OIDCIssuer is one entry of the oidcAdditionalIssuers setting.
+type OIDCIssuer struct {
+	IssuerURL string    `json:"issuerURL"`
+	Audience  Audiences `json:"audience"`
+}
+
+// AdditionalIssuers returns oidcAdditionalIssuers as the authenticator's
+// options.
+func (c Config) AdditionalIssuers() []auth.IssuerOptions {
+	issuers := make([]auth.IssuerOptions, 0, len(c.OIDCAdditionalIssuers))
+	for _, issuer := range c.OIDCAdditionalIssuers {
+		issuers = append(issuers, auth.IssuerOptions{IssuerURL: issuer.IssuerURL, Audiences: issuer.Audience})
+	}
+
+	return issuers
+}
+
+func (c Config) validateAdditionalIssuers() []error {
+	var problems []error
+
+	if len(c.OIDCAdditionalIssuers) > maxAdditionalIssuers {
+		problems = append(problems, fmt.Errorf("oidcAdditionalIssuers: %d issuers, at most %d are allowed", len(c.OIDCAdditionalIssuers), maxAdditionalIssuers))
+	}
+
+	seen := map[string]bool{c.OIDCIssuerURL: true}
+
+	for index, issuer := range c.OIDCAdditionalIssuers {
+		where := fmt.Sprintf("oidcAdditionalIssuers[%d]", index)
+
+		switch {
+		case issuer.IssuerURL == "":
+			problems = append(problems, fmt.Errorf("%s.issuerURL: required", where))
+		case !isHTTPURL(issuer.IssuerURL):
+			problems = append(problems, fmt.Errorf("%s.issuerURL: %q is not an http or https URL", where, issuer.IssuerURL))
+		case seen[issuer.IssuerURL]:
+			problems = append(problems, fmt.Errorf("%s.issuerURL: %q is already configured", where, issuer.IssuerURL))
+		}
+
+		seen[issuer.IssuerURL] = true
+
+		problems = append(problems, issuer.Audience.validate(where+".audience")...)
+	}
+
+	return problems
+}
+
+func isHTTPURL(value string) bool {
+	target, err := url.Parse(value)
+
+	return err == nil && (target.Scheme == "http" || target.Scheme == "https") && target.Host != ""
+}
+
 // Audiences is a list of OIDC audiences. In YAML it is one string or a list
 // of strings, so a single-value setting is a one-item list.
 type Audiences []string
@@ -653,15 +724,16 @@ func (a *Audiences) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func (a Audiences) validate() []error {
+// validate checks the audiences of the setting named key.
+func (a Audiences) validate(key string) []error {
 	if len(a) == 0 {
-		return []error{errors.New("oidcAudience: required")}
+		return []error{fmt.Errorf("%s: required", key)}
 	}
 
 	var problems []error
 
 	if len(a) > maxAudiences {
-		problems = append(problems, fmt.Errorf("oidcAudience: %d audiences, at most %d are allowed", len(a), maxAudiences))
+		problems = append(problems, fmt.Errorf("%s: %d audiences, at most %d are allowed", key, len(a), maxAudiences))
 	}
 
 	seen := make(map[string]bool, len(a))
@@ -669,11 +741,11 @@ func (a Audiences) validate() []error {
 	for _, audience := range a {
 		switch {
 		case audience == "":
-			problems = append(problems, errors.New("oidcAudience: an audience must not be empty"))
+			problems = append(problems, fmt.Errorf("%s: an audience must not be empty", key))
 		case len(audience) > maxAudienceLength:
-			problems = append(problems, fmt.Errorf("oidcAudience: an audience is longer than %d characters", maxAudienceLength))
+			problems = append(problems, fmt.Errorf("%s: an audience is longer than %d characters", key, maxAudienceLength))
 		case seen[audience]:
-			problems = append(problems, fmt.Errorf("oidcAudience: %q is listed more than once", audience))
+			problems = append(problems, fmt.Errorf("%s: %q is listed more than once", key, audience))
 		}
 
 		seen[audience] = true
@@ -928,11 +1000,12 @@ func (c Config) Validate() []error {
 
 	if c.OIDCIssuerURL == "" {
 		problems = append(problems, errors.New("oidcIssuerURL: required"))
-	} else if issuer, err := url.Parse(c.OIDCIssuerURL); err != nil || (issuer.Scheme != "http" && issuer.Scheme != "https") || issuer.Host == "" {
+	} else if !isHTTPURL(c.OIDCIssuerURL) {
 		problems = append(problems, fmt.Errorf("oidcIssuerURL: %q is not an http or https URL", c.OIDCIssuerURL))
 	}
 
-	problems = append(problems, c.OIDCAudience.validate()...)
+	problems = append(problems, c.OIDCAudience.validate("oidcAudience")...)
+	problems = append(problems, c.validateAdditionalIssuers()...)
 
 	for key, value := range map[string]string{
 		"oidcEmailClaim":         c.OIDCEmailClaim,
