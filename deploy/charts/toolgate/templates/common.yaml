@@ -5,8 +5,14 @@ this template applies `tpl` to its string values and adds the gateway's
 settings from `config`.
 */ -}}
 {{- with .Values.config }}
-{{- if not .database.existingSecret }}
-{{- fail "config.database.existingSecret is required: the name of a Secret that holds the PostgreSQL connection string" }}
+{{- if and .database.url .database.existingSecret }}
+{{- fail "config.database.url and config.database.existingSecret are both set: set exactly one source for the PostgreSQL connection string" }}
+{{- end }}
+{{- if not (or .database.url .database.existingSecret) }}
+{{- fail "config.database.url or config.database.existingSecret is required: the connection string inline, or the name of a Secret that holds it" }}
+{{- end }}
+{{- if and .database.migrationUrl .database.migrationSecret }}
+{{- fail "config.database.migrationUrl and config.database.migrationSecret are both set: set exactly one source for the migration connection string" }}
 {{- end }}
 {{- if not .oidc.issuerURL }}
 {{- fail "config.oidc.issuerURL is required: the issuer URL of the OIDC identity provider" }}
@@ -27,7 +33,7 @@ settings from `config`.
 {{- fail "config.audit.s3.bucket is required when config.audit.payloads is true" }}
 {{- end }}
 {{- if and (include "toolgate.migrateJobEnabled" $) (not .database.migrationEgress) }}
-{{- fail "config.database.migrationEgress is required when the migration Job renders (config.database.migrationSecret is set and config.database.migrateOnStart is false): NetworkPolicy egress rules that reach PostgreSQL" }}
+{{- fail "config.database.migrationEgress is required when the migration Job renders (config.database.migrationUrl or config.database.migrationSecret is set and config.database.migrateOnStart is false): NetworkPolicy egress rules that reach PostgreSQL" }}
 {{- end }}
 {{- end }}
 
@@ -39,7 +45,7 @@ settings from `config`.
 {{- $env := list
   (dict "name" "TOOLGATE_LISTEN_ADDRESS" "value" ":8080")
   (dict "name" "TOOLGATE_METRICS_LISTEN_ADDRESS" "value" ":9090")
-  (dict "name" "TOOLGATE_DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $config.database.existingSecret "key" $config.database.secretKey)))
+  (ternary (dict "name" "TOOLGATE_DATABASE_URL" "value" $config.database.url) (dict "name" "TOOLGATE_DATABASE_URL" "valueFrom" (dict "secretKeyRef" (dict "name" $config.database.existingSecret "key" $config.database.secretKey))) (not (empty $config.database.url)))
   (dict "name" "TOOLGATE_MIGRATE_ON_START" "value" (toString $config.database.migrateOnStart))
   (dict "name" "TOOLGATE_OIDC_ISSUER_URL" "value" $config.oidc.issuerURL)
   (dict "name" "TOOLGATE_OIDC_AUDIENCE" "value" (join "," $config.oidc.audience))
@@ -161,6 +167,14 @@ resolver gets its own projected service-account token with its audience.
 {{- if include "toolgate.migrateJobEnabled" . }}
 {{- $policy := index $resources "rawResources" "migrate-networkpolicy" "manifest" "spec" }}
 {{- $_ := set $policy "egress" (concat $policy.egress $config.database.migrationEgress) }}
+{{- $migrateContainer := $resources.controllers.migrate.containers.migrate }}
+{{- $migrateURL := dict "name" "TOOLGATE_DATABASE_URL" }}
+{{- if $config.database.migrationUrl }}
+{{- $_ := set $migrateURL "value" $config.database.migrationUrl }}
+{{- else }}
+{{- $_ := set $migrateURL "valueFrom" (dict "secretKeyRef" (dict "name" $config.database.migrationSecret "key" $config.database.migrationSecretKey)) }}
+{{- end }}
+{{- $_ := set $migrateContainer "env" (concat (list $migrateURL) ($migrateContainer.env | default list)) }}
 {{- end }}
 
 {{- with $config.imagePullSecrets }}

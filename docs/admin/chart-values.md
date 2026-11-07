@@ -20,12 +20,14 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.catalogNamespaces | list | `[]` | Namespaces whose `MCPServerTemplate` and `ToolgateRule` objects the gateway reads, such as `[toolgate-catalog]`. Empty means the release namespace. |
 | config.crds.enabled | bool | `true` | Install toolgate's CRDs with the chart. `helm upgrade` updates them. If false, install them yourself. |
 | config.crds.keep | bool | `true` | Keep the CRDs, and so every template, rule and settings profile, when the release is uninstalled (`helm.sh/resource-policy: keep`). |
-| config.database.existingSecret | string | `""` | Name of an existing Secret in the release namespace that holds the PostgreSQL connection string. Required. |
+| config.database.existingSecret | string | `""` | Name of an existing Secret in the release namespace that holds the PostgreSQL connection string. Use it for any string with a password. Set exactly one of this and `config.database.url`. |
 | config.database.migrateOnStart | bool | `true` | Whether the gateway creates and updates its tables when it starts. Set false when the gateway's database user has data rights only. Then run the migrations with `config.database.migrationSecret`, or run `toolgate migrate` yourself. |
 | config.database.migrationEgress | list | `[]` | Egress rules (the `egress` list of a Kubernetes `NetworkPolicy`) that let the migration Job reach PostgreSQL. Required when the Job renders. The chart adds DNS (port 53) itself. |
 | config.database.migrationSecret | string | `""` | Name of an existing Secret in the release namespace that holds the connection string of the database role that owns the tables. When it is set and `config.database.migrateOnStart` is false, a Helm hook Job runs `toolgate migrate` with it before every install and upgrade. Hooks need Helm or Flux: `helm template | kubectl apply` skips them. |
 | config.database.migrationSecretKey | string | `"url"` | Key in `config.database.migrationSecret` that holds the connection string. |
+| config.database.migrationUrl | string | `""` | The connection string of the database role that owns the tables, inline. Use it only for a string with no password. The value ends up in the Job spec and in the Helm release. Set at most one of this and `config.database.migrationSecret`; the Job renders as for the Secret. |
 | config.database.secretKey | string | `"url"` | Key in `config.database.existingSecret` that holds the connection string. |
+| config.database.url | string | `""` | The PostgreSQL connection string, inline. Use it only for a string with no password, such as client-certificate or token authentication. The value ends up in the Deployment spec and in the Helm release, where anyone who can read them sees it. Set exactly one of this and `config.database.existingSecret`. |
 | config.extraEnv | list | `[]` | More environment variables for the gateway container, as a list of Kubernetes `EnvVar` objects. |
 | config.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | config.image.repository | string | `"ghcr.io/soliddowant/toolgate"` | Gateway image repository. |

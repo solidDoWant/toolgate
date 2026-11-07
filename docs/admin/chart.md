@@ -181,7 +181,7 @@ The gateway keeps its state in PostgreSQL and creates its tables itself. You can
      GRANT EXECUTE ON FUNCTIONS TO toolgate_app;
    ```
 
-2. Put each connection string in a Secret in the release namespace.
+2. Put each connection string in a Secret in the release namespace. If a string has no password, you can set it inline instead (see below).
 3. Set these values:
 
    ```yaml
@@ -202,14 +202,30 @@ The gateway keeps its state in PostgreSQL and creates its tables itself. You can
 
 If you already have a database that one role owns, move it to the split mode with these steps, with the same default privileges as above. Use `REASSIGN OWNED BY old_role TO toolgate_migrator`, then `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA toolgate TO toolgate_app` and `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA toolgate TO toolgate_app`. Do not grant `EXECUTE` on a function by name: the audit partition function does not exist until the Job runs, and the default privilege for functions covers it.
 
-When `migrationSecret` is set and `migrateOnStart` is `false`, the chart adds three objects: a ServiceAccount with no permissions, a NetworkPolicy and a Job named `<release>-migrate` that runs `toolgate migrate`. The NetworkPolicy allows no ingress, and allows egress to DNS (port 53) and to `migrationEgress`. The chart fails with a message that names `config.database.migrationEgress` if you leave it empty.
+### Inline connection strings
+
+If a string holds no password, you can set it in the values. This fits client-certificate authentication, where the credential is the mounted certificate, and token-based authentication. Use `config.database.url` for the gateway and `config.database.migrationUrl` for the migration Job, in place of `existingSecret` and `migrationSecret`:
+
+```yaml
+config:
+  database:
+    url: "postgres://toolgate_app@db.example.com/toolgate?sslmode=verify-full&sslcert=/etc/pg/tls.crt&sslkey=/etc/pg/tls.key&sslrootcert=/etc/pg/ca.crt&search_path=toolgate"
+    migrateOnStart: false
+    migrationUrl: "postgres://toolgate_migrator@db.example.com/toolgate?sslmode=verify-full&sslcert=/etc/pg-migrate/tls.crt&sslkey=/etc/pg-migrate/tls.key&sslrootcert=/etc/pg-migrate/ca.crt&search_path=toolgate"
+```
+
+Set exactly one source for each string. The chart fails with a message that names both values if you set both, or if you set neither for the gateway. You can mix sources, for example an inline gateway string with a Secret migration string.
+
+An inline string is a plain value in the Deployment and Job specs and in the Helm release. Anyone who can read those objects can read it. Never put a password in it. Use the Secret values for any string that has one.
+
+When `migrationUrl` or `migrationSecret` is set and `migrateOnStart` is `false`, the chart adds three objects: a ServiceAccount with no permissions, a NetworkPolicy and a Job named `<release>-migrate` that runs `toolgate migrate`. The NetworkPolicy allows no ingress, and allows egress to DNS (port 53) and to `migrationEgress`. The chart fails with a message that names `config.database.migrationEgress` if you leave it empty.
 
 These are Helm hooks (`pre-install` and `pre-upgrade`). Helm and the Flux helm-controller run them before they apply the other objects, and wait for the Job. So the new gateway pods start only after the migrations. If the Job fails, the install or upgrade fails and the old pods keep serving. Helm deletes the objects after the Job succeeds.
 
 - **Hooks need Helm or Flux.** `helm template | kubectl apply` does not run hooks, so nothing migrates. In that case run `toolgate migrate` yourself before each upgrade.
 - **The deadline.** The Job stops after 240 seconds. The default timeout of the helm-controller is 5 minutes, so the Job fails before Flux gives up. If you set a longer `spec.timeout` on the HelmRelease, you must also raise `activeDeadlineSeconds` under `resources.controllers.migrate.job`.
 - **Mounts.** The Job mounts nothing from the release, because the release's ConfigMap and Secrets do not exist yet when it runs. If the Job needs a file, such as a client certificate for PostgreSQL, mount it with `resources.persistence.<name>.advancedMounts.migrate`. Mount files for the gateway, such as a resolver `caFile`, with `advancedMounts.gateway.gateway`. A `globalMounts` entry also mounts the file into the Job.
-- **No migration Secret.** If `migrateOnStart` is `false` and `migrationSecret` is empty, nothing migrates. The gateway refuses to start while the schema is older than it needs, and its log says so. Run `toolgate migrate` yourself.
+- **No migration Secret.** If `migrateOnStart` is `false` and both `migrationSecret` and `migrationUrl` are empty, nothing migrates. The gateway refuses to start while the schema is older than it needs, and its log says so. Run `toolgate migrate` yourself.
 
 ## CRD upgrades
 
