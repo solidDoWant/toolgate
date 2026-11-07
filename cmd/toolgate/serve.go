@@ -123,7 +123,14 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	searchMetrics := embeddings.NewMetrics()
 
-	searchEmbedder, err := newToolSearchEmbedder(cfg, searchMetrics)
+	// With scale-to-zero on, every replica records when it needs embeddings,
+	// so that the leader starts the embeddings server and keeps it running.
+	var embeddingsDemand func(context.Context)
+	if cfg.ToolSearchEmbeddingsScaleToZeroDeployment != "" {
+		embeddingsDemand = (&runtime.EmbeddingsDemand{Pool: server.Database(), Log: logger}).Record
+	}
+
+	searchEmbedder, err := newToolSearchEmbedder(cfg, searchMetrics, embeddingsDemand)
 	if err != nil {
 		logger.Error("gateway failed to start", "error", err)
 

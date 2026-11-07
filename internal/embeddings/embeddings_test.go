@@ -189,3 +189,32 @@ func TestEmbedEndpointTimeoutOpensCircuit(t *testing.T) {
 	_, err = client.Embed(t.Context(), []string{"a"})
 	require.ErrorIs(t, err, embeddings.ErrCircuitOpen)
 }
+
+// A scaled-down server must hear about demand even while the circuit is
+// open, or it would never be started again.
+func TestEmbedReportsDemandEvenWithCircuitOpen(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	var demands atomic.Int32
+
+	client, err := embeddings.New(embeddings.Options{
+		URL: server.URL, Model: "m",
+		OnDemand: func(context.Context) { demands.Add(1) },
+	})
+	require.NoError(t, err)
+
+	_, err = client.Embed(t.Context(), nil)
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), demands.Load(), "nothing to embed is no demand")
+
+	_, err = client.Embed(t.Context(), []string{"a"})
+	require.Error(t, err)
+	assert.Equal(t, int32(1), demands.Load())
+
+	_, err = client.EmbedFor(t.Context(), embeddings.OperationDocument, []string{"a"})
+	require.ErrorIs(t, err, embeddings.ErrCircuitOpen)
+	assert.Equal(t, int32(2), demands.Load())
+}

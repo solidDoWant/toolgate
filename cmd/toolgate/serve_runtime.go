@@ -277,6 +277,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
 
+	if err := addEmbeddingsScaler(mgr, cfg, clientset, pool, lease, options.registerMetrics, logger); err != nil {
+		return nil, err
+	}
+
 	result := make(chan error, 1)
 
 	go func() { result <- mgr.Start(ctx) }()
@@ -325,4 +329,37 @@ func kubeScheme() *k8sruntime.Scheme {
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 
 	return scheme
+}
+
+// addEmbeddingsScaler adds, when scale-to-zero is configured, the leader's
+// loop that scales the bundled embeddings server between 0 and 1 replicas.
+func addEmbeddingsScaler(mgr manager.Manager, cfg config.Config, clientset kubernetes.Interface, pool *pgxpool.Pool,
+	lease runtime.Fence, registerMetrics func(...prometheus.Collector) error, logger *slog.Logger,
+) error {
+	if cfg.ToolSearchEmbeddingsScaleToZeroDeployment == "" {
+		return nil
+	}
+
+	desired := runtime.NewEmbeddingsReplicasDesired()
+	if err := registerMetrics(desired); err != nil {
+		return err
+	}
+
+	// The scaler runs only on the Lease holder, like every runnable that
+	// does not say otherwise.
+	scaler := &runtime.EmbeddingsScaler{
+		Pool: pool,
+		Deployment: runtime.KubeEmbeddingsDeployment{
+			Client: clientset, Namespace: cfg.LeaseNamespace, Name: cfg.ToolSearchEmbeddingsScaleToZeroDeployment,
+		},
+		IdleTimeout: testtime.Scale(time.Duration(cfg.ToolSearchEmbeddingsScaleToZeroIdleTimeout)),
+		Fence:       lease,
+		Desired:     desired,
+		Log:         logger,
+	}
+	if err := mgr.Add(manager.RunnableFunc(scaler.Run)); err != nil {
+		return fmt.Errorf("kubernetes manager: %w", err)
+	}
+
+	return nil
 }

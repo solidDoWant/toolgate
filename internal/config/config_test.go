@@ -75,6 +75,8 @@ logLevel: debug
 		OIDCUIScopes:                []string{"openid", "email", "profile"},
 		AdminGroup:                  "toolgate-admins",
 		ToolSearchEmbeddingsTimeout: config.Duration(2 * time.Second),
+
+		ToolSearchEmbeddingsScaleToZeroIdleTimeout: config.Duration(15 * time.Minute),
 	}, cfg)
 }
 
@@ -513,6 +515,50 @@ func TestSessionResumeWindowBounds(t *testing.T) {
 			parsed, err := time.ParseDuration(value)
 			require.NoError(t, err)
 			assert.Equal(t, config.Duration(parsed), cfg.SessionResumeWindow)
+		})
+	}
+}
+
+func TestEmbeddingsScaleToZeroSettings(t *testing.T) {
+	tests := []struct {
+		name        string
+		deployment  string
+		idleTimeout string
+		want        time.Duration
+		wantProblem string
+	}{
+		{name: "smallest idle timeout", deployment: "toolgate-embeddings", idleTimeout: "1m", want: time.Minute},
+		{name: "largest idle timeout", deployment: "toolgate-embeddings", idleTimeout: "24h", want: 24 * time.Hour},
+		{name: "idle timeout below 1m", deployment: "toolgate-embeddings", idleTimeout: "59s", wantProblem: "toolSearchEmbeddingsScaleToZeroIdleTimeout: must be from 1m to 24h"},
+		{name: "idle timeout above 24h", deployment: "toolgate-embeddings", idleTimeout: "24h1s", wantProblem: "toolSearchEmbeddingsScaleToZeroIdleTimeout: must be from 1m to 24h"},
+		{name: "off by default", want: 15 * time.Minute},
+		{name: "deployment name not a Kubernetes name", deployment: "Toolgate_Embeddings", wantProblem: "toolSearchEmbeddingsScaleToZeroDeployment:"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := map[string]string{
+				"TOOLGATE_DATABASE_URL":    validDatabaseURL,
+				"TOOLGATE_OIDC_ISSUER_URL": "https://idp.example",
+				"TOOLGATE_OIDC_AUDIENCE":   "toolgate",
+			}
+			if test.deployment != "" {
+				env["TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_DEPLOYMENT"] = test.deployment
+			}
+
+			if test.idleTimeout != "" {
+				env["TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_IDLE_TIMEOUT"] = test.idleTimeout
+			}
+
+			cfg, err := config.Load("", envFrom(env))
+			if test.wantProblem != "" {
+				require.ErrorContains(t, err, test.wantProblem)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, test.deployment, cfg.ToolSearchEmbeddingsScaleToZeroDeployment)
+			assert.Equal(t, config.Duration(test.want), cfg.ToolSearchEmbeddingsScaleToZeroIdleTimeout)
 		})
 	}
 }

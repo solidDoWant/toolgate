@@ -304,6 +304,19 @@ type Config struct {
 	// seconds. A search that runs out of time uses words only.
 	ToolSearchEmbeddingsTimeout Duration `json:"toolSearchEmbeddingsTimeout" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_TIMEOUT"`
 
+	// The name of the Deployment of the bundled embeddings server, in the
+	// gateway's own namespace. If it is set, the gateway scales that
+	// Deployment to zero replicas when tool search is idle, and back to one
+	// when it is needed. If it is empty, the gateway never scales it. The
+	// chart sets it when `embeddings.server.scaleToZero.enabled` is true.
+	ToolSearchEmbeddingsScaleToZeroDeployment string `json:"toolSearchEmbeddingsScaleToZeroDeployment" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_DEPLOYMENT"`
+
+	// How long tool search must be idle before the gateway scales the
+	// embeddings server to zero. Tool search is idle when no live session has
+	// it on and no embeddings request was sent. Write it as a Go duration,
+	// such as `15m`. It must be from 1 minute to 24 hours.
+	ToolSearchEmbeddingsScaleToZeroIdleTimeout Duration `json:"toolSearchEmbeddingsScaleToZeroIdleTimeout" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_IDLE_TIMEOUT"`
+
 	// The URL of the S3 API that stores large audit payloads, such as
 	// `https://s3.example.com`. If it is empty, the gateway uses the AWS S3
 	// endpoint of `auditS3Region`. The gateway gets its S3 credentials from
@@ -605,6 +618,8 @@ func Default() Config {
 		ApprovalTimeout:        Duration(10 * time.Minute),
 
 		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
+
+		ToolSearchEmbeddingsScaleToZeroIdleTimeout: Duration(15 * time.Minute),
 	}
 }
 
@@ -1121,11 +1136,21 @@ func validateAddress(key, address string) []error {
 
 // validateToolSearchEmbeddings checks the embeddings settings of tool search.
 func (c Config) validateToolSearchEmbeddings() []error {
-	if c.ToolSearchEmbeddingsURL == "" {
-		return nil
+	var problems []error
+
+	if c.ToolSearchEmbeddingsScaleToZeroDeployment != "" {
+		if invalid := validation.IsDNS1123Subdomain(c.ToolSearchEmbeddingsScaleToZeroDeployment); len(invalid) > 0 {
+			problems = append(problems, fmt.Errorf("toolSearchEmbeddingsScaleToZeroDeployment: %s", strings.Join(invalid, "; ")))
+		}
 	}
 
-	var problems []error
+	if c.ToolSearchEmbeddingsScaleToZeroIdleTimeout < Duration(time.Minute) || c.ToolSearchEmbeddingsScaleToZeroIdleTimeout > Duration(24*time.Hour) {
+		problems = append(problems, errors.New("toolSearchEmbeddingsScaleToZeroIdleTimeout: must be from 1m to 24h"))
+	}
+
+	if c.ToolSearchEmbeddingsURL == "" {
+		return problems
+	}
 
 	endpoint, err := url.Parse(c.ToolSearchEmbeddingsURL)
 	if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {

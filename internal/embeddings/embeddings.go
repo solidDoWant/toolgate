@@ -45,6 +45,9 @@ type Options struct {
 	// Now returns the current time for the circuit breaker; nil means
 	// time.Now.
 	Now func() time.Time
+	// OnDemand, when set, is called before each Embed or EmbedFor, even when
+	// the circuit is open, so that a scaled-down server can be started.
+	OnDemand func(ctx context.Context)
 }
 
 // Client calls the embeddings endpoint.
@@ -56,6 +59,7 @@ type Client struct {
 	http     *http.Client
 	breaker  breaker
 	metrics  *Metrics
+	onDemand func(ctx context.Context)
 }
 
 // Metrics counts failed and skipped calls of the model endpoints. One value
@@ -145,6 +149,7 @@ func New(options Options, metrics ...*Metrics) (*Client, error) {
 		http:     client,
 		breaker:  breaker{now: valueOrNow(options.Now)},
 		metrics:  shared,
+		onDemand: options.OnDemand,
 	}, nil
 }
 
@@ -195,6 +200,10 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 // It records the duration of each request that reached the endpoint, whether
 // it succeeded or not. A call the open circuit skipped records nothing.
 func (c *Client) EmbedFor(ctx context.Context, operation string, texts []string) ([][]float32, error) {
+	if c.onDemand != nil && len(texts) > 0 {
+		c.onDemand(ctx)
+	}
+
 	vectors := make([][]float32, 0, len(texts))
 
 	for start := 0; start < len(texts); start += BatchSize {
