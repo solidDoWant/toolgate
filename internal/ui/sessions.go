@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -186,6 +187,8 @@ type sessionServerRow struct {
 	Status    string
 	Reason    string
 	Remote    bool
+	// Denied is true when the session's own scope denies the whole server.
+	Denied bool
 }
 
 // scopeView is what a session may use, from the workspace, the defaults and
@@ -213,6 +216,11 @@ type sessionPage struct {
 	Scope    scopeView
 	Calls    []callRow
 	AuditURL string
+	// CanDeny is true for the session's owner when the gateway can change
+	// scopes.
+	CanDeny bool
+	// DenyPath is the confirmation page of a deny.
+	DenyPath string
 }
 
 func clientText(name, version string) string {
@@ -476,6 +484,14 @@ func (u *UI) buildSessionPage(ctx context.Context, viewer Session, row db.Sessio
 
 	if data.Scope, err = u.sessionScope(ctx, row); err != nil {
 		return sessionPage{}, err
+	}
+
+	data.DenyPath = sessionDenyPath(row.ID)
+
+	data.CanDeny = u.options.Workspaces != nil && viewer.Principal == row.Principal
+	for index := range data.Servers {
+		server := &data.Servers[index]
+		server.Denied = slices.Contains(data.Scope.SessionDenied, server.Name)
 	}
 
 	events, err := u.queries.ListSessionCallEvents(ctx, db.ListSessionCallEventsParams{
