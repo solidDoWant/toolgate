@@ -59,6 +59,12 @@ type AuditEvent struct {
 	PayloadRef  string
 }
 
+type EmbeddingsServer struct {
+	ID           bool
+	LastDemandAt pgtype.Timestamptz
+	State        string
+}
+
 type Grant struct {
 	ID           string
 	Principal    string

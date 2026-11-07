@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ const maxEmbeddingsKeyBytes = 4 << 10
 
 // newToolSearchEmbedder returns the embeddings client of tool search, or nil
 // when no endpoint is configured. It registers the client's metrics.
-func newToolSearchEmbedder(cfg config.Config, metrics *embeddings.Metrics) (*embeddings.Client, error) {
+func newToolSearchEmbedder(cfg config.Config, metrics *embeddings.Metrics, onDemand func(context.Context)) (*embeddings.Client, error) {
 	if cfg.ToolSearchEmbeddingsURL == "" {
 		return nil, nil //nolint:nilnil // Nil means embeddings are off.
 	}
@@ -33,6 +34,7 @@ func newToolSearchEmbedder(cfg config.Config, metrics *embeddings.Metrics) (*emb
 	client, err := embeddings.New(embeddings.Options{
 		URL: cfg.ToolSearchEmbeddingsURL, Model: cfg.ToolSearchEmbeddingsModel,
 		APIKey: apiKey, Timeout: time.Duration(cfg.ToolSearchEmbeddingsTimeout),
+		OnDemand: onDemand,
 	}, metrics)
 	if err != nil {
 		return nil, fmt.Errorf("tool search embeddings: %w", err)

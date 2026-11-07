@@ -20,6 +20,7 @@ Only the replica that holds the leader Lease sets these metrics. The other repli
 - `toolgate_instances`
 - `toolgate_instance_namespaces_stuck`
 - `toolgate_approval_requests_pending`
+- `toolgate_embeddings_server_replicas_desired`
 - `toolgate_leader`
 
 When the leader changes, the new leader sets the metrics within 30 seconds.
@@ -120,6 +121,8 @@ Suggested alert on embedding errors:
 ```promql
 sum by (use) (increase(toolgate_tool_search_embedding_errors_total[15m])) > 0
 ```
+
+`toolgate_embeddings_server_replicas_desired` is a gauge of the replicas that the gateway wants for the bundled embeddings server. It is 1 while tool search is in use, and 0 after tool search was idle for the idle timeout. The series exists only when scale-to-zero is on (`toolSearchEmbeddingsScaleToZeroDeployment` is set in the [gateway configuration](configuration.md)). It has no labels. The gateway also logs each change to the number of replicas, with the reason.
 
 ## Auth and telemetry
 
