@@ -6,6 +6,8 @@
 
 - The gateway now tells the model which servers it can use: a short list in the MCP instructions, and the same names in the descriptions of `toolgate_find_tools` and `toolgate_list_servers`. Write each template's `description` for the model.
 
+- The Sessions page of the web UI now shows who runs each session, where (with a verified or unverified badge), which client and version, and whether the session is active, idle, ended or resumable. You can filter by state, workspace and, as an admin, user.
+
 ### Upgrade notes for admins
 
 - Sessions in tool search mode no longer list `toolgate_enable_server` and `toolgate_disable_server`. A call to a tool of an allowed server already turns the server on. A call to a tool of a server that the workspace blocks asks the user for access. To list the two tools in every mode, as before, set `config.metaTools.enableDisable` to `always`. See `docs/admin/tool-search.md`.

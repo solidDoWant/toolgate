@@ -40,14 +40,6 @@ SET email = @email, name = @name, groups = @groups, auth_time = @auth_time
 WHERE id_hash = @id_hash AND principal = @principal
   AND expires_at > now() AND last_seen_at > now() - interval '1 hour';
 
--- name: ListOpenSessionsForUI :many
--- Lists open sessions, newest activity first. An empty principal matches
--- every principal.
-SELECT * FROM sessions
-WHERE ended_at IS NULL AND (@principal::text = '' OR principal = @principal)
-ORDER BY last_seen_at DESC, id DESC
-LIMIT @page_size;
-
 -- name: ListRecentDecisions :many
 -- Lists the newest tool.decision events of one session.
 SELECT id, occurred_at, principal, workspace, session, attestation, server, tool, details
@@ -56,3 +48,43 @@ WHERE type = 'tool.decision' AND principal = @principal AND session = @session
   AND occurred_at >= @since::timestamptz
 ORDER BY occurred_at DESC, id DESC
 LIMIT @page_size;
+
+-- name: ListSessionsForUI :many
+-- Lists sessions for the Sessions page, newest activity first: open ones and
+-- those that ended after @ended_after (the start of the resume window). An
+-- empty principal or workspace matches every one. @only_open leaves ended
+-- sessions out, and @seen_after leaves out sessions with no request since.
+-- The client is the clientInfo of the session's newest MCP session.
+SELECT s.*,
+       COALESCE(m.initialize_params -> 'clientInfo' ->> 'name', '')::text AS client_name,
+       COALESCE(m.initialize_params -> 'clientInfo' ->> 'version', '')::text AS client_version
+FROM sessions s
+LEFT JOIN LATERAL (
+    SELECT initialize_params FROM mcp_sessions
+    WHERE session_pk = s.id
+    ORDER BY created_at DESC
+    LIMIT 1
+) m ON true
+WHERE (s.ended_at IS NULL OR (NOT @only_open::boolean AND s.ended_at > @ended_after::timestamptz))
+  AND (@principal::text = '' OR s.principal = @principal)
+  AND (@workspace::text = '' OR s.workspace = @workspace)
+  AND s.last_seen_at > @seen_after::timestamptz
+ORDER BY s.last_seen_at DESC, s.id DESC
+LIMIT @page_size;
+
+-- name: ListSessionWorkspaces :many
+-- Lists the workspaces of the sessions the Sessions page can show, for its
+-- workspace filter. An empty principal matches every one.
+SELECT DISTINCT workspace FROM sessions
+WHERE (ended_at IS NULL OR ended_at > @ended_after::timestamptz)
+  AND (@principal::text = '' OR principal = @principal)
+ORDER BY workspace
+LIMIT 200;
+
+-- name: ListSessionPrincipals :many
+-- Lists the principals of the sessions the Sessions page can show, for the
+-- admin's user filter.
+SELECT DISTINCT principal FROM sessions
+WHERE ended_at IS NULL OR ended_at > @ended_after::timestamptz
+ORDER BY principal
+LIMIT 200;

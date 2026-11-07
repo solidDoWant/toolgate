@@ -44,3 +44,5 @@
 <div><a href="/ui/workspaces">Change on the Workspaces page</a></div>{{end}}
 {{define "who"}}<span class="who" title="{{.Hover}}">{{.Text}}</span>{{if .Copyable}} <details class="copy-id"><summary>ID</summary><input readonly size="24" aria-label="Full ID" value="{{.Raw}}"></details>{{end}}{{end}}
 {{define "ws"}}<span title="{{.ID}}">{{.Label}}</span>{{end}}
+{{define "reltime"}}{{if .Text}}<time datetime="{{.ISO}}" title="{{.UTC}}">{{.Text}}</time>{{end}}{{end}}
+{{define "outcome"}}<span class="badge {{.Class}}">{{.Label}}</span>{{end}}

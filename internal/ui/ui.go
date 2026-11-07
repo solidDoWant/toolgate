@@ -159,6 +159,9 @@ type Options struct {
 	// ApprovalTimeout is how long an approved call stays usable
 	// (`approvalTimeout`). Zero means DefaultApprovalTimeout.
 	ApprovalTimeout time.Duration
+	// SessionResumeWindow is `sessionResumeWindow`: how long an ended
+	// session can be resumed. Zero means DefaultSessionResumeWindow.
+	SessionResumeWindow time.Duration
 	// AuditPayloads reports whether audit payloads are on.
 	AuditPayloads bool
 	// Payloads reads payload objects from S3 for the audit event and

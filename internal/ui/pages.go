@@ -61,7 +61,7 @@ var pageTemplates = map[string]*template.Template{
 
 // parsePage parses the layout and one page's content template.
 func parsePage(file string) *template.Template {
-	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp, "workspace": labelWorkspace}).
+	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp, "workspace": labelWorkspace, "since": timeSince, "outcome": outcomeBadge}).
 		ParseFS(templateFiles, "templates/layout.html", "templates/"+file+".html"))
 }
 

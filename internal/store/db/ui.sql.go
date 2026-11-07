@@ -124,55 +124,6 @@ func (q *Queries) InsertUISession(ctx context.Context, arg InsertUISessionParams
 	return i, err
 }
 
-const listOpenSessionsForUI = `-- name: ListOpenSessionsForUI :many
-SELECT id, principal, session_id, workspace, attestation, email, name, groups, created_at, last_seen_at, ended_at, kind, last_search_id, tool_search FROM sessions
-WHERE ended_at IS NULL AND ($1::text = '' OR principal = $1)
-ORDER BY last_seen_at DESC, id DESC
-LIMIT $2
-`
-
-type ListOpenSessionsForUIParams struct {
-	Principal string
-	PageSize  int32
-}
-
-// Lists open sessions, newest activity first. An empty principal matches
-// every principal.
-func (q *Queries) ListOpenSessionsForUI(ctx context.Context, arg ListOpenSessionsForUIParams) ([]Session, error) {
-	rows, err := q.db.Query(ctx, listOpenSessionsForUI, arg.Principal, arg.PageSize)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Session{}
-	for rows.Next() {
-		var i Session
-		if err := rows.Scan(
-			&i.ID,
-			&i.Principal,
-			&i.SessionID,
-			&i.Workspace,
-			&i.Attestation,
-			&i.Email,
-			&i.Name,
-			&i.Groups,
-			&i.CreatedAt,
-			&i.LastSeenAt,
-			&i.EndedAt,
-			&i.Kind,
-			&i.LastSearchID,
-			&i.ToolSearch,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listRecentDecisions = `-- name: ListRecentDecisions :many
 SELECT id, occurred_at, principal, workspace, session, attestation, server, tool, details
 FROM audit_events
@@ -226,6 +177,166 @@ func (q *Queries) ListRecentDecisions(ctx context.Context, arg ListRecentDecisio
 			&i.Server,
 			&i.Tool,
 			&i.Details,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionPrincipals = `-- name: ListSessionPrincipals :many
+SELECT DISTINCT principal FROM sessions
+WHERE ended_at IS NULL OR ended_at > $1::timestamptz
+ORDER BY principal
+LIMIT 200
+`
+
+// Lists the principals of the sessions the Sessions page can show, for the
+// admin's user filter.
+func (q *Queries) ListSessionPrincipals(ctx context.Context, endedAfter pgtype.Timestamptz) ([]string, error) {
+	rows, err := q.db.Query(ctx, listSessionPrincipals, endedAfter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var principal string
+		if err := rows.Scan(&principal); err != nil {
+			return nil, err
+		}
+		items = append(items, principal)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionWorkspaces = `-- name: ListSessionWorkspaces :many
+SELECT DISTINCT workspace FROM sessions
+WHERE (ended_at IS NULL OR ended_at > $1::timestamptz)
+  AND ($2::text = '' OR principal = $2)
+ORDER BY workspace
+LIMIT 200
+`
+
+type ListSessionWorkspacesParams struct {
+	EndedAfter pgtype.Timestamptz
+	Principal  string
+}
+
+// Lists the workspaces of the sessions the Sessions page can show, for its
+// workspace filter. An empty principal matches every one.
+func (q *Queries) ListSessionWorkspaces(ctx context.Context, arg ListSessionWorkspacesParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listSessionWorkspaces, arg.EndedAfter, arg.Principal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var workspace string
+		if err := rows.Scan(&workspace); err != nil {
+			return nil, err
+		}
+		items = append(items, workspace)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionsForUI = `-- name: ListSessionsForUI :many
+SELECT s.id, s.principal, s.session_id, s.workspace, s.attestation, s.email, s.name, s.groups, s.created_at, s.last_seen_at, s.ended_at, s.kind, s.last_search_id, s.tool_search,
+       COALESCE(m.initialize_params -> 'clientInfo' ->> 'name', '')::text AS client_name,
+       COALESCE(m.initialize_params -> 'clientInfo' ->> 'version', '')::text AS client_version
+FROM sessions s
+LEFT JOIN LATERAL (
+    SELECT initialize_params FROM mcp_sessions
+    WHERE session_pk = s.id
+    ORDER BY created_at DESC
+    LIMIT 1
+) m ON true
+WHERE (s.ended_at IS NULL OR (NOT $1::boolean AND s.ended_at > $2::timestamptz))
+  AND ($3::text = '' OR s.principal = $3)
+  AND ($4::text = '' OR s.workspace = $4)
+  AND s.last_seen_at > $5::timestamptz
+ORDER BY s.last_seen_at DESC, s.id DESC
+LIMIT $6
+`
+
+type ListSessionsForUIParams struct {
+	OnlyOpen   bool
+	EndedAfter pgtype.Timestamptz
+	Principal  string
+	Workspace  string
+	SeenAfter  pgtype.Timestamptz
+	PageSize   int32
+}
+
+type ListSessionsForUIRow struct {
+	ID            int64
+	Principal     string
+	SessionID     string
+	Workspace     string
+	Attestation   string
+	Email         string
+	Name          string
+	Groups        []string
+	CreatedAt     pgtype.Timestamptz
+	LastSeenAt    pgtype.Timestamptz
+	EndedAt       pgtype.Timestamptz
+	Kind          string
+	LastSearchID  pgtype.UUID
+	ToolSearch    bool
+	ClientName    string
+	ClientVersion string
+}
+
+// Lists sessions for the Sessions page, newest activity first: open ones and
+// those that ended after @ended_after (the start of the resume window). An
+// empty principal or workspace matches every one. @only_open leaves ended
+// sessions out, and @seen_after leaves out sessions with no request since.
+// The client is the clientInfo of the session's newest MCP session.
+func (q *Queries) ListSessionsForUI(ctx context.Context, arg ListSessionsForUIParams) ([]ListSessionsForUIRow, error) {
+	rows, err := q.db.Query(ctx, listSessionsForUI,
+		arg.OnlyOpen,
+		arg.EndedAfter,
+		arg.Principal,
+		arg.Workspace,
+		arg.SeenAfter,
+		arg.PageSize,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionsForUIRow{}
+	for rows.Next() {
+		var i ListSessionsForUIRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Principal,
+			&i.SessionID,
+			&i.Workspace,
+			&i.Attestation,
+			&i.Email,
+			&i.Name,
+			&i.Groups,
+			&i.CreatedAt,
+			&i.LastSeenAt,
+			&i.EndedAt,
+			&i.Kind,
+			&i.LastSearchID,
+			&i.ToolSearch,
+			&i.ClientName,
+			&i.ClientVersion,
 		); err != nil {
 			return nil, err
 		}

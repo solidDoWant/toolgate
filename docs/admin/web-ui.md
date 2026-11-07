@@ -87,9 +87,21 @@ The navigation shows the Blocks link only to admins.
 
 ## The Sessions pages
 
-`/ui/sessions` lists the open sessions. A session is open until the gateway ends it. A user sees only their own sessions. An admin sees all of them.
+`/ui/sessions` lists sessions, newest activity first. Each row shows:
 
-"Open" on a row shows `/ui/sessions/` followed by the session's number. The page shows the session's servers that are enabled and its 20 newest `tool.decision` events. Each event links to its audit page. A user who asks for another user's session, or for a session that has ended, gets 404. An admin can open any open session. You cannot end a session from the UI.
+- **Who:** the user's name or email, or "you". An admin sees other users by name.
+- **Where:** the workspace, with a "verified" or "unverified" badge. The raw workspace ID shows on hover.
+- **Client:** the client name and version that the client sent in `initialize`, for example "Claude Code 2.1.319", and the kind: a helper session, or a connector session (the session ID starts with `mcp.`).
+- **State:** `active` when the session is open and made a request in the last 5 minutes. `idle` when it is open and made none for 5 minutes or more. The gateway ends an idle session after `sessionIdleTimeout`. `resumable until` a time when the session ended and can still be resumed (`sessionResumeWindow` after it ended). Connector sessions are never resumed. Any other ended session shows `ended`.
+- **Tool search:** on or off.
+- **Last activity:** a relative time such as "2 min ago". The exact UTC time shows on hover.
+- **Session:** the first characters of the session ID. The full ID shows on hover and under "Copy".
+
+The filters are links and menus. They are in the URL, so you can bookmark a view: `state` is `active` (the default), `recent` (last request in the last 24 hours) or `all` (all sessions inside the resume window); `workspace` is a workspace ID. The default view shows your own active sessions. An admin can also pick one user, or everyone, with `user` (a subject, or `all`). A user who is not an admin always sees only their own sessions.
+
+If there are no sessions, the page says that sessions appear when Claude Code connects through the toolgate plugin, and links to Quick setup.
+
+"Open" on the row of an open session shows `/ui/sessions/` followed by the session's number. The page shows the session's servers that are enabled and its 20 newest `tool.decision` events. Each event links to its audit page. A user who asks for another user's session, or for a session that has ended, gets 404. An admin can open any open session. You cannot end a session from the UI.
 
 ## The Secrets page
 
@@ -121,7 +133,7 @@ You can filter by principal, workspace, session, server and tool. Each filter mu
 
 You can also set a time range. The default is the last 24 hours. A range can be at most 31 days, so a query reads at most two monthly partitions of the audit table. A longer range gives an error. All times are in UTC.
 
-The link "Open" on a row shows one event at `/ui/audit/events/` followed by a key: the time in Unix microseconds, a hyphen, and the event ID. The event is shown to its principal and to admins. Anyone else gets 404, so the key tells them nothing.
+The link "Open" on the row of an open session shows one event at `/ui/audit/events/` followed by a key: the time in Unix microseconds, a hyphen, and the event ID. The event is shown to its principal and to admins. Anyone else gets 404, so the key tells them nothing.
 
 When audit payloads are on, the event page also shows the payload of the event. The gateway reads a payload from S3 itself and sends it to the browser. It makes no presigned URLs, so browsers do not need to reach S3. The page shows the first 1 MiB of the payload as text. Under it, "Download the payload" gives `/ui/audit/events/` followed by the key and `/payload`. That link downloads the whole payload as a JSON file. It has the headers `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`. The same people can open it as can open the event page.
 
