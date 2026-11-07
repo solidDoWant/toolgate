@@ -26,8 +26,7 @@ type catalogChanges struct {
 }
 
 // fanOut sends list_changed to this replica's MCP sessions when their
-// proxied tools change (docs/design/phase-1.md §1, "Catalog changes", and
-// §3, "Fan-out of list_changed"). It re-syncs every MCP session on an
+// proxied tools change. It re-syncs every MCP session on an
 // instance:<id> notification, after missed notifications, and when a rule or
 // template changes, and the MCP sessions of one toolgate session on
 // session:<id>, and the MCP sessions of one principal on grant:<id> and
@@ -37,8 +36,7 @@ type catalogChanges struct {
 // runs for the life of the process.
 //
 // It also keeps the replica's one expiry timer for the earliest future
-// expires_at of live grants and temporary blocks (docs/design/phase-2.md §3,
-// "Fan-out of list_changed"). When it fires, every MCP session is re-synced
+// expires_at of live grants and temporary blocks. When it fires, every MCP session is re-synced
 // and the timer is set again. It is also reset after every grant: or block:
 // notification and after missed notifications.
 func (e *mcpEndpoint) fanOut(tools *metaTools, events <-chan store.Event, changed catalogChanges) {
@@ -135,7 +133,7 @@ func (e *mcpEndpoint) handleEvent(tools *metaTools, event store.Event) {
 
 // resyncToolSearch re-syncs the search-mode MCP sessions whose found tools
 // include the template with the given UID, after the leader rebuilt its
-// search rows (docs/design/phase-4.md §1, "Notifications"). A template that
+// search rows. A template that
 // is no longer in the catalog re-syncs every search-mode session.
 func (e *mcpEndpoint) resyncToolSearch(tools *metaTools, uid string) {
 	searching := func(current requestContext) bool { return current.searchMode }
@@ -206,7 +204,7 @@ func (e *mcpEndpoint) resyncGrantPrincipal(tools *metaTools, id string) {
 }
 
 // resyncScopePrincipal re-syncs the MCP sessions of the principal whose
-// user_scopes row changed (docs/design/phase-3.md §10, "The 5 s bound").
+// user_scopes row changed.
 func (e *mcpEndpoint) resyncScopePrincipal(tools *metaTools, id string) {
 	if tools.database == nil {
 		return

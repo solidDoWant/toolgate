@@ -103,8 +103,8 @@ func awaitWake(ctx context.Context, events <-chan store.Event, tick <-chan time.
 func (m *metaTools) readWait(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, id string) (db.Instance, bool, error) {
 	queries := db.New(m.database)
 
-	// An ended session keeps its enabled set for a resume
-	// (docs/design/phase-3.md §11), so the wait checks ended_at itself.
+	// An ended session keeps its enabled set for a resume,
+	// so the wait checks ended_at itself.
 	session, err := queries.GetSessionByID(ctx, current.session.ID)
 	if err != nil {
 		return db.Instance{}, false, fmt.Errorf("read session: %w", err)
@@ -134,7 +134,7 @@ func (m *metaTools) readWait(ctx context.Context, current requestContext, templa
 
 	if instance.Desired != "running" && !instance.FailedAt.Valid {
 		// A replaced instance has a new live row for the same template and
-		// scope key (docs/design/phase-2.md §6, "Restart"); wait on that.
+		// scope key; wait on that.
 		replacement, err := queries.GetLiveInstance(ctx, db.GetLiveInstanceParams{
 			TemplateNs: template.Namespace, TemplateName: template.Name,
 			ScopeKey: scopeKey(template.Spec.Scope, current.identity),

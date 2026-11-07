@@ -21,7 +21,7 @@ import (
 )
 
 // WaitingCallLimit is the most calls of one principal that wait for an
-// approval on one replica (docs/design/phase-2.md §4).
+// approval on one replica.
 const WaitingCallLimit = 32
 
 // approvalWaitInterval is the longest a waiting call goes without
@@ -95,9 +95,9 @@ func supportsURLElicitation(ctx context.Context, request *mcp.CallToolRequest) b
 	return capabilities != nil && capabilities.Elicitation != nil && capabilities.Elicitation.URL != nil
 }
 
-// awaitApproval is steps 3 to 5 of docs/design/phase-2.md §4 for an
-// approval that isn't usable yet. It returns the approved approval for step
-// 6, or a result that ends the call.
+// awaitApproval waits for an
+// approval that isn't usable yet. It returns the approved approval for the
+// use step, or a result that ends the call.
 func (m *metaTools) awaitApproval(ctx context.Context, call approvalCall, found foundApproval) (db.Approval, *mcp.CallToolResult, error) {
 	id := found.approval.ID
 	responses := call.request.Params.InputResponses
@@ -136,7 +136,7 @@ func (m *metaTools) awaitApproval(ctx context.Context, call approvalCall, found 
 	return m.waitForApproval(ctx, call, id)
 }
 
-// approvalInputRequest is step 4 of docs/design/phase-2.md §4: a result
+// approvalInputRequest is a result
 // asking the client, through the go-sdk's multi round-trip handling, to open
 // the approval page. The elicitation ID and the request state are both the
 // approval ID.
@@ -160,7 +160,7 @@ func approvalAccepted(responses mcp.InputResponseMap, id string) bool {
 	return ok && answer.Action == elicitAccept
 }
 
-// waitForApproval is step 5 of docs/design/phase-2.md §4. It subscribes
+// waitForApproval waits for the decision. It subscribes
 // before it reads, then re-reads the approval and decides again on every
 // approval:<id> notification, missed event and tick. A cancel or a
 // disconnect ends the wait with ctx's error and writes nothing.
@@ -249,7 +249,7 @@ func awaitApprovalWake(ctx context.Context, events <-chan store.Event, tick <-ch
 	}
 }
 
-// decideWhileWaiting decides steps 1 to 4 (docs/design/phase-3.md §10)
+// decideWhileWaiting decides steps 1 to 4
 // again with fresh policy state. A refusal ends the wait.
 func (m *metaTools) decideWhileWaiting(ctx context.Context, call approvalCall, id string) (*mcp.CallToolResult, error) {
 	template := call.template

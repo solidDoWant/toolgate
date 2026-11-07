@@ -18,7 +18,7 @@ import (
 
 // sayWhileInvalid exposes github's upstream echo as say, then makes the
 // template's newest generation invalid, so calls go on with the last valid
-// generation (docs/design/phase-4.md §6, row 246).
+// generation.
 func sayWhileInvalid(t *testing.T, fixture *mcpFixture) *observedClient {
 	t.Helper()
 

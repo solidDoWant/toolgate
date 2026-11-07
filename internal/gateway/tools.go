@@ -194,8 +194,7 @@ func (m *metaTools) withFoundTools(ctx context.Context, current requestContext, 
 }
 
 // listedTools returns the upstream tools listed for an enabled server, and
-// whether it lists any (docs/design/phase-4.md §3, "Lists while nothing
-// runs"):
+// whether it lists any:
 //   - a ready, healthy live instance lists its own tools;
 //   - a pending or starting instance, or no live instance, lists the catalog
 //     list, unless the newest instance failed on the template's current

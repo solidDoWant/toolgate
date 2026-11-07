@@ -30,7 +30,7 @@ import (
 )
 
 // MaxResultBytes is the largest tool result the gateway forwards, measured
-// as the JSON encoding of the result (docs/design/phase-1.md §7).
+// as the JSON encoding of the result.
 const MaxResultBytes = 16 << 20
 
 // upstreamResponseBudget bounds the upstream response bytes one forwarded
@@ -41,7 +41,7 @@ const upstreamResponseBudget = MaxResultBytes + upstreamlimit.Slack
 // forward.
 const lastUsedInterval = time.Minute
 
-// Reasons a call is refused before policy (docs/design/phase-1.md §3).
+// Reasons a call is refused before policy.
 const (
 	reasonNotEnabled = "not-enabled"
 	reasonNotReady   = "not-ready"
@@ -197,7 +197,7 @@ func (m *metaTools) dropUnlessReady(id string) {
 	entry.mu.Unlock()
 
 	// Close waits for the calls in flight on the session. They finish with
-	// whatever the upstream answers (row 12), and fan-out must not wait for
+	// whatever the upstream answers, and fan-out must not wait for
 	// them.
 	if session != nil {
 		go func() { _ = session.Close() }()
@@ -205,7 +205,7 @@ func (m *metaTools) dropUnlessReady(id string) {
 }
 
 // callTool answers a call of a proxied tool `<server>__<tool>`: it runs the
-// Call steps of docs/design/phase-1.md §3. Every refusal writes
+// call steps. Every refusal writes
 // tool.decision, and nothing is forwarded before the allow is committed.
 func (m *metaTools) callTool(ctx context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	observation := &callObservation{started: time.Now(), server: unknownServer}
@@ -228,7 +228,7 @@ func (m *metaTools) proxyCall(ctx context.Context, request *mcp.CallToolRequest)
 
 	// Step 1: find the server and the tool. A server that isn't enabled in
 	// this session is still found, since a call of an allowed server enables
-	// it (docs/design/phase-4.md §4).
+	// it.
 	template, enabled, err := m.enabledTemplate(ctx, current, server)
 	if err != nil {
 		return nil, err
@@ -280,22 +280,21 @@ func (m *metaTools) proxyCall(ctx context.Context, request *mcp.CallToolRequest)
 	}
 
 	// The built-in server has no instance: its calls skip the instance
-	// steps and go on to policy (docs/design/phase-4.md §7).
+	// steps and go on to policy.
 	if isBuiltin(template) {
 		return m.decideAndRun(ctx, current, request, template, db.Instance{}, tool)
 	}
 
 	// Step 2: its live instance must be ready. A call to an instance that is
 	// still starting, such as a restored or replaced one, waits for it as an
-	// enable does (docs/design/phase-3.md §11).
+	// enable does.
 	instance, status, reason, err := m.readyInstance(ctx, current, template)
 	if err != nil {
 		return nil, err
 	}
 
 	// Step 5: an `onCall` server with no live instance starts on this call,
-	// unless its newest instance failed on the current generation
-	// (docs/design/phase-4.md §4).
+	// unless its newest instance failed on the current generation.
 	if instance.ID == "" && template.UID != "" {
 		// The call is decided with fresh state before an instance is
 		// inserted: a refused principal must not start the server. The
@@ -434,7 +433,7 @@ func (m *metaTools) decideAndRun(ctx context.Context, current requestContext, re
 	return m.forwardAndRecord(ctx, current, request, instance, template, tool, request.Params.Arguments)
 }
 
-// forwardAndRecord is phase 1 call steps 5 and 6: it forwards an allowed
+// forwardAndRecord is the last part of a call: it forwards an allowed
 // call to instance and writes tool.result.
 func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext, request *mcp.CallToolRequest, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, error) {
 	server := template.Name
@@ -710,7 +709,7 @@ func callEvent(current requestContext, eventType, server, tool string, details m
 }
 
 // messageNotRecorded is the refusal of a call whose arguments couldn't be
-// stored (docs/design/phase-2.md §8).
+// stored.
 const messageNotRecorded = "The call couldn't be recorded. Try again later."
 
 // callArguments returns a call's arguments as an audit payload: nil when

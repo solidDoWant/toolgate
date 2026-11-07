@@ -51,8 +51,7 @@ func TestReplicaLossKeepsTheSession(t *testing.T) {
 		github := fixture.addEnableTemplate("github", "per-user", anyone)
 		other := fixture.replica(t)
 
-		// The enable is waiting on the first replica when it goes away
-		// (design row 14).
+		// The enable is waiting on the first replica when it goes away.
 		first := fixture.connectObserved(t, alice())
 		oldMCPSession := first.session.ID()
 		waiting := startEnable(t, first.session, "github")

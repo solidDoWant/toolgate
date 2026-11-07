@@ -22,8 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
-// Refusal reasons of an enable that asked for a session addition
-// (docs/design/phase-3.md §10, "Session additions").
+// Refusal reasons of an enable that asked for a session addition.
 const (
 	reasonSessionEnded     = "session-ended"
 	reasonAdditionDenied   = "addition-denied"
@@ -66,16 +65,15 @@ func (e additionEnable) workspace() string { return VerifiedWorkspace(e.current.
 
 // asksForAddition reports whether an enable refused only by the
 // workspace-scope step asks the user: only in a verified workspace, only
-// on a gateway with the web UI, and never for a deny entry's refusal
-// (docs/design/phase-4.md §7, "A deny is never asked about").
+// on a gateway with the web UI, and never for a deny entry's refusal.
 func (m *metaTools) asksForAddition(current requestContext, decision policy.Decision) bool {
 	return !decision.Allowed && decision.Step == policy.StepWorkspaceScope && decision.Denied == "" &&
 		VerifiedWorkspace(current.identity) != "" && m.approvalURL != nil
 }
 
-// requestSessionAddition runs steps 1 to 4 of docs/design/phase-3.md §10
-// "Session additions" for an enable whose only refusal is step 4. It returns
-// the request's ID when the enable may go on with phase 1 enable step 2. A
+// requestSessionAddition runs the policy steps for an enable whose
+// only refusal is the workspace-scope step. It returns
+// the request's ID when the enable may go on to the instance steps. A
 // non-nil result or error ends the enable; a refusal error has been
 // recorded, a context error (cancel or disconnect) has not.
 func (m *metaTools) requestSessionAddition(ctx context.Context, enable additionEnable) (string, *mcp.CallToolResult, error) {
@@ -380,7 +378,7 @@ func (m *metaTools) decideAddition(ctx context.Context, enable additionEnable, i
 		return true, m.refuseAddition(ctx, enable, reasonAdditionTimeout, id, m.additionTimeoutMessage(enable, id))
 	case request.Status == accessApproved:
 		// Approved, but still refused, such as by a deny entry, which a
-		// server approval never deletes (docs/design/phase-4.md §7).
+		// server approval never deletes.
 		reason := policy.StepWorkspaceScope
 		if decision.Denied != "" {
 			reason = policy.ReasonDenied

@@ -24,23 +24,23 @@ import (
 const lastSeenInterval = time.Minute
 
 // errWorkspaceChanged means a request named a different workspace than its
-// live session started with (design row 22).
+// live session started with.
 var errWorkspaceChanged = errors.New("this session started in a different workspace; start a new session to use another one")
 
 // errSessionEnded means a request named a session tied to an MCP session
 // (auth.MCPSessionPrefix) that has ended. Such a session ends with its MCP
-// session and is never resumed (docs/design/phase-4.md §9).
+// session and is never resumed.
 var errSessionEnded = errors.New("this session ended with its MCP session")
 
-// sessionStore keeps the sessions rows (docs/design/phase-1.md §2). toolgate's
+// sessionStore keeps the sessions rows. toolgate's
 // session state is keyed by (principal, X-Toolgate-Session), never by the MCP
 // session.
 type sessionStore struct {
 	pool        *pgxpool.Pool
 	auditOutput io.Writer
 	now         func() time.Time
-	// restore decides again and starts the servers a resumed session kept
-	// (docs/design/phase-3.md §11), inside the restart's transaction tx; nil
+	// restore decides again and starts the servers a resumed session kept,
+	// inside the restart's transaction tx; nil
 	// restores nothing.
 	restore func(ctx context.Context, tx pgx.Tx, current requestContext, servers []db.SessionServer) error
 }

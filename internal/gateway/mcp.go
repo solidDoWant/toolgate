@@ -36,7 +36,7 @@ import (
 // MCPPath is where the gateway serves MCP (Streamable HTTP).
 const MCPPath = "/mcp"
 
-// maxRequestBodyBytes bounds an MCP request body (docs/design/phase-1.md §7).
+// maxRequestBodyBytes bounds an MCP request body.
 const maxRequestBodyBytes = 4 << 20
 
 const mcpSessionHeader = "Mcp-Session-Id"
@@ -92,7 +92,7 @@ type MCPOptions struct {
 	// usable once approved. Zero means DefaultApprovalTimeout.
 	ApprovalTimeout time.Duration
 	// WorkspaceScoping turns on the workspace-scope step for signed-in
-	// users (docs/design/phase-3.md §10). Set it only on a gateway with the
+	// users. Set it only on a gateway with the
 	// web UI: without it the step is off.
 	WorkspaceScoping bool
 	// Workspaces serves the built-in server's tools with the same methods
@@ -115,10 +115,10 @@ const defaultSessionIdleTimeout = 2 * time.Hour
 
 // defaultMCPSessionIdleTimeout is the MCPSessionIdleTimeout when MCPOptions
 // sets none. A client of a released MCP session gets 404 and initializes
-// again (docs/design/phase-1.md §3).
+// again.
 const defaultMCPSessionIdleTimeout = 30 * time.Minute
 
-// The instance limits when MCPOptions sets none (docs/design/phase-1.md §7).
+// The instance limits when MCPOptions sets none.
 const (
 	defaultInstanceLimitPerUser = 20
 	defaultInstanceLimit        = 200
@@ -355,7 +355,7 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 }
 
 // statelessNoSessionMessage answers a 2026-07-28 request without
-// X-Toolgate-Session (docs/design/phase-4.md §8).
+// X-Toolgate-Session.
 const statelessNoSessionMessage = "This client sends no session. Use the toolgate plugin's headers helper, or a client on MCP 2025-11-25."
 
 // privateToolLists marks every tools/list result private and uncached, so
@@ -412,8 +412,8 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	mcpSessionID := request.Header.Get(mcpSessionHeader)
 
 	// A client without the session header gets a session tied to its MCP
-	// session: a new ID at initialize, and mcp.<Mcp-Session-Id> after
-	// (docs/design/phase-4.md §9). The binding check below refuses an ID
+	// session: a new ID at initialize, and mcp.<Mcp-Session-Id> after.
+	// The binding check below refuses an ID
 	// this replica didn't assign to this identity, so a client can't pick
 	// such a session.
 	var newSessionID string
@@ -471,7 +471,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 	}
 
 	// The MCP session ended while this request was on its way, so the
-	// client initializes again (docs/design/phase-4.md §9).
+	// client initializes again.
 	if errors.Is(err, errSessionEnded) {
 		http.Error(writer, "session not found", http.StatusNotFound)
 
@@ -630,7 +630,7 @@ func (e *mcpEndpoint) expireStateless(binding mcpBinding, held *mcpSession) {
 
 // writeInvalidRequest answers with HTTP 400 and a plain JSON-RPC invalid
 // request error, never the go-sdk's unsupported version error, so a
-// dual-era client falls back to initialize (docs/design/phase-4.md §8).
+// dual-era client falls back to initialize.
 func writeInvalidRequest(writer http.ResponseWriter, body []byte, message string) {
 	response := &jsonrpc.Response{Error: &jsonrpc.Error{Code: jsonrpc.CodeInvalidRequest, Message: message}}
 

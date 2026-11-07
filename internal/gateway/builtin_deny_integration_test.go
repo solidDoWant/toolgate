@@ -54,7 +54,7 @@ func TestBuiltinToolsDenied(t *testing.T) {
 	} {
 		t.Run(test.name+" withdraws the tools and refuses calls within 5 s across two replicas", func(t *testing.T) {
 			fixture := newBuiltinFixture(t)
-			// Default all with no list (row 206): the deny still narrows.
+			// Default all with no list: the deny still narrows.
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 
 			caller := fixture.connectObserved(t, attestedAlice())

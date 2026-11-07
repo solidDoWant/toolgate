@@ -28,7 +28,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 )
 
-// Workspace scoping limits (docs/design/phase-3.md §10, "State").
+// Workspace scoping limits.
 const (
 	// MaxWorkspaceLists is the most workspace lists one principal has.
 	MaxWorkspaceLists = 200
@@ -101,8 +101,8 @@ const (
 	ViaTool = "tool"
 )
 
-// WorkspaceChange is a change to a user's workspace lists or defaults
-// (docs/design/phase-3.md §10, "API and CLI"). It is also the change JSON of
+// WorkspaceChange is a change to a user's workspace lists or defaults.
+// It is also the change JSON of
 // a change access request.
 type WorkspaceChange struct {
 	Action    string `json:"action"`
@@ -177,7 +177,7 @@ type ScopeEntries struct {
 }
 
 // Workspaces reads and writes a user's workspace lists and defaults and
-// their change access requests (docs/design/phase-3.md §10).
+// their change access requests.
 type Workspaces struct {
 	database        *pgxpool.Pool
 	catalog         *catalog.Catalog
@@ -418,9 +418,9 @@ func (w *Workspaces) Request(ctx context.Context, identity auth.Identity, change
 	return result, err
 }
 
-// needsScopeRequest reports whether a change is an allow that phase 3's
+// needsScopeRequest reports whether a change is an allow that a plain
 // change request can't hold: one for a session, or naming a tool. It becomes
-// a scope request (docs/design/phase-4.md §12).
+// a scope request.
 func needsScopeRequest(change WorkspaceChange) bool {
 	if change.Action != WorkspaceAllow {
 		return false
@@ -479,8 +479,8 @@ func (w *Workspaces) ApproveChangeRequest(ctx context.Context, tx pgx.Tx, identi
 }
 
 // ApproveServerRequest approves identity's pending server request with
-// choice, AdditionSession or AdditionWorkspace, and writes its effect in tx
-// (docs/design/phase-3.md §10, "Session additions" step 6). It locks the
+// choice, AdditionSession or AdditionWorkspace, and writes its effect in tx.
+// It locks the
 // request's sessions row, then the user_scopes row, for both choices. The
 // approval page calls it after checking the step-up. Any error leaves tx to
 // be rolled back, so the request stays pending; a *WorkspaceError says why
@@ -648,8 +648,8 @@ func (w *Workspaces) recordAccessDecision(ctx context.Context, tx pgx.Tx, identi
 	return store.Notify(ctx, tx, store.KindApproval, request.ID)
 }
 
-// accessEvent is an access-request event, with the fields phase 2 writes
-// for an approval event.
+// accessEvent is an access-request event, with the fields an approval event
+// has.
 func accessEvent(identity auth.Identity, eventType string, request db.AccessRequest) audit.Event {
 	return audit.Event{
 		Type:        eventType,
@@ -771,8 +771,7 @@ func truncate(value string, length int) string {
 	return value[:length]
 }
 
-// change runs a validated change in tx (docs/design/phase-3.md §10,
-// "Writes"). mode says what a widening change does.
+// change runs a validated change in tx. mode says what a widening change does.
 func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identity, change WorkspaceChange, via string, mode widenMode) (WorkspaceResult, error) {
 	queries := db.New(tx)
 	applied := WorkspaceResult{Applied: true}
@@ -883,7 +882,7 @@ func (w *Workspaces) change(ctx context.Context, tx pgx.Tx, identity auth.Identi
 			removed, cleared = current, true
 		}
 
-		// A clear keeps the workspace's deny entries (docs/design/phase-4.md §7).
+		// A clear keeps the workspace's deny entries.
 		err := queries.DeleteWorkspaceScopeEntriesOfEffect(ctx, db.DeleteWorkspaceScopeEntriesOfEffectParams{
 			ScopeID: scope.ID, Workspace: pgtype.Text{String: change.Workspace, Valid: true}, Effect: policy.EffectAllow,
 		})

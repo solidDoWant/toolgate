@@ -124,8 +124,8 @@ var (
 	ErrInstanceChanged = errors.New("instance changed")
 )
 
-// RequestRestart records a restart request for an instance from the web UI
-// (docs/design/phase-2.md §6, "Restart", step 1). principal must own the
+// RequestRestart records a restart request for an instance from the web UI.
+// principal must own the
 // instance; a shared instance needs admin. The instance must be live, ready
 // and outdated. The request and the instance notification commit in one
 // transaction; the reconciler then replaces the instance.

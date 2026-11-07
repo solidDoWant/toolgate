@@ -472,7 +472,7 @@ func TestCallInteractions(t *testing.T) {
 
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
 
-		// A later call enables the server again (docs/design/phase-4.md §4).
+		// A later call enables the server again.
 		later := callTool(t, client.session, "github__slow", nil)
 		require.False(t, later.IsError, resultText(later))
 

@@ -20,7 +20,7 @@ import (
 
 // ReadUnverifiedDefault returns the unverified default of a user_scopes
 // row: list when the stored default is none and unverified_list is set,
-// else the stored default (docs/design/phase-4.md §2).
+// else the stored default.
 func ReadUnverifiedDefault(stored string, list bool) string {
 	if stored == ScopeNone && list {
 		return ScopeList

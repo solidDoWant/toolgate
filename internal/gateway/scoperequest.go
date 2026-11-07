@@ -25,8 +25,8 @@ import (
 )
 
 // accessKindScope is the kind of an access request for a change that a
-// phase 3 change request can't describe: a session-scoped or tool-level
-// allow (docs/design/phase-4.md §2, "Access requests").
+// plain change request can't describe: a session-scoped or tool-level
+// allow.
 const accessKindScope = "scope"
 
 // MaxAllowScopeEntries is the most allow entries one principal has. Deny
@@ -82,7 +82,7 @@ var (
 )
 
 // RequestScope finds or inserts identity's pending scope request to allow
-// items on target (docs/design/phase-4.md §7, "toolgate_allow" step 1).
+// items on target.
 // Items are server names or `<server>__<tool>` with the tool's exposed name.
 // named is the request ID the client named, a lookup key only: it is used
 // when every field matches. A named request that was denied or has expired
@@ -153,7 +153,7 @@ func (w *Workspaces) allowItems(identity auth.Identity, items []string) ([]Scope
 
 		// A server must be offered now. A tool is named by its exposed name
 		// in the curation calls use, so while the current generation is
-		// invalid it maps with the last valid one (docs/design/phase-4.md §6).
+		// invalid it maps with the last valid one.
 		template, err := w.catalog.Offered(server)
 		if isTool {
 			if curation, found := w.catalog.Curation(server); found {
@@ -271,7 +271,7 @@ func scopeRequestMatches(request db.AccessRequest, change ScopeChange, sessionPK
 }
 
 // refuseToolsOfDeniedServers refuses a tool item of a server that has a
-// server-level deny entry on the target (docs/design/phase-4.md §7, row 249).
+// server-level deny entry on the target.
 func (w *Workspaces) refuseToolsOfDeniedServers(ctx context.Context, queries *db.Queries, principal string, change ScopeChange, sessionPK pgtype.Int8) error {
 	scope, err := queries.GetUserScope(ctx, principal)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -380,8 +380,7 @@ func DecodeScopeChange(encoded []byte) (ScopeChange, error) {
 }
 
 // ApproveScopeRequest compare-and-sets identity's pending scope request to
-// approved and applies its allow in tx (docs/design/phase-4.md §7, "Nothing
-// changes until approval"). It locks a session target, then the user_scopes
+// approved and applies its allow in tx. It locks a session target, then the user_scopes
 // row. The approval page calls it after checking the step-up. Any error
 // leaves tx to be rolled back, so the request stays pending; a
 // *WorkspaceError says why to the user.

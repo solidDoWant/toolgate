@@ -18,7 +18,7 @@ const (
 	reasonFirstCall     = "first-call"
 )
 
-// enableForCall is steps 2 and 3 of docs/design/phase-4.md §4 for a call of a
+// enableForCall is the policy and enable part of a call of a
 // server the session hasn't enabled: it decides policy for the tool, asks
 // for a session addition when only the workspace-scope step refuses, and
 // enables the server. A non-nil result or error ends the call; both nil

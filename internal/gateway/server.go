@@ -105,10 +105,10 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 }
 
 // HandlePublic registers handler for pattern on the main port without
-// authentication. Only the probes, the client metadata document
-// (docs/design/phase-1.md §8), the protected resource metadata
-// (docs/design/phase-4.md §9) and the web UI's sign-in routes and static
-// files (docs/design/phase-2.md §5) are public.
+// authentication. Only the probes, the client metadata document,
+// the protected resource metadata
+// and the web UI's sign-in routes and static
+// files are public.
 func (s *Server) HandlePublic(pattern string, handler http.Handler) {
 	s.mux.Handle(pattern, handler)
 	s.publicRoutes = append(s.publicRoutes, pattern)

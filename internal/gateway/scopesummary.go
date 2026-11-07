@@ -16,7 +16,7 @@ import (
 )
 
 // MaxSummaryWorkspaces and MaxSummarySessions bound the workspaces and the
-// sessions of a scope summary (docs/design/phase-4.md §7).
+// sessions of a scope summary.
 const (
 	MaxSummaryWorkspaces = 200
 	MaxSummarySessions   = 200

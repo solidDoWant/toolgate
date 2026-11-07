@@ -15,8 +15,7 @@ import (
 
 // policyState loads the grants, temporary blocks and, for a signed-in user
 // on a gateway with workspace scoping, the scoping rows one request decides
-// with (docs/design/phase-2.md §3, "Loading grants and blocks", and
-// docs/design/phase-3.md §10). There is no
+// with. There is no
 // cache of rows: a revoke on another replica refuses the next decision here
 // at once.
 func (m *metaTools) policyState(ctx context.Context, identity auth.Identity) (policy.State, error) {

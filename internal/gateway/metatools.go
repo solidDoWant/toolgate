@@ -32,7 +32,7 @@ const (
 	ToolServerStatus  = "toolgate_server_status"
 )
 
-// Statuses shown to clients (SPEC.md §7).
+// Statuses shown to clients.
 const (
 	StatusStopped  = "stopped"
 	StatusStarting = "starting"
@@ -224,12 +224,11 @@ func (m *metaTools) serverStatus(ctx context.Context, request *mcp.CallToolReque
 }
 
 // notInWorkspaceReason is the list_servers reason of a server outside a
-// verified workspace's effective list (docs/design/phase-3.md §10,
-// "Effects").
+// verified workspace's effective list.
 const notInWorkspaceReason = "not allowed in this workspace; enable it to ask"
 
 // deniedReasons are the list_servers reasons of a server with a deny entry,
-// which an enable never asks about (docs/design/phase-4.md §7).
+// which an enable never asks about.
 var deniedReasons = map[policy.DeniedIn]string{
 	policy.DeniedInWorkspace: "denied in this workspace",
 	policy.DeniedInSession:   "denied in this session",
@@ -295,8 +294,7 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 	return entry, true, nil
 }
 
-// shownStatus maps an instance row to the status shown to clients
-// (docs/design/phase-1.md §2, "Status shown to clients").
+// shownStatus maps an instance row to the status shown to clients.
 func shownStatus(instance db.Instance) (status, reason string) {
 	if instance.FailedAt.Valid {
 		return StatusFailed, instance.Reason
@@ -317,7 +315,7 @@ func shownStatus(instance db.Instance) (status, reason string) {
 }
 
 // unhealthyMessage is the refusal of a call to, or an enable of, a ready
-// instance whose custom health check failed (docs/design/phase-3.md §6).
+// instance whose custom health check failed.
 func unhealthyMessage(server string, instance db.Instance) string {
 	return fmt.Sprintf("`%s` is unhealthy: %s. toolgate is repairing it.", server, instance.UnhealthyReason)
 }
@@ -353,8 +351,7 @@ func (m *metaTools) enabledSet(ctx context.Context, sessionPK int64) (map[types.
 	return enabled, nil
 }
 
-// scopeKey is the key that decides which sessions share an instance
-// (docs/design/phase-1.md §2).
+// scopeKey is the key that decides which sessions share an instance.
 func scopeKey(scope string, identity auth.Identity) string {
 	switch scope {
 	case "per-session":
