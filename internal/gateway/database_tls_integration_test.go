@@ -128,7 +128,7 @@ func TestGatewayUsesRotatedDatabaseClientCertificate(t *testing.T) {
 	// lifetime does, so the next queries and the listener reconnect.
 	var terminated int
 	require.NoError(t, admin.QueryRow(ctx,
-		"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = $1) AS t", role).Scan(&terminated))
+		"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND usename = $1) AS t", role).Scan(&terminated))
 	require.Positive(t, terminated)
 	database.Reset()
 
