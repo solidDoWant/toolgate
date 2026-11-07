@@ -19,7 +19,7 @@ import (
 
 const (
 	// InlinePayloadLimit is the size in bytes from which a payload is stored
-	// in S3 instead of in its audit row (docs/design/phase-2.md §8).
+	// in S3 instead of in its audit row.
 	InlinePayloadLimit = 65536
 	// MaxDeleteKeys is the most keys one DeleteObjects request takes.
 	MaxDeleteKeys = 1000

@@ -1,9 +1,8 @@
 // Package wellknown is the metadata the gateway publishes without
 // authentication: the client metadata document at
 // /.well-known/toolgate-client, so `toolgate login` can find the IdP from the
-// gateway URL alone (docs/design/phase-1.md §8), and the OAuth protected
-// resource metadata of the MCP endpoint, so standard MCP clients can sign in
-// (docs/design/phase-4.md §9). Both hold only public metadata, never secrets.
+// gateway URL alone, and the OAuth protected
+// resource metadata of the MCP endpoint, so standard MCP clients can sign in. Both hold only public metadata, never secrets.
 package wellknown
 
 import (

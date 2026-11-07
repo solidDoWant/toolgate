@@ -1,4 +1,4 @@
-// Package audit records toolgate's audit events (SPEC.md §12). Each event is
+// Package audit records toolgate's audit events. Each event is
 // one JSON line on stdout and one row in the audit_events table. Rows older
 // than the retention age are deleted in batches by Retention.
 package audit
@@ -15,7 +15,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// Event types written in phase 1 (SPEC.md §12).
+// Event types.
 const (
 	TypeSessionStart  = "session.start"
 	TypeSessionEnd    = "session.end"
@@ -26,8 +26,7 @@ const (
 	TypeInstanceReady = "instance.ready"
 	TypeInstanceFail  = "instance.fail"
 	TypeInstanceStop  = "instance.stop"
-	// TypeInstanceHealth is a change of a ready instance's health
-	// (docs/design/phase-3.md §6).
+	// TypeInstanceHealth is a change of a ready instance's health.
 	TypeInstanceHealth = "instance.health"
 	// TypeInstanceReapply is a reapply repair of an unhealthy instance.
 	TypeInstanceReapply = "instance.reapply"
@@ -86,7 +85,7 @@ func NewRecorder(stdout io.Writer, store Store) *Recorder {
 
 // Record writes event as one JSON line and one row. An error means the row
 // wasn't written; a caller that must record a decision before acting
-// (SPEC.md §2, principle 1) must not act on it.
+// must not act on it.
 func (r *Recorder) Record(ctx context.Context, event Event) error {
 	if event.Type == "" {
 		return fmt.Errorf("record audit event: type is empty")

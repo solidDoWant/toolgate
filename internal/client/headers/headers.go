@@ -1,6 +1,5 @@
 // Package headers builds what `toolgate headers` prints for Claude Code's
-// headersHelper: a fresh access token, the session ID and the workspace
-// (SPEC.md §13, docs/design/phase-1.md §8, "Client").
+// headersHelper: a fresh access token, the session ID and the workspace.
 package headers
 
 import (

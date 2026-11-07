@@ -323,7 +323,7 @@ spec:
                     approval:
                       description: |-
                         Approval set to required makes each call wait for a person's
-                        approval (phase 2).
+                        approval.
                       type: string
                       x-kubernetes-validations:
                       - message: approval must be required or omitted

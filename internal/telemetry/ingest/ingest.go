@@ -1,5 +1,5 @@
 // Package ingest serves the gateway's OTLP/HTTP ingest at `/v1/traces`,
-// `/v1/metrics` and `/v1/logs` (docs/design/phase-3.md §3). It removes the
+// `/v1/metrics` and `/v1/logs`. It removes the
 // identity attributes a client sent, sets the verified identity on every
 // record, removes prompt and tool content unless allowed, and forwards the
 // result synchronously to the configured OTLP endpoint. All decoding and
@@ -291,8 +291,7 @@ func (i *Ingest) serve(writer http.ResponseWriter, request *http.Request, signal
 	i.forward(writer, request.Context(), signal, encoded, json)
 }
 
-// forward sends the stamped request to the backend and maps its answer
-// (docs/design/phase-3.md §3, "Forwarding").
+// forward sends the stamped request to the backend and maps its answer.
 func (i *Ingest) forward(writer http.ResponseWriter, ctx context.Context, signal signal, body []byte, json bool) {
 	forwardRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, i.endpoint+"/v1/"+signal.name,
 		bytes.NewReader(body))

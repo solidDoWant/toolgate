@@ -1,6 +1,6 @@
 // Package embeddings calls an endpoint that speaks the OpenAI embeddings API
 // (POST <url>/v1/embeddings) and formats vectors for pgvector, which ranks them.
-// It uses the standard library only (docs/design/phase-4.md §5).
+// It uses the standard library only.
 package embeddings
 
 import (

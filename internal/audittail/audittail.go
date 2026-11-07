@@ -1,6 +1,5 @@
 // Package audittail serves `GET /api/v1/audit/tail`: the audit events the
-// caller may see, as an NDJSON stream that follows new events
-// (docs/design/phase-3.md §5).
+// caller may see, as an NDJSON stream that follows new events.
 package audittail
 
 import (
@@ -28,7 +27,7 @@ const Path = "/api/v1/audit/tail"
 // ContentType is the media type of the stream.
 const ContentType = "application/x-ndjson"
 
-// Bounds of a tail (docs/design/phase-3.md §9).
+// Bounds of a tail.
 const (
 	// BacklogEvents is how many past events a tail without `after` starts
 	// with, and BacklogAge how far back it looks for them.

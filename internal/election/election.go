@@ -1,6 +1,5 @@
 // Package election helps reconcilers that run on every replica but write
-// only while their replica holds the leader Lease (docs/design/phase-1.md
-// §1).
+// only while their replica holds the leader Lease.
 package election
 
 import (

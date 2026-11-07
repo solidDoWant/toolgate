@@ -1,6 +1,6 @@
 // Package sessionsapi serves `GET /api/v1/sessions`: the caller's open
-// sessions, the servers each has enabled (docs/design/phase-3.md §5), and
-// each one's allow and deny entries (docs/design/phase-4.md §12).
+// sessions, the servers each has enabled, and
+// each one's allow and deny entries.
 package sessionsapi
 
 import (

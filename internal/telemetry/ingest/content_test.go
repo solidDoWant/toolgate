@@ -16,8 +16,7 @@ import (
 )
 
 // contentAttributeNames are the attributes Claude Code adds with
-// OTEL_LOG_USER_PROMPTS, OTEL_LOG_TOOL_DETAILS and OTEL_LOG_TOOL_CONTENT
-// (docs/design/phase-3.md §3).
+// OTEL_LOG_USER_PROMPTS, OTEL_LOG_TOOL_DETAILS and OTEL_LOG_TOOL_CONTENT.
 var contentAttributeNames = []string{
 	"prompt", "prompt_text", "user_prompt", "response", "response.model_output", "new_context",
 	"system_reminders", "system_prompt_preview", "user_system_prompt", "tool_parameters", "tool_input",

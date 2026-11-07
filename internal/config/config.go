@@ -507,7 +507,7 @@ type Resolver struct {
 	CAFile   string   `json:"caFile"`
 }
 
-// Resolver limits (docs/design/phase-2.md §6).
+// Resolver limits.
 const (
 	DefaultResolverTimeout = Duration(10 * time.Second)
 	MaxResolverTimeout     = Duration(60 * time.Second)

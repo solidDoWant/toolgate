@@ -1,6 +1,5 @@
 // Package settings serves the Claude Code settings profiles that match an
-// identity, merged into one settings fragment (SPEC.md §13,
-// docs/design/phase-1.md §5, "Settings sync").
+// identity, merged into one settings fragment.
 package settings
 
 import (
@@ -38,8 +37,7 @@ var NestedKeys = []string{"permissions", "env"}
 // Matches reports whether selector applies to identity. The identity must be
 // one of the selector's principals or be in one of its groups, and, when the
 // selector names an attestation, have that attestation. A selector with no
-// principals and no groups applies to no one, like catalog access
-// (SPEC.md §8).
+// principals and no groups applies to no one, like catalog access.
 func Matches(identity auth.Identity, selector v1alpha1.ProfileSelector) bool {
 	if selector.Attestation != "" && selector.Attestation != identity.Attestation {
 		return false
