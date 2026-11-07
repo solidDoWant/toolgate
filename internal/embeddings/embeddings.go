@@ -48,18 +48,33 @@ type Options struct {
 	// OnDemand, when set, is called before each Embed or EmbedFor, even when
 	// the circuit is open, so that a scaled-down server can be started.
 	OnDemand func(ctx context.Context)
+	// ScaledDown, when set, is asked before each call goes out. When it
+	// returns true the bundled server is scaled down or starting: the call
+	// returns ErrScaledDown without a request and without touching the
+	// circuit.
+	ScaledDown func(ctx context.Context) bool
+}
+
+type withoutDemandKey struct{}
+
+// WithoutDemand returns a context whose calls do not report demand. A call
+// that only probes the endpoint uses it, so that probing alone never keeps a
+// scaled-down server running.
+func WithoutDemand(ctx context.Context) context.Context {
+	return context.WithValue(ctx, withoutDemandKey{}, true)
 }
 
 // Client calls the embeddings endpoint.
 type Client struct {
-	endpoint string
-	model    string
-	apiKey   string
-	timeout  time.Duration
-	http     *http.Client
-	breaker  breaker
-	metrics  *Metrics
-	onDemand func(ctx context.Context)
+	endpoint   string
+	model      string
+	apiKey     string
+	timeout    time.Duration
+	http       *http.Client
+	breaker    breaker
+	metrics    *Metrics
+	onDemand   func(ctx context.Context)
+	scaledDown func(ctx context.Context) bool
 }
 
 // Metrics counts failed and skipped calls of the model endpoints. One value
@@ -83,7 +98,7 @@ func NewMetrics() *Metrics {
 	return &Metrics{
 		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "toolgate_tool_search_embedding_errors_total",
-			Help: "Failed or skipped calls of the tool search model endpoints, by use (query or document) and reason (error or circuit_open).",
+			Help: "Failed or skipped calls of the tool search model endpoints, by use (query or document) and reason (error, circuit_open, dimension_mismatch or scaled_down).",
 		}, []string{"use", "reason"}),
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "toolgate_embeddings_request_duration_seconds",
@@ -142,14 +157,15 @@ func New(options Options, metrics ...*Metrics) (*Client, error) {
 	}
 
 	return &Client{
-		endpoint: strings.TrimRight(options.URL, "/") + "/v1/embeddings",
-		model:    options.Model,
-		apiKey:   options.APIKey,
-		timeout:  timeout,
-		http:     client,
-		breaker:  breaker{now: valueOrNow(options.Now)},
-		metrics:  shared,
-		onDemand: options.OnDemand,
+		endpoint:   strings.TrimRight(options.URL, "/") + "/v1/embeddings",
+		model:      options.Model,
+		apiKey:     options.APIKey,
+		timeout:    timeout,
+		http:       client,
+		breaker:    breaker{now: valueOrNow(options.Now)},
+		metrics:    shared,
+		onDemand:   options.OnDemand,
+		scaledDown: options.ScaledDown,
 	}, nil
 }
 
@@ -164,6 +180,12 @@ func (c *Client) Collectors() []prometheus.Collector { return c.metrics.Collecto
 func (c *Client) CountError(use string, err error) {
 	if errors.Is(err, ErrCircuitOpen) {
 		c.metrics.count(use, "circuit_open")
+
+		return
+	}
+
+	if errors.Is(err, ErrScaledDown) {
+		c.metrics.count(use, "scaled_down")
 
 		return
 	}
@@ -200,8 +222,12 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float32, error)
 // It records the duration of each request that reached the endpoint, whether
 // it succeeded or not. A call the open circuit skipped records nothing.
 func (c *Client) EmbedFor(ctx context.Context, operation string, texts []string) ([][]float32, error) {
-	if c.onDemand != nil && len(texts) > 0 {
+	if skip, _ := ctx.Value(withoutDemandKey{}).(bool); c.onDemand != nil && len(texts) > 0 && !skip {
 		c.onDemand(ctx)
+	}
+
+	if c.scaledDown != nil && len(texts) > 0 && c.scaledDown(ctx) {
+		return nil, ErrScaledDown
 	}
 
 	vectors := make([][]float32, 0, len(texts))

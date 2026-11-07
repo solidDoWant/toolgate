@@ -301,3 +301,18 @@ func EmbeddingsServerState(ctx context.Context, pool *pgxpool.Pool) (string, err
 
 	return server.State, nil
 }
+
+// EmbeddingsServerScaledDown returns a function that reports whether the
+// leader has published the bundled embeddings server as down or starting. If
+// the state can't be read it reports false, so the call goes out and its own
+// failure handling applies.
+func EmbeddingsServerScaledDown(pool *pgxpool.Pool) func(context.Context) bool {
+	return func(ctx context.Context) bool {
+		server, err := db.New(pool).GetEmbeddingsServer(ctx)
+		if err != nil {
+			return false
+		}
+
+		return server.State != EmbeddingsServerReady
+	}
+}

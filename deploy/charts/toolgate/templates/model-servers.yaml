@@ -9,7 +9,13 @@ downloaded directory. No NetworkPolicy: cluster admins add that.
 {{- if $values.server.enabled }}{{ $servers = append $servers (dict "key" "server" "name" "embeddings" "dir" "embeddings") }}{{ end -}}
 {{- if $servers }}
 {{- $claim := include "toolgate.modelClaim" . -}}
-{{- if not $values.server.cache.existingClaim }}
+{{- /*
+The claim is created only when it does not exist. An upgrade must never
+delete it: the server may still mount it. A claim from an earlier install is
+not in the release manifest, so Helm leaves it alone. Without a cluster to
+look at (helm template), the claim always renders.
+*/ -}}
+{{- if and (not $values.server.cache.existingClaim) (not (lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-models" (include "toolgate.fullname" .)))) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -19,7 +25,7 @@ metadata:
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-weight: "-10"
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: hook-failed
     helm.sh/resource-policy: keep
 spec:
   accessModes: {{ toYaml $values.server.cache.accessModes | nindent 4 }}
@@ -37,7 +43,8 @@ spec:
 {{- if not (regexMatch "^[0-9a-f]{40}$" (toString $server.modelRevision)) }}
 {{- fail (printf "embeddings.%s.modelRevision must be a full 40-character commit SHA of the model repository" $entry.key) }}
 {{- end }}
-{{- $image := printf "%s:%s@%s" $server.image.repository $server.image.tag $server.image.digest }}
+{{- $image := printf "%s:%s" $server.image.repository $server.image.tag }}
+{{- if $server.image.digest }}{{ $image = printf "%s@%s" $image $server.image.digest }}{{ end }}
 {{- $selector := dict "app.kubernetes.io/name" $.Chart.Name "app.kubernetes.io/instance" $.Release.Name "app.kubernetes.io/component" $entry.name }}
 ---
 apiVersion: batch/v1
@@ -68,7 +75,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: download
-          image: {{ printf "%s:%s@%s" $values.downloader.image.repository $values.downloader.image.tag $values.downloader.image.digest | quote }}
+          image: {{ printf "%s:%s%s" $values.downloader.image.repository $values.downloader.image.tag (ternary (printf "@%s" $values.downloader.image.digest) "" (ne (toString $values.downloader.image.digest) "")) | quote }}
           command: [uvx]
           args:
             - --from

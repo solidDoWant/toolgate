@@ -114,7 +114,7 @@ sum by (server) (increase(toolgate_instance_repairs_total{action="gave_up"}[1h])
 histogram_quantile(0.95, sum by (le, operation) (rate(toolgate_embeddings_request_duration_seconds_bucket[5m])))
 ```
 
-`toolgate_tool_search_embedding_errors_total{use, reason}` counts the calls that failed or were skipped. The label `use` is `query` or `document`. The label `reason` is `error` for a failed call, `circuit_open` for a call skipped because the circuit is open after repeated failures, and `dimension_mismatch` for a search that found stored vectors of another length than the query vector. While embeddings fail, search still works with word matching only.
+`toolgate_tool_search_embedding_errors_total{use, reason}` counts the calls that failed or were skipped. The label `use` is `query` or `document`. The label `reason` is `error` for a failed call, `circuit_open` for a call skipped because the circuit is open after repeated failures, `scaled_down` for a call skipped because the gateway scaled the bundled embeddings server to zero or the server is still starting, and `dimension_mismatch` for a search that found stored vectors of another length than the query vector. While embeddings fail, search still works with word matching only.
 
 Suggested alert on embedding errors:
 

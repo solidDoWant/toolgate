@@ -87,6 +87,8 @@ gateway_repository=ghcr.io/soliddowant/toolgate
 # Kubernetes 1.35 (the chart needs it), through the Docker Hub mirror, pinned by digest.
 kind_node_image=mirror.gcr.io/kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
 mcpserver_image="localhost/toolgate-e2e-mcpserver:$image_tag"
+embeddings_repository="localhost/toolgate-e2e-embeddings"
+embeddings_image="$embeddings_repository:$image_tag"
 work="$(mktemp -d)"
 export KUBECONFIG="$work/kubeconfig"
 
@@ -127,9 +129,17 @@ CGO_ENABLED=0 go build -trimpath -o "$work/mcpserver/mcpserver" ./test/mcpserver
 printf 'FROM scratch\nCOPY mcpserver /mcpserver\nUSER 65532:65532\nEXPOSE 8080\nENTRYPOINT ["/mcpserver"]\n' >"$work/mcpserver/Dockerfile"
 docker build --quiet --tag "$mcpserver_image" "$work/mcpserver" >&2
 
+# The embeddings server stands in for text-embeddings-inference. The same
+# binary is also installed as uvx, so it passes as the model download Job.
+log "building the test embeddings server image $embeddings_image"
+mkdir -p "$work/embeddingsserver"
+CGO_ENABLED=0 go build -trimpath -o "$work/embeddingsserver/embeddingsserver" ./test/embeddingsserver
+printf 'FROM scratch\nCOPY embeddingsserver /embeddingsserver\nCOPY embeddingsserver /usr/local/bin/uvx\nUSER 1000:1000\nEXPOSE 80\nENTRYPOINT ["/embeddingsserver"]\n' >"$work/embeddingsserver/Dockerfile"
+docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
+
 log "creating kind cluster $cluster"
 kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
-kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" >&2
+kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
 
 log "installing Flux"
 flux install --timeout 5m >&2
@@ -257,6 +267,16 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}}}' \
 	--set-json 'resources.persistence.secrets-keyset={"type":"secret","name":"toolgate-secrets-keyset","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/secrets-keyset","readOnly":true}]}}}' \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
+	--set embeddings.server.enabled=true \
+	--set embeddings.server.scaleToZero.enabled=true \
+	--set embeddings.server.scaleToZero.idleTimeout=1m \
+	--set embeddings.server.image.repository="$embeddings_repository" \
+	--set embeddings.server.image.tag="$image_tag" \
+	--set embeddings.server.image.digest= \
+	--set embeddings.downloader.image.repository="$embeddings_repository" \
+	--set embeddings.downloader.image.tag="$image_tag" \
+	--set embeddings.downloader.image.digest= \
+	--set embeddings.server.cache.accessModes='{ReadWriteOnce}' \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"

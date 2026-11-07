@@ -41,7 +41,7 @@ import (
 )
 
 // gatewayPodSelector selects the gateway pods of a release named toolgate.
-const gatewayPodSelector = "app.kubernetes.io/name=toolgate,app.kubernetes.io/instance=toolgate"
+const gatewayPodSelector = "app.kubernetes.io/name=toolgate,app.kubernetes.io/instance=toolgate,app.kubernetes.io/controller=gateway"
 
 // enableTimeout bounds one toolgate_enable_server call: an instance start
 // on a kind node, plus a leader change in the failover test.

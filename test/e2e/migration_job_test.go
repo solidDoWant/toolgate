@@ -81,7 +81,7 @@ func (o *jobObservation) observe(t *testing.T, admin *kubernetes.Clientset, stop
 	jobs, err := admin.BatchV1().Jobs(namespace).Watch(ctx, metav1.ListOptions{})
 	require.NoError(t, err)
 
-	pods, err := admin.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{LabelSelector: gatewayPodSelector + ",app.kubernetes.io/controller=gateway"})
+	pods, err := admin.CoreV1().Pods(namespace).Watch(ctx, metav1.ListOptions{LabelSelector: gatewayPodSelector})
 	require.NoError(t, err)
 
 	go func() {
