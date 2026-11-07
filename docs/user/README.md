@@ -113,6 +113,18 @@ To see the servers that you can use, run `toolgate servers`. It shows the same l
 
 The list depends on the workspace. `toolgate servers` sends the same workspace that Claude Code sends from the current directory. If you set `TOOLGATE_SESSION`, the command uses that session, and the `ENABLED` column shows the servers that are enabled in it.
 
+## See the servers in the web UI
+
+The Servers page of the web UI (`/ui/servers`) shows the servers that you can use, and only those. For each server it shows:
+
+- the scope: `per-session` (each session has its own instance), `per-user` (all your sessions share one instance) or `shared` (everyone shares one instance);
+- the environments: `any` (works from any signed-in machine), `attested` (needs an attested workspace) or `opt-in` (needs an attested workspace or a grant);
+- whether the server is remote, and which user secrets it needs and whether you set them (the page never shows a value);
+- the status of your instance and the number of tools, when known;
+- whether your workspace defaults and lists allow the server in verified workspaces and in unverified sessions, with a link to the Workspaces page to change them.
+
+Select a server name to see its tools. Blocked tools and tools that need approval are marked. The page also shows the `toolgate workspace allow` commands for the server. Click a command to select it, then copy it.
+
 ## See your open sessions
 
 To see your open sessions, run `toolgate sessions`. A session is one Claude Code conversation with the gateway. The command prints a table with these columns: `SESSION`, `WORKSPACE`, `LAST SEEN` and `SERVERS`. The `SERVERS` column lists the servers that are enabled in the session. A dash means that no server is enabled. If a session has servers or tools that you allowed or denied for that session only, the table also has the columns `ALLOWED` and `DENIED`.

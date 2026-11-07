@@ -6,6 +6,10 @@
 
 - If the gateway connects to PostgreSQL with a client certificate that expires after a short time, for example a cert-manager certificate that is valid for one hour, upgrade to this version. Versions 0.4.0 to 0.4.5 stop working when that certificate expires.
 
+### New
+
+- The Servers page of the web UI now shows the scope, the environments, the secrets that are needed and the workspace availability of each server you can use, and a detail page with its tools.
+
 ### Fixes
 
 - The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`.
