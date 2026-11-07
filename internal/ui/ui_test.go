@@ -49,7 +49,7 @@ func newUI(t *testing.T) (*ui.UI, *muxRegistrar) {
 func TestOnlySignInAndStaticRoutesArePublic(t *testing.T) {
 	webUI, registrar := newUI(t)
 
-	assert.ElementsMatch(t, []string{"GET /ui/login", "GET /ui/auth/callback", "GET /ui/static/"}, registrar.public)
+	assert.ElementsMatch(t, []string{"GET /ui/login", "GET /ui/auth/callback", "GET /ui/static/", "GET /install.sh"}, registrar.public)
 
 	var public []string
 

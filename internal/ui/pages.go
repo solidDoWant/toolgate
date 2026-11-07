@@ -45,6 +45,7 @@ var pageTemplates = map[string]*template.Template{
 	"approvals":      template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approvals.html")),
 	"approval":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approval.html")),
 	"workspaces":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/workspaces.html")),
+	"setup":          template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/setup.html")),
 	"access_request": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/access_request.html")),
 }
 
