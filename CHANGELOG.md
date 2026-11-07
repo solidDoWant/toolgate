@@ -2,9 +2,39 @@
 
 ## Unreleased
 
-- The web UI hides the Secrets link in its navigation when the gateway has no secrets keyset, instead of linking to a page that returns 404.
-- The Helm chart has the new values `config.oidc.cliClientID` and `config.oidc.cliScopes`. With `cliClientID` set, `toolgate login` needs no `--client-id`.
-- The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should.
+## 0.4.4
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes sign-in failures when several Claude Code sessions start at the same time, and two problems in the web UI. The Helm chart also gets values for the client ID and scopes of the `toolgate` command.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.4`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.4`. Follow `docs/admin/quick-start.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+This release has no breaking changes. An install of 0.4.3 upgrades with no changes to its values.
+
+### Signing in
+
+- When several `toolgate` commands renewed the sign-in at the same time, for example at the start of two Claude Code sessions, the identity provider could refuse one of them with `invalid_grant`. The user then had to sign in again. This happened with identity providers that give a new refresh token at each renewal and refuse the old one, for example Authentik. Now only one `toolgate` command at a time renews the sign-in. It holds a lock on the file `token.lock` in the toolgate configuration directory. The other commands wait, then use the new token. ([#492](https://github.com/solidDoWant/toolgate/pull/492))
+
+### Deployment
+
+- The Helm chart has the new values `config.oidc.cliClientID` and `config.oidc.cliScopes`. If you set `cliClientID`, users can run `toolgate login` without `--client-id`. See `docs/admin/chart.md`. ([#489](https://github.com/solidDoWant/toolgate/pull/489))
+
+### Fixes
+
+- The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should. ([#484](https://github.com/solidDoWant/toolgate/pull/484))
+- If the gateway has no secrets keyset, the web UI no longer shows the Secrets link in its navigation. Before, the link opened a page that returned 404. ([#485](https://github.com/solidDoWant/toolgate/pull/485))
+
+Internal work: design documents for MCP sessions that all gateway replicas share through PostgreSQL.
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- With more than one gateway replica, a request can fail with `404 session not found` when it reaches another replica right after the session starts. Claude Code then marks the `toolgate` server as failed. Until a later release fixes this, set `config.replicas` to `1`. ([#487](https://github.com/solidDoWant/toolgate/issues/487))
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.3
 
