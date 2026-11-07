@@ -143,7 +143,7 @@ func TestApprovalsList(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.StatusCode)
 
 	page := readBody(t, response)
-	assert.Contains(t, page, "<td>github</td><td>delete_repository</td><td>session-"+approvalID(0)+"</td><td>github.com/acme/repo</td>",
+	assert.Contains(t, page, "<td>github</td><td>delete_repository</td><td>session-"+approvalID(0)+"</td><td><span title=\"github.com/acme/repo\">github.com/acme/repo</span></td>",
 		"server, tool, session and workspace")
 	assert.Contains(t, page, ui.ApprovalPath(approvalID(0)))
 	assert.NotContains(t, page, approvalID(1), "an expired approval isn't listed")

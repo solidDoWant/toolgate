@@ -66,6 +66,12 @@ If the IdP does not send `auth_time`, the fresh sign-in fails. The other pages o
 
 Set `config.ui.adminGroup` to the group whose members are admins in the UI. If it is empty, nobody is an admin. The UI reads the groups at sign-in. If you remove a user from the group, the change takes effect at the latest when the user's 8-hour session ends. So the admin group is a snapshot from the last sign-in, and a removed admin can keep admin access for up to 8 hours.
 
+## How the pages show people
+
+The pages show a person by name and email, for example `Fred <fred@example.com>`. If toolgate knows only an email, a name or a username, it shows that. Your own user shows as "you". A service account shows as `serviceaccount namespace/name`. A SPIFFE workload shows its SPIFFE ID, shortened if it is long. If toolgate has never seen a name for a user, the page shows a short form such as `user 914009fe…`, and a button opens the full ID. Hover over any name to see the full ID.
+
+toolgate takes the names from the verified claims of the ID token when a user signs in and from the access token when a session starts. It keeps the newest values for each user in its database. It shows an email only if the identity provider verified it. It never asks the identity provider for names. A workspace has a short label too: `coder/user/name` shows as "Coder workspace name", and `claimed/name` shows as "unverified: name".
+
 ## The Servers page
 
 `/ui/servers` is the first page after a sign-in. It shows two lists:

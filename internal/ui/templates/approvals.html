@@ -5,7 +5,7 @@
 <thead><tr><th>Server</th><th>Tool</th><th>Session</th><th>Workspace</th><th>Requested</th><th>Expires</th><th></th></tr></thead>
 <tbody>
 {{range .Data.Approvals}}<tr id="approval-{{.ID}}">
-<td>{{.Server}}</td><td>{{.Tool}}</td><td>{{.Session}}</td><td>{{.Workspace}}</td>
+<td>{{.Server}}</td><td>{{.Tool}}</td><td>{{.Session}}</td><td>{{template "ws" (workspace .Workspace)}}</td>
 <td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
 <td><a href="/ui/approvals/{{.ID}}">Open</a></td>
 </tr>

@@ -78,6 +78,10 @@ type Identity struct {
 	Principal string `json:"principal"`
 	// Email is set only when the token's email-verified claim is true.
 	Email string `json:"email,omitempty"`
+	// Name and Username are the token's `name` and `preferred_username`
+	// claims. They are for display only.
+	Name     string `json:"name,omitempty"`
+	Username string `json:"username,omitempty"`
 	// Groups come from the configured groups claim.
 	Groups []string `json:"groups,omitempty"`
 	// Workspace is `claimed/<header>`, or `claimed/default` without a header,
@@ -709,6 +713,14 @@ func (a *Authenticator) identityFromClaims(subject string, claims map[string]jso
 		if err := json.Unmarshal(raw, &identity.Email); err != nil {
 			return Identity{}, fmt.Errorf("email claim: %w", err)
 		}
+	}
+
+	if raw, ok := claims["name"]; ok {
+		_ = json.Unmarshal(raw, &identity.Name)
+	}
+
+	if raw, ok := claims["preferred_username"]; ok {
+		_ = json.Unmarshal(raw, &identity.Username)
 	}
 
 	// A groups claim that isn't a list of strings is refused rather than

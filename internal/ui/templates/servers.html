@@ -34,7 +34,7 @@
 <thead><tr><th>Server</th><th>Scope</th><th>Owner</th><th>Status</th><th>Reason</th><th>Ready since</th><th>Version</th><th></th></tr></thead>
 <tbody>
 {{range .Data.Instances}}<tr>
-<td>{{.Server}}</td><td>{{.Scope}}</td><td>{{if .Owner}}{{.Owner}}{{else}}shared{{end}}</td><td><span class="badge {{badge .Status}}">{{.Status}}</span></td><td>{{.Reason}}</td>
+<td>{{.Server}}</td><td>{{.Scope}}</td><td>{{if .Owner}}{{template "who" index $.Data.Owners .Owner}}{{else}}shared{{end}}</td><td><span class="badge {{badge .Status}}">{{.Status}}</span></td><td>{{.Reason}}</td>
 <td>{{with .ReadyAt}}{{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td>
 <td>{{if .Outdated}}<span class="badge badge-warn">outdated</span>{{else}}<span class="badge badge-ok">current</span>{{end}}</td>
 <td>{{if and .Outdated (eq .Status "ready")}}<form method="post" action="/ui/instances/{{.ID}}/restart">

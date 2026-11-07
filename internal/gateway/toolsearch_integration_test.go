@@ -815,3 +815,46 @@ func TestBlockedServerReasonInSearchMode(t *testing.T) {
 	assert.NotContains(t, entry.Reason, "enable it to ask")
 	assert.Zero(t, fixture.accessRequestCount(t), "listing creates no request")
 }
+
+// Starting a session stores the verified display fields of the user, and a
+// user whose email the IdP didn't verify gets no email stored.
+func TestSessionStartRecordsThePrincipalProfile(t *testing.T) {
+	fixture := newMCPFixture(t)
+
+	profileOf := func(principal string) (email, name, username string, found bool) {
+		rows, err := fixture.pool.Query(t.Context(),
+			`SELECT email, name, username FROM principal_profiles WHERE principal = $1`, principal)
+		require.NoError(t, err)
+
+		defer rows.Close()
+
+		if !rows.Next() {
+			return "", "", "", false
+		}
+
+		require.NoError(t, rows.Scan(&email, &name, &username))
+
+		return email, name, username, true
+	}
+
+	named := alice()
+	named.session = "profile-session"
+	named.claims.Extra = map[string]any{"name": "Alice A", "preferred_username": "alice.a"}
+	fixture.connect(t, named)
+
+	email, name, username, found := profileOf("alice")
+	require.True(t, found)
+	assert.Equal(t, "alice@example.com", email)
+	assert.Equal(t, "Alice A", name)
+	assert.Equal(t, "alice.a", username)
+
+	unverified := bob()
+	unverified.claims.Email = "bob@example.com"
+	unverified.claims.Extra = map[string]any{"name": "Bob B"}
+	fixture.connect(t, unverified)
+
+	email, name, _, found = profileOf("bob")
+	require.True(t, found)
+	assert.Empty(t, email)
+	assert.Equal(t, "Bob B", name)
+}

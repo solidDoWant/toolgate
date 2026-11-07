@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/solidDoWant/toolgate/internal/principal"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -36,18 +37,21 @@ var auditTimeLayouts = []string{"2006-01-02T15:04", "2006-01-02T15:04:05", time.
 
 // auditEvent is one audit row as the pages show it.
 type auditEvent struct {
-	Key         string
-	OccurredAt  time.Time
-	Type        string
-	Principal   string
-	Workspace   string
-	Session     string
-	Attestation string
-	Server      string
-	Tool        string
-	TraceID     string
-	RequestID   string
-	Details     string
+	Key        string
+	OccurredAt time.Time
+	Type       string
+	Principal  string
+	// Who is Principal as people read it.
+	Who            principal.Display
+	Workspace      string
+	WorkspaceLabel workspaceLabel
+	Session        string
+	Attestation    string
+	Server         string
+	Tool           string
+	TraceID        string
+	RequestID      string
+	Details        string
 	// Payload is the first part of the payload, empty when there is none.
 	Payload string
 	// PayloadTruncated is true when Payload is not all of it.
@@ -191,18 +195,19 @@ func toAuditEvent(row db.GetAuditEventRow) auditEvent {
 	}
 
 	return auditEvent{
-		Key:         eventKey(row.OccurredAt.Time, row.ID),
-		OccurredAt:  row.OccurredAt.Time.UTC(),
-		Type:        row.Type,
-		Principal:   row.Principal,
-		Workspace:   row.Workspace,
-		Session:     row.Session,
-		Attestation: row.Attestation,
-		Server:      row.Server,
-		Tool:        row.Tool,
-		TraceID:     row.TraceID,
-		RequestID:   row.RequestID,
-		Details:     details.String(),
+		Key:            eventKey(row.OccurredAt.Time, row.ID),
+		OccurredAt:     row.OccurredAt.Time.UTC(),
+		Type:           row.Type,
+		Principal:      row.Principal,
+		Workspace:      row.Workspace,
+		WorkspaceLabel: labelWorkspace(row.Workspace),
+		Session:        row.Session,
+		Attestation:    row.Attestation,
+		Server:         row.Server,
+		Tool:           row.Tool,
+		TraceID:        row.TraceID,
+		RequestID:      row.RequestID,
+		Details:        details.String(),
 	}
 }
 
@@ -267,8 +272,16 @@ func (u *UI) audit(writer http.ResponseWriter, request *http.Request) {
 		data.NextURL = "/ui/audit?" + next.Encode()
 	}
 
+	principals := make([]string, 0, len(rows))
+
 	for _, row := range rows {
 		data.Events = append(data.Events, toAuditEvent(db.GetAuditEventRow(row)))
+		principals = append(principals, row.Principal)
+	}
+
+	names := u.namesFor(ctx, session.Principal, principals...)
+	for index := range data.Events {
+		data.Events[index].Who = names.show(data.Events[index].Principal)
 	}
 
 	u.render(writer, request, "audit", "Audit", data)
@@ -305,6 +318,7 @@ func (u *UI) auditEventPage(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	event := toAuditEvent(row)
+	event.Who = u.namesFor(ctx, session.Principal, row.Principal).show(row.Principal)
 	u.attachPayload(ctx, &event, occurredAt, id)
 
 	u.render(writer, request, "audit_event", "Audit event", event)

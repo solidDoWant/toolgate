@@ -5,7 +5,7 @@
 <thead><tr><th>ID</th><th>Match</th><th>Reason</th><th>Created by</th><th>Created</th><th>Ends</th></tr></thead>
 <tbody>
 {{range .Data.Blocks}}<tr>
-<td>{{.ID}}</td><td>{{.Match}}</td><td>{{.Reason}}</td><td>{{.CreatedBy}}</td>
+<td>{{.ID}}</td><td>{{.Match}}</td><td>{{.Reason}}</td><td>{{template "who" .Who}}</td>
 <td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
 </tr>
 {{end}}</tbody>

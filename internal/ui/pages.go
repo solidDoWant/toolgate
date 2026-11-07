@@ -12,6 +12,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/gateway"
+	"github.com/solidDoWant/toolgate/internal/principal"
 )
 
 // ServerSource gives the Servers page its rows. gateway.CatalogView
@@ -60,7 +61,7 @@ var pageTemplates = map[string]*template.Template{
 
 // parsePage parses the layout and one page's content template.
 func parsePage(file string) *template.Template {
-	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp}).
+	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp, "workspace": labelWorkspace}).
 		ParseFS(templateFiles, "templates/layout.html", "templates/"+file+".html"))
 }
 
@@ -197,6 +198,8 @@ type serversPage struct {
 	// Workspaces is true when the page shows workspace availability.
 	Workspaces bool
 	Admin      bool
+	// Owners shows each instance owner as people read it, by raw principal.
+	Owners map[string]principal.Display
 }
 
 // serverRow is one server of the catalog table.
@@ -281,6 +284,18 @@ func (u *UI) servers(writer http.ResponseWriter, request *http.Request) {
 		Instances:  instances,
 		Workspaces: u.options.Workspaces != nil,
 		Admin:      session.Admin,
+	}
+
+	owners := make([]string, 0, len(instances))
+	for _, instance := range instances {
+		owners = append(owners, instance.Owner)
+	}
+
+	names := u.namesFor(ctx, session.Principal, owners...)
+	data.Owners = make(map[string]principal.Display, len(owners))
+
+	for _, owner := range owners {
+		data.Owners[owner] = names.show(owner)
 	}
 
 	var scopes gateway.WorkspaceScopes

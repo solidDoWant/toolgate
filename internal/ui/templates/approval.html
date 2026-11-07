@@ -5,7 +5,7 @@
 <dt>Server</dt><dd>{{.Approval.Server}}</dd>
 <dt>Tool</dt><dd>{{.Approval.Tool}}</dd>
 <dt>Session</dt><dd>{{.Approval.Session}}</dd>
-<dt>Workspace</dt><dd>{{.Approval.Workspace}}</dd>
+<dt>Workspace</dt><dd>{{template "ws" (workspace .Approval.Workspace)}}</dd>
 <dt>Requested</dt><dd>{{.Approval.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
 <dt>Expires</dt><dd>{{.Approval.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
 </dl>

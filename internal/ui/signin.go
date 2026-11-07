@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -309,6 +310,8 @@ func (u *UI) completeStepUp(writer http.ResponseWriter, request *http.Request, l
 		return failure("the gateway can't update the session", err)
 	}
 
+	u.recordProfile(ctx, identity)
+
 	if updated == 0 {
 		return u.startSession(writer, request, identity)
 	}
@@ -321,6 +324,7 @@ type signedInIdentity struct {
 	principal string
 	email     string
 	name      string
+	username  string
 	groups    []string
 	authTime  pgtype.Timestamptz
 }
@@ -352,6 +356,10 @@ func (u *UI) identityFromIDToken(idToken *oidc.IDToken) (signedInIdentity, error
 
 	if raw, ok := claims["name"]; ok {
 		_ = json.Unmarshal(raw, &identity.name)
+	}
+
+	if raw, ok := claims["preferred_username"]; ok {
+		_ = json.Unmarshal(raw, &identity.username)
 	}
 
 	// Groups that aren't a list of strings are refused rather than ignored,
@@ -395,6 +403,8 @@ func (u *UI) startSession(writer http.ResponseWriter, request *http.Request, ide
 	if err != nil {
 		return failure("the gateway can't store the session", err)
 	}
+
+	u.recordProfile(ctx, identity)
 
 	if old, err := request.Cookie(SessionCookie); err == nil && old.Value != "" {
 		if err := u.queries.DeleteUISession(ctx, hashValue(old.Value)); err != nil {
@@ -464,4 +474,20 @@ func truncate(value string) string {
 	}
 
 	return value
+}
+
+// recordProfile stores the verified display fields of a sign-in so pages can
+// show the person instead of the raw subject. A failure only costs the
+// friendly name, so it is logged and the sign-in goes on.
+func (u *UI) recordProfile(ctx context.Context, identity signedInIdentity) {
+	if identity.email == "" && identity.name == "" && identity.username == "" {
+		return
+	}
+
+	err := u.queries.UpsertPrincipalProfile(ctx, db.UpsertPrincipalProfileParams{
+		Principal: identity.principal, Email: identity.email, Name: identity.name, Username: identity.username,
+	})
+	if err != nil {
+		u.logger.WarnContext(ctx, "cannot record the signed-in user's display name", "error", err)
+	}
 }

@@ -94,7 +94,7 @@ func TestSessionAddition(t *testing.T) {
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+ui.ApprovalPath(id))))
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.SignInToOIDC(user), chromedp.WaitVisible(allowSession)))
 
-		for _, shown := range []string{"immich", "session-1", additionWorkspace, "Always allow in this workspace", "Deny"} {
+		for _, shown := range []string{"immich", "session-1", "Coder workspace mail", "Always allow in this workspace", "Deny"} {
 			assert.True(t, pageShows(ctx, shown), "the page shows %q", shown)
 		}
 

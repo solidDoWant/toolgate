@@ -62,8 +62,8 @@ func TestServersPageShowsWorkspaceAvailability(t *testing.T) {
 				{Action: gateway.WorkspaceAllow, UnverifiedList: true, Servers: []string{"any-server"}},
 			},
 			contains: []string{
-				`Workspace <code>coder/dave/mail</code>: <span class="badge badge-ok">allowed</span>`,
-				`Workspace <code>coder/dave/blog</code>: <span class="badge badge-bad">blocked</span>`,
+				`Workspace <span title="coder/dave/mail">Coder workspace mail</span>: <span class="badge badge-ok">allowed</span>`,
+				`Workspace <span title="coder/dave/blog">Coder workspace blog</span>: <span class="badge badge-bad">blocked</span>`,
 				`Unverified session: <span class="badge badge-ok">allowed</span>`,
 				`href="/ui/workspaces"`,
 			},

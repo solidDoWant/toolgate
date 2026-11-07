@@ -5,7 +5,7 @@
 <dt>Kind</dt><dd>{{.Kind}}</dd>
 {{with .Server}}<dt>Server</dt><dd>{{.}}</dd>
 {{end}}{{with .Session}}<dt>Session</dt><dd>{{.}}</dd>
-{{end}}<dt>Workspace</dt><dd>{{.Workspace}}</dd>
+{{end}}<dt>Workspace</dt><dd>{{template "ws" (workspace .Workspace)}}</dd>
 <dt>Requested</dt><dd>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
 <dt>Expires</dt><dd>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
 </dl>
@@ -17,7 +17,7 @@
 <tr><td>Sessions without a verified workspace</td><td>{{.BeforeUnverified}}</td><td>{{.AfterUnverified}}</td></tr>
 </tbody>
 </table></div>
-{{else}}<p>Workspace {{.Workspace}}</p>
+{{else}}<p>Workspace {{template "ws" (workspace .Workspace)}}</p>
 <div class="table-wrap"><table id="change">
 <thead><tr><th>Before</th><th>After</th></tr></thead>
 <tbody><tr>
@@ -32,8 +32,8 @@
 <dt>Default before</dt><dd>{{.Before.Default}}</dd>
 <dt>Default after</dt><dd>{{.After.Default}}</dd>
 {{else if .Session}}<dt>Target session</dt><dd>{{.Session}}</dd>
-<dt>In workspace</dt><dd>{{.Workspace}}</dd>
-{{else}}<dt>Target workspace</dt><dd>{{.Workspace}}</dd>
+<dt>In workspace</dt><dd>{{template "ws" (workspace .Workspace)}}</dd>
+{{else}}<dt>Target workspace</dt><dd>{{template "ws" (workspace .Workspace)}}</dd>
 {{end}}<dt>Asked by session</dt><dd>{{if .AskedBy}}{{.AskedBy}}{{else}}none (the CLI){{end}}</dd>
 </dl>
 <div class="table-wrap"><table id="change">
