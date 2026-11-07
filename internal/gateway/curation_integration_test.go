@@ -113,7 +113,7 @@ func TestToolCuration(t *testing.T) {
 		assert.Equal(t, "say", decisions[1].Details["exposedTool"])
 	})
 
-	t.Run("row 199: a rule's tools glob refuses by the upstream name or the exposed name", func(t *testing.T) {
+	t.Run("a rule's tools glob refuses by the upstream name or the exposed name", func(t *testing.T) {
 		for _, glob := range []string{"github__echo", "github__say"} {
 			fixture := newMCPFixture(t)
 			fixture.addEnableTemplate("github", "per-user", anyone)

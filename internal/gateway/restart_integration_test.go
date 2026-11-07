@@ -142,7 +142,7 @@ func TestRequestRestart(t *testing.T) {
 		}
 	})
 
-	t.Run("[row 55] a second request before the replacement sets the column again; after it, matches nothing", func(t *testing.T) {
+	t.Run("a second request before the replacement sets the column again; after it, matches nothing", func(t *testing.T) {
 		template := perUser("restart-twice")
 		id := fixture.readyInstance(t, template, "alice", template.Generation-1)
 
@@ -158,7 +158,7 @@ func TestRequestRestart(t *testing.T) {
 }
 
 func TestEnableFollowsAReplacement(t *testing.T) {
-	t.Run("[row 53] an enable waiting on a replaced instance waits on the new live row", func(t *testing.T) {
+	t.Run("an enable waiting on a replaced instance waits on the new live row", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.catalog.MarkLoaded()
 		template := fixture.addEnableTemplate("github", "per-user", anyone)

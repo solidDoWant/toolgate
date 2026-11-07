@@ -76,7 +76,7 @@ func (f *mcpFixture) endedSessionEvents(t *testing.T, session string) []auditRow
 }
 
 func TestConnectorSessions(t *testing.T) {
-	t.Run("row 224: an initialize without the session header makes an unverified mcp. session bound to the MCP session", func(t *testing.T) {
+	t.Run("an initialize without the session header makes an unverified mcp. session bound to the MCP session", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
@@ -137,7 +137,7 @@ func TestConnectorSessions(t *testing.T) {
 		assert.Equal(t, 0, fixture.sessionCount(t))
 	})
 
-	t.Run("row 226: an Mcp-Session-Id this replica doesn't know gets 404 and makes no session", func(t *testing.T) {
+	t.Run("an Mcp-Session-Id this replica doesn't know gets 404 and makes no session", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		assert.Equal(t, http.StatusNotFound, fixture.pingStatus(t, connectorClient(), "0123456789abcdef0123456789abcdef"))
@@ -184,7 +184,7 @@ func TestConnectorSessions(t *testing.T) {
 		require.ErrorIs(t, err, pgx.ErrNoRows)
 	})
 
-	t.Run("row 227: a session header with the mcp. prefix gets 400", func(t *testing.T) {
+	t.Run("a session header with the mcp. prefix gets 400", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
@@ -196,7 +196,7 @@ func TestConnectorSessions(t *testing.T) {
 		assert.Equal(t, 1, fixture.sessionCount(t))
 	})
 
-	t.Run("row 225: a DELETE of the MCP session ends the session at once with session.end", func(t *testing.T) {
+	t.Run("a DELETE of the MCP session ends the session at once with session.end", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
@@ -225,7 +225,7 @@ func TestConnectorSessions(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "session.end"))
 	})
 
-	t.Run("row 225: the idle release of the MCP session ends the session with session.end", func(t *testing.T) {
+	t.Run("the idle release of the MCP session ends the session with session.end", func(t *testing.T) {
 		const idleTimeout = 500 * time.Millisecond
 
 		fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))

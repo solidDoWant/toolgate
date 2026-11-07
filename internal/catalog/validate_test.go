@@ -191,7 +191,7 @@ func TestValidate(t *testing.T) {
 				`{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleBinding","metadata":{"name":"n"}}`),
 		},
 		{
-			name:     "a namespaced kind not on the phase 1 list is valid",
+			name:     "a namespaced kind not on the built-in list is valid",
 			template: newTemplate("github", catalog.ScopePerSession, `{"apiVersion":"batch/v1","kind":"Job","metadata":{"name":"n"}}`),
 		},
 		{

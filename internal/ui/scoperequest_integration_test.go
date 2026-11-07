@@ -99,7 +99,7 @@ func TestScopeRequestApprovalPage(t *testing.T) {
 		assert.NotContains(t, page, "/approve")
 	})
 
-	t.Run("row 202: a session target that moved rolls back with the reason on the page", func(t *testing.T) {
+	t.Run("a session target that moved rolls back with the reason on the page", func(t *testing.T) {
 		sessionPK := env.openAttestedSession(t, "dave", "moved-session")
 		id := env.requestScope(t, gateway.ScopeTarget{Session: "moved-session"}, "any-server")
 

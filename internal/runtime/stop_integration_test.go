@@ -291,7 +291,7 @@ func TestStopDecisions(t *testing.T) {
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 
-	t.Run("[row 10] a deleted template stops its instance", func(t *testing.T) {
+	t.Run("a deleted template stops its instance", func(t *testing.T) {
 		template := fixture.template("deleted", "shared", 0, everyone)
 		session := fixture.session(t, "deleted-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -318,7 +318,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.requireTornDown(t, instance)
 	})
 
-	t.Run("[row 29] a scope change stops the instance and keeps the session's enable", func(t *testing.T) {
+	t.Run("a scope change stops the instance and keeps the session's enable", func(t *testing.T) {
 		template := fixture.template("rescoped", "per-user", time.Hour, everyone)
 		session := fixture.session(t, "rescoped-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -339,7 +339,7 @@ func TestStopDecisions(t *testing.T) {
 		require.Len(t, enabled, 1)
 	})
 
-	t.Run("[row 11] access removed in the owner's latest session snapshot stops the instance", func(t *testing.T) {
+	t.Run("access removed in the owner's latest session snapshot stops the instance", func(t *testing.T) {
 		template := fixture.template("access", "per-user", time.Hour, everyone)
 		session := fixture.session(t, "access-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -370,7 +370,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.requireTornDown(t, stopped)
 	})
 
-	t.Run("[row 13] a per-session instance stops once its session has ended, and the enabled rows stay", func(t *testing.T) {
+	t.Run("a per-session instance stops once its session has ended, and the enabled rows stay", func(t *testing.T) {
 		template := fixture.template("per-session", "per-session", 0, everyone)
 		session := fixture.session(t, "session-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -438,7 +438,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.requireTornDown(t, stops)
 	})
 
-	t.Run("[row 23] a stop re-checks under the lock and sees an enable that committed first", func(t *testing.T) {
+	t.Run("a stop re-checks under the lock and sees an enable that committed first", func(t *testing.T) {
 		template := fixture.template("race", "per-session", 0, everyone)
 		session := fixture.session(t, "race-user", "s1", "", "staff")
 		instance := fixture.instance(t, template, "session:race-user:s1", "race-user", "ready")
@@ -479,7 +479,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.requireRunning(t, instance)
 	})
 
-	t.Run("[row 23] when the stop commits first the instance isn't live for the enable", func(t *testing.T) {
+	t.Run("when the stop commits first the instance isn't live for the enable", func(t *testing.T) {
 		template := fixture.template("race-stop-first", "per-session", 0, everyone)
 		instance := fixture.instance(t, template, "session:race-stop-user:s1", "race-stop-user", "ready")
 

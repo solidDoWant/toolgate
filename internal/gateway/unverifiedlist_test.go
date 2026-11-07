@@ -15,7 +15,7 @@ func widensOnPhase3(oldStored, newStored string) bool {
 }
 
 func TestUnverifiedListStoredForm(t *testing.T) {
-	t.Run("row 241: list is stored as none with unverified_list, so a move to all widens under 0.3's rule", func(t *testing.T) {
+	t.Run("list is stored as none with unverified_list, so a move to all widens under 0.3's rule", func(t *testing.T) {
 		stored, list := gateway.StoreUnverifiedDefault("list")
 		assert.Equal(t, "none", stored)
 		assert.True(t, list)
@@ -23,7 +23,7 @@ func TestUnverifiedListStoredForm(t *testing.T) {
 		assert.True(t, gateway.DefaultsChangeWidens("none", "none", stored, list, "all", 1))
 	})
 
-	t.Run("row 241: a 0.3 write of none leaves unverified_list, so list stays list", func(t *testing.T) {
+	t.Run("a 0.3 write of none leaves unverified_list, so list stays list", func(t *testing.T) {
 		_, list := gateway.StoreUnverifiedDefault("list")
 		// A 0.3 write of none sets only unverified_default, so list keeps
 		// its value.

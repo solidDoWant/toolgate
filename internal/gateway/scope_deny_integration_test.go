@@ -203,7 +203,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Equal(t, []string{"session:session-1 github  deny"}, fixture.scopeEntryRows(t))
 	})
 
-	t.Run("row 207: another user's session gets no open session, and nothing is written", func(t *testing.T) {
+	t.Run("another user's session gets no open session, and nothing is written", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -217,7 +217,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Empty(t, fixture.scopeEntryRows(t))
 	})
 
-	t.Run("row 206: a deny with the default all and no list inserts a deny entry and refuses the server", func(t *testing.T) {
+	t.Run("a deny with the default all and no list inserts a deny entry and refuses the server", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		api.widen(t, attestedAlice(), workspacesapi.Change{Action: "defaults", Verified: "all"})
@@ -232,7 +232,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Empty(t, api.lists(t, attestedAlice())[aliceWorkspace], "no list is made")
 	})
 
-	t.Run("row 248: a deny applies when the principal has 500 allow entries", func(t *testing.T) {
+	t.Run("a deny applies when the principal has 500 allow entries", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -248,7 +248,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Contains(t, entries, aliceWorkspace+" github create_issue deny")
 	})
 
-	t.Run("row 243: clear deletes the list and the allow entries and keeps the deny entries", func(t *testing.T) {
+	t.Run("clear deletes the list and the allow entries and keeps the deny entries", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -266,7 +266,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Equal(t, []string{"github__open_issue"}, listed.Denied)
 	})
 
-	t.Run("row 243: with the default all, clear widens through a change request and keeps the deny entries", func(t *testing.T) {
+	t.Run("with the default all, clear widens through a change request and keeps the deny entries", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)

@@ -36,6 +36,7 @@ Using `$ARGUMENTS` and any answers from Step 2, produce a draft following this e
 
 - Depends on: {issue numbers, or "none"}
 - Scenarios: {the `AC-N-nn` checklist scenarios this moves, and the design sections and interaction-table rows it implements, or "defect fix"}
+- Tests: the worker names tests after the behaviour and ties them to a scenario only through the checklist's `Tests:` line; never ask for `[AC-…]` in test names.
 - {Key constraints, env vars, package contracts, file paths, or design decisions an implementer needs.}
 - {Add as many bullets as needed; omit this section if truly empty.}
 

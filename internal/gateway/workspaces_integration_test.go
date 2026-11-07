@@ -360,7 +360,7 @@ func TestWorkspaceLists(t *testing.T) {
 		assert.Empty(t, api.lists(t, attestedAlice()))
 	})
 
-	t.Run("row 125: a listed server the user loses access to stays refused", func(t *testing.T) {
+	t.Run("a listed server the user loses access to stays refused", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -420,7 +420,7 @@ func TestWorkspaceLists(t *testing.T) {
 		assert.Empty(t, api.lists(t, attestedAlice()))
 	})
 
-	t.Run("row 128: deny deletes the server's session additions of the user's open sessions in that workspace", func(t *testing.T) {
+	t.Run("deny deletes the server's session additions of the user's open sessions in that workspace", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -472,7 +472,7 @@ func TestWorkspaceLists(t *testing.T) {
 		assert.Equal(t, []string{"slack"}, fixture.sessionAdditions(t, session.ID))
 	})
 
-	t.Run("row 127: concurrent writes to the same principal's lists run in turn as set operations", func(t *testing.T) {
+	t.Run("concurrent writes to the same principal's lists run in turn as set operations", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 
 		const writers = 16

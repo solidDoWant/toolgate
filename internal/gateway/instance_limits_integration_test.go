@@ -113,7 +113,7 @@ func TestInstanceLimits(t *testing.T) {
 }
 
 func TestInstanceLimitInteractions(t *testing.T) {
-	t.Run("row 34: two enables of different servers by one user at the per-user limit take the last slot once", func(t *testing.T) {
+	t.Run("two enables of different servers by one user at the per-user limit take the last slot once", func(t *testing.T) {
 		fixture := newMCPFixture(t, withInstanceLimits(1, 200))
 		github := fixture.addEnableTemplate("github", "per-user", anyone)
 		slack := fixture.addEnableTemplate("slack", "per-user", anyone)

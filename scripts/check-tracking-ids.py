@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""Fails on tracking IDs in the codebase.
+
+Scenario IDs, phase numbers, design row and section numbers, and issue or PR
+numbers mean nothing to a future reader. A test is tied to a scenario only
+through the checklist's Tests: line, and a comment explains the reason.
+
+Every hit is reported with its file and line. Paths that must print or discuss
+these IDs are listed in EXCEPTIONS, each with its reason.
+"""
+
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+PATTERNS = [
+    ("scenario ID", re.compile(r"AC-\d+-\d+")),
+    ("test named after a scenario", re.compile(r"func TestAC")),
+    ("phase number", re.compile(r"\b[Pp]hase \d+\b")),
+    ("design row number", re.compile(r"\brow \d{2,}\b")),
+    ("design section number", re.compile(r"§\s?\d")),
+    ("issue or PR number", re.compile(r"(?<!&)#\d{2,}")),
+]
+
+# Path prefix (or exact path) -> reason it may contain tracking IDs.
+EXCEPTIONS = {
+    "docs/acceptance/": "the checklist defines the scenario IDs",
+    "docs/design/": "the design documents define phases, rows and sections",
+    "docs/README.md": "the index names the per-phase files",
+    "docs/agents/": "agent playbooks describe the rules and the IDs",
+    "CHANGELOG.md": "release notes list the merged issues and PRs",
+    ".claude/": "agent definitions and commands describe the rules and the IDs",
+    "scripts/acceptance-scoreboard.py": "the scoreboard prints scenario IDs",
+    "scripts/acceptance-scoreboard_test.py": "tests of the scoreboard use scenario IDs",
+    "scripts/acceptance.sh": "the acceptance runner prints scenario IDs",
+    "scripts/check-tracking-ids.py": "defines the patterns",
+    "scripts/check-tracking-ids_test.py": "tests the patterns",
+    "scripts/agents/": "the scheduler reads issue and PR numbers",
+    "scripts/ci/": "CI tools read scenario IDs, issue and PR numbers",
+}
+
+
+def excepted(path):
+    """Returns True when path may contain tracking IDs."""
+    return any(path == prefix or (prefix.endswith("/") and path.startswith(prefix)) for prefix in EXCEPTIONS)
+
+
+def check_text(path, text):
+    """Returns the list of problems found in the text of the file at path."""
+    if excepted(path):
+        return []
+    found = []
+    for number, line in enumerate(text.splitlines(), 1):
+        for label, pattern in PATTERNS:
+            match = pattern.search(line)
+            if match:
+                found.append(f"{path}:{number}: {label} {match.group(0)!r}")
+    return found
+
+
+def main():
+    root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
+    os.chdir(root)
+    files = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"], text=True
+    ).splitlines()
+    found = []
+    for path in files:
+        if not os.path.isfile(path):
+            continue
+        try:
+            text = pathlib.Path(path).read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        found += check_text(path, text)
+    for message in found:
+        print(message, file=sys.stderr)
+    return 1 if found else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

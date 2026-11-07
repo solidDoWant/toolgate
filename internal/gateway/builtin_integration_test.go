@@ -62,7 +62,7 @@ func listScopesResult(t *testing.T, text string) gateway.ListScopesResult {
 }
 
 func TestBuiltinServer(t *testing.T) {
-	t.Run("row 210: without the web UI the server isn't in the catalog and its tools are refused with not-offered", func(t *testing.T) {
+	t.Run("without the web UI the server isn't in the catalog and its tools are refused with not-offered", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 		client := fixture.connectObserved(t, attestedAlice())
@@ -81,7 +81,7 @@ func TestBuiltinServer(t *testing.T) {
 		assert.Equal(t, "not-offered", decisions[0].Details["reason"])
 	})
 
-	t.Run("row 208: a call where toolgate isn't allowed reaches the call path and writes tool.decision", func(t *testing.T) {
+	t.Run("a call where toolgate isn't allowed reaches the call path and writes tool.decision", func(t *testing.T) {
 		fixture := newBuiltinFixture(t)
 		// alice's unverified session: the default for unverified sessions
 		// is none, so step 4 refuses every server.

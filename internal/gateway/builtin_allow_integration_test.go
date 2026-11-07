@@ -106,7 +106,7 @@ func TestBuiltinAllow(t *testing.T) {
 		assert.Equal(t, 1, fixture.accessRequestCount(t))
 	})
 
-	t.Run("row 242: an accepted elicitation's round trip finds the named request and waits until it is approved", func(t *testing.T) {
+	t.Run("an accepted elicitation's round trip finds the named request and waits until it is approved", func(t *testing.T) {
 		fixture := newBuiltinFixture(t)
 		curatedGithub(fixture)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -199,7 +199,7 @@ func TestBuiltinAllow(t *testing.T) {
 		assert.Equal(t, "pending", status)
 	})
 
-	t.Run("row 242: a named request that was denied or expired gets phase 3's messages", func(t *testing.T) {
+	t.Run("a named request that was denied or expired gets the denied or expired messages", func(t *testing.T) {
 		for _, test := range []struct {
 			status  string
 			message string
@@ -251,14 +251,14 @@ func TestBuiltinAllow(t *testing.T) {
 				message: "Server `github` has no tool `create_issue`."},
 			{name: "a claimed workspace", arguments: map[string]any{"workspace": "claimed/x", "servers": []string{"github"}},
 				message: "Workspace `claimed/x` can't have a list"},
-			{name: "row 207: another user's session", arguments: map[string]any{"session": "bob-session-1", "servers": []string{"github"}},
+			{name: "another user's session", arguments: map[string]any{"session": "bob-session-1", "servers": []string{"github"}},
 				message: "You have no open session `bob-session-1`."},
 			{name: "an unverified session", arguments: map[string]any{"session": "unverified", "servers": []string{"github"}},
 				message: "Session `unverified` has no verified workspace, so it uses only your default for unverified sessions."},
-			{name: "row 249: a tool of a server denied in the workspace", deny: "workspace",
+			{name: "a tool of a server denied in the workspace", deny: "workspace",
 				arguments: map[string]any{"workspace": aliceWorkspace, "servers": []string{"github__open_issue"}},
 				message:   "Server `github` is denied in workspace `" + aliceWorkspace + "`. Allow the server first."},
-			{name: "row 249: a tool of a server denied in the session", deny: "session",
+			{name: "a tool of a server denied in the session", deny: "session",
 				arguments: map[string]any{"session": "session-2", "servers": []string{"github__open_issue"}},
 				message:   "Server `github` is denied in this session. Allow the server first."},
 		} {
@@ -346,7 +346,7 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 			require.Len(t, fixture.auditRows(t, "tool.result"), 1)
 		})
 
-		t.Run("row 208: "+call.tool+" is refused at step 4 where toolgate isn't allowed, with tool.decision", func(t *testing.T) {
+		t.Run(""+call.tool+" is refused at step 4 where toolgate isn't allowed, with tool.decision", func(t *testing.T) {
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			// A verified workspace whose list doesn't hold toolgate.
@@ -384,7 +384,7 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 	}
 
 	for _, tool := range []string{toolAllow, toolDeny} {
-		t.Run("row 207: "+tool+" refuses another user's session and writes nothing", func(t *testing.T) {
+		t.Run(""+tool+" refuses another user's session and writes nothing", func(t *testing.T) {
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)

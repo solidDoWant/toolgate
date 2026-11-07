@@ -63,7 +63,7 @@ func TestResolverExpiryReplacement(t *testing.T) {
 	fixture.setNow(now)
 
 	for _, status := range []string{"ready", "starting"} {
-		t.Run("[row 58] a "+status+" instance under 60 s from expiry is replaced", func(t *testing.T) {
+		t.Run("a "+status+" instance under 60 s from expiry is replaced", func(t *testing.T) {
 			_, old := fixture.expiringInstance(t, "expiring-"+status, status, now.Add(59*time.Second), true)
 
 			fixture.expiryPass(t)
@@ -100,7 +100,7 @@ func TestResolverExpiryReplacement(t *testing.T) {
 		assert.Equal(t, old.ID, live.ID)
 	})
 
-	t.Run("[row 72] an idle instance with no enabling session is stopped, not replaced", func(t *testing.T) {
+	t.Run("an idle instance with no enabling session is stopped, not replaced", func(t *testing.T) {
 		_, old := fixture.expiringInstance(t, "expiring-idle", "ready", now.Add(30*time.Second), false)
 
 		fixture.setNow(now.Add(2 * time.Hour))
@@ -117,7 +117,7 @@ func TestResolverExpiryReplacement(t *testing.T) {
 		assert.Zero(t, fixture.expiryStops(t, old))
 	})
 
-	t.Run("[row 73] an instance whose template was deleted is stopped, not replaced", func(t *testing.T) {
+	t.Run("an instance whose template was deleted is stopped, not replaced", func(t *testing.T) {
 		template, old := fixture.expiringInstance(t, "expiring-deleted", "ready", now.Add(30*time.Second), true)
 		fixture.catalog.Delete(types.NamespacedName{Namespace: template.Namespace, Name: template.Name})
 
@@ -129,7 +129,7 @@ func TestResolverExpiryReplacement(t *testing.T) {
 		assert.Zero(t, fixture.expiryStops(t, old))
 	})
 
-	t.Run("[row 73] an instance whose owner lost access is stopped, not replaced", func(t *testing.T) {
+	t.Run("an instance whose owner lost access is stopped, not replaced", func(t *testing.T) {
 		template, old := fixture.expiringInstance(t, "expiring-access", "ready", now.Add(30*time.Second), true)
 		template.Spec.Access.Groups = []string{"admins"}
 		fixture.newVersion(template)

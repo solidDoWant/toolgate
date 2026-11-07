@@ -87,7 +87,7 @@ func TestRestartRecovery(t *testing.T) {
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 
-	t.Run("[row 17] labelled namespaces with no live instance row are deleted", func(t *testing.T) {
+	t.Run("labelled namespaces with no live instance row are deleted", func(t *testing.T) {
 		template := fixture.template("orphans", "shared", 0, everyone)
 
 		// A namespace whose row is gone, and one whose row is stopped.
@@ -114,7 +114,7 @@ func TestRestartRecovery(t *testing.T) {
 		fixture.requireRunning(t, live)
 	})
 
-	t.Run("[row 17] orphaned objects in the shared namespace are deleted, and the namespace stays", func(t *testing.T) {
+	t.Run("orphaned objects in the shared namespace are deleted, and the namespace stays", func(t *testing.T) {
 		live := fixture.sharedInstance(t, fixture.template("shared-sweep-live", "shared", 0, everyone), "ready")
 		fixture.createSharedObjects(t, "0000000000000000000000000000eeee")
 
@@ -133,7 +133,7 @@ func TestRestartRecovery(t *testing.T) {
 		fixture.requireRunning(t, live)
 	})
 
-	t.Run("[row 17] the sweep lists namespaces before it reads rows", func(t *testing.T) {
+	t.Run("the sweep lists namespaces before it reads rows", func(t *testing.T) {
 		template := fixture.template("applied-during-sweep", "shared", 0, everyone)
 
 		var created string
@@ -155,7 +155,7 @@ func TestRestartRecovery(t *testing.T) {
 		assert.True(t, fixture.namespaceExists(t, created), "a namespace applied before its row was read isn't an orphan")
 	})
 
-	t.Run("[row 17] starting and ready rows without a namespace go back to pending at the current generation", func(t *testing.T) {
+	t.Run("starting and ready rows without a namespace go back to pending at the current generation", func(t *testing.T) {
 		template := fixture.template("lost-objects", "shared", 0, everyone)
 		starting := fixture.instance(t, template, "shared", "", "starting")
 		other := fixture.template("lost-objects-ready", "shared", 0, everyone)
@@ -181,7 +181,7 @@ func TestRestartRecovery(t *testing.T) {
 		assert.Equal(t, int64(1), current.Generation)
 	})
 
-	t.Run("[row 17] a long-ready instance sent back to pending becomes ready again when it answers", func(t *testing.T) {
+	t.Run("a long-ready instance sent back to pending becomes ready again when it answers", func(t *testing.T) {
 		template := fixture.template("long-ready", "shared", 0, everyone)
 		instance := fixture.longReadyInstanceWithoutObjects(t, template)
 
@@ -199,7 +199,7 @@ func TestRestartRecovery(t *testing.T) {
 		assert.Equal(t, "ready", current.Status, "reason: %s", current.Reason)
 	})
 
-	t.Run("[row 17] a long-ready instance sent back to pending fails once startTimeout has passed since the restart", func(t *testing.T) {
+	t.Run("a long-ready instance sent back to pending fails once startTimeout has passed since the restart", func(t *testing.T) {
 		template := fixture.template("long-ready-silent", "shared", 0, everyone)
 		instance := fixture.longReadyInstanceWithoutObjects(t, template)
 
@@ -237,7 +237,7 @@ func TestRestartRecovery(t *testing.T) {
 		assert.Contains(t, current.Reason, "didn't become ready within 5m0s")
 	})
 
-	t.Run("[row 17] live rows with their namespace and pending rows without one are left alone", func(t *testing.T) {
+	t.Run("live rows with their namespace and pending rows without one are left alone", func(t *testing.T) {
 		template := fixture.template("intact", "shared", 0, everyone)
 		ready := fixture.instance(t, template, "shared", "", "ready")
 		other := fixture.template("intact-pending", "shared", 0, everyone)
@@ -250,7 +250,7 @@ func TestRestartRecovery(t *testing.T) {
 		assert.Equal(t, "pending", fixture.get(t, pending.ID).Status)
 	})
 
-	t.Run("[row 16] a stopping instance whose namespace the old leader didn't delete is deleted by the new leader", func(t *testing.T) {
+	t.Run("a stopping instance whose namespace the old leader didn't delete is deleted by the new leader", func(t *testing.T) {
 		template := fixture.template("stopping-handover", "shared", 0, everyone)
 		instance := fixture.instance(t, template, "shared", "", "ready")
 		_, err := fixture.queries.SetInstanceDesiredStopped(t.Context(), instance.ID)

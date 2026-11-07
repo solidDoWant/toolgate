@@ -67,7 +67,7 @@ func TestScopeRequests(t *testing.T) {
 		assert.Zero(t, fixture.accessRequestCount(t))
 	})
 
-	t.Run("row 200: an allow for a session answers 202 with a scope request and changes nothing before approval", func(t *testing.T) {
+	t.Run("an allow for a session answers 202 with a scope request and changes nothing before approval", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -99,7 +99,7 @@ func TestScopeRequests(t *testing.T) {
 		assert.Equal(t, 1, fixture.accessRequestCount(t))
 	})
 
-	t.Run("a widening change of phase 3's shape still creates a change request", func(t *testing.T) {
+	t.Run("a widening change of a granted shape still creates a change request", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -108,7 +108,7 @@ func TestScopeRequests(t *testing.T) {
 		assert.Equal(t, "change", kind)
 	})
 
-	t.Run("row 221: the change-request approval, which a 0.3 replica runs, refuses a scope row and changes nothing", func(t *testing.T) {
+	t.Run("the change-request approval, which a 0.3 replica runs, refuses a scope row and changes nothing", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -230,7 +230,7 @@ func TestScopeRequests(t *testing.T) {
 		require.Len(t, fixture.auditRows(t, gateway.TypeSessionAddition), 1)
 	})
 
-	t.Run("row 249: a tool of a server denied on the target is refused and nothing is written", func(t *testing.T) {
+	t.Run("a tool of a server denied on the target is refused and nothing is written", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addWorkspaceEntry(t, aliceWorkspace, "github", "", policy.EffectDeny)
@@ -252,7 +252,7 @@ func TestScopeRequests(t *testing.T) {
 		assert.Zero(t, fixture.accessRequestCount(t))
 	})
 
-	t.Run("row 202: a session target in another workspace rolls the approval back with the reason", func(t *testing.T) {
+	t.Run("a session target in another workspace rolls the approval back with the reason", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -275,7 +275,7 @@ func TestScopeRequests(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, gateway.TypeAccessApprove))
 	})
 
-	t.Run("row 201: ending the session expires its scope requests and deletes its allows, keeping its denies", func(t *testing.T) {
+	t.Run("ending the session expires its scope requests and deletes its allows, keeping its denies", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -301,7 +301,7 @@ func TestScopeRequests(t *testing.T) {
 		assert.Equal(t, "scope", expired[0].Details["kind"])
 	})
 
-	t.Run("row 247: the leader's pass expires scope requests whose target session ended after the request", func(t *testing.T) {
+	t.Run("the leader's pass expires scope requests whose target session ended after the request", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -326,7 +326,7 @@ func TestScopeRequests(t *testing.T) {
 		assert.Equal(t, "session-1", expired[0].Session)
 	})
 
-	t.Run("row 247: a scope request created after its session ended is left to its own expiry", func(t *testing.T) {
+	t.Run("a scope request created after its session ended is left to its own expiry", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())

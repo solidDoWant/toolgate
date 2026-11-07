@@ -194,7 +194,7 @@ func awaitOutcome(t *testing.T, outcomes <-chan callOutcome, bound time.Duration
 
 func TestApprovalElicitation(t *testing.T) {
 	for _, revision := range []string{revisionElicitCreate, modernRevision} {
-		t.Run("row 40: on "+revision+" the client opens the approval page, an approval from another replica lets the call through", func(t *testing.T) {
+		t.Run("on "+revision+" the client opens the approval page, an approval from another replica lets the call through", func(t *testing.T) {
 			fixture := newApprovalFixture(t, withApprovalURL)
 			client := fixture.connectEliciting(t, elicitingOptions{revision: revision, answer: "accept"})
 
@@ -279,7 +279,7 @@ func TestApprovalElicitation(t *testing.T) {
 }
 
 func TestApprovalWait(t *testing.T) {
-	t.Run("row 40: a denial fails the waiting call", func(t *testing.T) {
+	t.Run("a denial fails the waiting call", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -299,7 +299,7 @@ func TestApprovalWait(t *testing.T) {
 		assert.Equal(t, approval.ID, decisions[0].Details["approval"])
 	})
 
-	t.Run("row 41: when expires_at passes, the waiting call expires the approval and fails with the timeout in words", func(t *testing.T) {
+	t.Run("when expires_at passes, the waiting call expires the approval and fails with the timeout in words", func(t *testing.T) {
 		t.Cleanup(gateway.SetApprovalWaitInterval(100 * time.Millisecond))
 
 		fixture := newApprovalFixture(t, withApprovalURL, func(options *gateway.MCPOptions) { options.ApprovalTimeout = time.Minute })
@@ -327,7 +327,7 @@ func TestApprovalWait(t *testing.T) {
 		assert.Equal(t, "approval-timeout", decisions[0].Details["reason"])
 	})
 
-	t.Run("row 41: when the leader's pass expired the approval, the waiting call refuses without approval.expire", func(t *testing.T) {
+	t.Run("when the leader's pass expired the approval, the waiting call refuses without approval.expire", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -369,7 +369,7 @@ func TestApprovalWait(t *testing.T) {
 		assert.Equal(t, "approved", fixture.approvals(t)[0].Status)
 	})
 
-	t.Run("row 43: a rule that refuses the call ends the wait with the refusal", func(t *testing.T) {
+	t.Run("a rule that refuses the call ends the wait with the refusal", func(t *testing.T) {
 		t.Cleanup(gateway.SetApprovalWaitInterval(100 * time.Millisecond))
 
 		fixture := newApprovalFixture(t, withApprovalURL)
@@ -393,7 +393,7 @@ func TestApprovalWait(t *testing.T) {
 		assert.Equal(t, "pending", fixture.approvals(t)[0].Status)
 	})
 
-	t.Run("row 44: a cancelled wait writes nothing, and a retry uses the approval once approved", func(t *testing.T) {
+	t.Run("a cancelled wait writes nothing, and a retry uses the approval once approved", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 

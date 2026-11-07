@@ -33,7 +33,7 @@ func (f *mcpFixture) stopInstance(t *testing.T, id string) {
 }
 
 func TestSessionResume(t *testing.T) {
-	t.Run("row 166: a resume from the same workspace restores the set, starts an instance without an enable and sends the tools with list_changed", func(t *testing.T) {
+	t.Run("a resume from the same workspace restores the set, starts an instance without an enable and sends the tools with list_changed", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")
@@ -85,7 +85,7 @@ func TestSessionResume(t *testing.T) {
 		assert.Equal(t, instance.ID, enables[1]["instance"])
 	})
 
-	t.Run("row 167: a resume from another workspace starts with no servers and writes session.start", func(t *testing.T) {
+	t.Run("a resume from another workspace starts with no servers and writes session.start", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")
@@ -108,7 +108,7 @@ func TestSessionResume(t *testing.T) {
 		assert.Len(t, fixture.auditRows(t, "session.start"), 2)
 	})
 
-	t.Run("row 168: a rule added during the pause drops its server with server.disable; the server gets no tools and no call; the rest are restored", func(t *testing.T) {
+	t.Run("a rule added during the pause drops its server with server.disable; the server gets no tools and no call; the rest are restored", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.addEnableTemplate("jira", "per-user", anyone)
@@ -147,7 +147,7 @@ func TestSessionResume(t *testing.T) {
 		assert.Empty(t, upstream.started, "the call reached the upstream server")
 	})
 
-	t.Run("row 168: a workspace scope narrowed during the pause drops the server with server.disable", func(t *testing.T) {
+	t.Run("a workspace scope narrowed during the pause drops the server with server.disable", func(t *testing.T) {
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -170,7 +170,7 @@ func TestSessionResume(t *testing.T) {
 		assert.Equal(t, unverifiedRefusal("github"), disables[0]["reason"])
 	})
 
-	t.Run("row 170: a server over the instance limit is dropped with server.disable, reason limit; the others are restored", func(t *testing.T) {
+	t.Run("a server over the instance limit is dropped with server.disable, reason limit; the others are restored", func(t *testing.T) {
 		fixture := newMCPFixture(t, withInstanceLimits(1, 200))
 		github := fixture.addEnableTemplate("github", "per-user", anyone)
 		jira := fixture.addEnableTemplate("jira", "per-user", anyone)
@@ -221,7 +221,7 @@ func TestSessionResume(t *testing.T) {
 }
 
 func TestSessionResumeInterrupted(t *testing.T) {
-	t.Run("row 166: a restore that fails part-way leaves the session ended, and the next request restores every server once", func(t *testing.T) {
+	t.Run("a restore that fails part-way leaves the session ended, and the next request restores every server once", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		github := fixture.addEnableTemplate("github", "per-session", anyone)
 		jira := fixture.addEnableTemplate("jira", "per-session", anyone)

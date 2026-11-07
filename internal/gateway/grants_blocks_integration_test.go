@@ -102,7 +102,7 @@ func (f *mcpFixture) insertBlock(t *testing.T, match v1alpha1.RuleMatch, reason 
 }
 
 func TestGrants(t *testing.T) {
-	t.Run("row 35: a grant created on another replica lets the retry of a refused enable through, and the call records the grant", func(t *testing.T) {
+	t.Run("a grant created on another replica lets the retry of a refused enable through, and the call records the grant", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
 		fixture.startUpstream(t, "github")
@@ -125,7 +125,7 @@ func TestGrants(t *testing.T) {
 		assert.Equal(t, grant, decisions[0].Details["grant"])
 	})
 
-	t.Run("row 37: a grant reaching expires_at refuses the next call and sends list_changed within 5 s", func(t *testing.T) {
+	t.Run("a grant reaching expires_at refuses the next call and sends list_changed within 5 s", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
 		fixture.startUpstream(t, "github")
@@ -147,7 +147,7 @@ func TestGrants(t *testing.T) {
 		assert.Equal(t, []string{"github"}, fixture.enabledServers(t, "alice", "session-1"), "a grant's expiry stops nothing")
 	})
 
-	t.Run("row 36: a revoked grant refuses the next call and the principal's streams get list_changed within 5 s; other principals get none", func(t *testing.T) {
+	t.Run("a revoked grant refuses the next call and the principal's streams get list_changed within 5 s; other principals get none", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
 		fixture.addEnableTemplate("open", "per-user", anyone)
@@ -177,7 +177,7 @@ func TestGrants(t *testing.T) {
 		assert.Equal(t, 1, bobs.listChangedCount())
 	})
 
-	t.Run("row 38: a grant revoked while the enable waits for its instance refuses the enable when the instance is ready", func(t *testing.T) {
+	t.Run("a grant revoked while the enable waits for its instance refuses the enable when the instance is ready", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", optInForAlice)
 
@@ -194,7 +194,7 @@ func TestGrants(t *testing.T) {
 		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"), "the refused enable deletes its session_servers row")
 	})
 
-	t.Run("row 39: a grant narrowed to one session refuses an enable from another session of the same user", func(t *testing.T) {
+	t.Run("a grant narrowed to one session refuses an enable from another session of the same user", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
 		fixture.insertGrant(t, "alice", "github", "", "session-1", time.Hour)
@@ -210,7 +210,7 @@ func TestGrants(t *testing.T) {
 }
 
 func TestTemporaryBlocks(t *testing.T) {
-	t.Run("row 50: a temporary block made on one replica sends list_changed on every replica within 5 s and refuses calls with its reason", func(t *testing.T) {
+	t.Run("a temporary block made on one replica sends list_changed on every replica within 5 s and refuses calls with its reason", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -246,7 +246,7 @@ func TestTemporaryBlocks(t *testing.T) {
 		assert.Equal(t, "temporary-block", decisions[0].Details["step"])
 	})
 
-	t.Run("row 51: a temporary block reaching expires_at sends list_changed and the tools come back without a new enable", func(t *testing.T) {
+	t.Run("a temporary block reaching expires_at sends list_changed and the tools come back without a new enable", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -268,7 +268,7 @@ func TestTemporaryBlocks(t *testing.T) {
 		require.False(t, result.IsError, resultText(result))
 	})
 
-	t.Run("row 52: after a LISTEN reconnect every stream gets list_changed and the expiry timer is reset", func(t *testing.T) {
+	t.Run("after a LISTEN reconnect every stream gets list_changed and the expiry timer is reset", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")

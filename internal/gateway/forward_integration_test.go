@@ -427,7 +427,7 @@ func TestCallLimits(t *testing.T) {
 }
 
 func TestCallInteractions(t *testing.T) {
-	t.Run("row 4: a disable while a call is in flight lets the call finish, refuses later calls with not-enabled and withdraws the tools", func(t *testing.T) {
+	t.Run("a disable while a call is in flight lets the call finish, refuses later calls with not-enabled and withdraws the tools", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")
@@ -482,7 +482,7 @@ func TestCallInteractions(t *testing.T) {
 		assert.Equal(t, "allow", decisions[1].Details["decision"])
 	})
 
-	t.Run("row 20: an upstream tool change sends list_changed with the new list to sessions using the server", func(t *testing.T) {
+	t.Run("an upstream tool change sends list_changed with the new list to sessions using the server", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.addEnableTemplate("jira", "per-user", anyone)

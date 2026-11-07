@@ -106,7 +106,7 @@ func TestRuleChanges(t *testing.T) {
 		assert.Equal(t, "still here", resultText(allowed))
 	})
 
-	t.Run("row 7: removing a rule brings the tools back to open sessions without re-enabling", func(t *testing.T) {
+	t.Run("removing a rule brings the tools back to open sessions without re-enabling", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -129,7 +129,7 @@ func TestRuleChanges(t *testing.T) {
 		assert.Equal(t, "back", resultText(result))
 	})
 
-	t.Run("row 31: a rule reaching its expires time sends list_changed and brings the tools back", func(t *testing.T) {
+	t.Run("a rule reaching its expires time sends list_changed and brings the tools back", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -150,7 +150,7 @@ func TestRuleChanges(t *testing.T) {
 		assert.ElementsMatch(t, append(metaToolNames, "github__echo"), toolNames(t, client.session))
 	})
 
-	t.Run("row 6: a rule added while a call is in flight lets the call finish, refuses the next call and sends list_changed", func(t *testing.T) {
+	t.Run("a rule added while a call is in flight lets the call finish, refuses the next call and sends list_changed", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")
@@ -180,7 +180,7 @@ func TestRuleChanges(t *testing.T) {
 }
 
 func TestAccessAndFailureChanges(t *testing.T) {
-	t.Run("row 11: access removed from a user refuses calls at once and withdraws the tools from open sessions", func(t *testing.T) {
+	t.Run("access removed from a user refuses calls at once and withdraws the tools from open sessions", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -207,7 +207,7 @@ func TestAccessAndFailureChanges(t *testing.T) {
 		assert.Equal(t, "refuse", decisions[0].Details["decision"])
 	})
 
-	t.Run("row 12: an instance failing after ready lets the in-flight call finish, refuses later calls with not-ready and keeps the server enabled", func(t *testing.T) {
+	t.Run("an instance failing after ready lets the in-flight call finish, refuses later calls with not-ready and keeps the server enabled", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")

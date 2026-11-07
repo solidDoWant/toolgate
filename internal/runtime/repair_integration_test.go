@@ -162,7 +162,7 @@ func TestRepair(t *testing.T) {
 		return template, fixture.makeUnhealthy(t, fixture.get(t, instance.ID), check, now.Add(-time.Second), repairs...)
 	}
 
-	t.Run("[row 109] replace: a new leader's first pass replaces an unhealthy instance with reason health-check", func(t *testing.T) {
+	t.Run("replace: a new leader's first pass replaces an unhealthy instance with reason health-check", func(t *testing.T) {
 		template, old := readyUnhealthy(t, "repair-replace", healthCheck("replace", 3))
 
 		repairer := fixture.repairer(repairKube(t))
@@ -191,7 +191,7 @@ func TestRepair(t *testing.T) {
 		assert.InDelta(t, 1, promtestutil.ToFloat64(repairer.Metrics.Repairs.WithLabelValues(template.Name, "replace")), 0)
 	})
 
-	t.Run("[row 108] a passing check doesn't make a row under replacement healthy", func(t *testing.T) {
+	t.Run("a passing check doesn't make a row under replacement healthy", func(t *testing.T) {
 		_, old := readyUnhealthy(t, "repair-passes", healthCheck("", 0))
 
 		require.NoError(t, fixture.repairer(repairKube(t)).Step(t.Context(), old))
@@ -221,7 +221,7 @@ func TestRepair(t *testing.T) {
 		assert.WithinDuration(t, now, replacement.Repairs[2].Time, time.Millisecond)
 	})
 
-	t.Run("[row 110] a repair beyond maxRepairs within 30 minutes fails the row instead", func(t *testing.T) {
+	t.Run("a repair beyond maxRepairs within 30 minutes fails the row instead", func(t *testing.T) {
 		now := *fixture.now.Load()
 
 		// maxRepairs 2 with one repair in the window: the second is made.

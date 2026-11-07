@@ -32,7 +32,7 @@ func (f *mcpFixture) setHealth(t *testing.T, id string, healthy bool, reason str
 }
 
 func TestUnhealthyInstance(t *testing.T) {
-	t.Run("row 106: an instance that becomes unhealthy lets the call in flight finish, refuses later calls with not-ready and withdraws the tools", func(t *testing.T) {
+	t.Run("an instance that becomes unhealthy lets the call in flight finish, refuses later calls with not-ready and withdraws the tools", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")
@@ -105,7 +105,7 @@ func TestUnhealthyInstance(t *testing.T) {
 		assert.Len(t, fixture.auditRows(t, "instance.health"), 2)
 	})
 
-	t.Run("row 107: an enable whose instance is unhealthy returns the reason and leaves the server enabled; the tools arrive once it is healthy", func(t *testing.T) {
+	t.Run("an enable whose instance is unhealthy returns the reason and leaves the server enabled; the tools arrive once it is healthy", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")

@@ -17,7 +17,7 @@ import (
 )
 
 func TestCallEnables(t *testing.T) {
-	t.Run("row 175: two calls at once to a server that isn't enabled write one server.enable", func(t *testing.T) {
+	t.Run("two calls at once to a server that isn't enabled write one server.enable", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -78,7 +78,7 @@ func TestCallEnables(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "server.enable"))
 	})
 
-	t.Run("row 176: a 33rd server refuses the call with limit", func(t *testing.T) {
+	t.Run("a 33rd server refuses the call with limit", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -101,7 +101,7 @@ func TestCallEnables(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "server.enable"))
 	})
 
-	t.Run("row 177: in a verified workspace a call outside the list asks, and an approval lets the next call through", func(t *testing.T) {
+	t.Run("in a verified workspace a call outside the list asks, and an approval lets the next call through", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 
@@ -142,7 +142,7 @@ func TestCallEnables(t *testing.T) {
 		assert.Equal(t, "first-call", enables[0].Details["reason"])
 	})
 
-	t.Run("row 178: in an unverified session a call outside the list is refused at once", func(t *testing.T) {
+	t.Run("in an unverified session a call outside the list is refused at once", func(t *testing.T) {
 		fixture := newMCPFixtureWithAuth(t, attestedUsers(), withWorkspaceScoping, withApprovalURL)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.startUpstream(t, "github")

@@ -76,7 +76,7 @@ func (f *mcpFixture) startOnEnable(template *v1alpha1.MCPServerTemplate) {
 }
 
 func TestToolCatalogLists(t *testing.T) {
-	t.Run("a starting instance lists the catalog list; row 185: a different real list reaches the session and other scope keys", func(t *testing.T) {
+	t.Run("a starting instance lists the catalog list; a different real list reaches the session and other scope keys", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startOnEnable(template)
@@ -108,7 +108,7 @@ func TestToolCatalogLists(t *testing.T) {
 		_ = bobResults
 	})
 
-	t.Run("row 187: with no row for the current generation the list falls back to the newest older row", func(t *testing.T) {
+	t.Run("with no row for the current generation the list falls back to the newest older row", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startOnEnable(template)
@@ -122,7 +122,7 @@ func TestToolCatalogLists(t *testing.T) {
 		assert.ElementsMatch(t, append(metaToolNames, "github__older"), toolNames(t, client.session))
 	})
 
-	t.Run("row 188: declared tools are listed while others start and nothing is learned from a ready instance", func(t *testing.T) {
+	t.Run("declared tools are listed while others start and nothing is learned from a ready instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startOnEnable(template)
