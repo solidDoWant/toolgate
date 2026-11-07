@@ -232,6 +232,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		Logger:        logger,
 		Subscribe:     listener.Subscribe,
 
+		SubscribeReplies: listener.SubscribeReplies,
+
 		InstanceLimitPerUser: cfg.InstanceLimitPerUser,
 		InstanceLimit:        cfg.InstanceLimit,
 		SharedNamespace:      cfg.SharedNamespace,

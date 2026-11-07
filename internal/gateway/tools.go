@@ -54,6 +54,10 @@ type sessionTools struct {
 	mu sync.Mutex
 	// offered maps each proxied tool name to its JSON definition.
 	offered map[string][]byte
+	// synced says offered was brought up to date from the rows at least
+	// once. A copy that another replica's session was adopted into starts
+	// unsynced.
+	synced bool
 }
 
 func newSessionTools(server *mcp.Server, call mcp.ToolHandler, current requestContext) *sessionTools {
@@ -79,6 +83,8 @@ func (s *sessionTools) currentRequest() requestContext {
 func (s *sessionTools) apply(wanted map[string]*mcp.Tool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	s.synced = true
 
 	var removed []string
 
@@ -370,6 +376,14 @@ func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler 
 			return next(ctx, method, request)
 		}
 
+		// A copy that has never synced, such as one just adopted from
+		// another replica, gets its tools from the rows first, so a call
+		// of an offered tool takes the go-sdk's tool path with its
+		// elicitation.
+		if err := m.syncUnsynced(ctx, call); err != nil {
+			return nil, err
+		}
+
 		if m.offers(call, call.Params.Name) {
 			result, err := next(ctx, method, request)
 
@@ -383,6 +397,32 @@ func (m *metaTools) routeProxiedCalls(next mcp.MethodHandler) mcp.MethodHandler 
 
 		return m.callTool(withoutElicitation(ctx), call)
 	}
+}
+
+// syncUnsynced brings the proxied tools of the call's MCP session up to
+// date when they have never been synced on this copy.
+func (m *metaTools) syncUnsynced(ctx context.Context, call *mcp.CallToolRequest) error {
+	current, ok := requestContextOf(call)
+	if !ok {
+		return nil
+	}
+
+	offered, found := m.offeredTools(call.Session, current)
+	if !found {
+		return nil
+	}
+
+	offered.mu.Lock()
+	synced := offered.synced
+	offered.mu.Unlock()
+
+	if synced {
+		return nil
+	}
+
+	_, err := m.syncSession(ctx, call.Session, current)
+
+	return err
 }
 
 // offers reports whether the MCP session currently offers the proxied tool

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -18,6 +19,19 @@ import (
 
 // Channel is the PostgreSQL notification channel every replica listens on.
 const Channel = "toolgate_events"
+
+// RepliesChannel carries a client's answer to a server request from the
+// replica that received it to the replica that sent the request. Every
+// replica listens on it too.
+const RepliesChannel = "toolgate_mcp_replies"
+
+// MaxReplyBytes bounds a payload on RepliesChannel. PostgreSQL refuses a
+// notification of 8000 bytes or more.
+const MaxReplyBytes = 7 << 10
+
+// ErrReplyTooLarge is returned by NotifyReply for a payload over
+// MaxReplyBytes.
+var ErrReplyTooLarge = errors.New("reply is larger than 7 KiB")
 
 // Notification kinds.
 const (
@@ -63,6 +77,20 @@ func Notify(ctx context.Context, q db.DBTX, kind, id string) error {
 	return nil
 }
 
+// NotifyReply queues payload on RepliesChannel through q. A payload over
+// MaxReplyBytes is refused with ErrReplyTooLarge.
+func NotifyReply(ctx context.Context, q db.DBTX, payload []byte) error {
+	if len(payload) > MaxReplyBytes {
+		return ErrReplyTooLarge
+	}
+
+	if err := db.New(q).NotifyReply(ctx, string(payload)); err != nil {
+		return fmt.Errorf("notify reply: %w", err)
+	}
+
+	return nil
+}
+
 // Listener holds one connection that LISTENs on Channel and passes every
 // notification to its subscribers. When the connection drops, it
 // reconnects and sends every subscriber an Event with Missed set.
@@ -72,6 +100,7 @@ type Listener struct {
 
 	mu          sync.Mutex
 	subscribers map[*subscriber]struct{}
+	replies     map[chan []byte]struct{}
 	listening   chan struct{}
 }
 
@@ -88,6 +117,7 @@ func NewListener(pool *pgxpool.Pool, logger *slog.Logger) *Listener {
 		pool:        pool,
 		logger:      logger,
 		subscribers: make(map[*subscriber]struct{}),
+		replies:     make(map[chan []byte]struct{}),
 		listening:   make(chan struct{}),
 	}
 }
@@ -108,6 +138,28 @@ func (l *Listener) Subscribe() (<-chan Event, func()) {
 		once.Do(func() {
 			l.mu.Lock()
 			delete(l.subscribers, sub)
+			l.mu.Unlock()
+		})
+	}
+}
+
+// SubscribeReplies returns a channel of the payloads that arrive on
+// RepliesChannel and a function that ends the subscription. A payload that
+// finds the buffer full is dropped: a lost answer leaves its call waiting
+// until the call's own wait ends.
+func (l *Listener) SubscribeReplies() (<-chan []byte, func()) {
+	replies := make(chan []byte, subscriberBuffer)
+
+	l.mu.Lock()
+	l.replies[replies] = struct{}{}
+	l.mu.Unlock()
+
+	var once sync.Once
+
+	return replies, func() {
+		once.Do(func() {
+			l.mu.Lock()
+			delete(l.replies, replies)
 			l.mu.Unlock()
 		})
 	}
@@ -164,8 +216,10 @@ func (l *Listener) listen(ctx context.Context, reconnected bool, onListening fun
 	raw := conn.Hijack()
 	defer func() { _ = raw.Close(context.WithoutCancel(ctx)) }()
 
-	if _, err := raw.Exec(ctx, "LISTEN "+pgx.Identifier{Channel}.Sanitize()); err != nil {
-		return fmt.Errorf("listen: %w", err)
+	for _, channel := range []string{Channel, RepliesChannel} {
+		if _, err := raw.Exec(ctx, "LISTEN "+pgx.Identifier{channel}.Sanitize()); err != nil {
+			return fmt.Errorf("listen on %s: %w", channel, err)
+		}
 	}
 
 	onListening()
@@ -178,6 +232,12 @@ func (l *Listener) listen(ctx context.Context, reconnected bool, onListening fun
 		notification, err := raw.WaitForNotification(ctx)
 		if err != nil {
 			return fmt.Errorf("wait for notification: %w", err)
+		}
+
+		if notification.Channel == RepliesChannel {
+			l.broadcastReply([]byte(notification.Payload))
+
+			continue
 		}
 
 		kind, id, ok := strings.Cut(notification.Payload, ":")
@@ -197,6 +257,18 @@ func (l *Listener) broadcast(event Event) {
 
 	for sub := range l.subscribers {
 		sub.deliver(event)
+	}
+}
+
+func (l *Listener) broadcastReply(payload []byte) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	for replies := range l.replies {
+		select {
+		case replies <- payload:
+		default:
+		}
 	}
 }
 

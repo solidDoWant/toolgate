@@ -68,6 +68,16 @@ func (f *mcpFixture) connectObserved(t *testing.T, client user) *observedClient 
 func (f *mcpFixture) connectObservedTo(t *testing.T, endpoint string, client user) *observedClient {
 	t.Helper()
 
+	return connectObservedThrough(t, endpoint, headerTransport{header: f.headers(t, client)})
+}
+
+// connectObservedThrough connects a client that sends its requests through
+// roundTripper. It returns once the client's GET stream got the
+// list_changed it gets when it attaches, and counts list_changed from zero
+// after that one.
+func connectObservedThrough(t *testing.T, endpoint string, roundTripper http.RoundTripper) *observedClient {
+	t.Helper()
+
 	observed := &observedClient{}
 	mcpClient := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "0"}, &mcp.ClientOptions{
 		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
@@ -83,7 +93,7 @@ func (f *mcpFixture) connectObservedTo(t *testing.T, endpoint string, client use
 	})
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   endpoint,
-		HTTPClient: &http.Client{Transport: headerTransport{header: f.headers(t, client)}},
+		HTTPClient: &http.Client{Transport: roundTripper},
 	}
 
 	session, err := mcpClient.Connect(t.Context(), transport, nil)
@@ -91,6 +101,13 @@ func (f *mcpFixture) connectObservedTo(t *testing.T, endpoint string, client use
 	t.Cleanup(func() { _ = session.Close() })
 
 	observed.session = session
+
+	require.Eventually(t, func() bool { return observed.listChangedCount() > 0 }, waitTimeout, 10*time.Millisecond,
+		"the GET stream gets list_changed when it attaches")
+
+	observed.mu.Lock()
+	observed.listChanged = 0
+	observed.mu.Unlock()
 
 	return observed
 }
