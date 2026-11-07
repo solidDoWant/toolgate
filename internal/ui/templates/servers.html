@@ -3,11 +3,12 @@
 {{end}}<h2>Catalog</h2>
 {{if .Data.Servers}}
 <div class="table-wrap"><table id="catalog">
-<thead><tr><th>Server</th><th>Description</th><th>Scope</th><th>Environments</th><th>Kind</th><th>Status</th><th>Tools</th>{{if .Data.Workspaces}}<th>In your workspaces</th>{{end}}{{if .Data.Admin}}<th>Instances</th>{{end}}</tr></thead>
+<thead><tr><th>Server</th><th>Description</th><th>Scope</th><th>Access</th><th>Environments</th><th>Kind</th><th>Status</th><th>Tools</th>{{if .Data.Workspaces}}<th>In your workspaces</th>{{end}}{{if .Data.Admin}}<th>Instances</th>{{end}}</tr></thead>
 <tbody>
 {{range .Data.Servers}}<tr>
 <td><a href="/ui/servers/{{.Name}}">{{.Name}}</a></td><td>{{.Description}}</td>
 <td><span class="badge badge-neutral" title="{{scopeHelp .Scope}}">{{.Scope}}</span></td>
+<td>{{template "access" .}}</td>
 <td><span class="badge {{environmentBadge .Environments}}" title="{{environmentHelp .Environments}}">{{.Environments}}</span></td>
 <td>{{if .Remote}}<span class="badge badge-neutral">remote</span>{{else}}launched{{end}}{{range .Secrets}}<br>needs secret <code>{{.Name}}</code>: {{if .Set}}set{{else}}not set{{end}}{{end}}</td>
 <td><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</td>

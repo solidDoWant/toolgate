@@ -113,6 +113,7 @@ func TestServerDetail(t *testing.T) {
 		body := readBody(t, response)
 		assert.Contains(t, body, "Needs secret <code>mail-archiver-api-key</code>: not set")
 		assert.Contains(t, body, "Kind: remote")
+		assert.Contains(t, body, "<li>Access: Listed users and groups</li>")
 	})
 
 	t.Run("a server the user can't see is not found", func(t *testing.T) {

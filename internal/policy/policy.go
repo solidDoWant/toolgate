@@ -10,6 +10,7 @@ import (
 
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
@@ -275,32 +276,56 @@ func proxiedName(server, tool string) string {
 // SPIFFE workloads match only spiffeIDs, service accounts only
 // serviceAccounts, and users only users and groups, so a user whose subject
 // looks like a SPIFFE ID or a service account name can't pass as one. An
-// identity without a kind matches nothing.
+// identity without a kind matches nothing. Entries of spiffeIDs, users and
+// groups are glob patterns matched against the whole value; a user's email
+// is matched only when the identity provider verified it, because
+// Identity.Email is empty otherwise.
 func HasAccess(identity auth.Identity, access v1alpha1.Access) bool {
 	switch identity.Kind {
 	case auth.KindSPIFFE:
-		return slices.ContainsFunc(access.SPIFFEIDs, func(pattern string) bool {
-			compiled, err := glob.Compile(pattern)
-
-			return err == nil && compiled.Match(identity.Principal)
-		})
+		return matchesAnyPattern(access.SPIFFEIDs, identity.Principal)
 	case auth.KindServiceAccount:
 		return slices.Contains(access.ServiceAccounts, identity.Principal)
 	case auth.KindUser:
-		if access.AllUsers || slices.Contains(access.Users, identity.Principal) {
+		if access.AllUsers || matchesAnyPattern(access.Users, identity.Principal) {
 			return true
 		}
 
-		if identity.Email != "" && slices.Contains(access.Users, identity.Email) {
+		if identity.Email != "" && matchesAnyPattern(access.Users, identity.Email) {
 			return true
 		}
 
 		return slices.ContainsFunc(identity.Groups, func(group string) bool {
-			return slices.Contains(access.Groups, group)
+			return matchesAnyPattern(access.Groups, group)
 		})
 	default:
 		return false
 	}
+}
+
+// globMetacharacters are the characters that make an access entry a
+// pattern. An entry without any of them is compared as is, so it matches
+// exactly what it did before entries became patterns, and costs no compile.
+const globMetacharacters = `*?[]{}\`
+
+// IsAccessPattern reports whether an access entry is a glob pattern rather
+// than an exact value.
+func IsAccessPattern(entry string) bool {
+	return strings.ContainsAny(entry, globMetacharacters)
+}
+
+// matchesAnyPattern reports whether value matches one of the access entries.
+// An invalid pattern matches nothing; the catalog marks its template invalid.
+func matchesAnyPattern(entries []string, value string) bool {
+	return slices.ContainsFunc(entries, func(entry string) bool {
+		if !IsAccessPattern(entry) {
+			return entry == value
+		}
+
+		compiled, err := glob.Compile(entry)
+
+		return err == nil && compiled.Match(value)
+	})
 }
 
 // environmentAllows reports whether an attestation level satisfies an

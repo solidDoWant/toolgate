@@ -64,8 +64,9 @@ func (f *fakeServers) Catalog(ctx context.Context, identity auth.Identity) ([]ga
 		switch entry.Name {
 		case "github":
 			info.Environments, info.ToolCount = "any", 12
+			info.UserPatterns, info.GroupPatterns = []string{"*@example.com"}, []string{"dev-*"}
 		case "prod-db":
-			info.Environments = "attested"
+			info.Environments, info.Everyone = "attested", true
 		}
 
 		infos = append(infos, info)
@@ -299,6 +300,8 @@ func TestServersPage(t *testing.T) {
 
 			assert.Contains(t, body, `<a href="/ui/servers/github">github</a>`)
 			assert.Contains(t, body, "Only from an attested environment.")
+			assert.Equal(t, 1, strings.Count(body, "<td>Everyone</td>"), "only the server open to every user shows Everyone")
+			assert.Contains(t, body, "<div>Users <code>*@example.com</code></div><div>Group <code>dev-*</code></div>")
 			assert.Contains(t, body, `<span class="badge badge-warn">outdated</span>`)
 			assert.Equal(t, test.wantShared, strings.Contains(body, "<td>wiki</td>"), "shared instances only for admins")
 			assert.Equal(t, test.wantShared, strings.Contains(body, `href="/ui/blocks"`), "the Blocks link only for admins")

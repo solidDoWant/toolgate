@@ -147,8 +147,8 @@ spec:
   idleStop: 30m
   startTimeout: 5m
   access:
-    users: []                   # OIDC subjects or emails
-    groups: [dev]
+    users: []                   # globs on OIDC subjects or verified emails; "*" = every user
+    groups: [dev]               # globs on group names
     serviceAccounts: []         # system:serviceaccount:ns:name
     spiffeIDs: []               # globs, such as spiffe://td/owner/*/workspace/*
     environments: opt-in        # any | opt-in (default) | attested
@@ -230,7 +230,7 @@ With `shared`, all instances go in one configured namespace and are told apart b
 ## 10. Policy
 
 **Order of evaluation**, the same for enable, list and call:
-1. **Catalog access:** the identity must match `access.users`, `groups`, `serviceAccounts` or `spiffeIDs`. A SPIFFE identity matches only `spiffeIDs`, and `spiffeIDs` matches nothing else. A template with no access lists is available to no one.
+1. **Catalog access:** the identity must match `access.users`, `groups`, `serviceAccounts` or `spiffeIDs`. A SPIFFE identity matches only `spiffeIDs`, and `spiffeIDs` matches nothing else. Entries of `users` and `groups` are glob patterns that match the whole value, so `users: ["*"]` means every user identity and no other kind. An entry without glob characters matches exactly. A template with no access lists is available to no one.
 2. **Environment:** the server's `environments`, or the tool's override.
    - `any` passes.
    - `attested` needs `attested`.

@@ -217,13 +217,18 @@ type HealthCheckHTTP struct {
 // Access lists the identities that may use a server, and the environments
 // it may be used from.
 type Access struct {
-	// Users are OIDC subjects or verified emails.
+	// Users are glob patterns matched against the OIDC subject and the
+	// verified email of a user identity, such as alice@example.com,
+	// *@example.com, or * for every signed-in user. Escape a literal *, ?,
+	// [, ], {, } or \ with a backslash. Service accounts and SPIFFE
+	// identities never match them.
 	// +optional
 	// +kubebuilder:validation:MaxItems=1024
 	// +kubebuilder:validation:items:MaxLength=256
 	Users []string `json:"users,omitempty"`
 
-	// Groups are OIDC group names.
+	// Groups are glob patterns matched against each OIDC group of a user
+	// identity. * matches any user with at least one group, not every user.
 	// +optional
 	// +kubebuilder:validation:MaxItems=1024
 	// +kubebuilder:validation:items:MaxLength=256
