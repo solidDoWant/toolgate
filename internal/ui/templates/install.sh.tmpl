@@ -1,0 +1,178 @@
+#!/bin/sh
+# toolgate installer, served by the gateway at {{.GatewayURL}}/install.sh.
+# Read it before you run it: curl -fsSL {{.GatewayURL}}/install.sh | less
+#
+# It installs the toolgate command for this gateway's version, installs the
+# Claude Code plugin when claude is present, and saves the gateway URL.
+# It sends nothing except the downloads from GitHub and the claude commands.
+#
+# Options: --dry-run (or TOOLGATE_DRY_RUN=1) prints the actions and changes
+# nothing. TOOLGATE_INSTALL_DIR chooses the install directory.
+set -eu
+
+GATEWAY_URL={{shq .GatewayURL}}
+VERSION={{shq .Version}}
+RELEASE_URL='https://github.com/solidDoWant/toolgate/releases/download'
+MARKETPLACE='solidDoWant/toolgate'
+PLUGIN='toolgate@toolgate'
+
+dry_run=${TOOLGATE_DRY_RUN:-0}
+[ "$dry_run" = 1 ] || dry_run=0
+
+for arg in "$@"; do
+	case $arg in
+	--dry-run) dry_run=1 ;;
+	-h | --help)
+		echo "usage: install.sh [--dry-run]"
+		exit 0
+		;;
+	*)
+		echo "install.sh: unknown option: $arg" >&2
+		exit 2
+		;;
+	esac
+done
+
+say() {
+	printf '%s\n' "$*"
+}
+
+die() {
+	printf 'install.sh: %s\n' "$*" >&2
+	exit 1
+}
+
+# run prints the command in a dry run and runs it otherwise.
+run() {
+	if [ "$dry_run" = 1 ]; then
+		say "[dry run] $*"
+		return 0
+	fi
+	"$@"
+}
+
+if [ "$VERSION" = dev ]; then
+	die "this gateway is a development build and has no release to install; install a release of the CLI by hand"
+fi
+
+case $(uname -s) in
+Linux) os=linux ;;
+Darwin) os=darwin ;;
+*) die "unsupported operating system $(uname -s); this script supports Linux and macOS" ;;
+esac
+
+case $(uname -m) in
+x86_64 | amd64) arch=amd64 ;;
+aarch64 | arm64) arch=arm64 ;;
+*) die "unsupported CPU architecture $(uname -m); this script supports amd64 and arm64" ;;
+esac
+
+asset="toolgate-$os-$arch"
+base="$RELEASE_URL/$VERSION"
+
+command -v curl >/dev/null 2>&1 || die "curl is required"
+
+if command -v sha256sum >/dev/null 2>&1; then
+	hash_file() { sha256sum "$1" | cut -d ' ' -f 1; }
+elif command -v shasum >/dev/null 2>&1; then
+	hash_file() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
+else
+	die "sha256sum or shasum is required to verify the download"
+fi
+
+# have_tty is true when a terminal is available to ask the user.
+have_tty() {
+	[ -t 0 ] || ( : </dev/tty ) 2>/dev/null
+}
+
+on_path() {
+	case ":$PATH:" in
+	*":$1:"*) return 0 ;;
+	esac
+	return 1
+}
+
+# Choose the install directory: $TOOLGATE_INSTALL_DIR, then ~/.local/bin
+# when it is on PATH, then /usr/local/bin (with sudo when needed).
+use_sudo=0
+if [ -n "${TOOLGATE_INSTALL_DIR:-}" ]; then
+	install_dir=$TOOLGATE_INSTALL_DIR
+	if [ "$dry_run" = 0 ]; then
+		mkdir -p "$install_dir" 2>/dev/null || true
+		[ -w "$install_dir" ] || die "$install_dir is not writable"
+	fi
+elif [ -n "${HOME:-}" ] && on_path "$HOME/.local/bin" && { [ -w "$HOME/.local/bin" ] || [ ! -e "$HOME/.local/bin" ]; }; then
+	install_dir=$HOME/.local/bin
+	[ "$dry_run" = 1 ] || mkdir -p "$install_dir"
+elif [ -w /usr/local/bin ]; then
+	install_dir=/usr/local/bin
+elif command -v sudo >/dev/null 2>&1 && have_tty; then
+	install_dir=/usr/local/bin
+	use_sudo=1
+else
+	die "no writable directory on PATH; set TOOLGATE_INSTALL_DIR to a directory you can write to"
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT INT TERM
+
+say "Downloading toolgate $VERSION ($asset)"
+run curl -fsSL -o "$tmp/$asset" "$base/$asset"
+run curl -fsSL -o "$tmp/checksums.txt" "$base/checksums.txt"
+
+if [ "$dry_run" = 1 ]; then
+	say "[dry run] verify the SHA-256 of $asset against checksums.txt"
+else
+	want=$(awk -v name="$asset" '$2 == name { print $1 }' "$tmp/checksums.txt")
+	[ -n "$want" ] || die "checksums.txt has no entry for $asset"
+	got=$(hash_file "$tmp/$asset")
+	[ "$got" = "$want" ] || die "checksum mismatch for $asset: want $want, got $got"
+	say "Checksum verified"
+fi
+
+target="$install_dir/toolgate"
+say "Installing $target"
+if [ "$use_sudo" = 1 ]; then
+	run sudo install -m 0755 "$tmp/$asset" "$target"
+else
+	run chmod 0755 "$tmp/$asset"
+	run mv -f "$tmp/$asset" "$target"
+fi
+
+if ! on_path "$install_dir"; then
+	say "Warning: $install_dir is not on your PATH. Add it, for example: export PATH=\"$install_dir:\$PATH\""
+fi
+
+if command -v claude >/dev/null 2>&1; then
+	say "Installing the Claude Code plugin"
+	run claude plugin marketplace add "$MARKETPLACE" || run claude plugin marketplace update toolgate
+	run claude plugin install "$PLUGIN" || run claude plugin update "$PLUGIN"
+	if [ "$dry_run" = 1 ]; then
+		say "[dry run] claude plugin configure $PLUGIN --values-stdin (gateway_url=$GATEWAY_URL)"
+	else
+		printf '{"gateway_url":"%s"}\n' "$GATEWAY_URL" | claude plugin configure "$PLUGIN" --values-stdin
+	fi
+else
+	say "claude was not found. When you install Claude Code, run:"
+	say "  claude plugin marketplace add $MARKETPLACE"
+	say "  claude plugin install $PLUGIN"
+	say "  then set the Gateway URL to $GATEWAY_URL with: /plugin configure $PLUGIN"
+fi
+
+run "$target" configure --gateway "$GATEWAY_URL"
+
+if [ "$dry_run" = 1 ]; then
+	say "[dry run] offer to run: toolgate login"
+elif have_tty; then
+	printf 'Sign in now with "toolgate login"? [Y/n] '
+	answer=
+	read -r answer </dev/tty || answer=n
+	case $answer in
+	"" | y | Y | yes | YES) "$target" login </dev/tty ;;
+	*) say "Later, run: toolgate login" ;;
+	esac
+else
+	say "To sign in, run: toolgate login"
+fi
+
+say "Done. Check it with: toolgate status"

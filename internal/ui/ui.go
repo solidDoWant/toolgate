@@ -223,6 +223,8 @@ func New(options Options, registrar Registrar) *UI {
 	u.Handle("GET "+LoginPath, Public, http.HandlerFunc(u.login))
 	u.Handle("GET "+CallbackPath, Public, http.HandlerFunc(u.callback))
 	u.Handle("GET "+StaticPath, Public, staticFilesHandler(http.StripPrefix(StaticPath, http.FileServerFS(static))))
+	u.Handle("GET "+InstallPath, Public, http.HandlerFunc(u.installScript))
+	u.Handle("GET "+SetupPath, User, http.HandlerFunc(u.setup))
 	u.Handle("POST "+LogoutPath, User, http.HandlerFunc(u.logout))
 	u.Handle("GET /{$}", User, http.RedirectHandler(HomePath, http.StatusSeeOther))
 

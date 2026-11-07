@@ -12,6 +12,20 @@ This page tells you how to:
 - set the secrets that your servers need with `toolgate secret set`;
 - read a refusal, and find out which rule refused a call.
 
+## Quick install
+
+On Linux or macOS, run this command. Replace `https://toolgate.example.com` with the URL of your gateway:
+
+```
+curl -fsSL https://toolgate.example.com/install.sh | sh
+```
+
+The gateway serves this script. It downloads the `toolgate` command in the same version as the gateway, checks its SHA-256 checksum, installs it in a directory on your `PATH`, installs the plugin when `claude` is present, saves the gateway URL, and offers to run `toolgate login`. You can read the script before you run it: `curl -fsSL https://toolgate.example.com/install.sh | less`. To see its actions without any change, run it with `sh -s -- --dry-run`. To choose the install directory, set `TOOLGATE_INSTALL_DIR`. The script sends nothing except the downloads from GitHub and the `claude` commands.
+
+When you are signed in to the web UI, the page `/ui/setup` shows these commands with the URL of your gateway filled in, with a Copy button for each. It also has the Windows steps.
+
+The rest of this page is the manual path.
+
 ## Install the plugin
 
 The toolgate plugin connects Claude Code to your gateway. A plugin marketplace is a list of plugins that Claude Code can install. This repository is a marketplace with one plugin, `toolgate`.
