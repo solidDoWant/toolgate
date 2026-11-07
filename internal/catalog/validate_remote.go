@@ -101,8 +101,9 @@ func headerValueAllowed(value string) bool {
 			variable := rest[2 : 2+end]
 			secret, isSecret := strings.CutPrefix(variable, "secret:")
 			field, isPrincipal := strings.CutPrefix(variable, "principal.")
+			isAllowed := (isSecret && secret != "") || (isPrincipal && field != "")
 
-			if !(isSecret && secret != "") && !(isPrincipal && field != "") {
+			if !isAllowed {
 				return false
 			}
 

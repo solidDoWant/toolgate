@@ -202,6 +202,7 @@ func TestRemoteHeaderValuesStayOutOfStatusAndLog(t *testing.T) {
 			fixture := newReconcilerFixture(t, template)
 
 			var logs bytes.Buffer
+
 			fixture.reconciler.Log = slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 			fixture.reconcile(t, keyOf(template))
