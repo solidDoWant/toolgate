@@ -111,6 +111,21 @@ type Instance struct {
 	McpRevision        string
 }
 
+type McpSession struct {
+	ID                string
+	SessionPk         int64
+	Principal         string
+	SessionID         string
+	Workspace         string
+	Attestation       string
+	ProtocolVersion   string
+	InitializeParams  []byte
+	InitializedParams []byte
+	CreatedAt         pgtype.Timestamptz
+	LastSeenAt        pgtype.Timestamptz
+	EndedAt           pgtype.Timestamptz
+}
+
 type ScopeEntry struct {
 	ID        int64
 	ScopeID   int64

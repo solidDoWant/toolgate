@@ -32,6 +32,9 @@ const (
 	// KindToolSearch names a template by its UID: the leader rebuilt the
 	// template's tool search rows.
 	KindToolSearch = "toolsearch"
+	// KindMCPSession names an MCP session by its Mcp-Session-Id: the
+	// session ended, so every replica closes its copy.
+	KindMCPSession = "mcpsession"
 )
 
 const (
