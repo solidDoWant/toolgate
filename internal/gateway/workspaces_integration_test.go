@@ -625,7 +625,7 @@ func TestWorkspaceDefaults(t *testing.T) {
 
 		unverified := alice()
 		unverified.session = "unverified"
-		assert.Empty(t, listServers(t, fixture.connectObserved(t, unverified).session), "the unverified default stays none")
+		assert.Empty(t, serverNames(listServers(t, fixture.connectObserved(t, unverified).session)), "the unverified default stays none")
 
 		before := client.listChangedCount()
 
@@ -650,10 +650,10 @@ func TestWorkspaceDefaults(t *testing.T) {
 		fixture.startUpstream(t, "github")
 
 		client := fixture.connectObserved(t, alice())
-		assert.Empty(t, listServers(t, client.session))
+		assert.Empty(t, serverNames(listServers(t, client.session)))
 
 		id := api.requestChange(t, alice(), workspacesapi.Change{Action: "defaults", Unverified: workspacesapi.Unverified{Default: "all"}})
-		assert.Empty(t, listServers(t, client.session))
+		assert.Empty(t, serverNames(listServers(t, client.session)))
 		require.NoError(t, api.approve(t, id))
 
 		assert.Equal(t, []string{"github"}, serverNames(listServers(t, client.session)))

@@ -161,7 +161,7 @@ func TestScopeEntries(t *testing.T) {
 		fixture.addSessionEntry(t, "session-1", "github", "echo", policy.EffectAllow)
 		fixture.setUnverifiedDefault(t, "alice", policy.ScopeDefaultNone)
 
-		assert.Empty(t, listServers(t, client.session))
+		assert.Empty(t, serverNames(listServers(t, client.session)))
 	})
 
 	t.Run("a tool deny withdraws only that tool, and an allow entry lists only its tool", func(t *testing.T) {
@@ -253,7 +253,7 @@ func TestUnverifiedAllowList(t *testing.T) {
 		fixture.setUnverifiedList(t)
 
 		client := fixture.connectObserved(t, alice())
-		assert.Empty(t, listServers(t, client.session))
+		assert.Empty(t, serverNames(listServers(t, client.session)))
 	})
 
 	t.Run("a verified workspace ignores the unverified list", func(t *testing.T) {

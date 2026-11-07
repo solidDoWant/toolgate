@@ -234,7 +234,7 @@ A session has a verified workspace when its workspace proved where it runs, for 
 
 The effective list never gives you a server that your admin does not let you use.
 
-In a verified workspace, `toolgate_list_servers` shows a server that is not on the effective list as `blocked`, with "not allowed in this workspace; enable it to ask". In an unverified session, it does not show the server. Claude does not get the tools of the server. If a server leaves the effective list, it stays turned on, but its tools go away. If the server comes back on the list, its tools come back, and you do not turn it on again.
+In a verified workspace, `toolgate_list_servers` shows a server that is not on the effective list as `blocked`, with "not allowed in this workspace; enable it to ask". In an unverified session, it shows the server as `blocked` in the same way, with the reason "not allowed in sessions without a verified workspace" and the commands that fix it. Claude does not get the tools of the server. If a server leaves the effective list, it stays turned on, but its tools go away. If the server comes back on the list, its tools come back, and you do not turn it on again.
 
 ### Change your lists and defaults
 
@@ -285,6 +285,17 @@ toolgate refuses an approval in these cases, and the request stays open:
 - The session already has 32 servers that you added for it only, the list already has 64 servers, or you already have 200 lists. Remove one, then approve again.
 
 To remove a server that you added to one session, run `toolgate workspace deny --session ID SERVER`.
+
+### No servers?
+
+If `toolgate_list_servers` shows your servers as `blocked`, or Claude finds no tools, check if the session is unverified. A laptop or a devcontainer is unverified. The default for unverified sessions is `none`, so every server is blocked there. Your access groups are not the problem.
+
+To fix it, do one of these:
+
+- Set the default for unverified sessions on the Workspaces page, or run `toolgate workspace defaults --unverified all`.
+- Allow one server with `toolgate workspace allow --unverified SERVER`.
+
+A server that is not in the list at all is not in your catalog. Ask your admin to give you access.
 
 ## The headers that Claude Code sends
 

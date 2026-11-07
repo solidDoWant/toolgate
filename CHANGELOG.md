@@ -9,6 +9,8 @@
 ### Fixes
 
 - The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`.
+- Sessions without a verified workspace now show the servers that the workspace scope blocks as `blocked`, with the fix, in `toolgate_list_servers`, `toolgate_server_status` and `toolgate_find_tools`. Before, the list was empty and the status said "isn't in your catalog".
+
 
 ## 0.4.5
 

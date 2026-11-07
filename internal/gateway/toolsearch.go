@@ -10,6 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/solidDoWant/toolgate/internal/auth"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -76,9 +78,10 @@ type FindToolsResult struct {
 }
 
 const (
-	noteDegraded         = "Search by meaning is unavailable right now, so these are keyword matches only. If none fits, reword the request with the action and the object (for example \"list Slack channels\"), or try again later."
-	noteNoResult         = "No tool matched. Reword the request with a specific action and object (for example \"list Slack channels\")."
-	noteNoResultDegraded = "No tool matched, and search by meaning is unavailable right now. Reword the request with a specific action and object (for example \"list Slack channels\"), or try again later."
+	noteDegraded          = "Search by meaning is unavailable right now, so these are keyword matches only. If none fits, reword the request with the action and the object (for example \"list Slack channels\"), or try again later."
+	noteUnverifiedBlocked = "No tool matched. Some of your servers exist but are blocked in sessions without a verified workspace, so their tools aren't searched. Set the default for unverified sessions (Workspaces page, or `toolgate workspace defaults --unverified …`), or allow a server with `toolgate workspace allow --unverified <server>`."
+	noteNoResult          = "No tool matched. Reword the request with a specific action and object (for example \"list Slack channels\")."
+	noteNoResultDegraded  = "No tool matched, and search by meaning is unavailable right now. Reword the request with a specific action and object (for example \"list Slack channels\"), or try again later."
 )
 
 // findToolsNote returns the note of a result with count tools.
@@ -281,12 +284,15 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 	// because they are outside the list, in a verified workspace.
 	candidates := map[string]*v1alpha1.MCPServerTemplate{}
 	uids := []string{}
+	unverifiedBlocked := false
 
 	for _, template := range m.catalog.List() {
 		decision := m.policy.Decide(policy.Request{Identity: current.identity, Template: template, State: state})
 		if decision.Allowed || asksForTool(current, decision) {
 			candidates[string(template.UID)] = template
 			uids = append(uids, string(template.UID))
+		} else if decision.Step == policy.StepWorkspaceScope && decision.Denied == "" && current.identity.Attestation != auth.AttestationAttested {
+			unverifiedBlocked = true
 		}
 	}
 
@@ -358,6 +364,9 @@ func (m *metaTools) findTools(ctx context.Context, request *mcp.CallToolRequest,
 	}
 
 	result.Note = findToolsNote(len(result.Tools), degraded)
+	if len(result.Tools) == 0 && unverifiedBlocked {
+		result.Note = noteUnverifiedBlocked
+	}
 
 	search, err := newSearchRecord(degraded, kept)
 	if err != nil {

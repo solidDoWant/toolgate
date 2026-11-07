@@ -227,6 +227,10 @@ func (m *metaTools) serverStatus(ctx context.Context, request *mcp.CallToolReque
 // verified workspace's effective list.
 const notInWorkspaceReason = "not allowed in this workspace; enable it to ask"
 
+// notInUnverifiedReason is the list_servers reason of a server the user's
+// default for unverified sessions doesn't allow.
+const notInUnverifiedReason = "not allowed in sessions without a verified workspace; set the default for unverified sessions (Workspaces page, or `toolgate workspace defaults --unverified …`), or allow it with `toolgate workspace allow --unverified <server>`"
+
 // deniedReasons are the list_servers reasons of a server with a deny entry,
 // which an enable never asks about.
 var deniedReasons = map[policy.DeniedIn]string{
@@ -237,9 +241,8 @@ var deniedReasons = map[policy.DeniedIn]string{
 var errNoIdentity = errors.New("Sign in again: run `toolgate login`.") //nolint:staticcheck // A sentence for the model.
 
 // entry describes template for the request's identity. visible is false when
-// the identity has no catalog access to it, or when the workspace-scope
-// step refuses it in an unverified session, where an enable can't ask. Any
-// other refusal shows the server as blocked with the reason.
+// the identity has no catalog access to it. Any other refusal shows the
+// server as blocked with the reason.
 func (m *metaTools) entry(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, enabled map[types.NamespacedName]bool, state policy.State) (entry ServerEntry, visible bool, err error) {
 	decision := m.policy.Decide(policy.Request{Identity: current.identity, Template: template, State: state})
 	if !decision.Allowed && decision.Step == policy.StepAccess {
@@ -264,11 +267,10 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 		}
 
 		if decision.Step == policy.StepWorkspaceScope {
-			if current.identity.Attestation != auth.AttestationAttested {
-				return ServerEntry{}, false, nil
-			}
-
 			entry.Reason = notInWorkspaceReason
+			if current.identity.Attestation != auth.AttestationAttested {
+				entry.Reason = notInUnverifiedReason
+			}
 		}
 
 		return entry, true, nil

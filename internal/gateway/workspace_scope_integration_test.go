@@ -61,10 +61,13 @@ func (f *mcpFixture) accessRequestCount(t *testing.T) int {
 	return count
 }
 
+// serverNames are the names of the entries that are not blocked.
 func serverNames(entries []gateway.ServerEntry) []string {
 	names := make([]string, 0, len(entries))
 	for _, entry := range entries {
-		names = append(names, entry.Name)
+		if entry.Status != gateway.StatusBlocked {
+			names = append(names, entry.Name)
+		}
 	}
 
 	return names
@@ -79,7 +82,7 @@ func TestWorkspaceScope(t *testing.T) {
 
 		client := fixture.connectObserved(t, alice())
 
-		assert.Empty(t, listServers(t, client.session))
+		assert.Empty(t, serverNames(listServers(t, client.session)))
 
 		result := callTool(t, client.session, gateway.ToolEnableServer, map[string]any{"name": "github"})
 		require.True(t, result.IsError)
@@ -136,7 +139,7 @@ func TestWorkspaceScope(t *testing.T) {
 		assert.Less(t, time.Since(started), scopeChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, elsewhere.session))
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, alices.session))
-		assert.Empty(t, listServers(t, alices.session), "an unverified session leaves refused servers out")
+		assert.Empty(t, serverNames(listServers(t, alices.session)), "an unverified session lists refused servers as blocked")
 		assert.Equal(t, []string{"github"}, fixture.enabledServers(t, "alice", "session-1"), "the server stays enabled")
 
 		refused := callTool(t, alices.session, "github__echo", map[string]any{"text": "x"})
