@@ -17,8 +17,8 @@ WHERE id_hash = @id_hash AND last_seen_at <= now() - interval '1 minute';
 DELETE FROM ui_sessions WHERE id_hash = @id_hash;
 
 -- name: InsertUILogin :exec
-INSERT INTO ui_logins (state_hash, nonce, pkce_verifier, return_to, step_up, ui_session_hash)
-VALUES (@state_hash, @nonce, @pkce_verifier, @return_to, @step_up, sqlc.narg(ui_session_hash));
+INSERT INTO ui_logins (state_hash, nonce, pkce_verifier, return_to, step_up, ui_session_hash, restarted)
+VALUES (@state_hash, @nonce, @pkce_verifier, @return_to, @step_up, sqlc.narg(ui_session_hash), @restarted);
 
 -- name: TakeUILogin :one
 -- Takes the sign-in in progress for the state, so each state works once.

@@ -429,7 +429,9 @@ func TestSignInReturnsOnlyToUIPaths(t *testing.T) {
 	assert.Equal(t, ui.HomePath, response.Header.Get("Location"))
 }
 
-func TestSignInCallbackFromAnotherBrowserIsRefused(t *testing.T) {
+// A callback whose state is not this browser's never completes: the browser
+// starts its own sign-in, which keeps the old one's return path.
+func TestSignInCallbackFromAnotherBrowserRestartsTheSignIn(t *testing.T) {
 	env := startUIEnv(t, "")
 	victim := env.browser(t)
 	attacker := env.browser(t)
@@ -439,13 +441,74 @@ func TestSignInCallbackFromAnotherBrowserIsRefused(t *testing.T) {
 	callback := env.signInAtIdP(t, attacker, authURL, toolgatetest.OIDCUser{Subject: "attacker"})
 
 	response := get(t, victim, callback.String())
-	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
 	assert.Nil(t, setCookie(response, ui.SessionCookie))
 	assert.Equal(t, 0, env.countRows(t, "ui_sessions"))
 	assert.Equal(t, []string{"web UI sign-in: the state does not match this browser's sign-in"}, env.refusals.reasons())
 
+	restart := location(t, response)
+	assert.NotEqual(t, authURL.Query().Get("state"), restart.Query().Get("state"), "a new sign-in")
+	assert.Empty(t, restart.Query().Get("prompt"), "not a step-up")
+
 	response = get(t, victim, env.server.URL+whoamiPath)
 	assert.Equal(t, http.StatusSeeOther, response.StatusCode, "the victim is not signed in")
+
+	// The attacker's sign-in is gone, so its callback can't complete later.
+	response = get(t, attacker, callback.String())
+	assert.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Nil(t, setCookie(response, ui.SessionCookie))
+
+	// The victim signs in as themselves and lands on the old return path.
+	response = get(t, victim, env.signInAtIdP(t, victim, restart, toolgatetest.OIDCUser{Subject: "victim"}).String())
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+	assert.Equal(t, "/ui/whoami", location(t, response).Path)
+	assert.Equal(t, "victim", env.whoami(t, victim)["principal"])
+}
+
+func TestSignInStateMismatchWithoutASignInRestartsAtTheHomePage(t *testing.T) {
+	env := startUIEnv(t, "")
+	browser := env.browser(t)
+
+	response := get(t, browser, env.server.URL+ui.CallbackPath+"?state=unknown&code=x")
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+	assert.Equal(t, ui.LoginPath, location(t, response).Path)
+	assert.Empty(t, location(t, response).RawQuery, "a sign-in that returns to the home page")
+	assert.Nil(t, setCookie(response, ui.SessionCookie))
+	assert.Equal(t, []string{"web UI sign-in: the state does not match this browser's sign-in"}, env.refusals.reasons())
+}
+
+// A restarted sign-in whose state again does not match shows the page, so a
+// browser that drops the state cookie never loops.
+func TestSignInRestartsOnceAfterAStateMismatch(t *testing.T) {
+	env := startUIEnv(t, "")
+	browser := env.browser(t)
+
+	response := get(t, browser, env.server.URL+ui.StepUpURL(stepUpFormPath))
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+	// Each callback opens in a browser without the state cookie.
+	callback := env.signInAtIdP(t, browser, location(t, response), alice)
+
+	response = get(t, env.browser(t), callback.String())
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+	restart := location(t, response)
+	assert.Equal(t, "login", restart.Query().Get("prompt"), "the restart keeps the step-up")
+	assert.Equal(t, "0", restart.Query().Get("max_age"))
+
+	callback = env.signInAtIdP(t, browser, restart, alice)
+
+	response = get(t, env.browser(t), callback.String())
+	require.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Contains(t, body(t, response), "Your browser didn't keep the cookie of this sign-in, so toolgate can't finish it. "+
+		"Allow cookies for this site, sign in from one tab only, and start again at /ui/login.")
+	assert.Nil(t, setCookie(response, ui.SessionCookie))
+	assert.Equal(t, 0, env.countRows(t, "ui_sessions"))
+	assert.Equal(t, 0, env.countRows(t, "ui_logins"), "no new sign-in")
+	assert.Equal(t, []string{
+		"web UI sign-in: the state does not match this browser's sign-in",
+		"web UI sign-in: the state does not match this browser's sign-in",
+	}, env.refusals.reasons())
 }
 
 func TestSignInStateWorksOnce(t *testing.T) {
@@ -479,7 +542,7 @@ func TestFailedSignInsFollowTheRefusalRateRule(t *testing.T) {
 
 	for range 11 {
 		response := get(t, browser, env.server.URL+ui.CallbackPath+"?state=forged&code=x")
-		require.Equal(t, http.StatusForbidden, response.StatusCode)
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
 	}
 
 	assert.Len(t, env.refusals.reasons(), 10)

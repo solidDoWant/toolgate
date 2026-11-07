@@ -162,24 +162,53 @@ func TestStepUpWithoutASessionCreatesOne(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), row.AuthTime.Time, time.Minute)
 }
 
-func TestStepUpRefusesAnAuthTimeBeforeTheSignInStarted(t *testing.T) {
+// A step-up whose auth_time is not fresh starts a new step-up once, then
+// shows the page.
+func TestStepUpRestartsOnceWhenTheSignInIsNotFresh(t *testing.T) {
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
 	response := get(t, browser, env.server.URL+ui.StepUpURL(stepUpFormPath))
 	require.Equal(t, http.StatusSeeOther, response.StatusCode)
 
-	callback := env.signInAtIdP(t, browser, location(t, response), alice)
-
 	// As if the IdP returned a sign-in from before the step-up started.
-	_, err := env.pool.Exec(t.Context(), "UPDATE ui_logins SET created_at = now() + interval '2 minutes'")
-	require.NoError(t, err)
+	notFresh := func(authURL *url.URL) *http.Response {
+		callback := env.signInAtIdP(t, browser, authURL, alice)
 
-	response = get(t, browser, callback.String())
-	require.Equal(t, http.StatusForbidden, response.StatusCode)
+		_, err := env.pool.Exec(t.Context(), "UPDATE ui_logins SET created_at = now() + interval '2 minutes'")
+		require.NoError(t, err)
+
+		return get(t, browser, callback.String())
+	}
+
+	first := location(t, response)
+
+	response = notFresh(first)
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
 	assert.Nil(t, setCookie(response, ui.SessionCookie))
 	assert.Equal(t, 0, env.countRows(t, "ui_sessions"))
-	assert.Len(t, env.refusals.reasons(), 1)
+
+	restart := location(t, response)
+	assert.NotEqual(t, first.Query().Get("state"), restart.Query().Get("state"), "a new sign-in")
+	assert.Equal(t, "login", restart.Query().Get("prompt"))
+	assert.Equal(t, "0", restart.Query().Get("max_age"))
+
+	var returnTo string
+	require.NoError(t, env.pool.QueryRow(t.Context(), "SELECT return_to FROM ui_logins").Scan(&returnTo))
+	assert.Equal(t, stepUpFormPath, returnTo)
+
+	response = notFresh(restart)
+	require.Equal(t, http.StatusForbidden, response.StatusCode)
+	assert.Contains(t, body(t, response),
+		"Your identity provider signed you in with your existing session instead of asking for your password again. "+
+			"Sign out of the identity provider and try again, or ask your admin to make the provider honour `prompt=login`.")
+	assert.Nil(t, setCookie(response, ui.SessionCookie))
+	assert.Equal(t, 0, env.countRows(t, "ui_sessions"))
+	assert.Equal(t, 0, env.countRows(t, "ui_logins"), "no new sign-in")
+	assert.Equal(t, []string{
+		"web UI sign-in: the step-up sign-in is not fresh",
+		"web UI sign-in: the step-up sign-in is not fresh",
+	}, env.refusals.reasons())
 }
 
 func TestStepUpFailsClosedWithoutAuthTime(t *testing.T) {

@@ -344,7 +344,7 @@ Pages:
 - **Blocks** (admins): temporary blocks with an expiry (up to 30 days); the standing rules from git shown read-only.
 - **Workspaces**: the user's defaults and workspace lists; add and remove servers, clear a list. The defaults form has "Only these servers", the default `list` for unverified sessions, with a checkbox for each server the user has access to. Checking a server, or moving from nothing to `list` while servers are checked, widens and needs the step-up; unchecking applies at once.
 
-**Step-up.** Creating a grant or approving a call needs an authentication less than 5 minutes old. toolgate redirects to the IdP with `prompt=login` and `max_age=0`, and checks `auth_time`. The IdP's flow decides how the person signs in (the owner uses passkeys).
+**Step-up.** Creating a grant or approving a call needs an authentication less than 5 minutes old. toolgate redirects to the IdP with `prompt=login` and `max_age=0`, and checks `auth_time`. When `auth_time` is not fresh, or the callback's state does not match the browser's sign-in cookie, toolgate starts one new sign-in (with the same return path and step-up) instead of showing an error, and shows the error the second time. The IdP's flow decides how the person signs in (the owner uses passkeys).
 
 **From inside a session.** When a call needs an approval, the gateway sends a URL-mode MCP elicitation linking to the approval page. A call that needs a grant fails at once with a link to the Grants page. Claude Code opens it in the browser, and the call continues when the person acts, up to `approvalTimeout` (default 10 min). In sessions that can't show an elicitation (`-p`, CI), the call fails at once with an error naming the grant or approval needed.
 

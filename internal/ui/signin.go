@@ -22,10 +22,18 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// login starts a sign-in: it stores the
-// state, nonce and PKCE verifier in ui_logins, sets the per-sign-in state
-// cookie and redirects to the IdP.
+// login starts a sign-in that returns to the return_to parameter and, when
+// step_up is 1, asks the IdP for a fresh sign-in.
 func (u *UI) login(writer http.ResponseWriter, request *http.Request) {
+	query := request.URL.Query()
+	u.beginSignIn(writer, request, ReturnTo(query.Get("return_to")), query.Get("step_up") == "1", false)
+}
+
+// beginSignIn stores the state, nonce and PKCE verifier in ui_logins, sets
+// the per-sign-in state cookie and redirects to the IdP. restarted marks a
+// sign-in the gateway started again after a failed callback, so it is
+// restarted at most once.
+func (u *UI) beginSignIn(writer http.ResponseWriter, request *http.Request, returnTo string, stepUp, restarted bool) {
 	ctx := request.Context()
 
 	pending, err := u.queries.CountUILogins(ctx)
@@ -55,7 +63,6 @@ func (u *UI) login(writer http.ResponseWriter, request *http.Request) {
 	verifier := oauth2.GenerateVerifier()
 	stateHash := hashValue(state)
 
-	stepUp := request.URL.Query().Get("step_up") == "1"
 	authOptions := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(verifier), oidc.Nonce(nonce)}
 
 	// A step-up records the browser's session, so the callback updates it,
@@ -79,9 +86,10 @@ func (u *UI) login(writer http.ResponseWriter, request *http.Request) {
 		StateHash:     stateHash,
 		Nonce:         nonce,
 		PkceVerifier:  verifier,
-		ReturnTo:      ReturnTo(request.URL.Query().Get("return_to")),
+		ReturnTo:      returnTo,
 		StepUp:        stepUp,
 		UiSessionHash: sessionHash,
+		Restarted:     restarted,
 	})
 	if err != nil {
 		u.logger.ErrorContext(ctx, "cannot store the sign-in", "error", err)
@@ -136,6 +144,11 @@ func ReturnTo(raw string) string {
 	return raw
 }
 
+// stateMismatchMessage is the page of a restarted sign-in whose state
+// again does not match this browser's sign-in.
+const stateMismatchMessage = "Your browser didn't keep the cookie of this sign-in, so toolgate can't finish it. " +
+	"Allow cookies for this site, sign in from one tab only, and start again at " + LoginPath + "."
+
 func loginCookieName(stateHash []byte) string {
 	return LoginCookiePrefix + hex.EncodeToString(stateHash)[:8]
 }
@@ -147,6 +160,18 @@ type signInFailure struct {
 	// message, if set, is the whole text of the page.
 	message string
 	err     error
+	// restart, if set, replaces the page with a new sign-in.
+	restart *signInRestart
+}
+
+// signInRestart is the new sign-in that follows a failure a new sign-in
+// can fix.
+type signInRestart struct {
+	// known is false when the failed sign-in's row is gone: the browser then
+	// starts a plain sign-in at LoginPath.
+	known    bool
+	returnTo string
+	stepUp   bool
 }
 
 func (f *signInFailure) Error() string { return f.reason }
@@ -162,6 +187,12 @@ func (u *UI) callback(writer http.ResponseWriter, request *http.Request) {
 	returnTo, failed := u.completeSignIn(writer, request)
 	if failed != nil {
 		u.refuse(request, failed)
+
+		if failed.restart != nil {
+			u.restartSignIn(writer, request, *failed.restart)
+
+			return
+		}
 
 		message := failed.message
 		if message == "" {
@@ -198,7 +229,7 @@ func (u *UI) completeSignIn(writer http.ResponseWriter, request *http.Request) (
 	// another browser is refused.
 	cookie, err := request.Cookie(cookieName)
 	if err != nil || subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(state)) != 1 {
-		return "", failure("the state does not match this browser's sign-in", nil)
+		return "", u.stateMismatch(ctx, stateHash)
 	}
 
 	login, err := u.queries.TakeUILogin(ctx, stateHash)
@@ -260,6 +291,42 @@ func (u *UI) completeSignIn(writer http.ResponseWriter, request *http.Request) (
 	return login.ReturnTo, nil
 }
 
+// stateMismatch is the failure of a callback whose state is not this
+// browser's sign-in: the cookie expired, the user went back to an old
+// callback, or another browser started the sign-in. The old sign-in never
+// completes, since the cookie check is what stops a callback from another
+// browser signing this one in. A new sign-in from this browser keeps the old
+// one's return path and step-up, unless it was itself a restart.
+func (u *UI) stateMismatch(ctx context.Context, stateHash []byte) *signInFailure {
+	failed := failure("the state does not match this browser's sign-in", nil)
+
+	login, err := u.queries.TakeUILogin(ctx, stateHash)
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		failed.restart = &signInRestart{}
+	case err != nil:
+		failed.err = err
+	case login.Restarted:
+		failed.message = stateMismatchMessage
+	default:
+		failed.restart = &signInRestart{known: true, returnTo: ReturnTo(login.ReturnTo), stepUp: login.StepUp}
+	}
+
+	return failed
+}
+
+// restartSignIn starts the new sign-in that follows a failed callback.
+func (u *UI) restartSignIn(writer http.ResponseWriter, request *http.Request, restart signInRestart) {
+	if !restart.known {
+		http.Redirect(writer, request, LoginPath, http.StatusSeeOther)
+
+		return
+	}
+
+	u.beginSignIn(writer, request, restart.returnTo, restart.stepUp, true)
+}
+
 // completeStepUp runs the step-up checks
 // and records the fresh sign-in: on the session the step-up
 // started from, or on a new session when there was none.
@@ -271,7 +338,14 @@ func (u *UI) completeStepUp(writer http.ResponseWriter, request *http.Request, l
 	}
 
 	if err := checkStepUpAuthTime(identity.authTime.Time, login.CreatedAt.Time, time.Now()); err != nil {
-		return failure("the step-up sign-in is not fresh", err)
+		failed := failure("the step-up sign-in is not fresh", err)
+		if login.Restarted {
+			failed.message = notFreshMessage
+		} else {
+			failed.restart = &signInRestart{known: true, returnTo: ReturnTo(login.ReturnTo), stepUp: true}
+		}
+
+		return failed
 	}
 
 	if login.UiSessionHash == nil {

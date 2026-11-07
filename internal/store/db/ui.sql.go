@@ -145,8 +145,8 @@ func (q *Queries) GetValidUISession(ctx context.Context, idHash []byte) (UiSessi
 }
 
 const insertUILogin = `-- name: InsertUILogin :exec
-INSERT INTO ui_logins (state_hash, nonce, pkce_verifier, return_to, step_up, ui_session_hash)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO ui_logins (state_hash, nonce, pkce_verifier, return_to, step_up, ui_session_hash, restarted)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertUILoginParams struct {
@@ -156,6 +156,7 @@ type InsertUILoginParams struct {
 	ReturnTo      string
 	StepUp        bool
 	UiSessionHash []byte
+	Restarted     bool
 }
 
 func (q *Queries) InsertUILogin(ctx context.Context, arg InsertUILoginParams) error {
@@ -166,6 +167,7 @@ func (q *Queries) InsertUILogin(ctx context.Context, arg InsertUILoginParams) er
 		arg.ReturnTo,
 		arg.StepUp,
 		arg.UiSessionHash,
+		arg.Restarted,
 	)
 	return err
 }
@@ -532,7 +534,7 @@ func (q *Queries) ListSessionsForUI(ctx context.Context, arg ListSessionsForUIPa
 const takeUILogin = `-- name: TakeUILogin :one
 DELETE FROM ui_logins
 WHERE state_hash = $1 AND created_at > now() - interval '10 minutes'
-RETURNING state_hash, nonce, pkce_verifier, return_to, step_up, ui_session_hash, created_at
+RETURNING state_hash, nonce, pkce_verifier, return_to, step_up, ui_session_hash, created_at, restarted
 `
 
 // Takes the sign-in in progress for the state, so each state works once.
@@ -549,6 +551,7 @@ func (q *Queries) TakeUILogin(ctx context.Context, stateHash []byte) (UiLogin, e
 		&i.StepUp,
 		&i.UiSessionHash,
 		&i.CreatedAt,
+		&i.Restarted,
 	)
 	return i, err
 }

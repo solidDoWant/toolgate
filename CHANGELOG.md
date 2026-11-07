@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Web UI
+
+- When a sign-in fails because the IdP did not ask for a fresh sign-in, or because the browser lost the sign-in cookie, the web UI now starts a new sign-in one time instead of showing an error page.
+
 ## 0.4.7
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release changes three template rules, so read the upgrade notes before you upgrade. It also adds a Quick setup page and an install script, new Sessions and Audit pages in the web UI, and a list of the servers for the model.

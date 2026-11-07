@@ -26,6 +26,8 @@ const (
 	missingAuthTimeMessage = "Your identity provider didn't say when you signed in, so toolgate can't confirm a fresh sign-in. " +
 		"Ask an admin to make it send `auth_time`."
 	differentUserMessage = "You signed in as a different user."
+	notFreshMessage      = "Your identity provider signed you in with your existing session instead of asking for your password again. " +
+		"Sign out of the identity provider and try again, or ask your admin to make the provider honour `prompt=login`."
 )
 
 // checkStepUpAuthTime checks the auth_time of a step-up's ID token against
