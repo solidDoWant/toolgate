@@ -239,20 +239,6 @@ kubectl -n "$release_namespace" create secret generic toolgate-secrets-keyset \
 	--from-file=keyset.json="$work/keyset/keyset.json" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-resolver-ca \
 	--from-file=ca.pem="$TOOLGATE_E2E_RESOLVER_CERT" >&2
-# The model claim is created here, not by the chart: the chart's claim is a
-# hook resource that an upgrade deletes and recreates, which hangs while the
-# embeddings server mounts it.
-kubectl -n "$release_namespace" apply -f - >&2 <<'CLAIM'
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: toolgate-test-models
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 1Gi
-CLAIM
 ./scripts/chart-deps.sh >&2
 helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.image.repository="$gateway_repository" \
@@ -290,7 +276,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set embeddings.downloader.image.repository="$embeddings_repository" \
 	--set embeddings.downloader.image.tag="$image_tag" \
 	--set embeddings.downloader.image.digest= \
-	--set embeddings.server.cache.existingClaim=toolgate-test-models \
+	--set embeddings.server.cache.accessModes='{ReadWriteOnce}' \
 	--wait --timeout 5m >&2
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"
