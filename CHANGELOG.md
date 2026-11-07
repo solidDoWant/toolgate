@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The Helm chart has the new values `config.oidc.cliClientID` and `config.oidc.cliScopes`. With `cliClientID` set, `toolgate login` needs no `--client-id`.
+
 ## 0.4.3
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. In this patch release, the Helm chart creates no network policies. The cluster owner writes them.
