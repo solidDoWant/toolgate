@@ -19,3 +19,14 @@ func (q *Queries) Notify(ctx context.Context, payload string) error {
 	_, err := q.db.Exec(ctx, notify, payload)
 	return err
 }
+
+const notifyReply = `-- name: NotifyReply :exec
+SELECT pg_notify('toolgate_mcp_replies', $1::text)
+`
+
+// Queues a client's answer to a server request on the toolgate_mcp_replies
+// channel, for the replica that sent the request.
+func (q *Queries) NotifyReply(ctx context.Context, payload string) error {
+	_, err := q.db.Exec(ctx, notifyReply, payload)
+	return err
+}
