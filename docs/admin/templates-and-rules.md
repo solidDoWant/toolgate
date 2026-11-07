@@ -65,7 +65,7 @@ The name of the template is the name of the server. It has 31 characters at most
 
 ## The fields of a template
 
-- `description`: the text that users and the model see in the list of servers.
+- `description`: the text that users and the model see in the list of servers. The gateway also puts it in the instructions it sends to the model at the start of every session, for each server the user can use. Write it for the model: what the server is for and when to use it, in one or two sentences. The gateway cuts it to 120 characters and removes line breaks and control characters, so put the key words first. The model sees at most 20 servers.
 - `scope`: who shares one instance. An instance is one running copy of the server.
   - `per-session`: one instance for each Claude Code session.
   - `per-user`: one instance for each user, shared by the sessions of that user.
