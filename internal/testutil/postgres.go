@@ -243,6 +243,18 @@ func (p *Postgres) IssueClientCert(tb testing.TB, user string) (certFile, keyFil
 	return writeFile(tb, dir, "client.crt", pair.CertPEM), writeFile(tb, dir, "client.key", pair.KeyPEM)
 }
 
+// IssueClientCertUntil is IssueClientCert for a certificate that expires at
+// notAfter. The server refuses it after that time.
+func (p *Postgres) IssueClientCertUntil(tb testing.TB, user string, notAfter time.Time) (certFile, keyFile string) {
+	tb.Helper()
+
+	pair, err := p.ca.issueUntilE(notAfter, user, x509.ExtKeyUsageClientAuth)
+	require.NoError(tb, err)
+	dir := tb.TempDir()
+
+	return writeFile(tb, dir, "client.crt", pair.CertPEM), writeFile(tb, dir, "client.key", pair.KeyPEM)
+}
+
 // ConnStringFor returns a URL that authenticates as user with the given
 // client certificate files.
 func (p *Postgres) ConnStringFor(user, certFile, keyFile string) string {

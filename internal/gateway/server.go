@@ -25,6 +25,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/health"
+	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 	"github.com/solidDoWant/toolgate/internal/wellknown"
 )
@@ -56,7 +57,10 @@ type Server struct {
 // New builds the gateway from cfg. It does not connect to PostgreSQL: the
 // connection pool connects on first use, and `/readyz` fails until it can.
 func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, error) {
-	database, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	// store.Open re-reads the TLS client certificate files for every new
+	// connection, so a rotated certificate is used once the pool recycles
+	// its connections.
+	database, err := store.Open(ctx, cfg.DatabaseURL)
 	if err != nil {
 		// The error can echo the connection string, so it is not wrapped.
 		return nil, errors.New("database: cannot create the PostgreSQL connection pool")

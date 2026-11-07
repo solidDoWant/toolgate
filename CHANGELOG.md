@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.6
+
+### Upgrade notes for admins
+
+- If the gateway connects to PostgreSQL with a client certificate that expires after a short time, for example a cert-manager certificate that is valid for one hour, upgrade to this version. Versions 0.4.0 to 0.4.5 stop working when that certificate expires.
+
+### Fixes
+
+- The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`.
+
 ## 0.4.5
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. In this patch release, all gateway replicas share MCP sessions through PostgreSQL, and the gateway sends tool calls to remote MCP servers. The release also fixes the plugin in Coder workspaces and the settings profiles of Claude Code.
