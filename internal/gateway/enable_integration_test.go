@@ -484,7 +484,7 @@ func (f *mcpFixture) catalogTemplate(t *testing.T, name string) *v1alpha1.MCPSer
 }
 
 func TestEnableInteractions(t *testing.T) {
-	t.Run("row 1: two sessions of one user enabling a per-user server at once share one instance", func(t *testing.T) {
+	t.Run("two sessions of one user enabling a per-user server at once share one instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -526,7 +526,7 @@ func TestEnableInteractions(t *testing.T) {
 		assert.NotEqual(t, instance.ID, bobInstance.ID)
 	})
 
-	t.Run("row 2: the same session enabling twice waits on one instance and both get the same result", func(t *testing.T) {
+	t.Run("the same session enabling twice waits on one instance and both get the same result", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 
@@ -548,7 +548,7 @@ func TestEnableInteractions(t *testing.T) {
 		assert.Len(t, fixture.instancesOf(t, template), 1)
 	})
 
-	t.Run("row 3: a disable while an enable waits makes the enable return disabled while starting", func(t *testing.T) {
+	t.Run("a disable while an enable waits makes the enable return disabled while starting", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 
@@ -574,7 +574,7 @@ func TestEnableInteractions(t *testing.T) {
 		{scope: "per-user", scopeKey: "user:alice", other: &user{claims: alice().claims, session: "session-2"}},
 		{scope: "shared", scopeKey: "shared", other: new(bob())},
 	} {
-		t.Run("row 25, row 173: a session that ends while an enable waits ends the wait and keeps the server, "+test.scope, func(t *testing.T) {
+		t.Run("a session that ends while an enable waits ends the wait and keeps the server, "+test.scope, func(t *testing.T) {
 			fixture := newMCPFixture(t)
 			template := fixture.addEnableTemplate("github", test.scope, anyone)
 
@@ -610,7 +610,7 @@ func TestEnableInteractions(t *testing.T) {
 		})
 	}
 
-	t.Run("row 5: a rule added while an enable waits refuses it when the instance is ready", func(t *testing.T) {
+	t.Run("a rule added while an enable waits refuses it when the instance is ready", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 

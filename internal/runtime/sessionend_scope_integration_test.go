@@ -76,7 +76,7 @@ func TestSessionScopeEntriesEndAndForget(t *testing.T) {
 		assert.Equal(t, [][]string{{}}, fixture.auditServers(t, "session.forget", session))
 	})
 
-	t.Run("row 247: the cleanup pass deletes the allow entries and found tools of a session ended without them deleted", func(t *testing.T) {
+	t.Run("the cleanup pass deletes the allow entries and found tools of a session ended without them deleted", func(t *testing.T) {
 		ended := fixture.session(t, "old-leader-user", "s1", "", "staff")
 		live := fixture.session(t, "old-leader-user", "s2", "", "staff")
 		fixture.addSessionScopeRows(t, ended)

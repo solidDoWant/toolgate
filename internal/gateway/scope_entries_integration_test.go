@@ -109,7 +109,7 @@ func assertDeniedEnable(t *testing.T, fixture *mcpFixture, result string, messag
 }
 
 func TestScopeEntries(t *testing.T) {
-	t.Run("row 236: a workspace deny refuses an enable at once and list_servers shows it denied in this workspace", func(t *testing.T) {
+	t.Run("a workspace deny refuses an enable at once and list_servers shows it denied in this workspace", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 		fixture.addWorkspaceEntry(t, aliceWorkspace, "github", "", policy.EffectDeny)
@@ -124,7 +124,7 @@ func TestScopeEntries(t *testing.T) {
 		assert.Empty(t, client.elicitations(), "no elicitation")
 	})
 
-	t.Run("row 236: a session deny refuses an enable at once and list_servers shows it denied in this session", func(t *testing.T) {
+	t.Run("a session deny refuses an enable at once and list_servers shows it denied in this session", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 
@@ -193,7 +193,7 @@ func TestScopeEntries(t *testing.T) {
 		assert.Equal(t, policy.ReasonDenied, last.Details["reason"])
 	})
 
-	t.Run("row 237: a server approval deletes no deny entry, and the wait ends approved, but still refused", func(t *testing.T) {
+	t.Run("a server approval deletes no deny entry, and the wait ends approved, but still refused", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		client := fixture.connectElicitingAs(t, attestedAlice(), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -217,7 +217,7 @@ func TestScopeEntries(t *testing.T) {
 		assert.Equal(t, request.ID, enables[0].Details["request"])
 	})
 
-	t.Run("row 254: without the web UI deny entries do nothing", func(t *testing.T) {
+	t.Run("without the web UI deny entries do nothing", func(t *testing.T) {
 		fixture := newMCPFixtureWithAuth(t, attestedUsers())
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.startUpstream(t, "github")

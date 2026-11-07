@@ -163,7 +163,7 @@ func (f *mcpFixture) replaceInstance(t *testing.T, old db.Instance) string {
 }
 
 func TestCallWaitsForStartingInstance(t *testing.T) {
-	t.Run("row 171: a call to a restored server that is still pending waits, with progress, and is forwarded once it is ready", func(t *testing.T) {
+	t.Run("a call to a restored server that is still pending waits, with progress, and is forwarded once it is ready", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")
@@ -186,7 +186,7 @@ func TestCallWaitsForStartingInstance(t *testing.T) {
 		assert.Len(t, fixture.auditRows(t, "tool.result"), 1)
 	})
 
-	t.Run("row 171: a call waiting for an instance that fails is refused with the reason and not forwarded", func(t *testing.T) {
+	t.Run("a call waiting for an instance that fails is refused with the reason and not forwarded", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")
@@ -201,7 +201,7 @@ func TestCallWaitsForStartingInstance(t *testing.T) {
 		fixture.assertNotForwarded(t, awaitWaitingCall(t, results), "image pull failed")
 	})
 
-	t.Run("row 171: a call waiting longer than startTimeout is refused and not forwarded", func(t *testing.T) {
+	t.Run("a call waiting longer than startTimeout is refused and not forwarded", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")
@@ -217,7 +217,7 @@ func TestCallWaitsForStartingInstance(t *testing.T) {
 		fixture.assertNotForwarded(t, awaitWaitingCall(t, results), "`github` didn't become ready within 2s.")
 	})
 
-	t.Run("row 171: a call while a restart replaces a ready instance waits for the replacement and is forwarded to it", func(t *testing.T) {
+	t.Run("a call while a restart replaces a ready instance waits for the replacement and is forwarded to it", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")
@@ -243,7 +243,7 @@ func TestCallWaitsForStartingInstance(t *testing.T) {
 		assert.Equal(t, replacement, decisions[0].Details["instance"])
 	})
 
-	t.Run("row 172: a disable while a call waits ends the wait with disabled while starting and forwards nothing", func(t *testing.T) {
+	t.Run("a disable while a call waits ends the wait with disabled while starting and forwards nothing", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")
@@ -260,7 +260,7 @@ func TestCallWaitsForStartingInstance(t *testing.T) {
 		fixture.assertNotForwarded(t, awaitWaitingCall(t, results), "`github` was disabled while starting.")
 	})
 
-	t.Run("row 173: a session that ends while a call waits ends the wait and keeps the server", func(t *testing.T) {
+	t.Run("a session that ends while a call waits ends the wait and keeps the server", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		fixture.startUpstream(t, "github")

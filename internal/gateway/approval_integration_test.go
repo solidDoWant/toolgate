@@ -116,7 +116,7 @@ func TestApprovalRequest(t *testing.T) {
 		assert.Equal(t, "approval-pending", decisions[0].Details["reason"])
 	})
 
-	t.Run("row 46: the same call again finds the pending approval", func(t *testing.T) {
+	t.Run("the same call again finds the pending approval", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		first := callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -180,7 +180,7 @@ func TestApprovalRequest(t *testing.T) {
 		assert.Equal(t, canonical, resultText(result))
 	})
 
-	t.Run("row 47: a used approval lets no second call through; that call gets a new pending approval", func(t *testing.T) {
+	t.Run("a used approval lets no second call through; that call gets a new pending approval", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -200,7 +200,7 @@ func TestApprovalRequest(t *testing.T) {
 		assert.Len(t, fixture.auditRows(t, "tool.result"), 1)
 	})
 
-	t.Run("row 47: when another call uses the approval first, the call starts again once and gets a new pending approval", func(t *testing.T) {
+	t.Run("when another call uses the approval first, the call starts again once and gets a new pending approval", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -223,7 +223,7 @@ func TestApprovalRequest(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "tool.result"))
 	})
 
-	t.Run("row 48: a RequestState naming another principal's approval finds nothing", func(t *testing.T) {
+	t.Run("a RequestState naming another principal's approval finds nothing", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		bobClient := fixture.connectObserved(t, bob())
@@ -265,7 +265,7 @@ func TestApprovalRequest(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "approval.expire"))
 	})
 
-	t.Run("row 49: once the template drops approval: required, the call needs no approval", func(t *testing.T) {
+	t.Run("once the template drops approval: required, the call needs no approval", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -323,7 +323,7 @@ func TestApprovalUseRechecks(t *testing.T) {
 		step   string
 	}{
 		{
-			name: "row 67: disabled server refuses with not-enabled",
+			name: "disabled server refuses with not-enabled",
 			change: func(t *testing.T, fixture *approvalFixture) {
 				_, err := fixture.pool.Exec(t.Context(), `DELETE FROM session_servers`)
 				assert.NoError(t, err)
@@ -331,7 +331,7 @@ func TestApprovalUseRechecks(t *testing.T) {
 			reason: "not-enabled",
 		},
 		{
-			name: "row 68: ended session refuses with not-enabled",
+			name: "ended session refuses with not-enabled",
 			change: func(t *testing.T, fixture *approvalFixture) {
 				_, err := fixture.pool.Exec(t.Context(), `UPDATE sessions SET ended_at = now()`)
 				assert.NoError(t, err)
@@ -341,7 +341,7 @@ func TestApprovalUseRechecks(t *testing.T) {
 			reason: "not-enabled",
 		},
 		{
-			name: "row 69: a replacement instance that isn't ready refuses with not-ready",
+			name: "a replacement instance that isn't ready refuses with not-ready",
 			change: func(t *testing.T, fixture *approvalFixture) {
 				_, err := fixture.pool.Exec(t.Context(), `UPDATE instances SET status = 'starting' WHERE id = $1`, fixture.instance.ID)
 				assert.NoError(t, err)
@@ -349,7 +349,7 @@ func TestApprovalUseRechecks(t *testing.T) {
 			reason: "not-ready",
 		},
 		{
-			name: "row 70: failed instance refuses with not-ready",
+			name: "failed instance refuses with not-ready",
 			change: func(t *testing.T, fixture *approvalFixture) {
 				_, err := fixture.pool.Exec(t.Context(), `UPDATE instances SET status = 'failed', reason = 'crashed' WHERE id = $1`, fixture.instance.ID)
 				assert.NoError(t, err)
@@ -357,7 +357,7 @@ func TestApprovalUseRechecks(t *testing.T) {
 			reason: "not-ready",
 		},
 		{
-			name: "row 71: deleted template refuses with not-ready",
+			name: "deleted template refuses with not-ready",
 			change: func(_ *testing.T, fixture *approvalFixture) {
 				fixture.catalog.Delete(types.NamespacedName{Namespace: templateNamespace, Name: "github"})
 			},

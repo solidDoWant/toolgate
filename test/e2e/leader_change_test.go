@@ -94,12 +94,12 @@ func runningLeader(t *testing.T, admin *kubernetes.Clientset) string {
 func TestLeaderChangeRecovery(t *testing.T) {
 	admin := adminClient(t)
 
-	t.Run("[row 17] the leader deletes an instance namespace with no instance row", func(t *testing.T) {
+	t.Run("the leader deletes an instance namespace with no instance row", func(t *testing.T) {
 		name := orphanNamespace(t, admin, "00000000000000000000000000e2e017")
 		requireNamespaceGone(t, admin, name, "the leader's sweep deletes the orphaned namespace")
 	})
 
-	t.Run("[row 17] after the leader is killed the new leader deletes orphans", func(t *testing.T) {
+	t.Run("after the leader is killed the new leader deletes orphans", func(t *testing.T) {
 		leader := runningLeader(t, admin)
 
 		require.NoError(t, admin.CoreV1().Pods(releaseNamespace()).Delete(t.Context(), leader,

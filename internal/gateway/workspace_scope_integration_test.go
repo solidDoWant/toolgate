@@ -93,7 +93,7 @@ func TestWorkspaceScope(t *testing.T) {
 		assert.Equal(t, policy.StepWorkspaceScope, enables[0].Details["step"])
 	})
 
-	t.Run("row 162: without the web UI the step is off and a user with no row sees every server", func(t *testing.T) {
+	t.Run("without the web UI the step is off and a user with no row sees every server", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", everyone)
 		fixture.startUpstream(t, "github")
@@ -104,7 +104,7 @@ func TestWorkspaceScope(t *testing.T) {
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
 	})
 
-	t.Run("row 122, row 123: narrowing the default on another replica withdraws the tools within 5 s and refuses calls; widening brings them back without an enable", func(t *testing.T) {
+	t.Run("narrowing the default on another replica withdraws the tools within 5 s and refuses calls; widening brings them back without an enable", func(t *testing.T) {
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", everyone)
 		fixture.startUpstream(t, "github")
@@ -162,7 +162,7 @@ func TestWorkspaceScope(t *testing.T) {
 		assert.Equal(t, "back", resultText(allowed))
 	})
 
-	t.Run("row 124: an enable waiting for its instance is refused at ready when the scope narrowed meanwhile", func(t *testing.T) {
+	t.Run("an enable waiting for its instance is refused at ready when the scope narrowed meanwhile", func(t *testing.T) {
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		template := fixture.addEnableTemplate("github", "per-user", everyone)
 		fixture.setUnverifiedDefault(t, "alice", policy.ScopeDefaultAll)
@@ -178,7 +178,7 @@ func TestWorkspaceScope(t *testing.T) {
 		assert.Equal(t, unverifiedRefusal("github"), outcome.err)
 	})
 
-	t.Run("row 125: a user who lost catalog access stays refused although the scope allows everything", func(t *testing.T) {
+	t.Run("a user who lost catalog access stays refused although the scope allows everything", func(t *testing.T) {
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", v1alpha1.Access{Users: []string{"bob"}, Environments: "any"})
 		fixture.setUnverifiedDefault(t, "alice", policy.ScopeDefaultAll)
@@ -194,7 +194,7 @@ func TestWorkspaceScope(t *testing.T) {
 }
 
 func TestWorkspaceScopeApprovalWait(t *testing.T) {
-	t.Run("row 159: a call waiting for approval is refused with the step-4 message once the scope narrows, and the approval isn't used", func(t *testing.T) {
+	t.Run("a call waiting for approval is refused with the step-4 message once the scope narrows, and the approval isn't used", func(t *testing.T) {
 		defer gateway.SetApprovalWaitInterval(100 * time.Millisecond)()
 
 		fixture := newMCPFixture(t, withApprovalURL, withWorkspaceScoping)

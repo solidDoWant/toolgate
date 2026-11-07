@@ -29,7 +29,7 @@ func (f *mcpFixture) runningInstances(t *testing.T, session string) int {
 }
 
 func TestConnectorSessionEndRaces(t *testing.T) {
-	t.Run("row 225: a request racing the DELETE of the MCP session doesn't resume the ended mcp. session", func(t *testing.T) {
+	t.Run("a request racing the DELETE of the MCP session doesn't resume the ended mcp. session", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		ended := make(chan struct{})
@@ -79,7 +79,7 @@ func TestConnectorSessionEndRaces(t *testing.T) {
 		assert.Zero(t, fixture.runningInstances(t, session), "its per-session instances stop")
 	})
 
-	t.Run("row 225: a request racing the idle release of the MCP session doesn't resume the ended mcp. session", func(t *testing.T) {
+	t.Run("a request racing the idle release of the MCP session doesn't resume the ended mcp. session", func(t *testing.T) {
 		const idleTimeout = 500 * time.Millisecond
 
 		fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))

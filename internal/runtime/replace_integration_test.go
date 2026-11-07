@@ -82,7 +82,7 @@ func TestReplace(t *testing.T) {
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}, Environments: "any"}
 
-	t.Run("[row 57] a new leader's first pass replaces a requested instance with one at the current generation", func(t *testing.T) {
+	t.Run("a new leader's first pass replaces a requested instance with one at the current generation", func(t *testing.T) {
 		template := fixture.template("replace", "per-user", time.Hour, everyone)
 		session := fixture.session(t, "replace-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -169,7 +169,7 @@ func TestReplace(t *testing.T) {
 		assert.Zero(t, fixture.restartStops(t, old))
 	})
 
-	t.Run("[row 56] a replacement waits for the advisory lock and does nothing when the stop commits first", func(t *testing.T) {
+	t.Run("a replacement waits for the advisory lock and does nothing when the stop commits first", func(t *testing.T) {
 		template := fixture.template("replace-race", "per-user", time.Hour, everyone)
 		session := fixture.session(t, "replace-race-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -221,7 +221,7 @@ func TestReplace(t *testing.T) {
 		assert.Zero(t, fixture.restartStops(t, old))
 	})
 
-	t.Run("[row 56] when the replacement commits first the stop's re-check runs on the new row", func(t *testing.T) {
+	t.Run("when the replacement commits first the stop's re-check runs on the new row", func(t *testing.T) {
 		template := fixture.template("replace-first", "per-user", time.Minute, everyone)
 		session := fixture.session(t, "replace-first-user", "s1", "", "staff")
 		fixture.enable(t, session, template)

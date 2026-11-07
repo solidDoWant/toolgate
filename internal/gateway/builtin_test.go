@@ -24,8 +24,8 @@ func TestBuiltinServerAccess(t *testing.T) {
 	}{
 		{name: "a signed-in user", identity: auth.Identity{Kind: auth.KindUser, Principal: "alice", Attestation: auth.AttestationUser}, allowed: true},
 		{name: "a user in a verified workspace", identity: auth.Identity{Kind: auth.KindUser, Principal: "alice", Attestation: auth.AttestationAttested}, allowed: true},
-		{name: "row 209: a service account", identity: auth.Identity{Kind: auth.KindServiceAccount, Principal: "system:serviceaccount:ci:bot", Attestation: auth.AttestationAttested}},
-		{name: "row 209: a SPIFFE workload", identity: auth.Identity{Kind: auth.KindSPIFFE, Principal: "spiffe://example.com/w", Attestation: auth.AttestationAttested}},
+		{name: "a service account", identity: auth.Identity{Kind: auth.KindServiceAccount, Principal: "system:serviceaccount:ci:bot", Attestation: auth.AttestationAttested}},
+		{name: "a SPIFFE workload", identity: auth.Identity{Kind: auth.KindSPIFFE, Principal: "spiffe://example.com/w", Attestation: auth.AttestationAttested}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			decision := engine.Decide(policy.Request{Identity: test.identity, Template: template, Tool: "list_scopes"})
@@ -40,7 +40,7 @@ func TestBuiltinServerAccess(t *testing.T) {
 }
 
 func TestBuiltinServerInCatalog(t *testing.T) {
-	t.Run("row 210: a catalog without the built-in server doesn't offer it", func(t *testing.T) {
+	t.Run("a catalog without the built-in server doesn't offer it", func(t *testing.T) {
 		templates := catalog.New()
 
 		_, err := templates.Offered(gateway.BuiltinServerName)

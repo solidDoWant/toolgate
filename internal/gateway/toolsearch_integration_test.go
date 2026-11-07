@@ -106,7 +106,7 @@ func (f *mcpFixture) foundToolCount(t *testing.T) int {
 }
 
 func TestToolSearchMode(t *testing.T) {
-	t.Run("row 230: the header and the setting decide the mode on each request, and find_tools is only listed in search mode", func(t *testing.T) {
+	t.Run("the header and the setting decide the mode on each request, and find_tools is only listed in search mode", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.declareTools(t, template, declared("create_issue", "Create an issue"))
@@ -182,7 +182,7 @@ func TestToolSearchMode(t *testing.T) {
 		assert.Equal(t, "first-call", fixture.auditRows(t, "server.enable")[0].Details["reason"])
 	})
 
-	t.Run("row 252: a query with no words, or only stop words, gives no tools and the message", func(t *testing.T) {
+	t.Run("a query with no words, or only stop words, gives no tools and the message", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.declareTools(t, template, declared("create_issue", "Create an issue"))
@@ -231,7 +231,7 @@ func TestToolSearchMode(t *testing.T) {
 		assert.True(t, callTool(t, client, gateway.ToolFindTools, map[string]any{"query": ""}).IsError)
 	})
 
-	t.Run("row 228: a 51st found tool pushes out the oldest, row 229: ending the session deletes them", func(t *testing.T) {
+	t.Run("a 51st found tool pushes out the oldest; ending the session deletes them", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -258,7 +258,7 @@ func TestToolSearchMode(t *testing.T) {
 		assert.Equal(t, 0, fixture.foundToolCount(t))
 	})
 
-	t.Run("row 231: a rebuild of the template's rows sends list_changed to search-mode sessions with its found tools", func(t *testing.T) {
+	t.Run("a rebuild of the template's rows sends list_changed to search-mode sessions with its found tools", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.declareTools(t, template, declared("create_issue", "Create an issue"))
@@ -378,7 +378,7 @@ func TestSearchNeverReturnsRefusedTools(t *testing.T) {
 		assert.Equal(t, "denied", decisions[len(decisions)-1].Details["reason"])
 	})
 
-	t.Run("row 179, row 232: a rule added after the search refuses the call, and the next list leaves the tool out", func(t *testing.T) {
+	t.Run("a rule added after the search refuses the call, and the next list leaves the tool out", func(t *testing.T) {
 		fixture := newFixture(t)
 		fixture.setUnverifiedList(t, "open")
 

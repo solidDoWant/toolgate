@@ -422,7 +422,7 @@ const reasonMissingToken = "missing token"
 
 // challenge is the WWW-Authenticate value of a refused request. An MCP
 // request's names the resource metadata when it is set, with
-// error="invalid_token" when a token was sent (RFC 6750 §3, RFC 9728 §5.1).
+// error="invalid_token" when a token was sent (RFC 6750 section 3, RFC 9728 section 5.1).
 func (a *Authenticator) challenge(mcp, tokenSent bool) string {
 	if !mcp || a.metadata == "" {
 		return "Bearer"

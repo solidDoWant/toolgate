@@ -652,7 +652,7 @@ func TestLeaderKilledDuringStart(t *testing.T) {
 
 	var started string
 
-	t.Run("[row 15] the leader is killed after it applied the instance's objects", func(t *testing.T) {
+	t.Run("the leader is killed after it applied the instance's objects", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			namespaces := instanceNamespaces(collect, t.Context(), admin, name)
 			require.Len(collect, namespaces, 1)
@@ -668,7 +668,7 @@ func TestLeaderKilledDuringStart(t *testing.T) {
 			metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}))
 	})
 
-	t.Run("[row 15] the new leader finishes the start with no duplicate and no orphan", func(t *testing.T) {
+	t.Run("the new leader finishes the start with no duplicate and no orphan", func(t *testing.T) {
 		result := awaitEnable(t, results)
 		require.Empty(t, result.err)
 		assert.ElementsMatch(t, prefixedTools(name), result.tools)

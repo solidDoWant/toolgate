@@ -202,7 +202,7 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, status, body)
 	})
 
-	t.Run("row 241: a 0.3 write of none leaves unverified_list, so list stays list", func(t *testing.T) {
+	t.Run("a 0.3 write of none leaves unverified_list, so list stays list", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 
 		api.applyChange(t, unverifiedAlice(), unverifiedDefaults("list"))

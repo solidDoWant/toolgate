@@ -11,7 +11,7 @@ Operating manual for this repository. toolgate is a self-hosted MCP gateway: one
 
 ## Principles
 
-Non-negotiable; they override convenience (`SPEC.md` §2):
+Non-negotiable; they override convenience (`SPEC.md`, the principles section):
 
 1. **No tool call is forwarded without an authorization decision, and every decision is recorded.**
 2. **Trust only what is verified.** Claimed fields (a user's workspace, any session ID) can narrow access, never widen it.
@@ -37,12 +37,12 @@ Call out any change touching these in the PR description.
 - **Storage:** `pgx/v5`, `pressly/goose` embedded forward-only migrations, `sqlc` for queries. S3 through the AWS SDK v2.
 - **Secrets:** `github.com/tink-crypto/tink-go/v2` (AEAD). Keychain: `github.com/zalando/go-keyring`.
 - **YAML:** `sigs.k8s.io/yaml` and the unstructured types. **Telemetry:** OpenTelemetry Go SDK, `log/slog` JSON logs, Prometheus metrics.
-- **Web UI (phase 2):** `html/template` + vendored htmx. No JavaScript build step.
+- **Web UI:** `html/template` + vendored htmx. No JavaScript build step.
 - **Nix flake** dev shell; **golangci-lint**; **Helm** chart in `deploy/charts/toolgate`.
 
 ## Project Structure
 
-See `SPEC.md` §19: `cmd/toolgate`, `internal/`, `api/v1alpha1`, `deploy/charts/toolgate`, `plugin/` (the Claude Code plugin and marketplace manifest), `test/` (kind e2e harness, test MCP server, fake IdP), `docs/` (`user/`, `admin/`, `dev/`, `design/`, `acceptance/`, `agents/`; see `docs/README.md`), `scripts/`.
+See the layout section of `SPEC.md`: `cmd/toolgate`, `internal/`, `api/v1alpha1`, `deploy/charts/toolgate`, `plugin/` (the Claude Code plugin and marketplace manifest), `test/` (kind e2e harness, test MCP server, fake IdP), `docs/` (`user/`, `admin/`, `dev/`, `design/`, `acceptance/`, `agents/`; see `docs/README.md`), `scripts/`.
 
 ## Commands
 
@@ -80,6 +80,7 @@ Provisioned through `flake.nix`; agents get it through `CLAUDE_ENV_FILE`. Docker
 - Mark a criterion complete only after running its test and seeing it pass.
 - Tests exercise public interfaces. Never mock the component under test. Every test must fail if its criterion is violated.
 - To tie a test to a checklist scenario, add it to the scenario's `Tests:` line in `docs/acceptance/phase-N.md` (`` `package/dir: TestName/subtest name` ``). Test names carry no scenario IDs. The scoreboard and the test guard read only that line.
+- **No tracking IDs in the code.** Name a test after the behaviour it checks. Write comments that explain the reason, never "see row N", "phase N", a scenario ID, a `§` section number or an issue or PR number. `make lint` fails on them (`scripts/check-tracking-ids.py`; the exceptions are listed there with reasons).
 
 ## Testing Style
 
@@ -92,7 +93,7 @@ Provisioned through `flake.nix`; agents get it through `CLAUDE_ENV_FILE`. Docker
 - **Never roll your own cryptography.** Every cipher, hash, MAC, KDF, signature and random source comes from an established library (Tink, Go's standard library, `golang.org/x/crypto`). Never implement or port a primitive.
 - **The same for well-known protocols and formats:** MCP, OAuth 2.0 and OIDC, JWT, OTLP, YAML parsing, Kubernetes apply and status. Use the libraries in Tech Stack. If none fits, stop and hand back `HANDOFF: question`.
 - Every HTTP handler authenticates first, and every MCP operation goes through the policy engine. Add a test proving an unauthorized identity is refused.
-- Template rendering is structured (`SPEC.md` §9): substitute into parsed string values only. Never build YAML or JSON by string concatenation.
+- Template rendering is structured (`SPEC.md`, the templating section): substitute into parsed string values only. Never build YAML or JSON by string concatenation.
 - Bound all inputs: request sizes, header lengths, tool-result sizes, list lengths.
 - **No Docker Hub (owner rule).** Every container image this repo references, whether in tests, the e2e manifests, kind, the chart, Dockerfiles or docs examples, comes from `ghcr.io` first, then `quay.io`, and only if neither publishes it, from `mirror.gcr.io` (Google's Docker Hub mirror: `mirror.gcr.io/library/<name>` for official images). Never `docker.io`, and never an unqualified name like `postgres`. Pin by digest. Docker Hub rate-limits anonymous pulls and has failed CI.
 - Never log secrets, tokens, or tool arguments and results (those go to the audit payload store only, and only when enabled).

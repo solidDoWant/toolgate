@@ -108,7 +108,7 @@ func attestedAliceIn(session string) user {
 }
 
 func TestSessionAdditions(t *testing.T) {
-	t.Run("row 131, row 137: without elicitation an enable inserts one server request, fails with the link, and finds the same request again", func(t *testing.T) {
+	t.Run("without elicitation an enable inserts one server request, fails with the link, and finds the same request again", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 
@@ -149,7 +149,7 @@ func TestSessionAdditions(t *testing.T) {
 		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"))
 	})
 
-	t.Run("row 132, row 136: a session approval lets the next enable through in that session only", func(t *testing.T) {
+	t.Run("a session approval lets the next enable through in that session only", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		first := fixture.connectObserved(t, attestedAlice())
 
@@ -181,7 +181,7 @@ func TestSessionAdditions(t *testing.T) {
 		assert.Len(t, fixture.serverRequests(t), 2)
 	})
 
-	t.Run("row 133: an \"always\" approval wakes the enables waiting in two sessions of the workspace", func(t *testing.T) {
+	t.Run("an \"always\" approval wakes the enables waiting in two sessions of the workspace", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		first := fixture.connectElicitingAs(t, attestedAlice(), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 		second := fixture.connectElicitingAs(t, attestedAliceIn("session-2"), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
@@ -235,7 +235,7 @@ func TestSessionAdditions(t *testing.T) {
 		assert.Equal(t, 2, allows)
 	})
 
-	t.Run("row 157: the session ending during a wait stops the enable without restarting the session", func(t *testing.T) {
+	t.Run("the session ending during a wait stops the enable without restarting the session", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		client := fixture.connectElicitingAs(t, attestedAlice(), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -262,7 +262,7 @@ func TestSessionAdditions(t *testing.T) {
 		assert.Equal(t, []any{"session-ended"}, reasons)
 	})
 
-	t.Run("row 134, row 135, row 154: ending a session deletes its additions and expires its requests, so a restarted session has none", func(t *testing.T) {
+	t.Run("ending a session deletes its additions and expires its requests, so a restarted session has none", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
 		client := fixture.connectObserved(t, attestedAlice())
@@ -296,7 +296,7 @@ func TestSessionAdditions(t *testing.T) {
 		assert.Len(t, fixture.serverRequests(t), 3, "the restarted session asks again")
 	})
 
-	t.Run("row 154: a session approval refuses a session that ended or moved to another workspace", func(t *testing.T) {
+	t.Run("a session approval refuses a session that ended or moved to another workspace", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 
@@ -394,7 +394,7 @@ func TestServerRequestApprovalLimits(t *testing.T) {
 		check   require.ErrorAssertionFunc
 	}{
 		{
-			name: "row 160: a session approval at 31 additions succeeds", choice: gateway.AdditionSession,
+			name: "a session approval at 31 additions succeeds", choice: gateway.AdditionSession,
 			prepare: func(t *testing.T, fixture *mcpFixture, sessionPK int64) {
 				for index := range gateway.MaxSessionAdditions - 1 {
 					fixture.addSessionAddition(t, sessionPK, fmt.Sprintf("filler-%d", index))
@@ -402,7 +402,7 @@ func TestServerRequestApprovalLimits(t *testing.T) {
 			},
 		},
 		{
-			name: "row 160: a session approval at 32 additions rolls back", choice: gateway.AdditionSession,
+			name: "a session approval at 32 additions rolls back", choice: gateway.AdditionSession,
 			prepare: func(t *testing.T, fixture *mcpFixture, sessionPK int64) {
 				for index := range gateway.MaxSessionAdditions {
 					fixture.addSessionAddition(t, sessionPK, fmt.Sprintf("filler-%d", index))
@@ -411,7 +411,7 @@ func TestServerRequestApprovalLimits(t *testing.T) {
 			check: limitError("This session already has 32 added servers. Remove one, then approve again."),
 		},
 		{
-			name: "row 163: a session approval keeps an existing addition and succeeds", choice: gateway.AdditionSession,
+			name: "a session approval keeps an existing addition and succeeds", choice: gateway.AdditionSession,
 			prepare: func(t *testing.T, fixture *mcpFixture, sessionPK int64) {
 				for index := range gateway.MaxSessionAdditions - 1 {
 					fixture.addSessionAddition(t, sessionPK, fmt.Sprintf("filler-%d", index))
@@ -421,20 +421,20 @@ func TestServerRequestApprovalLimits(t *testing.T) {
 			},
 		},
 		{
-			name: "row 160: an \"always\" approval at 63 servers in the list succeeds", choice: gateway.AdditionWorkspace,
+			name: "an \"always\" approval at 63 servers in the list succeeds", choice: gateway.AdditionWorkspace,
 			prepare: func(t *testing.T, fixture *mcpFixture, _ int64) {
 				fixture.fillList(t, aliceWorkspace, gateway.MaxWorkspaceListServers-1)
 			},
 		},
 		{
-			name: "row 160: an \"always\" approval at 64 servers in the list rolls back", choice: gateway.AdditionWorkspace,
+			name: "an \"always\" approval at 64 servers in the list rolls back", choice: gateway.AdditionWorkspace,
 			prepare: func(t *testing.T, fixture *mcpFixture, _ int64) {
 				fixture.fillList(t, aliceWorkspace, gateway.MaxWorkspaceListServers)
 			},
 			check: limitError("Workspace `coder/alice/dev`'s list already has 64 servers. Remove one, then approve again."),
 		},
 		{
-			name: "row 160: an \"always\" approval at 199 other lists succeeds", choice: gateway.AdditionWorkspace,
+			name: "an \"always\" approval at 199 other lists succeeds", choice: gateway.AdditionWorkspace,
 			prepare: func(t *testing.T, fixture *mcpFixture, _ int64) {
 				for index := range gateway.MaxWorkspaceLists - 1 {
 					fixture.fillList(t, fmt.Sprintf("coder/alice/w%d", index), 0)
@@ -442,7 +442,7 @@ func TestServerRequestApprovalLimits(t *testing.T) {
 			},
 		},
 		{
-			name: "row 160: an \"always\" approval at 200 other lists rolls back", choice: gateway.AdditionWorkspace,
+			name: "an \"always\" approval at 200 other lists rolls back", choice: gateway.AdditionWorkspace,
 			prepare: func(t *testing.T, fixture *mcpFixture, _ int64) {
 				for index := range gateway.MaxWorkspaceLists {
 					fixture.fillList(t, fmt.Sprintf("coder/alice/w%d", index), 0)
@@ -496,7 +496,7 @@ func TestServerRequestApprovalLimits(t *testing.T) {
 		})
 	}
 
-	t.Run("row 161: a deny that commits after a session approval deletes the addition", func(t *testing.T) {
+	t.Run("a deny that commits after a session approval deletes the addition", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		sessionPK := fixture.openAttestedSession(t)
 		fixture.fillList(t, aliceWorkspace, 1)

@@ -53,7 +53,7 @@ func TestLazyStart(t *testing.T) {
 		assert.NotContains(t, events[0], "instance")
 	})
 
-	t.Run("row 191: onEnable inserts the instance and waits", func(t *testing.T) {
+	t.Run("onEnable inserts the instance and waits", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		template.Spec.Start = catalog.StartOnEnable
@@ -67,7 +67,7 @@ func TestLazyStart(t *testing.T) {
 		require.Empty(t, awaitEnable(t, results).err)
 	})
 
-	t.Run("row 191: without a catalog list the enable inserts the instance and waits", func(t *testing.T) {
+	t.Run("without a catalog list the enable inserts the instance and waits", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 		client := fixture.connectObserved(t, alice())
@@ -79,7 +79,7 @@ func TestLazyStart(t *testing.T) {
 		require.Empty(t, awaitEnable(t, results).err)
 	})
 
-	t.Run("row 234: an enable after a failure inserts a pending instance and doesn't wait", func(t *testing.T) {
+	t.Run("an enable after a failure inserts a pending instance and doesn't wait", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		fixture.failedInstance(t, template, scopeKey, template.Generation, "image pull failed")
@@ -108,7 +108,7 @@ func TestLazyStart(t *testing.T) {
 		assert.Empty(t, fixture.liveID(t, template, scopeKey))
 	})
 
-	t.Run("row 192: a resume restores an onCall server without an instance", func(t *testing.T) {
+	t.Run("a resume restores an onCall server without an instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		client := alice()
@@ -126,7 +126,7 @@ func TestLazyStart(t *testing.T) {
 		assert.Contains(t, toolNames(t, resumed.session), "github__echo")
 	})
 
-	t.Run("row 181: a call starts the instance, waits with progress and is forwarded", func(t *testing.T) {
+	t.Run("a call starts the instance, waits with progress and is forwarded", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		fixture.startUpstream(t, "github")
@@ -162,7 +162,7 @@ func TestLazyStart(t *testing.T) {
 		assert.Equal(t, "refuse", decisions[0].Details["decision"])
 	})
 
-	t.Run("row 182: two sessions of one user calling a per-user server get one instance", func(t *testing.T) {
+	t.Run("two sessions of one user calling a per-user server get one instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-user", "echo")
 		fixture.startUpstream(t, "github")
@@ -186,7 +186,7 @@ func TestLazyStart(t *testing.T) {
 		assert.Len(t, fixture.instancesOf(t, template), 1)
 	})
 
-	t.Run("row 183: a start failure fails the waiting call with the reason", func(t *testing.T) {
+	t.Run("a start failure fails the waiting call with the reason", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		fixture.startUpstream(t, "github")
@@ -202,7 +202,7 @@ func TestLazyStart(t *testing.T) {
 		fixture.assertNotForwarded(t, awaitWaitingCall(t, results), "image pull failed")
 	})
 
-	t.Run("row 184: a call after a failure on the current generation is refused at once and inserts nothing", func(t *testing.T) {
+	t.Run("a call after a failure on the current generation is refused at once and inserts nothing", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		fixture.startUpstream(t, "github")
@@ -217,7 +217,7 @@ func TestLazyStart(t *testing.T) {
 		assert.Len(t, fixture.instancesOf(t, template), 1)
 	})
 
-	t.Run("row 235: a call after a failure on an older generation inserts an instance and waits", func(t *testing.T) {
+	t.Run("a call after a failure on an older generation inserts an instance and waits", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		fixture.startUpstream(t, "github")
@@ -233,7 +233,7 @@ func TestLazyStart(t *testing.T) {
 		assert.Equal(t, "again", resultText(awaitWaitingCall(t, results)))
 	})
 
-	t.Run("row 186: a tool missing from the ready instance is refused as not offered", func(t *testing.T) {
+	t.Run("a tool missing from the ready instance is refused as not offered", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo", "gone")
 		fixture.startUpstream(t, "github")
@@ -255,7 +255,7 @@ func TestLazyStart(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "tool.result"))
 	})
 
-	t.Run("row 193: after an idle stop the next call starts a new instance", func(t *testing.T) {
+	t.Run("after an idle stop the next call starts a new instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		fixture.startUpstream(t, "github")
@@ -278,7 +278,7 @@ func TestLazyStart(t *testing.T) {
 		assert.NotEqual(t, old.ID, fixture.liveID(t, template, scopeKey))
 	})
 
-	t.Run("row 194: an unhealthy ready instance is refused and no other instance starts", func(t *testing.T) {
+	t.Run("an unhealthy ready instance is refused and no other instance starts", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.lazyTemplate(t, "per-session", "echo")
 		client := fixture.connectObserved(t, alice())

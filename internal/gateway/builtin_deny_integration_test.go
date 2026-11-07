@@ -151,7 +151,7 @@ func TestBuiltinToolsDenied(t *testing.T) {
 			{name: "no items", arguments: map[string]any{"workspace": aliceWorkspace, "servers": []string{}}, message: "Name 1 to 32 servers or tools."},
 			{name: "33 items", arguments: map[string]any{"workspace": aliceWorkspace, "servers": items}, message: "Name 1 to 32 servers or tools."},
 			{name: "32 items", arguments: map[string]any{"workspace": aliceWorkspace, "servers": items[:32]}, written: true},
-			{name: "row 207: another user's session", arguments: map[string]any{"session": "bob-session-1", "servers": []string{"github"}},
+			{name: "another user's session", arguments: map[string]any{"session": "bob-session-1", "servers": []string{"github"}},
 				message: "You have no open session `bob-session-1`."},
 			{name: "a claimed workspace", arguments: map[string]any{"workspace": "claimed/x", "servers": []string{"github"}},
 				message: "Workspace `claimed/x` can't have a list"},
