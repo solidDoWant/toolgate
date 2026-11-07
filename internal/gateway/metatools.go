@@ -116,10 +116,8 @@ type metaTools struct {
 }
 
 func (m *metaTools) register(server *mcp.Server) {
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolListServers,
-		Description: "List the MCP servers you can enable, with their scope, status and whether they are enabled in this session.",
-	}, m.listServers)
+	empty := catalogSummary{}
+	m.registerDiscoveryTools(server, empty.findToolsDescription(), empty.listServersDescription())
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        ToolEnableServer,
@@ -130,11 +128,6 @@ func (m *metaTools) register(server *mcp.Server) {
 		Name:        ToolDisableServer,
 		Description: "Remove a server's tools from this session.",
 	}, m.disableServer)
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        ToolFindTools,
-		Description: "Search the tools of the servers you can use by what you want to do. The tools it returns are added to your tool list.",
-	}, m.findTools)
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        ToolServerStatus,
