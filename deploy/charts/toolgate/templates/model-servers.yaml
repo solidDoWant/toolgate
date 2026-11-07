@@ -9,7 +9,13 @@ downloaded directory. No NetworkPolicy: cluster admins add that.
 {{- if $values.server.enabled }}{{ $servers = append $servers (dict "key" "server" "name" "embeddings" "dir" "embeddings") }}{{ end -}}
 {{- if $servers }}
 {{- $claim := include "toolgate.modelClaim" . -}}
-{{- if not $values.server.cache.existingClaim }}
+{{- /*
+The claim is created only when it does not exist. An upgrade must never
+delete it: the server may still mount it. A claim from an earlier install is
+not in the release manifest, so Helm leaves it alone. Without a cluster to
+look at (helm template), the claim always renders.
+*/ -}}
+{{- if and (not $values.server.cache.existingClaim) (not (lookup "v1" "PersistentVolumeClaim" .Release.Namespace (printf "%s-models" (include "toolgate.fullname" .)))) }}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -19,7 +25,7 @@ metadata:
   annotations:
     helm.sh/hook: pre-install,pre-upgrade
     helm.sh/hook-weight: "-10"
-    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-delete-policy: hook-failed
     helm.sh/resource-policy: keep
 spec:
   accessModes: {{ toYaml $values.server.cache.accessModes | nindent 4 }}
