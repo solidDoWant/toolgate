@@ -8,16 +8,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/yaml"
 )
 
 var splitValues = []string{
 	"config.database.migrateOnStart=false",
 	"config.database.migrationSecret=toolgate-migrator",
-	"config.database.migrationEgress[0].ports[0].port=5432",
 }
 
 func hookOf(t *testing.T, object manifest) (string, string) {
@@ -46,7 +42,6 @@ func TestDefaultValuesRenderNoMigrationHook(t *testing.T) {
 	} {
 		manifests := renderWith(t, set...)
 		assert.Empty(t, ofKind(manifests, "Job"), "%v", set)
-		assert.Empty(t, ofKind(manifests, "NetworkPolicy"), "%v", set)
 
 		for _, candidate := range manifests {
 			assert.NotContains(t, string(candidate.raw), "helm.sh/hook:", "%v: %s", set, candidate.Kind)
@@ -80,8 +75,8 @@ func TestMigrationHookObjects(t *testing.T) {
 		return weight
 	}
 
-	// The weights order the objects: the ServiceAccount, the policy, the Job.
-	accountWeight, policyWeight, jobWeight := "", weightOf("NetworkPolicy"), weightOf("Job")
+	// The weights order the objects: the ServiceAccount, then the Job.
+	accountWeight, jobWeight := "", weightOf("Job")
 
 	for _, candidate := range ofKind(manifests, "ServiceAccount") {
 		if candidate.Metadata.Name == "toolgate-migrate" {
@@ -90,7 +85,6 @@ func TestMigrationHookObjects(t *testing.T) {
 	}
 
 	assert.Equal(t, "-20", accountWeight)
-	assert.Equal(t, "-10", policyWeight)
 	assert.Equal(t, "0", jobWeight)
 
 	job := find[batchv1.Job](t, manifests, "Job")
@@ -128,30 +122,6 @@ func TestMigrationHookObjects(t *testing.T) {
 
 	assert.Equal(t, "false", env["TOOLGATE_MIGRATE_ON_START"].Value)
 	assert.Equal(t, "toolgate-database", env["TOOLGATE_DATABASE_URL"].ValueFrom.SecretKeyRef.Name)
-
-	policy := find[networkingv1.NetworkPolicy](t, manifests, "NetworkPolicy")
-	selector, err := metav1.LabelSelectorAsSelector(&policy.Spec.PodSelector)
-	require.NoError(t, err)
-	assert.True(t, selector.Matches(labels.Set(job.Spec.Template.Labels)), "the policy selects the Job's pods")
-
-	deploymentLabels := labels.Set(deployment.Spec.Template.Labels)
-	assert.False(t, selector.Matches(deploymentLabels), "the policy leaves the gateway pods alone")
-	assert.Empty(t, policy.Spec.Ingress)
-	assert.ElementsMatch(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}, policy.Spec.PolicyTypes)
-	require.Len(t, policy.Spec.Egress, 2)
-	require.Len(t, policy.Spec.Egress[0].Ports, 2)
-	assert.Equal(t, 53, policy.Spec.Egress[0].Ports[0].Port.IntValue())
-	assert.Equal(t, 53, policy.Spec.Egress[0].Ports[1].Port.IntValue())
-	assert.Equal(t, 5432, policy.Spec.Egress[1].Ports[0].Port.IntValue())
-}
-
-func TestMigrationJobRequiresEgress(t *testing.T) {
-	_, err := render(t, append([]string{
-		"config.database.migrateOnStart=false",
-		"config.database.migrationSecret=toolgate-migrator",
-	}, quickStartValues...))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "migrationEgress")
 }
 
 func TestMigrationJobMountsNothingFromTheRelease(t *testing.T) {

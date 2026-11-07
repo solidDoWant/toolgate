@@ -67,3 +67,20 @@ func TestModelServerNeedsAPinnedRevision(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "modelRevision")
 }
+
+func TestChartRendersNoNetworkPolicies(t *testing.T) {
+	configurations := map[string][]string{
+		"defaults":      nil,
+		"split roles":   {"--set", "config.database.migrateOnStart=false", "--set", "config.database.migrationSecret=toolgate-migrator"},
+		"embeddings on": {"--set", "embeddings.server.enabled=true"},
+		"scale to zero": scaleToZeroValues,
+	}
+
+	for name, args := range configurations {
+		t.Run(name, func(t *testing.T) {
+			for _, item := range renderQuickStart(t, args...) {
+				assert.NotContains(t, []string{"NetworkPolicy", "CiliumNetworkPolicy"}, item.Kind, item.Metadata.Name)
+			}
+		})
+	}
+}

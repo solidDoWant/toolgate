@@ -32,9 +32,6 @@ settings from `config`.
 {{- if and .audit.payloads (not .audit.s3.bucket) }}
 {{- fail "config.audit.s3.bucket is required when config.audit.payloads is true" }}
 {{- end }}
-{{- if and (include "toolgate.migrateJobEnabled" $) (not .database.migrationEgress) }}
-{{- fail "config.database.migrationEgress is required when the migration Job renders (config.database.migrationUrl or config.database.migrationSecret is set and config.database.migrateOnStart is false): NetworkPolicy egress rules that reach PostgreSQL" }}
-{{- end }}
 {{- end }}
 
 {{- $resources := mustDeepCopy .Values.resources -}}
@@ -165,8 +162,6 @@ resolver gets its own projected service-account token with its audience.
 {{- end }}
 
 {{- if include "toolgate.migrateJobEnabled" . }}
-{{- $policy := index $resources "rawResources" "migrate-networkpolicy" "manifest" "spec" }}
-{{- $_ := set $policy "egress" (concat $policy.egress $config.database.migrationEgress) }}
 {{- $migrateContainer := $resources.controllers.migrate.containers.migrate }}
 {{- $migrateURL := dict "name" "TOOLGATE_DATABASE_URL" }}
 {{- if $config.database.migrationUrl }}

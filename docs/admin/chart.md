@@ -10,7 +10,7 @@ The chart installs these objects:
 
 - The three toolgate CRDs: `MCPServerTemplate`, `ToolgateRule` and `SettingsProfile`.
 - A Deployment with two gateway pods, a Service for them, and a second Service for their metrics.
-- A migration Job with its own ServiceAccount and NetworkPolicy, only in the split database mode (see below).
+- A migration Job with its own ServiceAccount, only in the split database mode (see below).
 - A PodDisruptionBudget that keeps at least one gateway pod running when Kubernetes drains a node. A PodDisruptionBudget is a limit on how many pods Kubernetes can evict at the same time.
 - A ServiceMonitor for the metrics Service, if you set `config.serviceMonitor.enabled` to `true`. The Prometheus Operator must be installed.
 - A ServiceAccount for the gateway.
@@ -190,14 +190,6 @@ The gateway keeps its state in PostgreSQL and creates its tables itself. You can
        existingSecret: toolgate-app        # the toolgate_app role
        migrateOnStart: false
        migrationSecret: toolgate-migrator  # the toolgate_migrator role
-       migrationEgress:                    # NetworkPolicy egress rules that reach PostgreSQL
-         - to:
-             - namespaceSelector:
-                 matchLabels:
-                   kubernetes.io/metadata.name: databases
-           ports:
-             - protocol: TCP
-               port: 5432
    ```
 
 If you already have a database that one role owns, move it to the split mode with these steps, with the same default privileges as above. Use `REASSIGN OWNED BY old_role TO toolgate_migrator`, then `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA toolgate TO toolgate_app` and `GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA toolgate TO toolgate_app`. Do not grant `EXECUTE` on a function by name: the audit partition function does not exist until the Job runs, and the default privilege for functions covers it.
@@ -218,7 +210,7 @@ Set exactly one source for each string. The chart fails with a message that name
 
 An inline string is a plain value in the Deployment and Job specs and in the Helm release. Anyone who can read those objects can read it. Never put a password in it. Use the Secret values for any string that has one.
 
-When `migrationUrl` or `migrationSecret` is set and `migrateOnStart` is `false`, the chart adds three objects: a ServiceAccount with no permissions, a NetworkPolicy and a Job named `<release>-migrate` that runs `toolgate migrate`. The NetworkPolicy allows no ingress, and allows egress to DNS (port 53) and to `migrationEgress`. The chart fails with a message that names `config.database.migrationEgress` if you leave it empty.
+When `migrationUrl` or `migrationSecret` is set and `migrateOnStart` is `false`, the chart adds three objects: a ServiceAccount with no permissions and a Job named `<release>-migrate` that runs `toolgate migrate`.
 
 These are Helm hooks (`pre-install` and `pre-upgrade`). Helm and the Flux helm-controller run them before they apply the other objects, and wait for the Job. So the new gateway pods start only after the migrations. If the Job fails, the install or upgrade fails and the old pods keep serving. Helm deletes the objects after the Job succeeds.
 
@@ -226,6 +218,17 @@ These are Helm hooks (`pre-install` and `pre-upgrade`). Helm and the Flux helm-c
 - **The deadline.** The Job stops after 240 seconds. The default timeout of the helm-controller is 5 minutes, so the Job fails before Flux gives up. If you set a longer `spec.timeout` on the HelmRelease, you must also raise `activeDeadlineSeconds` under `resources.controllers.migrate.job`.
 - **Mounts.** The Job mounts nothing from the release, because the release's ConfigMap and Secrets do not exist yet when it runs. If the Job needs a file, such as a client certificate for PostgreSQL, mount it with `resources.persistence.<name>.advancedMounts.migrate`. Mount files for the gateway, such as a resolver `caFile`, with `advancedMounts.gateway.gateway`. A `globalMounts` entry also mounts the file into the Job.
 - **No migration Secret.** If `migrateOnStart` is `false` and both `migrationSecret` and `migrationUrl` are empty, nothing migrates. The gateway refuses to start while the schema is older than it needs, and its log says so. Run `toolgate migrate` yourself.
+
+## Network policies
+
+The chart creates no network policies. The cluster owner writes them. This is what each pod needs:
+
+- Gateway: ingress on the http and metrics ports. Egress to DNS, the Kubernetes API, PostgreSQL, the OIDC issuer, the embeddings server and the MCP instance pods.
+- Migration Job: egress to DNS and to PostgreSQL.
+- Embeddings server: ingress from the gateway. No egress.
+- Model download Job: egress to Hugging Face and PyPI on port 443.
+
+The policies that the gateway creates inside the `tg-*` instance namespaces are not part of the chart. They isolate the MCP servers.
 
 ## CRD upgrades
 

@@ -49,10 +49,6 @@ config:
     # -- Key in `config.database.migrationSecret` that holds the connection
     # string.
     migrationSecretKey: url
-    # -- Egress rules (the `egress` list of a Kubernetes `NetworkPolicy`) that
-    # let the migration Job reach PostgreSQL. Required when the Job renders.
-    # The chart adds DNS (port 53) itself.
-    migrationEgress: []
 
   oidc:
     # -- Issuer URL of the OIDC identity provider that users sign in with,
@@ -437,30 +433,6 @@ resources:
       endpoints:
         - port: metrics
   rawResources:
-    # Confines the migration Job's pods: no ingress, DNS and
-    # `config.database.migrationEgress` out (templates/common.yaml adds it).
-    migrate-networkpolicy:
-      enabled: '{{ include "toolgate.migrateJobEnabled" . }}'
-      forceRename: '{{ include "toolgate.fullname" . }}-migrate'
-      manifest:
-        apiVersion: networking.k8s.io/v1
-        kind: NetworkPolicy
-        metadata:
-          annotations:
-            helm.sh/hook: pre-install,pre-upgrade
-            helm.sh/hook-weight: "-10"
-            helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
-        spec:
-          policyTypes: [Ingress, Egress]
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: "{{ .Chart.Name }}"
-              app.kubernetes.io/instance: "{{ .Release.Name }}"
-              app.kubernetes.io/controller: migrate
-          egress:
-            - ports:
-                - {protocol: UDP, port: 53}
-                - {protocol: TCP, port: 53}
     gateway-pdb:
       forceRename: '{{ include "toolgate.fullname" . }}'
       manifest:
