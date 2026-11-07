@@ -373,7 +373,7 @@ A phase's design (`docs/design/phase-N.md`, with its interaction table) is revie
 - **Unit:** Go `testing` + `testify`, table-driven.
 - **Integration** (`//go:build integration`): PostgreSQL in Docker, and an S3-compatible server in Docker (the first infra issue picks a maintained one and records why).
 - **Kubernetes e2e:** kind with Flux installed. The gateway runs in-cluster from a locally built image, and a Go MCP client (the official SDK) drives it, with a fake OIDC provider (the first infra issue picks a maintained library, for example `github.com/oauth2-proxy/mockoidc`). The test MCP server is a small Go binary in `test/mcpserver/` that echoes its environment and secrets so tests can check rendering.
-- **Acceptance:** each checklist scenario has a test tagged `[AC-<phase>-<nn>]`. `make acceptance` prints passing scenarios out of the total. Scenarios that need a real Claude Code session or a real browser are marked `manual` in the checklist and checked by the owner.
+- **Acceptance:** each checklist scenario lists its Go tests on a `Tests:` line in the checklist. `make acceptance` prints passing scenarios out of the total. Scenarios that need a real Claude Code session or a real browser are marked `manual` in the checklist and checked by the owner.
 - Tests never depend on wall-clock speed. Timing-sensitive tests pass `-count=50 -race`.
 
 ## 19. Repository layout

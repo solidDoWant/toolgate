@@ -56,7 +56,7 @@ Run `make help` for the full list, and keep it and this section current as targe
 - `make generate-docs`: regenerate the gateway configuration reference (`docs/admin/configuration.md`) from the doc comments in `internal/config`. `make generate` runs it too.
 - `make test-integration`: `integration`-tagged tests against PostgreSQL and S3 in Docker, and a local Kubernetes API server (envtest, binaries from the dev shell).
 - `make test-e2e`: a new kind cluster with Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server; deleted afterwards. Agents set `E2E_CLUSTER=toolgate-<issue>` (`docs/dev/e2e-tests.md`).
-- `make acceptance`: run every `[AC-…]` test on a new kind cluster (as `test-e2e`) and print the scoreboard for the current phase.
+- `make acceptance`: run every test named on a checklist `Tests:` line on a new kind cluster (as `test-e2e`) and print the scoreboard for the current phase.
 - `make plugin-check`: `claude plugin validate --strict` on the plugin and marketplace, then install them into a throwaway Claude Code config and check the result (needs the `claude` CLI; CI pins its version).
 - `make chart-lint`, `make docs-check`, `make release VERSION=x.y.z` (dry run only; releasing is the release-manager's job).
 
@@ -79,7 +79,7 @@ Provisioned through `flake.nix`; agents get it through `CLAUDE_ENV_FILE`. Docker
 - **Never modify acceptance tests to make them pass; fix the code.**
 - Mark a criterion complete only after running its test and seeing it pass.
 - Tests exercise public interfaces. Never mock the component under test. Every test must fail if its criterion is violated.
-- A checklist scenario's test carries its tag (`[AC-1-07]`) in its name so `make acceptance` counts it.
+- To tie a test to a checklist scenario, add it to the scenario's `Tests:` line in `docs/acceptance/phase-N.md` (`` `package/dir: TestName/subtest name` ``). Test names carry no scenario IDs. The scoreboard and the test guard read only that line.
 
 ## Testing Style
 

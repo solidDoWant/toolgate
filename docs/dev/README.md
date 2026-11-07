@@ -6,7 +6,7 @@ toolgate is in early development. The pages on the architecture are not written 
 
 - the architecture and the packages under `internal/`;
 - how to build and test: `make help` lists the commands, and the test tiers are unit, integration (PostgreSQL and S3 in Docker) and e2e (kind);
-- how acceptance tests are tagged and counted by `make acceptance`;
+- how acceptance tests are tied to scenarios (the `Tests:` lines of the checklist) and counted by `make acceptance`;
 
 [Integration tests](integration-tests.md) describes the dependencies that integration tests start.
 

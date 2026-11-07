@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Runs every acceptance test (a Go test tagged with a checklist scenario:
-# a `[AC-N-nn] ...` subtest or a `TestACN_nn...` function) with the
-# integration and e2e build tags, and prints the scoreboard for the phase's
+# Runs every acceptance test (a Go test named on a `Tests:` line of a checklist
+# scenario, docs/acceptance/phase-N.md) with the integration and e2e build tags, and prints the scoreboard for the phase's
 # checklist, docs/acceptance/phase-$PHASE.md (default 1): one line per
 # scenario (pass, fail, not run, no test, manual) and the number passing out of the automated scenarios.
 #
@@ -27,7 +26,9 @@ results="$out/results"
 rm -rf "$out"
 mkdir -p "$results"
 
-pattern=$(./scripts/acceptance-scoreboard.py --go-run-pattern --sources .) || exit 1
+checklist_args=()
+for file in docs/acceptance/phase-*.md; do checklist_args+=(--checklist "$file"); done
+pattern=$(./scripts/acceptance-scoreboard.py --go-run-pattern "${checklist_args[@]}") || exit 1
 result_file="$results/go-acceptance.json"
 if [[ -n "${E2E_SHARD:-}" && -n "$pattern" ]]; then
 	listing=$(go test -tags 'integration e2e' -list '.*' ./...) || exit 1

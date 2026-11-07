@@ -51,7 +51,7 @@ test: ## Run unit tests: Go (race detector; GO_TEST_JSON=file also writes the go
 	./scripts/e2e/shard_test.py
 
 .PHONY: test-guard
-test-guard: ## Fail if HEAD deletes or skips an [AC-N-nn] scenario test since its merge base with BASE (default origin/master; CI passes the PR labels).
+test-guard: ## Fail if HEAD deletes, unlists or skips a test named on a `Tests:` line of a checklist since its merge base with BASE (default origin/master; CI passes the PR labels).
 	./scripts/ci/test-guard.py --base $(or $(BASE),origin/master)
 
 .PHONY: test-integration
@@ -68,7 +68,7 @@ test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S
 	./scripts/e2e/run.sh ./scripts/test-e2e.sh
 
 .PHONY: acceptance
-acceptance: ## Run every [AC-…] test on a new kind cluster (as test-e2e) and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/). E2E_SHARD=i/n runs shard i of n only.
+acceptance: ## Run every test named on a checklist `Tests:` line on a new kind cluster (as test-e2e) and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/). E2E_SHARD=i/n runs shard i of n only.
 	PHASE=$(PHASE) ./scripts/e2e/run.sh ./scripts/acceptance.sh
 
 .PHONY: docs-check

@@ -3,23 +3,28 @@
 of a checklist (docs/acceptance/phase-N.md) with the result of its tests, then
 the number passing.
 
-The checklist lists its scenarios as `- **AC-N-nn Title.** ...` items; an
-item whose bold title says `(manual)` is a manual check that no
-one runs. A test belongs to a scenario by its name: a Go subtest
-(`t.Run`) titled `[AC-N-nn] ...`, or a top-level Go test `TestACN_nn...` (Go
-function names cannot hold brackets). The results directory holds
+The checklist lists its scenarios as `- **AC-N-nn Title.** ...` items. An
+item whose bold title says `(manual)` is a manual check that no one runs. A
+scenario titled `Release` is checked by the release manager and has no tests.
+Every other scenario has a continuation line
+`  Tests: `package/dir: TestName/subtest name`, ...` that names its Go tests:
+the package directory, a colon, and the test's name as `go test -json` reports
+it, with a subtest path joined by `/` (spaces may stand for the `_` Go uses).
+A test is tied to a scenario only by this line. The results directory holds
 `go test -json` output in `go-*.json` files.
 
 A scenario is `fail` if any of its tests failed, `pass` if its tests ran and
-all passed, `not run` if it has tagged tests (in the sources or skipped in the
-results) of which none failed and not all passed, `no test` otherwise, and
-`manual` when the checklist marks it so. Manual scenarios are still printed,
-but nobody runs them and they are left out of the total.
+all passed, `not run` if it has tests of which none failed and not all passed,
+and `no test` when it has none (a release scenario). Manual scenarios are still
+printed, but nobody runs them and they are left out of the total.
+
+The scoreboard still prints, but the exit status is 1, when a `Tests:` line
+names a test that doesn't exist in the sources or the results, or when a
+scenario that is neither manual nor a release has no `Tests:` line.
 
 With `--go-run-pattern`, it prints instead the `go test -run` pattern that
-selects the acceptance tests: the `TestACN_nn...` tests and every top-level
-test that holds an `[AC-N-nn] ...` subtest. It prints nothing when there are
-none.
+selects the top-level tests of every given checklist. It prints nothing when
+there are none.
 """
 
 import argparse
@@ -29,46 +34,56 @@ import re
 import sys
 
 SCENARIO = re.compile(r"^- \*\*(AC-\d+-\d+)\b([^*]*)\*\*")
-TAG = re.compile(r"\[(AC-\d+-\d+)\]")
-GO_TEST = re.compile(r"^TestAC(\d+)_(\d+)")
-GO_DECLARATION = re.compile(r"^func TestAC(\d+)_(\d+)\w*\(", re.MULTILINE)
+TESTS_LINE = re.compile(r"^\s+Tests:(.*)$")
+TEST_ENTRY = re.compile(r"`([^`]*)`")
+ENTRY_PARTS = re.compile(r"^(\S+): (\S.*)$")
 GO_FUNCTION = re.compile(r"^func (Test\w+)\(", re.MULTILINE)
-GO_SUBTEST = re.compile(r"""\b\w+\.Run\(\s*["`]\[(AC-\d+-\d+)\]""")
 PRECEDENCE = ["skip", "pass", "fail"]
-SKIPPED_DIRECTORIES = {".git", ".claude", "node_modules", "build", "bin"}
+
+
+class Scenario:
+    def __init__(self, identifier, title):
+        self.identifier = identifier
+        self.manual = "(manual)" in title
+        self.release = title.strip().startswith("Release")
+        self.tests = []  # (package directory, normalized test name, test name as written)
+        self.malformed = []
+
+
+def normalize(name):
+    """The name as `go test` reports it: whitespace becomes `_`."""
+    return re.sub(r"\s", "_", name)
 
 
 def scenarios(checklist):
-    """The checklist's scenarios: (id, manual) pairs, in order."""
+    """The checklist's scenarios, in order, with the tests they name."""
+    return parse_scenarios(checklist.read_text(encoding="utf-8"))
+
+
+def parse_scenarios(text):
     found = []
-    for line in checklist.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         match = SCENARIO.match(line)
         if match:
-            found.append((match.group(1), "(manual)" in match.group(2)))
+            found.append(Scenario(match.group(1), match.group(2)))
+            continue
+        tests = TESTS_LINE.match(line)
+        if tests and found:
+            for entry in TEST_ENTRY.findall(tests.group(1)):
+                parts = ENTRY_PARTS.match(entry)
+                if parts:
+                    found[-1].tests.append((parts.group(1), normalize(parts.group(2)), parts.group(2)))
+                else:
+                    found[-1].malformed.append(entry)
     return found
 
 
-def scenario_id(phase, number):
-    return f"AC-{int(phase)}-{int(number):02d}"
-
-
-def title_id(title):
-    match = TAG.match(title.strip())
-    return match.group(1) if match else None
-
-
-def go_id(name):
-    """The scenario of a `go test` result: a top-level `TestACN_nn...` test,
-    or a subtest named `[AC-N-nn] ...` (its own result, not its subtests')."""
-    elements = name.split("/")
-    if len(elements) == 1:
-        match = GO_TEST.match(name)
-        return scenario_id(*match.groups()) if match else None
-    return title_id(elements[-1])
+def in_package(package, directory):
+    return package == directory or package.endswith("/" + directory)
 
 
 def results(directory):
-    """(scenario id, outcome) pairs, outcome one of pass, fail, skip.
+    """{(package, test name): outcome}, outcome one of pass, fail, skip.
 
     The same test can appear in several files, since the unit, integration and
     e2e runs each include the tests without build tags. Each (package, test)
@@ -82,46 +97,41 @@ def results(directory):
                 continue
             event = json.loads(line)
             action = event.get("Action")
-            if action not in ("pass", "fail", "skip"):
+            if action not in ("pass", "fail", "skip") or not event.get("Test"):
                 continue
-            scenario = go_id(event.get("Test", ""))
-            if scenario:
-                key = (scenario, event.get("Package"), event.get("Test"))
-                merged[key] = max(merged.get(key, action), action, key=PRECEDENCE.index)
-    return [(key[0], action) for key, action in merged.items()]
+            key = (event.get("Package", ""), event["Test"])
+            merged[key] = max(merged.get(key, action), action, key=PRECEDENCE.index)
+    return merged
 
 
-def go_sources(root):
-    for path in root.rglob("*_test.go"):
-        if not SKIPPED_DIRECTORIES & set(path.relative_to(root).parts):
-            yield path
+def package_sources(root, directory):
+    """The text of the test files in a package directory, or None."""
+    package = root / directory
+    if not package.is_dir():
+        return None
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(package.glob("*_test.go")))
 
 
-def tagged_in_sources(root):
-    """Scenario ids that have a test in the sources, run or not."""
-    ids = set()
-    for path in go_sources(root):
-        source = path.read_text(encoding="utf-8")
-        for match in GO_DECLARATION.finditer(source):
-            ids.add(scenario_id(*match.groups()))
-        for match in GO_SUBTEST.finditer(source):
-            ids.add(match.group(1))
-    return ids
+def exists_in_sources(root, directory, name):
+    """Whether the test is declared: its top-level function is, and every
+    subtest title after it appears in the package's test files as written."""
+    source = package_sources(root, directory)
+    if source is None:
+        return False
+    elements = name.split("/")
+    if elements[0] not in {match.group(1) for match in GO_FUNCTION.finditer(source)}:
+        return False
+    flat = normalize(source)
+    return all(normalize(element.replace("_", " ")) in flat or element in flat for element in elements[1:])
 
 
-def go_run_pattern(root):
-    names = set()
-    has_functions = False
-    for path in go_sources(root):
-        source = path.read_text(encoding="utf-8")
-        has_functions = has_functions or bool(GO_DECLARATION.search(source))
-        functions = list(GO_FUNCTION.finditer(source))
-        for subtest in GO_SUBTEST.finditer(source):
-            enclosing = [function for function in functions if function.start() < subtest.start()]
-            if enclosing:
-                names.add(enclosing[-1].group(1))
-    alternatives = (["TestAC[0-9]+_[0-9]+.*"] if has_functions else []) + sorted(names)
-    return "^(" + "|".join(alternatives) + ")$" if alternatives else ""
+def top_level_names(listed):
+    return sorted({normalized.split("/")[0] for scenario in listed for _, normalized, _ in scenario.tests})
+
+
+def go_run_pattern(listed):
+    names = top_level_names(listed)
+    return "^(" + "|".join(names) + ")$" if names else ""
 
 
 def status(outcomes, tagged):
@@ -136,35 +146,44 @@ def status(outcomes, tagged):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--checklist", type=pathlib.Path)
+    parser.add_argument("--checklist", type=pathlib.Path, action="append", default=[])
     parser.add_argument("--results", type=pathlib.Path)
-    parser.add_argument("--sources", type=pathlib.Path, required=True)
-    parser.add_argument("--go-run-pattern", action="store_true", help="print the go test -run pattern of the acceptance tests")
+    parser.add_argument("--sources", type=pathlib.Path)
+    parser.add_argument("--go-run-pattern", action="store_true", help="print the go test -run pattern of the checklists' tests")
     arguments = parser.parse_args()
     if arguments.go_run_pattern:
-        print(go_run_pattern(arguments.sources))
+        if not arguments.checklist:
+            parser.error("--checklist is required with --go-run-pattern")
+        print(go_run_pattern([scenario for checklist in arguments.checklist for scenario in scenarios(checklist)]))
         return 0
-    if arguments.checklist is None or arguments.results is None:
-        parser.error("--checklist and --results are required to print the scoreboard")
+    if len(arguments.checklist) != 1 or arguments.results is None or arguments.sources is None:
+        parser.error("one --checklist, --results and --sources are required to print the scoreboard")
 
-    listed = scenarios(arguments.checklist)
-    outcomes = {scenario: [] for scenario, _ in listed}
-    for scenario, outcome in results(arguments.results):
-        if scenario in outcomes:
-            outcomes[scenario].append(outcome)
-    tagged = tagged_in_sources(arguments.sources)
-
+    listed = scenarios(arguments.checklist[0])
+    outcomes = results(arguments.results)
+    problems = []
     passing = 0
     automated = 0
-    for scenario, manual in listed:
-        line_status = "manual" if manual else status(outcomes[scenario], scenario in tagged)
+    for scenario in listed:
+        found = []
+        for directory, normalized, written in scenario.tests:
+            matching = [action for (package, test), action in outcomes.items() if test == normalized and in_package(package, directory)]
+            found.extend(matching)
+            if not matching and not exists_in_sources(arguments.sources, directory, written):
+                problems.append(f"{scenario.identifier}: no test {written} in {directory}")
+        problems.extend(f"{scenario.identifier}: malformed Tests entry `{entry}` (want `directory: TestName`)" for entry in scenario.malformed)
+        if not scenario.tests and not scenario.manual and not scenario.release:
+            problems.append(f"{scenario.identifier}: not manual and has no Tests line")
+        line_status = "manual" if scenario.manual else status(found, bool(scenario.tests))
         passing += line_status == "pass"
-        automated += not manual
-        print(f"{scenario}  {line_status}")
+        automated += not scenario.manual
+        print(f"{scenario.identifier}  {line_status}")
     left_out = len(listed) - automated
     suffix = f" ({left_out} manual, not counted)" if left_out else ""
     print(f"passing {passing}/{automated}{suffix}")
-    return 0
+    for problem in problems:
+        print(f"acceptance-scoreboard: {problem}", file=sys.stderr)
+    return 1 if problems else 0
 
 
 if __name__ == "__main__":

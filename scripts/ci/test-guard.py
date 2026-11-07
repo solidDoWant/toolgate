@@ -4,43 +4,58 @@
 
 It compares HEAD with its merge base with `--base` (default `origin/master`).
 
-Scenario tests are the Go tests tagged with a checklist id
-(docs/acceptance/phase-N.md): `t.Run` subtests (any `x.Run(...)` call) whose
-title starts with `[AC-N-nn]`, and top-level functions named
-`TestACN_nn...` (Go function names cannot hold brackets). A test is
-identified by its title (or function name), wherever it lives, so moving one
-between files is fine. Every title at the base must still exist at HEAD as
-often as before, and none may gain skip calls (`t.Skip`, `t.Skipf`,
-`t.SkipNow`) in its body, or for a subtest in its enclosing top-level
-function before it. Commented-out code does not count.
+Scenario tests are the Go tests named on the `Tests:` lines of the checklists
+(docs/acceptance/phase-N.md; the format is in
+scripts/acceptance-scoreboard.py): a package directory and a test name, with
+a subtest path after a top-level test function. Every test named at the base
+must still be named for the same scenario at HEAD and still exist: its
+top-level function is declared in the package, and each subtest title is a
+string literal in the package's test files. Moving a test between files of
+its package is fine. None may gain skip calls (`t.Skip`, `t.Skipf`,
+`t.SkipNow`) in its body, or for a subtest in the top-level function before
+it. Commented-out code does not count.
 
 The label `test-removal-approved` (TEST_GUARD_PR_LABELS, comma-separated),
 which only the owner applies, turns the check off.
 
 Threat model: it stops a self-merging agent from making the checklist pass
-by deleting, renaming or skipping a scenario test. It does not judge whether
-a test still checks its scenario; weakened assertions are out of its reach.
+by deleting, renaming, unlisting or skipping a scenario test. It does not
+judge whether a test still checks its scenario; weakened assertions are out
+of its reach.
 """
 
 import argparse
 import collections
+import importlib.util
 import os
+import pathlib
 import re
 import subprocess
 import sys
 
-TAG = r"\[AC-\d+-\d+\]"
 APPROVAL_LABEL = "test-removal-approved"
+CHECKLISTS = "docs/acceptance"
 
 GO_SUBTEST = re.compile(r"\b\w+\.Run\s*\(")
-GO_FUNCTION = re.compile(r"^func (TestAC\d+_\d+\w*)\s*\(", re.MULTILINE)
 GO_TOP_LEVEL = re.compile(r"^func ", re.MULTILINE)
 SKIP_CALL = re.compile(r"(?:\b\w+|\))\.(?:Skip|Skipf|SkipNow)\s*\(")
 STRING = re.compile(r"\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'|`[^`]*`")
 TITLE = re.compile(r"(?:\"((?:[^\"\\\n]|\\.)*)\"|`([^`]*)`)")
 
+Test = collections.namedtuple("Test", "scenario directory name")
+Found = collections.namedtuple("Found", "skip_calls")
 
-Test = collections.namedtuple("Test", "title path skip_calls")
+
+def load_scoreboard():
+    sys.dont_write_bytecode = True  # keep the import from leaving a __pycache__ in the checkout
+    path = pathlib.Path(__file__).resolve().parent.parent / "acceptance-scoreboard.py"
+    spec = importlib.util.spec_from_file_location("acceptance_scoreboard", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+scoreboard = load_scoreboard()
 
 
 def git(*arguments, check=True):
@@ -100,64 +115,105 @@ def closing(text, open_index):
     return len(text)
 
 
-def tagged_title(text, open_index):
-    """The first argument of the call whose `(` is at open_index, if it is a
-    string literal starting with a checklist id."""
-    index = open_index + 1
-    while index < len(text) and text[index].isspace():
-        index += 1
-    match = TITLE.match(text, index)
-    if not match:
-        return None
-    title = next(group for group in match.groups() if group is not None)
-    return " ".join(title.split()) if re.match(TAG, title) else None
+def unquote(literal):
+    return literal[1:-1].replace('\\"', '"').replace("\\\\", "\\")
 
 
-def go_tests(path, text):
+def listed_tests(ref):
+    """The tests the checklists at ref name, as Test tuples."""
+    files = git("ls-tree", "--name-only", ref, f"{CHECKLISTS}/", check=False).stdout.split()
     tests = []
-    for match in GO_FUNCTION.finditer(text):
+    for file in sorted(files):
+        if not re.search(r"phase-\d+\.md$", file):
+            continue
+        for scenario in scoreboard.parse_scenarios(git("show", f"{ref}:{file}").stdout):
+            tests.extend(Test(scenario.identifier, directory, written) for directory, _, written in scenario.tests)
+    return tests
+
+
+def test_files(ref):
+    """{package directory: [blob id, ...]} for the Go test files at ref."""
+    listing = git("ls-tree", "-r", ref).stdout
+    files = collections.defaultdict(list)
+    for line in listing.splitlines():
+        meta, _, name = line.partition("\t")
+        if name.endswith("_test.go"):
+            files[name.rpartition("/")[0]].append(meta.split()[2])
+    return files
+
+
+MASKED = {}
+
+
+def masked_blobs(blobs):
+    """Fills MASKED with the comment-masked text of each blob, using one git
+    process for all blobs not read yet."""
+    wanted = [blob for blob in dict.fromkeys(blobs) if blob not in MASKED]
+    if not wanted:
+        return
+    completed = subprocess.run(["git", "cat-file", "--batch"], input="".join(f"{blob}\n" for blob in wanted).encode(), capture_output=True)
+    if completed.returncode != 0:
+        raise SystemExit(f"test-guard: git cat-file failed: {completed.stderr.decode().strip()}")
+    data = completed.stdout
+    index = 0
+    for blob in wanted:
+        end = data.index(b"\n", index)
+        size = int(data[index:end].split()[2])
+        MASKED[blob] = mask_comments(data[end + 1 : end + 1 + size].decode("utf-8", errors="replace"))
+        index = end + 1 + size + 1
+
+
+def package_texts(files, directory):
+    """The comment-masked text of each test file of a package directory."""
+    masked_blobs(files.get(directory, []))
+    return [MASKED[blob] for blob in files.get(directory, [])]
+
+
+def locate(texts, name):
+    """Where the test `name` (Function or Function/subtest/...) is declared in
+    the package's texts: its skip call count, or None when it is not there."""
+    elements = name.split("/")
+    for text in texts:
+        match = re.search(rf"^func {re.escape(elements[0])}\s*\(", text, re.MULTILINE)
+        if not match:
+            continue
         body = text.find("{", closing(text, match.end() - 1))
         end = closing(text, body) if body >= 0 else len(text)
-        tests.append(Test(f"func {match.group(1)}", path, len(SKIP_CALL.findall(text, match.start(), end))))
-    tops = [match.start() for match in GO_TOP_LEVEL.finditer(text)]
-    for match in GO_SUBTEST.finditer(text):
-        start = match.end() - 1
-        title = tagged_title(text, start)
-        if title is None:
-            continue
-        parent = max((top for top in tops if top < match.start()), default=0)
-        skip_calls = len(SKIP_CALL.findall(text, parent, match.start())) + len(SKIP_CALL.findall(text, start, closing(text, start)))
-        tests.append(Test(title, path, skip_calls))
-    return tests
-
-
-def scenario_tests(ref):
-    """The scenario tests at ref."""
-    listing = git("grep", "-lE", r"\[AC-[0-9]+-[0-9]+\]|func TestAC[0-9]+_[0-9]", ref, "--", "*.go", check=False)
-    if listing.returncode not in (0, 1):
-        raise SystemExit(f"test-guard: git grep failed: {listing.stderr.strip()}")
-    tests = []
-    for line in listing.stdout.splitlines():
-        path = line.split(":", 1)[1]
-        tests.extend(go_tests(path, mask_comments(git("show", f"{ref}:{path}").stdout)))
-    return tests
+        literals = {scoreboard.normalize(unquote(found.group(0))) for found in STRING.finditer(text)}
+        if any(scoreboard.normalize(element) not in literals for element in elements[1:]):
+            return None
+        if len(elements) == 1:
+            return Found(len(SKIP_CALL.findall(text, match.start(), end)))
+        for run in GO_SUBTEST.finditer(text, match.start(), end):
+            start = run.end() - 1
+            index = start + 1
+            while text[index].isspace():
+                index += 1
+            title = TITLE.match(text, index)
+            if title and scoreboard.normalize(unquote(title.group(0))) == scoreboard.normalize(elements[-1]):
+                return Found(len(SKIP_CALL.findall(text, match.start(), run.start())) + len(SKIP_CALL.findall(text, start, closing(text, start))))
+        return Found(len(SKIP_CALL.findall(text, match.start(), end)))
+    return None
 
 
 def test_problems(base, head):
     problems = []
-    by_title = collections.defaultdict(lambda: ([], []))
-    for test in scenario_tests(base):
-        by_title[test.title][0].append(test)
-    for test in scenario_tests(head):
-        by_title[test.title][1].append(test)
-    for title, (before, after) in sorted(by_title.items()):
-        if not before:
+    base_files = test_files(base)
+    head_files = test_files(head)
+    listed_at_head = set(listed_tests(head))
+    for test in listed_tests(base):
+        before = locate(package_texts(base_files, test.directory), test.name)
+        if before is None:
             continue
-        where = ", ".join(sorted({test.path for test in before}))
-        if len(after) < len(before):
-            problems.append(f"deleted or renamed: {title} (was in {where})")
-        elif sum(test.skip_calls for test in after) > sum(test.skip_calls for test in before):
-            problems.append(f"new skip call: {title} (in {', '.join(sorted({test.path for test in after}))})")
+        label = f"{test.scenario} {test.directory}: {test.name}"
+        if test not in listed_at_head:
+            problems.append(f"removed from the Tests line: {label}")
+            continue
+        after = locate(package_texts(head_files, test.directory), test.name)
+        if after is None:
+            problems.append(f"deleted or renamed: {label}")
+        elif after.skip_calls > before.skip_calls:
+            problems.append(f"new skip call: {label}")
     return problems
 
 
