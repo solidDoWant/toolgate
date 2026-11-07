@@ -439,6 +439,35 @@ func TestOIDCAudienceSetting(t *testing.T) {
 	})
 }
 
+func TestOIDCCLISettings(t *testing.T) {
+	env := func(t *testing.T, extraArgs ...string) map[string]string {
+		t.Helper()
+
+		manifests, err := render(t, quickStartValues, extraArgs...)
+		require.NoError(t, err)
+
+		values := map[string]string{}
+
+		for _, variable := range find[appsv1.Deployment](t, manifests, "Deployment").Spec.Template.Spec.Containers[0].Env {
+			values[variable.Name] = variable.Value
+		}
+
+		return values
+	}
+
+	t.Run("set", func(t *testing.T) {
+		values := env(t, "--set", "config.oidc.cliClientID=toolgate-cli", "--set", "config.oidc.cliScopes={openid,email}")
+		assert.Equal(t, "toolgate-cli", values["TOOLGATE_OIDC_CLI_CLIENT_ID"])
+		assert.Equal(t, "openid,email", values["TOOLGATE_OIDC_CLI_SCOPES"])
+	})
+
+	t.Run("unset", func(t *testing.T) {
+		values := env(t)
+		assert.NotContains(t, values, "TOOLGATE_OIDC_CLI_CLIENT_ID")
+		assert.NotContains(t, values, "TOOLGATE_OIDC_CLI_SCOPES")
+	})
+}
+
 func TestWebUISettings(t *testing.T) {
 	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
 		t.Helper()

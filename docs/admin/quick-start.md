@@ -38,7 +38,10 @@ You need these items:
      oidc:
        issuerURL: https://idp.example.com/realms/main
        audience: toolgate
+       cliClientID: toolgate
    ```
+
+   `cliClientID` is the public client that `toolgate login` signs in with. Set it, and users need no `--client-id`. List it in `audience` too, unless the access tokens of the CLI client are for another audience. The CLI and the web UI (`config.ui.clientID`) may be the same client when your identity provider gives one issuer per client, as Authentik does. `cliScopes` changes the scopes that the CLI asks for.
 
 4. Install the chart with the release name `toolgate`:
 
