@@ -15,17 +15,17 @@
 <pre id="arguments">{{.Arguments}}</pre>
 {{if .ArgumentsTruncated}}<p class="note">Only the first part of the arguments is shown.</p>
 {{end}}{{end}}
-{{if .Message}}<p class="status">{{.Message}}</p>
+{{if .Message}}<p class="flash status" role="status">{{.Message}}</p>
 {{else}}
 {{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>
 <a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
 {{else}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/approve">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit">Approve</button>
+<button type="submit" class="primary">Approve</button>
 </form>
 {{end}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/deny">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit">Deny</button>
+<button type="submit" class="danger">Deny</button>
 </form>
 {{end}}
 {{end}}

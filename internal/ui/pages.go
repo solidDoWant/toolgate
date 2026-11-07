@@ -7,6 +7,7 @@ import (
 	"errors"
 	"html/template"
 	"net/http"
+	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/gateway"
@@ -33,26 +34,65 @@ var templateFiles embed.FS
 
 // pageTemplates holds one template set per page, each with the layout.
 var pageTemplates = map[string]*template.Template{
-	"servers":        template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/servers.html")),
-	"audit":          template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit.html")),
-	"blocks":         template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/blocks.html")),
-	"sessions":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/sessions.html")),
-	"session":        template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/session.html")),
-	"secrets":        template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/secrets.html")),
-	"audit_event":    template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/audit_event.html")),
-	"grants":         template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/grants.html")),
-	"grant_new":      template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/grant_new.html")),
-	"approvals":      template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approvals.html")),
-	"approval":       template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/approval.html")),
-	"workspaces":     template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/workspaces.html")),
-	"access_request": template.Must(template.ParseFS(templateFiles, "templates/layout.html", "templates/access_request.html")),
+	"servers":        parsePage("servers"),
+	"audit":          parsePage("audit"),
+	"blocks":         parsePage("blocks"),
+	"sessions":       parsePage("sessions"),
+	"session":        parsePage("session"),
+	"secrets":        parsePage("secrets"),
+	"audit_event":    parsePage("audit_event"),
+	"grants":         parsePage("grants"),
+	"grant_new":      parsePage("grant_new"),
+	"approvals":      parsePage("approvals"),
+	"approval":       parsePage("approval"),
+	"workspaces":     parsePage("workspaces"),
+	"access_request": parsePage("access_request"),
+}
+
+// parsePage parses the layout and one page's content template.
+func parsePage(file string) *template.Template {
+	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass}).
+		ParseFS(templateFiles, "templates/layout.html", "templates/"+file+".html"))
+}
+
+// badgeClass maps a status word to the colour class of its badge. Words it
+// doesn't know get the neutral class.
+func badgeClass(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "ready", "running", "live", "approved", "allow", "allowed", "attested", "verified", "valid", "current":
+		return "badge-ok"
+	case "starting", "pending", "outdated", "stopping":
+		return "badge-warn"
+	case "blocked", "failed", "denied", "deny", "expired", "revoked", "invalid", "error":
+		return "badge-bad"
+	default:
+		return "badge-neutral"
+	}
+}
+
+// navSection names the nav link a page highlights.
+func navSection(name string) string {
+	switch name {
+	case "session":
+		return "sessions"
+	case "audit_event":
+		return "audit"
+	case "grant_new":
+		return "grants"
+	case "approval", "access_request":
+		return "approvals"
+	default:
+		return name
+	}
 }
 
 // page is what the layout renders around a page's content.
 type page struct {
 	Title string
-	User  string
-	Admin bool
+	// Section is the nav link to highlight.
+	Section string
+	User    string
+	Admin   bool
 	// Secrets is true when the Secrets page is registered, so the nav links to it.
 	Secrets   bool
 	CSRFToken string
@@ -81,6 +121,7 @@ func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, sta
 
 	err := pageTemplates[name].ExecuteTemplate(&body, "layout", page{
 		Title:     title,
+		Section:   navSection(name),
 		User:      user,
 		Admin:     session.Admin,
 		Secrets:   u.options.Secrets != nil,
