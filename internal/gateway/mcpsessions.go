@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -114,13 +115,17 @@ func streamableAccepts(values []string) (jsonOK, streamOK bool) {
 
 // connectCopy connects a copy of the MCP session id on a new server. A nil
 // state starts a session that the client initializes on this request.
-func (e *mcpEndpoint) connectCopy(id string, binding mcpBinding, current requestContext, state *mcp.ServerSessionState) (*mcpSession, error) {
+func (e *mcpEndpoint) connectCopy(ctx context.Context, id string, binding mcpBinding, current requestContext, state *mcp.ServerSessionState) (*mcpSession, error) {
 	server := e.newServer(false)
 	transport := &mcp.StreamableServerTransport{SessionID: id}
 
-	// The copy outlives the request that made it, so it gets no request
-	// context.
-	serverSession, err := server.Connect(context.Background(), transport, &mcp.ServerSessionOptions{State: state})
+	// The copy outlives the request that made it, so it keeps only that
+	// request's trace span: the go-sdk hands the connection's context to
+	// every handler, and the audit events and spans of the session's
+	// calls join the trace of the request that made the copy.
+	connectCtx := trace.ContextWithSpan(context.Background(), trace.SpanFromContext(ctx))
+
+	serverSession, err := server.Connect(connectCtx, transport, &mcp.ServerSessionOptions{State: state})
 	if err != nil {
 		return nil, fmt.Errorf("connect MCP session: %w", err)
 	}
@@ -149,8 +154,8 @@ func (e *mcpEndpoint) connectCopy(id string, binding mcpBinding, current request
 // startSession makes the copy of a new MCP session for an initialize and
 // marks a request on it as in progress. The initialize middleware stores
 // its row.
-func (e *mcpEndpoint) startSession(id string, binding mcpBinding, current requestContext) (*mcpSession, error) {
-	held, err := e.connectCopy(id, binding, current, nil)
+func (e *mcpEndpoint) startSession(ctx context.Context, id string, binding mcpBinding, current requestContext) (*mcpSession, error) {
+	held, err := e.connectCopy(ctx, id, binding, current, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +265,7 @@ func (e *mcpEndpoint) adopt(ctx context.Context, id string, binding mcpBinding) 
 		}
 	}
 
-	return e.connectCopy(id, binding, requestContext{}, state)
+	return e.connectCopy(ctx, id, binding, requestContext{}, state)
 }
 
 // touch moves last_seen_at of the MCP session forward at most once a
@@ -344,19 +349,32 @@ func (e *mcpEndpoint) deleteSession(ctx context.Context, writer http.ResponseWri
 	writer.WriteHeader(http.StatusNoContent)
 }
 
-// closeCopy forgets this replica's copy of the MCP session id and closes
-// it, which ends its GET stream. The session's row is untouched.
+// closeCopy forgets this replica's copy of the MCP session id, ends its GET
+// streams and closes it once the requests in progress on it end, so a call
+// waiting on the session still answers. The session's row is untouched.
 func (e *mcpEndpoint) closeCopy(id string) {
 	e.mu.Lock()
 
 	held, found := e.bindings[id]
-	if found {
-		e.forget(id, held)
+	if !found {
+		e.mu.Unlock()
+
+		return
+	}
+
+	e.forget(id, held)
+	held.closing = true
+	idle := held.active == 0
+
+	for _, stream := range e.streams {
+		if stream.session == held {
+			stream.cancel()
+		}
 	}
 
 	e.mu.Unlock()
 
-	if found {
+	if idle {
 		_ = held.serverSession.Close()
 	}
 }
@@ -492,15 +510,26 @@ func (e *mcpEndpoint) storeInitialized(ctx context.Context, request mcp.Request)
 	return err
 }
 
-// trackStream registers the context cancel of a GET stream, so Shutdown can
-// end it. The returned function removes it.
-func (e *mcpEndpoint) trackStream(cancel context.CancelFunc) func() {
+// openStream is a GET stream in progress and the copy it is served on.
+type openStream struct {
+	session *mcpSession
+	cancel  context.CancelFunc
+}
+
+// trackStream registers the context cancel of a GET stream on held, so
+// Shutdown and closeCopy can end it.
+func (e *mcpEndpoint) trackStream(held *mcpSession, cancel context.CancelFunc) func() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	// The session may have ended since the request acquired the copy.
+	if held.closing {
+		cancel()
+	}
+
 	e.nextStream++
 	key := e.nextStream
-	e.streams[key] = cancel
+	e.streams[key] = openStream{session: held, cancel: cancel}
 
 	return func() {
 		e.mu.Lock()
@@ -517,7 +546,7 @@ func (e *mcpEndpoint) Shutdown() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	for _, cancel := range e.streams {
-		cancel()
+	for _, stream := range e.streams {
+		stream.cancel()
 	}
 }

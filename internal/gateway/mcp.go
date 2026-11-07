@@ -182,6 +182,9 @@ type mcpSession struct {
 	stored bool
 	// lastTouch is when this replica last moved the row's last_seen_at.
 	lastTouch time.Time
+	// closing says the session ended: the copy is forgotten and closes
+	// once its last request ends.
+	closing bool
 }
 
 // mcpEndpoint serves MCP. It must run behind auth.Middleware in its MCP
@@ -223,8 +226,8 @@ type mcpEndpoint struct {
 	bindings map[string]*mcpSession
 	// adopting holds the copies being built from their rows.
 	adopting map[string]*adoption
-	// streams holds the cancels of the open GET streams, for Shutdown.
-	streams    map[uint64]context.CancelFunc
+	// streams holds the open GET streams, for Shutdown and closeCopy.
+	streams    map[uint64]openStream
 	nextStream uint64
 	// stateless holds this replica's stateless bindings, each with its own
 	// mcp.Server, so list_changed reaches the binding's listen streams.
@@ -272,7 +275,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		},
 		bindings: make(map[string]*mcpSession),
 		adopting: make(map[string]*adoption),
-		streams:  make(map[uint64]context.CancelFunc),
+		streams:  make(map[uint64]openStream),
 
 		stateless: make(map[mcpBinding]*mcpSession),
 
@@ -564,7 +567,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		// A new MCP session gets its own copy. It is in use until the
 		// initialize request ends, and closed then unless its row was
 		// stored.
-		held, err = e.startSession(newSessionID, binding, current)
+		held, err = e.startSession(request.Context(), newSessionID, binding, current)
 		if err != nil {
 			e.logger.ErrorContext(request.Context(), "starting an MCP session failed", "error", err)
 			http.Error(writer, "The gateway can't start a session right now. Try again later.", http.StatusServiceUnavailable)
@@ -593,7 +596,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 		ctx, cancel = context.WithCancel(ctx)
 		defer cancel()
-		defer e.trackStream(cancel)()
+		defer e.trackStream(held, cancel)()
 	}
 
 	e.statefulHandler.ServeHTTP(writer, request.WithContext(ctx))
@@ -769,6 +772,14 @@ func (e *mcpEndpoint) release(id string, session *mcpSession) {
 	defer e.mu.Unlock()
 
 	session.active--
+	if session.active == 0 && session.closing {
+		// An ended session's copy closes after its last request, so a
+		// call in progress still gets its answer.
+		go func() { _ = session.serverSession.Close() }()
+
+		return
+	}
+
 	if session.active > 0 || e.bindings[id] != session {
 		return
 	}
