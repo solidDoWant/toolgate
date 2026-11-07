@@ -46,3 +46,4 @@
 {{define "ws"}}<span title="{{.ID}}">{{.Label}}</span>{{end}}
 {{define "reltime"}}{{if .Text}}<time datetime="{{.ISO}}" title="{{.UTC}}">{{.Text}}</time>{{end}}{{end}}
 {{define "outcome"}}<span class="badge {{.Class}}">{{.Label}}</span>{{end}}
+{{define "access"}}{{if .Everyone}}Everyone{{else}}{{range .UserPatterns}}<div>Users <code>{{.}}</code></div>{{end}}{{range .GroupPatterns}}<div>Group <code>{{.}}</code></div>{{end}}{{if not (or .UserPatterns .GroupPatterns)}}Listed users and groups{{end}}{{end}}{{end}}

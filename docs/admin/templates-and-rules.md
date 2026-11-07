@@ -160,13 +160,43 @@ When an object fails, the instance becomes unhealthy, as above, with a reason su
 
 A user can use a server only when both of these checks pass:
 
-1. The user matches the access lists. `access.users` lists OIDC subjects or email addresses. `access.groups` lists groups. `access.serviceAccounts` lists service accounts as `system:serviceaccount:NAMESPACE:NAME`. `access.spiffeIDs` lists glob patterns of SPIFFE IDs. See [SPIFFE sign-in](spiffe-sign-in.md). A template with no access lists is available to no one.
+1. The user matches the access lists. `access.users` lists OIDC subjects or email addresses, as patterns. `access.groups` lists groups, as patterns. See [Patterns in users and groups](#patterns-in-users-and-groups). `access.serviceAccounts` lists service accounts as `system:serviceaccount:NAMESPACE:NAME`. `access.spiffeIDs` lists glob patterns of SPIFFE IDs. See [SPIFFE sign-in](spiffe-sign-in.md). A template with no access lists is available to no one.
 2. The environment of the request matches `access.environments`:
    - `any`: every signed-in user and every pod.
    - `attested`: only pods that sign in with a service-account token, and workloads that sign in with a SPIFFE JWT-SVID. See [Pod sign-in](pod-sign-in.md) and [SPIFFE sign-in](spiffe-sign-in.md).
    - `opt-in`: the default. In this version it works like `attested`.
 
-toolgate matches an email address only when the identity provider verified it. Because `opt-in` is the default, users on their own computers cannot use a server until you set `environments: any`.
+toolgate matches an email address only when the identity provider verified it.
+
+### Patterns in users and groups
+
+Each entry of `access.users` and `access.groups` is a glob pattern. A glob pattern is a text where `*` stands for any text. The pattern must match the whole value.
+
+- `*` matches any text. `?` matches one character. `[abc]` matches one of the listed characters. `{a,b}` matches one of the listed texts.
+- An entry of `access.users` matches the user's subject. It also matches the user's email address, but only when the identity provider verified the address.
+- An entry of `access.groups` matches each group of the user.
+- An entry without `*`, `?`, `[`, `]`, `{`, `}` or `\` matches only the exact value, as in earlier versions.
+- To match one of these characters as itself, put `\` in front of it. In YAML, write `'\*'` in single quotes.
+- An entry that is not a valid pattern makes the template invalid. The reason shows in the `Valid` condition of the template.
+- Service accounts and SPIFFE workloads never match `users` or `groups`. They need `serviceAccounts` or `spiffeIDs`.
+
+Examples:
+
+```yaml
+access:
+  users: ["*"]                 # every signed-in user
+  environments: any
+---
+access:
+  users: ["*@example.com"]     # users with a verified address at example.com
+---
+access:
+  groups: ["team-*"]           # users in a group whose name starts with team-
+```
+
+`groups: ["*"]` does not mean everyone. It matches only users who have at least one group. To give a server to everyone, use `users: ["*"]`.
+
+Use `users: ["*"]` with care. Anyone who can sign in to the gateway can then use the server. Use it only for servers that have no per-user data and no per-user permissions, for example a server that searches public data. A pattern only decides who passes the access lists. `environments`, workspace scopes, rules, grants, approvals and instance limits still apply. A remote `per-user` server that uses `${secret:...}` still needs the secret of each user. Because `opt-in` is the default, users on their own computers cannot use a server until you set `environments: any`.
 
 ## The objects in a template
 

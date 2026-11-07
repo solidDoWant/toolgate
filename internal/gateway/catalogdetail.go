@@ -9,6 +9,7 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
+	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 )
@@ -26,6 +27,13 @@ type ServerInfo struct {
 	// Environments is the server's access.environments: any, opt-in or
 	// attested.
 	Environments string
+	// Everyone says every signed-in user may use the server: its
+	// access.users has the pattern *.
+	Everyone bool
+	// UserPatterns and GroupPatterns are the glob patterns of access.users
+	// and access.groups, as written. Exact names aren't shown, so one user
+	// doesn't see who else was given the server.
+	UserPatterns, GroupPatterns []string
 	// Remote says toolgate connects to the server and doesn't start it.
 	Remote bool
 	// Secrets are the user secrets the server needs.
@@ -74,6 +82,7 @@ func (v *CatalogView) Catalog(ctx context.Context, identity auth.Identity) ([]Se
 		}
 
 		info := ServerInfo{ServerEntry: entry, Environments: template.Spec.Access.Environments, Remote: template.Spec.Remote != nil, ToolCount: -1}
+		info.Everyone, info.UserPatterns, info.GroupPatterns = accessSummary(template.Spec.Access)
 
 		for _, name := range catalog.RequiredSecretNames(template) {
 			info.Secrets = append(info.Secrets, SecretStatus{Name: name, Set: set[name]})
@@ -140,4 +149,26 @@ func toolInfos(template *v1alpha1.MCPServerTemplate, list map[string]toolcatalog
 	slices.SortFunc(tools, func(a, b ToolInfo) int { return strings.Compare(a.Name, b.Name) })
 
 	return tools
+}
+
+// accessSummary says whether access lets every signed-in user in, and
+// otherwise lists its user and group patterns.
+func accessSummary(access v1alpha1.Access) (everyone bool, users, groups []string) {
+	if access.AllUsers || slices.Contains(access.Users, "*") {
+		return true, nil, nil
+	}
+
+	for _, entry := range access.Users {
+		if policy.IsAccessPattern(entry) {
+			users = append(users, entry)
+		}
+	}
+
+	for _, entry := range access.Groups {
+		if policy.IsAccessPattern(entry) {
+			groups = append(groups, entry)
+		}
+	}
+
+	return false, users, groups
 }

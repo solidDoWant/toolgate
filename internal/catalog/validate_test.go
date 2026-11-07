@@ -512,3 +512,18 @@ func TestValidateSPIFFEIDPatterns(t *testing.T) {
 	invalid.Spec.Access.SPIFFEIDs = []string{"spiffe://coder.example.com/[*"}
 	assert.Contains(t, catalog.Reason(catalog.Validator{Mapper: testRESTMapper()}.Validate(invalid)), "access.spiffeIDs[0]")
 }
+
+func TestValidateUserAndGroupPatterns(t *testing.T) {
+	valid := newTemplate("github", catalog.ScopePerSession, serviceResource)
+	valid.Spec.Access.Users = []string{"*", "*@example.com", "alice", `\*`}
+	valid.Spec.Access.Groups = []string{"*", "dev-*"}
+	assert.Empty(t, catalog.Validator{Mapper: testRESTMapper()}.Validate(valid))
+
+	invalidUser := newTemplate("github", catalog.ScopePerSession, serviceResource)
+	invalidUser.Spec.Access.Users = []string{"alice", "[*"}
+	assert.Contains(t, catalog.Reason(catalog.Validator{Mapper: testRESTMapper()}.Validate(invalidUser)), `access.users[1]: "[*" is not a valid pattern`)
+
+	invalidGroup := newTemplate("github", catalog.ScopePerSession, serviceResource)
+	invalidGroup.Spec.Access.Groups = []string{"dev-[a"}
+	assert.Contains(t, catalog.Reason(catalog.Validator{Mapper: testRESTMapper()}.Validate(invalidGroup)), `access.groups[0]: "dev-[a" is not a valid pattern`)
+}

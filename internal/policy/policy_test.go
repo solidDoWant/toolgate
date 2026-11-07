@@ -87,7 +87,7 @@ func TestCatalogAccess(t *testing.T) {
 		{name: "other user", identity: laptopUser(), access: v1alpha1.Access{Users: []string{"bob-sub"}, Environments: "any"}},
 		{name: "group", identity: laptopUser(), access: v1alpha1.Access{Groups: []string{"ops", "dev"}, Environments: "any"}, allowed: true},
 		{name: "other group", identity: laptopUser(), access: v1alpha1.Access{Groups: []string{"ops"}, Environments: "any"}},
-		{name: "users entries aren't globs", identity: laptopUser(), access: v1alpha1.Access{Users: []string{"*"}, Environments: "any"}},
+		{name: "users star matches any user", identity: laptopUser(), access: v1alpha1.Access{Users: []string{"*"}, Environments: "any"}, allowed: true},
 		{name: "service account", identity: pod("ci"), access: v1alpha1.Access{ServiceAccounts: []string{"system:serviceaccount:ci:runner"}, Environments: "any"}, allowed: true},
 		{name: "other service account", identity: pod("ci"), access: v1alpha1.Access{ServiceAccounts: []string{"system:serviceaccount:ci:other"}, Environments: "any"}},
 		{name: "service account listed as user", identity: pod("ci"), access: v1alpha1.Access{Users: []string{"system:serviceaccount:ci:runner"}, Environments: "any"}},

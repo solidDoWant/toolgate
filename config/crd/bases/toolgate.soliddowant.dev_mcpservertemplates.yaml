@@ -64,7 +64,9 @@ spec:
                     - message: environments must be one of any, opt-in, attested
                       rule: self in ['any', 'opt-in', 'attested']
                   groups:
-                    description: Groups are OIDC group names.
+                    description: |-
+                      Groups are glob patterns matched against each OIDC group of a user
+                      identity. * matches any user with at least one group, not every user.
                     items:
                       maxLength: 256
                       type: string
@@ -89,7 +91,12 @@ spec:
                     maxItems: 64
                     type: array
                   users:
-                    description: Users are OIDC subjects or verified emails.
+                    description: |-
+                      Users are glob patterns matched against the OIDC subject and the
+                      verified email of a user identity, such as alice@example.com,
+                      *@example.com, or * for every signed-in user. Escape a literal *, ?,
+                      [, ], {, } or \ with a backslash. Service accounts and SPIFFE
+                      identities never match them.
                     items:
                       maxLength: 256
                       type: string

@@ -14,6 +14,8 @@
 
 ### Upgrade notes for admins
 
+- Entries in `access.users` and `access.groups` of a template are now glob patterns. `users: ["*"]` makes a server available to every signed-in user. Entries without `*`, `?`, `[`, `]`, `{`, `}` or `\` match exactly, as before. An entry that is not a valid pattern makes the template invalid. See "Who can use a server" in `docs/admin/templates-and-rules.md`.
+
 - `endpoint.path` of a template now defaults to `/mcp`. Before, an unset path meant the server root. If a template left `path` unset and its server serves MCP at the root, set `path: /`.
 - Breaking change: a `per-user` template that uses `${session.id}` or `${workspace.id}` is now invalid. Set `scope: per-session` on it.
 - Sessions in tool search mode no longer list `toolgate_enable_server` and `toolgate_disable_server`. A call to a tool of an allowed server already turns the server on. A call to a tool of a server that the workspace blocks asks the user for access. To list the two tools in every mode, as before, set `config.metaTools.enableDisable` to `always`. See `docs/admin/tool-search.md`.

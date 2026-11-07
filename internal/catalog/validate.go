@@ -107,9 +107,18 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 		problems = append(problems, fmt.Sprintf("namespace %q must be one of per-instance, shared", spec.Namespace))
 	}
 
-	for index, pattern := range spec.Access.SPIFFEIDs {
-		if _, err := glob.Compile(pattern); err != nil {
-			problems = append(problems, fmt.Sprintf("access.spiffeIDs[%d]: %q is not a valid pattern", index, pattern))
+	for _, list := range []struct {
+		field    string
+		patterns []string
+	}{
+		{"users", spec.Access.Users},
+		{"groups", spec.Access.Groups},
+		{"spiffeIDs", spec.Access.SPIFFEIDs},
+	} {
+		for index, pattern := range list.patterns {
+			if _, err := glob.Compile(pattern); err != nil {
+				problems = append(problems, fmt.Sprintf("access.%s[%d]: %q is not a valid pattern", list.field, index, pattern))
+			}
 		}
 	}
 
