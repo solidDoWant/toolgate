@@ -1,0 +1,10 @@
+{{define "content"}}
+<h2>Deny {{.Data.Server}} for this session</h2>
+<p>The server <code>{{.Data.Server}}</code> stops working in session <span title="{{.Data.Session.SessionID}}">{{.Data.Session.ShortID}}</span> and in no other session. Its tools are refused here from now on. This does not change your workspace lists.</p>
+<form method="post" action="{{.Data.Action}}">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<input type="hidden" name="server" value="{{.Data.Server}}">
+<button type="submit">Deny {{.Data.Server}} for this session</button>
+<a href="{{.Data.Back}}">Cancel</a>
+</form>
+{{end}}

@@ -261,6 +261,7 @@ func New(options Options, registrar Registrar) *UI {
 
 	if options.Workspaces != nil {
 		u.registerWorkspaces()
+		u.registerSessionDeny()
 	}
 
 	u.registerApprovals()

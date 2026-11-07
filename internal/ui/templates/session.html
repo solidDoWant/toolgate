@@ -12,12 +12,13 @@
 <h2>Servers</h2>
 {{if .Data.Servers}}
 <div class="table-wrap"><table id="servers">
-<thead><tr><th>Server</th><th>Status</th><th>Instance</th></tr></thead>
+<thead><tr><th>Server</th><th>Status</th><th>Instance</th>{{if .Data.CanDeny}}<th></th>{{end}}</tr></thead>
 <tbody>
 {{range .Data.Servers}}<tr>
 <td><a href="/ui/servers/{{.Name}}">{{.Template}}</a></td>
-<td><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</td>
+<td><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}{{if .Denied}} <span class="badge badge-bad">blocked for this session</span>{{end}}</td>
 <td>{{if .Remote}}remote{{else}}namespace {{.Namespace}}{{end}}</td>
+{{if $.Data.CanDeny}}<td>{{if not .Denied}}<form method="get" action="{{$.Data.DenyPath}}"><input type="hidden" name="server" value="{{.Name}}"><button type="submit">Deny for this session</button></form>{{end}}</td>{{end}}
 </tr>
 {{end}}</tbody>
 </table></div>

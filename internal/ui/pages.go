@@ -48,6 +48,7 @@ var pageTemplates = map[string]*template.Template{
 	"blocks":         parsePage("blocks"),
 	"sessions":       parsePage("sessions"),
 	"session":        parsePage("session"),
+	"session_deny":   parsePage("session_deny"),
 	"secrets":        parsePage("secrets"),
 	"audit_event":    parsePage("audit_event"),
 	"grants":         parsePage("grants"),
@@ -124,7 +125,7 @@ func navSection(name string) string {
 	switch name {
 	case "server":
 		return "servers"
-	case "session":
+	case "session", "session_deny":
 		return "sessions"
 	case "audit_event":
 		return "audit"
