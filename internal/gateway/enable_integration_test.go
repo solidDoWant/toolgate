@@ -348,7 +348,7 @@ func TestEnableServer(t *testing.T) {
 		require.Empty(t, awaitEnable(t, results).err)
 	})
 
-	t.Run("[AC-1-22] a missing secret fails naming the secret and the command, and writes nothing", func(t *testing.T) {
+	t.Run("a missing secret fails naming the secret and the command, and writes nothing", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		template.Spec.Resources = []k8sruntime.RawExtension{{Raw: []byte(
@@ -723,7 +723,7 @@ func serverStatus(t *testing.T, session *mcp.ClientSession, name string) gateway
 }
 
 func TestTemplateChange(t *testing.T) {
-	t.Run("[AC-1-19] new instances use the edited template and server_status shows the running one as outdated", func(t *testing.T) {
+	t.Run("new instances use the edited template and server_status shows the running one as outdated", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		original := fixture.addEnableTemplate("github", "per-session", anyone)
 

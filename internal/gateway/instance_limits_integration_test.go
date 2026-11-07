@@ -52,7 +52,7 @@ func (f *mcpFixture) requireLimitRefusal(t *testing.T, client user, name, limit 
 }
 
 func TestInstanceLimits(t *testing.T) {
-	t.Run("[AC-1-31] at the per-user limit a new instance is refused, reuse works, and other users are not affected", func(t *testing.T) {
+	t.Run("at the per-user limit a new instance is refused, reuse works, and other users are not affected", func(t *testing.T) {
 		fixture := newMCPFixture(t, withInstanceLimits(2, 200))
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.addEnableTemplate("jira", "per-session", anyone)

@@ -126,8 +126,8 @@ func recordingGateway(t *testing.T) (string, func() []string) {
 	}
 }
 
-func TestAC3_09ClientCommandsSendAJWTSVID(t *testing.T) {
-	t.Run("[AC-3-09] with TOOLGATE_SPIFFE_SOCKET every client command sends a fresh JWT-SVID", func(t *testing.T) {
+func TestClientCommandsSendAJWTSVID(t *testing.T) {
+	t.Run("with TOOLGATE_SPIFFE_SOCKET every client command sends a fresh JWT-SVID", func(t *testing.T) {
 		isolateUserConfig(t)
 
 		socket, fake := startWorkloadAPI(t, false)

@@ -67,7 +67,7 @@ func engine(t *testing.T, rules ...*v1alpha1.ToolgateRule) *policy.Engine {
 	return &policy.Engine{Rules: set, Now: func() time.Time { return now }}
 }
 
-func TestAC1_06CatalogAccess(t *testing.T) {
+func TestCatalogAccess(t *testing.T) {
 	unverified := laptopUser()
 	unverified.Email = ""
 
@@ -95,7 +95,7 @@ func TestAC1_06CatalogAccess(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run("[AC-1-06] "+test.name, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			decision := engine(t).Decide(policy.Request{Identity: test.identity, Template: template("github", test.access, nil)})
 
 			assert.Equal(t, test.allowed, decision.Allowed, decision.Reason)
@@ -204,7 +204,7 @@ func TestRuleMatchesSPIFFEWorkspace(t *testing.T) {
 	assert.True(t, decision.Allowed, decision.Reason)
 }
 
-func TestAC1_27Attestation(t *testing.T) {
+func TestAttestationRules(t *testing.T) {
 	access := func(environments string) v1alpha1.Access {
 		return v1alpha1.Access{Users: []string{"alice-sub"}, ServiceAccounts: []string{"system:serviceaccount:ci:runner"}, Environments: environments}
 	}
@@ -226,7 +226,7 @@ func TestAC1_27Attestation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run("[AC-1-27] "+test.name, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			decision := engine(t).Decide(policy.Request{Identity: test.identity, Template: template("github", access(test.environments), nil)})
 
 			assert.Equal(t, test.allowed, decision.Allowed, decision.Reason)
@@ -280,7 +280,7 @@ func TestToolOverrides(t *testing.T) {
 	}
 }
 
-func TestAC1_26Rules(t *testing.T) {
+func TestPolicyRules(t *testing.T) {
 	everyone := v1alpha1.Access{Users: []string{"alice-sub"}, Groups: []string{"dev"}, ServiceAccounts: []string{"system:serviceaccount:ci:runner", "system:serviceaccount:ci2:runner", "system:serviceaccount:prod:runner"}, Environments: "any"}
 	github := template("github", everyone, nil)
 	jira := template("jira", everyone, nil)
@@ -382,7 +382,7 @@ func TestAC1_26Rules(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run("[AC-1-26] "+test.name, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			decision := engine(t, test.rules...).Decide(policy.Request{Identity: test.identity, Template: test.template, Tool: test.tool})
 
 			if test.refused == "" {

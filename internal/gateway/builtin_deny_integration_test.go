@@ -16,7 +16,7 @@ import (
 
 const toolDeny = "toolgate_deny"
 
-func TestAC4_16BuiltinDeny(t *testing.T) {
+func TestBuiltinToolsDenied(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		// target is the deny's target argument: workspace or session.
@@ -28,25 +28,25 @@ func TestAC4_16BuiltinDeny(t *testing.T) {
 		event string
 	}{
 		{
-			name:   "[AC-4-16] a workspace server-level deny",
+			name:   "a workspace server-level deny",
 			target: map[string]any{"workspace": aliceWorkspace}, item: "github",
 			entry: aliceWorkspace + " github  deny",
 			event: gateway.TypeWorkspaceChange,
 		},
 		{
-			name:   "[AC-4-16] a workspace tool-level deny",
+			name:   "a workspace tool-level deny",
 			target: map[string]any{"workspace": aliceWorkspace}, item: "github__echo", toolOnly: true,
 			entry: aliceWorkspace + " github echo deny",
 			event: gateway.TypeWorkspaceChange,
 		},
 		{
-			name:   "[AC-4-16] a session server-level deny",
+			name:   "a session server-level deny",
 			target: map[string]any{"session": "session-1"}, item: "github",
 			entry: "session:session-1 github  deny",
 			event: gateway.TypeSessionAddition,
 		},
 		{
-			name:   "[AC-4-16] a session tool-level deny",
+			name:   "a session tool-level deny",
 			target: map[string]any{"session": "session-1"}, item: "github__echo", toolOnly: true,
 			entry: "session:session-1 github echo deny",
 			event: gateway.TypeSessionAddition,

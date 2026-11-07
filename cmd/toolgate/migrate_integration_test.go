@@ -43,7 +43,7 @@ func TestMigrateCommandExitsOneOnFailure(t *testing.T) {
 }
 
 func TestServeWithoutMigrateOnStartRefusesAnOlderDatabase(t *testing.T) {
-	t.Run("[AC-3-15] no goose table counts as version 0 and is not created", func(t *testing.T) {
+	t.Run("no goose table counts as version 0 and is not created", func(t *testing.T) {
 		pg := testutil.StartPostgresEmpty(t)
 		pool := openPool(t, pg.ConnString())
 

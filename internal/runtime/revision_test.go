@@ -142,7 +142,7 @@ func TestConnectUpstreamChoosesTheRevision(t *testing.T) {
 	}
 }
 
-func TestAC4_07ProbeTreatsA503AsNoVersionAnswer(t *testing.T) {
+func TestProbeTreatsA503AsNoVersionAnswer(t *testing.T) {
 	t.Parallel()
 
 	for _, status := range []int{http.StatusServiceUnavailable, http.StatusTooManyRequests, http.StatusInternalServerError} {
@@ -163,7 +163,7 @@ func TestAC4_07ProbeTreatsA503AsNoVersionAnswer(t *testing.T) {
 	}
 }
 
-func TestAC4_07ProbeTreatsAnOlderDiscoverListAsTransient(t *testing.T) {
+func TestProbeTreatsAnOlderDiscoverListAsTransient(t *testing.T) {
 	t.Parallel()
 
 	endpoint, log := scriptedUpstream(t, func(w http.ResponseWriter, request *jsonrpc.Request) {

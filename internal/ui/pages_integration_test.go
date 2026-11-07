@@ -324,9 +324,9 @@ func pageShows(ctx context.Context, text string) bool {
 	return err == nil && strings.Contains(body, text)
 }
 
-// [AC-2-03] In a browser, a form submitted without the session's CSRF token
+// In a browser, a form submitted without the session's CSRF token
 // is refused and changes nothing.
-func TestAC2_03FormWithoutCSRFTokenIsRefused(t *testing.T) {
+func TestFormWithoutCSRFTokenIsRefused(t *testing.T) {
 	env := startUIEnv(t, "")
 	env.insertSession(t, "browser-csrf", nil)
 

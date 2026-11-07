@@ -146,7 +146,7 @@ func requireWaiting(t *testing.T, session *gatewaySession) {
 	}, 30*time.Second, 200*time.Millisecond)
 }
 
-func TestAC2_13ApprovalTimeout(t *testing.T) {
+func TestApprovalTimeout(t *testing.T) {
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 
@@ -154,7 +154,7 @@ func TestAC2_13ApprovalTimeout(t *testing.T) {
 	alice := connectEliciting(t, endpoint, "alice", "e2e-"+rand.String(8))
 	enable(t, alice, name)
 
-	t.Run("[AC-2-13] an approval nobody acts on fails the call after the approval timeout", func(t *testing.T) {
+	t.Run("an approval nobody acts on fails the call after the approval timeout", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), approvalCallBound()+time.Minute)
 		defer cancel()
 

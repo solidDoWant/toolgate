@@ -104,7 +104,7 @@ func (a *workspaceAPI) sessionsList(t *testing.T, client user) sessionsapi.List 
 }
 
 func TestScopeDenyThroughTheAPI(t *testing.T) {
-	t.Run("[AC-4-14] workspace, server: removes it from the list, inserts a deny entry and deletes its allow entries", func(t *testing.T) {
+	t.Run("workspace, server: removes it from the list, inserts a deny entry and deletes its allow entries", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -126,7 +126,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Equal(t, []any{"github"}, changes[len(changes)-1].Details["removed"])
 	})
 
-	t.Run("[AC-4-14] workspace, tool: maps the exposed name, inserts a deny entry and deletes its allow entry", func(t *testing.T) {
+	t.Run("workspace, tool: maps the exposed name, inserts a deny entry and deletes its allow entry", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -146,7 +146,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Equal(t, []string{"github__open_issue"}, listed.Denied, "entries are shown by exposed name")
 	})
 
-	t.Run("[AC-4-14] session, server: deletes its session addition and allow entries and inserts a session deny entry", func(t *testing.T) {
+	t.Run("session, server: deletes its session addition and allow entries and inserts a session deny entry", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -172,7 +172,7 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 		assert.Empty(t, sessions.Sessions[0].Allowed)
 	})
 
-	t.Run("[AC-4-14] session, tool: inserts a session deny entry for the upstream tool", func(t *testing.T) {
+	t.Run("session, tool: inserts a session deny entry for the upstream tool", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 

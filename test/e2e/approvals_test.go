@@ -109,7 +109,7 @@ func callText(result *mcp.CallToolResult) string {
 	return text.String()
 }
 
-func TestAC2_12ApprovalOnThePage(t *testing.T) {
+func TestApprovalOnThePage(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -140,7 +140,7 @@ func TestAC2_12ApprovalOnThePage(t *testing.T) {
 
 	var id, link string
 
-	t.Run("[AC-2-12] without elicitation the call fails at once naming the approval", func(t *testing.T) {
+	t.Run("without elicitation the call fails at once naming the approval", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 
@@ -159,7 +159,7 @@ func TestAC2_12ApprovalOnThePage(t *testing.T) {
 
 	browser := uiBrowser(t)
 
-	t.Run("[AC-2-12] the page lists the approval", func(t *testing.T) {
+	t.Run("the page lists the approval", func(t *testing.T) {
 		response, page := openApprovalLink(t, browser, link, testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 		require.Equal(t, http.StatusOK, response.StatusCode, page)
 		assert.Equal(t, "/ui/approvals/"+id, response.Request.URL.Path, "the sign-in returns to the approval")
@@ -173,7 +173,7 @@ func TestAC2_12ApprovalOnThePage(t *testing.T) {
 		assert.Contains(t, list, "<td>"+name+"</td><td>echo</td>")
 	})
 
-	t.Run("[AC-2-12] after approving, the retry succeeds", func(t *testing.T) {
+	t.Run("after approving, the retry succeeds", func(t *testing.T) {
 		response, err := browser.Get(link)
 		require.NoError(t, err)
 

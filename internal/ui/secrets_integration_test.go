@@ -288,9 +288,9 @@ func TestSecretFormBodyLimitIsFourMiBPlus64KiB(t *testing.T) {
 	assert.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode, "other forms keep the small limit")
 }
 
-// [AC-2-02] In a browser, a user sets, replaces and deletes a secret, and
+// In a browser, a user sets, replaces and deletes a secret, and
 // after saving the value appears in no page.
-func TestAC2_02SecretsInBrowser(t *testing.T) {
+func TestSecretsInBrowser(t *testing.T) {
 	env := startUIEnv(t, "")
 	env.insertSession(t, "browser-secrets", nil)
 

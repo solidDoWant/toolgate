@@ -300,10 +300,10 @@ func TestGrantPagesNeedASession(t *testing.T) {
 	assert.Equal(t, http.StatusSeeOther, response.StatusCode)
 }
 
-// [AC-2-09] In a browser, creating a grant when the sign-in is older than 5
+// In a browser, creating a grant when the sign-in is older than 5
 // minutes sends the user to the IdP first, and creates the grant only after
 // the fresh sign-in.
-func TestAC2_09GrantNeedsAFreshSignIn(t *testing.T) {
+func TestGrantNeedsAFreshSignIn(t *testing.T) {
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 

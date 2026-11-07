@@ -70,14 +70,14 @@ func (e *uiEnv) accessRequestStatus(t *testing.T, id string) string {
 	return request.Status
 }
 
-// [AC-3-17] The Workspaces page applies a widening change only with a fresh
+// The Workspaces page applies a widening change only with a fresh
 // step-up, a narrowing one without, and refuses a POST without the CSRF token
 // or a UI session.
-func TestAC3_17WorkspacesPage(t *testing.T) {
+func TestWorkspacesPage(t *testing.T) {
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 
-	t.Run("[AC-3-17] the page shows the defaults, lists and open verified workspaces", func(t *testing.T) {
+	t.Run("the page shows the defaults, lists and open verified workspaces", func(t *testing.T) {
 		_, err := db.New(env.pool).CreateSession(t.Context(), db.CreateSessionParams{
 			Principal: "dave", SessionID: "attested-1", Workspace: "coder/dave/blog",
 			Attestation: auth.AttestationAttested, Kind: auth.KindUser, Groups: []string{},
@@ -102,7 +102,7 @@ func TestAC3_17WorkspacesPage(t *testing.T) {
 		assert.Contains(t, page, "Sign in again to continue", "a sign-in of unknown age asks for a step-up")
 	})
 
-	t.Run("[AC-3-17] a widening POST without a fresh step-up is refused", func(t *testing.T) {
+	t.Run("a widening POST without a fresh step-up is refused", func(t *testing.T) {
 		browser := env.insertSession(t, "ws-stale", []string{"dev"})
 		env.freshSignIn(t, "ws-stale")
 		env.ageSignIn(t, "ws-stale", ui.StepUpMaxAge+30*time.Second)
@@ -128,7 +128,7 @@ func TestAC3_17WorkspacesPage(t *testing.T) {
 		assert.Equal(t, gateway.ScopeNone, env.scopesOf(t, "dave").VerifiedDefault)
 	})
 
-	t.Run("[AC-3-17] a widening POST with a fresh step-up applies", func(t *testing.T) {
+	t.Run("a widening POST with a fresh step-up applies", func(t *testing.T) {
 		browser := env.insertSession(t, "ws-fresh", []string{"dev"})
 		env.freshSignIn(t, "ws-fresh")
 
@@ -147,7 +147,7 @@ func TestAC3_17WorkspacesPage(t *testing.T) {
 		assert.Contains(t, page, "optin-server")
 	})
 
-	t.Run("[AC-3-17] a narrowing POST applies without a step-up", func(t *testing.T) {
+	t.Run("a narrowing POST applies without a step-up", func(t *testing.T) {
 		browser := env.insertSession(t, "ws-narrow", []string{"dev"})
 		env.freshSignIn(t, "ws-narrow")
 		env.ageSignIn(t, "ws-narrow", time.Hour)
@@ -172,7 +172,7 @@ func TestAC3_17WorkspacesPage(t *testing.T) {
 		assert.False(t, exists)
 	})
 
-	t.Run("[AC-3-17] a POST without the CSRF token is refused", func(t *testing.T) {
+	t.Run("a POST without the CSRF token is refused", func(t *testing.T) {
 		browser := env.insertSession(t, "ws-csrf", []string{"dev"})
 		env.freshSignIn(t, "ws-csrf")
 
@@ -188,7 +188,7 @@ func TestAC3_17WorkspacesPage(t *testing.T) {
 		assert.Equal(t, gateway.ScopeNone, env.scopesOf(t, "dave").VerifiedDefault)
 	})
 
-	t.Run("[AC-3-17] a request without a UI session is refused", func(t *testing.T) {
+	t.Run("a request without a UI session is refused", func(t *testing.T) {
 		browser := env.browser(t)
 
 		response := get(t, browser, env.server.URL+ui.WorkspacesPath)
@@ -204,13 +204,13 @@ func TestAC3_17WorkspacesPage(t *testing.T) {
 	})
 }
 
-// [AC-3-17] A change request's page shows the change before and after, only
+// A change request's page shows the change before and after, only
 // to its owner, and approving it with a fresh step-up applies the change.
-func TestAC3_17ChangeApprovalPage(t *testing.T) {
+func TestChangeApprovalPage(t *testing.T) {
 	env := startUIEnv(t, "admins")
 	env.addGrantTemplates()
 
-	t.Run("[AC-3-17] another user, admins too, gets 404", func(t *testing.T) {
+	t.Run("another user, admins too, gets 404", func(t *testing.T) {
 		id := env.requestChange(t, gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, Workspace: workspaceName, Servers: []string{"optin-server"}})
 
 		for _, groups := range [][]string{{"dev"}, {"dev", "admins"}} {
@@ -228,7 +228,7 @@ func TestAC3_17ChangeApprovalPage(t *testing.T) {
 		assert.Equal(t, "pending", env.accessRequestStatus(t, id))
 	})
 
-	t.Run("[AC-3-17] approving applies the change; then the page offers nothing", func(t *testing.T) {
+	t.Run("approving applies the change; then the page offers nothing", func(t *testing.T) {
 		browser := env.insertSession(t, "change-owner", []string{"dev"})
 		env.freshSignIn(t, "change-owner")
 
@@ -259,7 +259,7 @@ func TestAC3_17ChangeApprovalPage(t *testing.T) {
 		assert.NotContains(t, page, "/deny")
 	})
 
-	t.Run("[AC-3-17] approving needs a fresh step-up", func(t *testing.T) {
+	t.Run("approving needs a fresh step-up", func(t *testing.T) {
 		id := env.requestChange(t, gateway.WorkspaceChange{Action: gateway.WorkspaceDefaults, Verified: gateway.ScopeAll})
 
 		browser := env.insertSession(t, "change-stale", []string{"dev"})
@@ -287,7 +287,7 @@ func TestAC3_17ChangeApprovalPage(t *testing.T) {
 		assert.NotContains(t, page, "/approve")
 	})
 
-	t.Run("[AC-3-17] the approval page needs a UI session", func(t *testing.T) {
+	t.Run("the approval page needs a UI session", func(t *testing.T) {
 		id := env.requestChange(t, gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, Workspace: "coder/dave/other", Servers: []string{"optin-server"}})
 		browser := env.browser(t)
 

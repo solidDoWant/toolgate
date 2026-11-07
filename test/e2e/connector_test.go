@@ -30,12 +30,12 @@ import (
 // at the redirect to it, so nothing listens there.
 const connectorRedirect = "http://127.0.0.1:1/callback"
 
-// TestAC4_09ConnectorSignIn reaches the gateway at its public URL, so the
+// TestConnectorSignIn reaches the gateway at its public URL, so the
 // default mcpPublicURL (publicURL + /mcp) is the resource clients use. A
 // client following the MCP authorization spec finds the IdP through the
 // protected resource metadata, signs in with the connector client using
 // PKCE, and connects with the access token.
-func TestAC4_09ConnectorSignIn(t *testing.T) {
+func TestConnectorSignIn(t *testing.T) {
 	provider := oidcProvider(t)
 	admin := adminClient(t)
 
@@ -47,7 +47,7 @@ func TestAC4_09ConnectorSignIn(t *testing.T) {
 	insecure := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // The test's own TLS proxy on loopback.
 	client := &http.Client{Transport: insecure}
 
-	t.Run("[AC-4-09] an MCP request with no token gets 401 naming the protected resource metadata", func(t *testing.T) {
+	t.Run("an MCP request with no token gets 401 naming the protected resource metadata", func(t *testing.T) {
 		response := postMCP(t, client, resource, "")
 		assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
 		assert.Equal(t, `Bearer resource_metadata="`+metadataURL+`"`, response.Header.Get("WWW-Authenticate"))
@@ -57,7 +57,7 @@ func TestAC4_09ConnectorSignIn(t *testing.T) {
 		assert.Equal(t, `Bearer resource_metadata="`+metadataURL+`", error="invalid_token"`, response.Header.Get("WWW-Authenticate"))
 	})
 
-	t.Run("[AC-4-09] the metadata document names the IdP as the authorization server", func(t *testing.T) {
+	t.Run("the metadata document names the IdP as the authorization server", func(t *testing.T) {
 		for _, target := range []string{metadataURL, publicURL + wellknown.ProtectedResourceRootPath} {
 			metadata := getResourceMetadata(t, client, target)
 			assert.Equal(t, resource, metadata.Resource, target)
@@ -65,7 +65,7 @@ func TestAC4_09ConnectorSignIn(t *testing.T) {
 		}
 	})
 
-	t.Run("[AC-4-09] a client following the MCP authorization spec signs the user in and acts as them", func(t *testing.T) {
+	t.Run("a client following the MCP authorization spec signs the user in and acts as them", func(t *testing.T) {
 		user := testutil.OIDCUser{Subject: "connector-" + rand.String(8), Email: "connector@example.com", EmailVerified: true}
 		session := "e2e-" + rand.String(8)
 

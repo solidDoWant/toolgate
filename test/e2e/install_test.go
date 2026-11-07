@@ -17,10 +17,10 @@ import (
 // release named toolgate.
 const gatewayDeployment = "toolgate"
 
-func TestAC1_01ChartInstall(t *testing.T) {
+func TestChartInstall(t *testing.T) {
 	admin := adminClient(t)
 
-	t.Run("[AC-1-01] the CRDs exist", func(t *testing.T) {
+	t.Run("the CRDs exist", func(t *testing.T) {
 		extensions, err := apiextensionsclient.NewForConfig(adminConfig(t))
 		require.NoError(t, err)
 
@@ -34,7 +34,7 @@ func TestAC1_01ChartInstall(t *testing.T) {
 		}
 	})
 
-	t.Run("[AC-1-01] two replicas are ready and /healthz answers on both", func(t *testing.T) {
+	t.Run("two replicas are ready and /healthz answers on both", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			deployment, err := admin.AppsV1().Deployments(releaseNamespace()).Get(t.Context(), gatewayDeployment, metav1.GetOptions{})
 			require.NoError(collect, err)

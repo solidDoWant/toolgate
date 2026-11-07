@@ -18,10 +18,10 @@ import (
 	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
-// [AC-4-11] In a browser, the user picks "Only these servers" with a
+// In a browser, the user picks "Only these servers" with a
 // checkbox per server. Adding servers needs a fresh sign-in; removing one
 // applies without it.
-func TestAC4_11UnverifiedAllowListPage(t *testing.T) {
+func TestUnverifiedAllowListPage(t *testing.T) {
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 
@@ -43,7 +43,7 @@ func TestAC4_11UnverifiedAllowListPage(t *testing.T) {
 		return scopes.UnverifiedDefault, scopes.UnverifiedServers
 	}
 
-	t.Run("[AC-4-11] with a fresh sign-in, \"Only these servers\" saves the checked servers", func(t *testing.T) {
+	t.Run("with a fresh sign-in, \"Only these servers\" saves the checked servers", func(t *testing.T) {
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+ui.WorkspacesPath)))
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.SignInToOIDC(user), chromedp.WaitVisible(save)))
 
@@ -65,7 +65,7 @@ func TestAC4_11UnverifiedAllowListPage(t *testing.T) {
 		}, time.Minute, 100*time.Millisecond)
 	})
 
-	t.Run("[AC-4-11] without a fresh sign-in, removing a server applies and adding one asks for a sign-in", func(t *testing.T) {
+	t.Run("without a fresh sign-in, removing a server applies and adding one asks for a sign-in", func(t *testing.T) {
 		_, err := env.pool.Exec(t.Context(), "UPDATE ui_sessions SET auth_time = now() - interval '6 minutes' WHERE principal = $1", user.Subject)
 		require.NoError(t, err)
 

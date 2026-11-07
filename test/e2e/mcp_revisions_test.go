@@ -183,18 +183,18 @@ func approveInBrowser(t *testing.T, link string) {
 	require.Contains(t, page, "This approval was approved.")
 }
 
-func TestAC4_08ClientRevisions(t *testing.T) {
+func TestClientRevisions(t *testing.T) {
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
 	webUI(t, endpoint)
 
-	t.Run("[AC-4-08] a go-sdk client at its default tries 2026-07-28 first and ends on 2025-11-25", func(t *testing.T) {
+	t.Run("a go-sdk client at its default tries 2026-07-28 first and ends on 2025-11-25", func(t *testing.T) {
 		session := connectGateway(t, endpoint, "alice", "e2e-"+rand.String(8))
 		assert.Equal(t, revisionLegacy, session.session.InitializeResult().ProtocolVersion)
 	})
 
-	t.Run("[AC-4-08] server/discover without X-Toolgate-Session gets the older revisions and makes no session", func(t *testing.T) {
+	t.Run("server/discover without X-Toolgate-Session gets the older revisions and makes no session", func(t *testing.T) {
 		principal := "e2e-discover-" + rand.String(6)
 		header := gatewayHeader(t, principal, "", nil)
 		header.Del(auth.SessionHeader)
@@ -207,7 +207,7 @@ func TestAC4_08ClientRevisions(t *testing.T) {
 		assert.Zero(t, sessionRows(t, principal), "no sessions row")
 	})
 
-	t.Run("[AC-4-08] a 2026-07-28 request without X-Toolgate-Session gets 400 with a plain invalid request error", func(t *testing.T) {
+	t.Run("a 2026-07-28 request without X-Toolgate-Session gets 400 with a plain invalid request error", func(t *testing.T) {
 		principal := "e2e-nosession-" + rand.String(6)
 		header := gatewayHeader(t, principal, "", nil)
 		header.Del(auth.SessionHeader)
@@ -227,13 +227,13 @@ func TestAC4_08ClientRevisions(t *testing.T) {
 		assert.Zero(t, sessionRows(t, principal), "no sessions row")
 	})
 
-	t.Run("[AC-4-08] a dual-era client with X-Toolgate-Session that sends a modern request first stays on 2026-07-28", func(t *testing.T) {
+	t.Run("a dual-era client with X-Toolgate-Session that sends a modern request first stays on 2026-07-28", func(t *testing.T) {
 		session := connectModern(t, endpoint, "alice", "e2e-"+rand.String(8), false)
 		assert.Equal(t, revisionModern, session.session.InitializeResult().ProtocolVersion)
 		assert.Subset(t, listedTools(t, t.Context(), session.session), []string{gateway.ToolListServers})
 	})
 
-	t.Run("[AC-4-08] a 2026-07-28-only client lists, enables, calls, completes an approval and disables", func(t *testing.T) {
+	t.Run("a 2026-07-28-only client lists, enables, calls, completes an approval and disables", func(t *testing.T) {
 		session := connectModern(t, endpoint, "alice", "e2e-"+rand.String(8), true)
 		require.Equal(t, revisionModern, session.session.InitializeResult().ProtocolVersion)
 

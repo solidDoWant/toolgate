@@ -87,7 +87,7 @@ func resolverServerResources(t *testing.T, image string) []k8sruntime.RawExtensi
 	return append(resources, k8sruntime.RawExtension{Raw: secret})
 }
 
-func TestAC2_18Resolver(t *testing.T) {
+func TestResolver(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -101,7 +101,7 @@ func TestAC2_18Resolver(t *testing.T) {
 	name := createTemplate(t, kube, "e2e-resolver", "per-user", resolverServerResources(t, image))
 	requireTemplateValid(t, kube, name)
 
-	t.Run("[AC-2-18] the test server gets the resolver's value, and a fresh one after it expires", func(t *testing.T) {
+	t.Run("the test server gets the resolver's value, and a fresh one after it expires", func(t *testing.T) {
 		pods := gatewayPods(t, admin)
 		session := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))

@@ -54,7 +54,7 @@ func sessionEvents(t *testing.T, admin *kubernetes.Clientset, session string) []
 	return lines
 }
 
-func TestAC3_22ResumeAfterLongPause(t *testing.T) {
+func TestResumeAfterLongPause(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -80,7 +80,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 		requireNamespaceGone(t, admin, instance.Name, "nothing runs during the pause")
 	}
 
-	t.Run("[AC-3-22] a session resumed from the same workspace within the window gets its servers back", func(t *testing.T) {
+	t.Run("a session resumed from the same workspace within the window gets its servers back", func(t *testing.T) {
 		session := "e2e-" + rand.String(8)
 		startAndPause(t, session)
 
@@ -120,7 +120,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 		requireNamespaceGone(t, admin, instance.Name, "the resumed session's instance stops when it ends again")
 	})
 
-	t.Run("[AC-3-22] a session resumed from another workspace starts with no servers", func(t *testing.T) {
+	t.Run("a session resumed from another workspace starts with no servers", func(t *testing.T) {
 		session := "e2e-" + rand.String(8)
 		startAndPause(t, session)
 
@@ -134,7 +134,7 @@ func TestAC3_22ResumeAfterLongPause(t *testing.T) {
 		idleOut(t, admin, session)
 	})
 
-	t.Run("[AC-3-22] a session resumed after the window starts with no servers, and the audit log records the forgetting", func(t *testing.T) {
+	t.Run("a session resumed after the window starts with no servers, and the audit log records the forgetting", func(t *testing.T) {
 		session := "e2e-" + rand.String(8)
 		startAndPause(t, session)
 

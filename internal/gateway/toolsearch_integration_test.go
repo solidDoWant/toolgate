@@ -297,7 +297,7 @@ func TestToolSearchMode(t *testing.T) {
 	})
 }
 
-func TestAC4_02SearchNeverReturnsRefusedTools(t *testing.T) {
+func TestSearchNeverReturnsRefusedTools(t *testing.T) {
 	newFixture := func(t *testing.T) *mcpFixture {
 		t.Helper()
 
@@ -407,9 +407,9 @@ const (
 	accessAskValue     = "ask"
 )
 
-// TestAC4_03SearchQuality runs the frozen fixture through the real rebuild
+// TestToolSearchQuality runs the frozen fixture through the real rebuild
 // and the real search.
-func TestAC4_03SearchQuality(t *testing.T) {
+func TestToolSearchQuality(t *testing.T) {
 	endpoint := testutil.StartEmbeddings(t)
 
 	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: endpoint.Model, Timeout: 30 * time.Second})
@@ -438,7 +438,7 @@ func TestSearchEval(t *testing.T) {
 
 	scores := scoreSearchFixture(t, embedder)
 
-	t.Logf("model %s: words only %d of %d, hybrid %d of %d (the AC-4-03 bar is %d)", model, scores.words, scores.total, scores.hybrid, scores.total, minToolSearchHits)
+	t.Logf("model %s: words only %d of %d, hybrid %d of %d (the search quality bar is %d)", model, scores.words, scores.total, scores.hybrid, scores.total, minToolSearchHits)
 }
 
 type searchScores struct {

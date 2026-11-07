@@ -84,7 +84,7 @@ func requireNamespaceDeleted(t *testing.T, admin *kubernetes.Clientset, name str
 	}, 4*time.Minute, 2*time.Second)
 }
 
-func TestAC2_16HelmReleaseTemplate(t *testing.T) {
+func TestHelmReleaseTemplate(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -98,7 +98,7 @@ func TestAC2_16HelmReleaseTemplate(t *testing.T) {
 
 	var namespace string
 
-	t.Run("[AC-2-16] the template becomes ready when Flux reports the release ready, and serves tools", func(t *testing.T) {
+	t.Run("the template becomes ready when Flux reports the release ready, and serves tools", func(t *testing.T) {
 		tools := enable(t, session, name)
 		assert.ElementsMatch(t, prefixedTools(name), tools)
 
@@ -111,7 +111,7 @@ func TestAC2_16HelmReleaseTemplate(t *testing.T) {
 		assert.Empty(t, result.err, "the server's tool answers")
 	})
 
-	t.Run("[AC-2-16] stopping the instance removes it fully", func(t *testing.T) {
+	t.Run("stopping the instance removes it fully", func(t *testing.T) {
 		require.NotEmpty(t, namespace, "the enable subtest found the namespace")
 
 		result := callServerTool(t.Context(), session.session, gateway.ToolDisableServer, name)
@@ -121,7 +121,7 @@ func TestAC2_16HelmReleaseTemplate(t *testing.T) {
 	})
 }
 
-func TestAC2_17FailingHelmRelease(t *testing.T) {
+func TestFailingHelmRelease(t *testing.T) {
 	mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -133,7 +133,7 @@ func TestAC2_17FailingHelmRelease(t *testing.T) {
 	pods := gatewayPods(t, admin)
 	session := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 
-	t.Run("[AC-2-17] a HelmRelease that fails to install fails toolgate_enable_server with its reason", func(t *testing.T) {
+	t.Run("a HelmRelease that fails to install fails toolgate_enable_server with its reason", func(t *testing.T) {
 		started := time.Now()
 		result := awaitEnable(t, startEnable(t, session, name))
 

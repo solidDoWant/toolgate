@@ -17,8 +17,8 @@ func TestChangeUnverified(t *testing.T) {
 		want      workspacesapi.Unverified
 		assertion require.ErrorAssertionFunc
 	}{
-		{name: "[AC-4-11] true is the unverified allow list", body: `{"action":"allow","unverified":true}`, want: workspacesapi.Unverified{List: true}},
-		{name: "[AC-4-11] a string is a default", body: `{"action":"defaults","unverified":"list"}`, want: workspacesapi.Unverified{Default: "list"}},
+		{name: "true is the unverified allow list", body: `{"action":"allow","unverified":true}`, want: workspacesapi.Unverified{List: true}},
+		{name: "a string is a default", body: `{"action":"defaults","unverified":"list"}`, want: workspacesapi.Unverified{Default: "list"}},
 		{name: "absent", body: `{"action":"allow"}`},
 		{name: "a number is refused", body: `{"action":"allow","unverified":1}`, assertion: require.Error},
 	}

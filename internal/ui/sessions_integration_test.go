@@ -145,10 +145,10 @@ func TestSessionPages(t *testing.T) {
 	})
 }
 
-// [AC-2-04] In a browser, a user sees their open sessions with the enabled
+// In a browser, a user sees their open sessions with the enabled
 // servers and last decisions, gets 404 for another user's session, and an
 // admin sees all.
-func TestAC2_04Sessions(t *testing.T) {
+func TestSessionsPage(t *testing.T) {
 	env := startUIEnv(t, "admins")
 	env.insertSession(t, "ac-user", nil)
 	env.insertSession(t, "ac-admin", []string{"admins"})

@@ -70,10 +70,10 @@ func (e *uiEnv) requestStatusOf(t *testing.T, id string) string {
 	return status
 }
 
-// [AC-3-19] In a browser, the user allows a server for one session and,
+// In a browser, the user allows a server for one session and,
 // after a fresh sign-in, always for the workspace. A second session doesn't
 // get the session-only addition, and ending the session removes it.
-func TestAC3_19SessionAddition(t *testing.T) {
+func TestSessionAddition(t *testing.T) {
 	env := startUIEnv(t, "")
 
 	browser := toolgatetest.StartBrowser(t, chromedp.Flag("ignore-certificate-errors", true))
@@ -88,7 +88,7 @@ func TestAC3_19SessionAddition(t *testing.T) {
 	allowSession := chromedp.CSS(`#allow-session`)
 	allowWorkspace := chromedp.CSS(`#allow-workspace`)
 
-	t.Run("[AC-3-19] \"Allow for this session\" adds the server to that session only", func(t *testing.T) {
+	t.Run("\"Allow for this session\" adds the server to that session only", func(t *testing.T) {
 		id := env.insertServerRequest(t, user.Subject, first, "immich")
 
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+ui.ApprovalPath(id))))
@@ -109,7 +109,7 @@ func TestAC3_19SessionAddition(t *testing.T) {
 		assert.False(t, listed, "no workspace list is created")
 	})
 
-	t.Run("[AC-3-19] \"Always allow in this workspace\" needs a fresh sign-in and adds the server to the list", func(t *testing.T) {
+	t.Run("\"Always allow in this workspace\" needs a fresh sign-in and adds the server to the list", func(t *testing.T) {
 		id := env.insertServerRequest(t, user.Subject, first, "paperless")
 
 		_, err := env.pool.Exec(t.Context(), "UPDATE ui_sessions SET auth_time = now() - interval '6 minutes' WHERE principal = $1", user.Subject)
@@ -131,7 +131,7 @@ func TestAC3_19SessionAddition(t *testing.T) {
 		assert.Equal(t, []string{"immich"}, env.additionsOf(t, first), "the list choice adds no session addition")
 	})
 
-	t.Run("[AC-3-19] ending the session removes its session-only addition", func(t *testing.T) {
+	t.Run("ending the session removes its session-only addition", func(t *testing.T) {
 		_, err := env.pool.Exec(t.Context(), "UPDATE sessions SET last_seen_at = now() - interval '3 hours' WHERE id = $1", first)
 		require.NoError(t, err)
 

@@ -141,7 +141,7 @@ func auditEventLinks(t *testing.T, browser context.Context, publicURL, server st
 	return links
 }
 
-func TestAC2_19AuditPayloads(t *testing.T) {
+func TestAuditPayloads(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -208,7 +208,7 @@ func TestAC2_19AuditPayloads(t *testing.T) {
 		return result
 	}
 
-	t.Run("[AC-2-19] with payloads off neither a small nor a large call is stored", func(t *testing.T) {
+	t.Run("with payloads off neither a small nor a large call is stored", func(t *testing.T) {
 		echo(t, "small off")
 		echo(t, strings.Repeat("l", audit.InlinePayloadLimit+1024))
 
@@ -235,7 +235,7 @@ func TestAC2_19AuditPayloads(t *testing.T) {
 		return text
 	}
 
-	t.Run("[AC-2-19] a small result is inline and viewable from its event", func(t *testing.T) {
+	t.Run("a small result is inline and viewable from its event", func(t *testing.T) {
 		echo(t, "small marker on")
 
 		require.Never(t, func() bool { return objectCount(t, s3Client, bucket) > 0 }, 2*time.Second, time.Second,
@@ -246,7 +246,7 @@ func TestAC2_19AuditPayloads(t *testing.T) {
 		assert.Contains(t, view(t, links["tool.result"]), "small marker on")
 	})
 
-	t.Run("[AC-2-19] a result over 64 KiB is in S3 and viewable from its event", func(t *testing.T) {
+	t.Run("a result over 64 KiB is in S3 and viewable from its event", func(t *testing.T) {
 		marker := "BIGMARKER" + rand.String(6)
 		echo(t, marker+strings.Repeat("l", audit.InlinePayloadLimit+1024))
 

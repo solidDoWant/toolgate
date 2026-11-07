@@ -79,7 +79,7 @@ func refusedWith(message string) require.ErrorAssertionFunc {
 	}
 }
 
-func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
+func TestGatewayWritesAreConfined(t *testing.T) {
 	admin := adminClient(t)
 	gateway := gatewayClient(t)
 
@@ -109,7 +109,7 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 	grantAdmin(t, admin, managedByNamespace)
 	grantAdmin(t, admin, unrestrictedNamespace)
 
-	t.Run("[AC-1-24] a ClusterRole is refused", func(t *testing.T) {
+	t.Run("a ClusterRole is refused", func(t *testing.T) {
 		role := &rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: "e2e-" + suffix, Labels: instanceLabels(instance)}}
 		_, err := gateway.RbacV1().ClusterRoles().Create(t.Context(), role, metav1.CreateOptions{})
 		require.Error(t, err)
@@ -120,7 +120,7 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 		return &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "e2e", Namespace: namespace, Labels: instanceLabels(instance)}}
 	}
 
-	t.Run("[AC-1-24] a Role in an instance namespace is accepted", func(t *testing.T) {
+	t.Run("a Role in an instance namespace is accepted", func(t *testing.T) {
 		_, err := gateway.RbacV1().Roles(instanceNamespace).Create(t.Context(), role(instanceNamespace), metav1.CreateOptions{})
 		require.NoError(t, err)
 
@@ -128,12 +128,12 @@ func TestAC1_24GatewayWritesAreConfined(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("[AC-1-24] a Role outside toolgate's namespaces is refused", func(t *testing.T) {
+	t.Run("a Role outside toolgate's namespaces is refused", func(t *testing.T) {
 		_, err := gateway.RbacV1().Roles(plainNamespace).Create(t.Context(), role(plainNamespace), metav1.CreateOptions{})
 		refusedWith("may write only in namespaces labelled toolgate.soliddowant.dev/writable=true")(t, err)
 	})
 
-	t.Run("[AC-1-24] a write in a writable namespace without Pod Security restricted is refused", func(t *testing.T) {
+	t.Run("a write in a writable namespace without Pod Security restricted is refused", func(t *testing.T) {
 		_, err := gateway.RbacV1().Roles(unrestrictedNamespace).Create(t.Context(), role(unrestrictedNamespace), metav1.CreateOptions{})
 		refusedWith("may write only in namespaces labelled pod-security.kubernetes.io/enforce=restricted")(t, err)
 	})

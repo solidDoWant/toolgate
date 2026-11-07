@@ -106,7 +106,7 @@ func initializeConnector(t *testing.T, endpoint, user string) string {
 	return id
 }
 
-func TestAC4_10SessionsWithoutHelper(t *testing.T) {
+func TestSessionsWithoutHelper(t *testing.T) {
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
@@ -117,7 +117,7 @@ func TestAC4_10SessionsWithoutHelper(t *testing.T) {
 			session+"' AND type = 'session.end'"))
 	}
 
-	t.Run("[AC-4-10] a server/discover before initialize gets the older revisions and makes no session", func(t *testing.T) {
+	t.Run("a server/discover before initialize gets the older revisions and makes no session", func(t *testing.T) {
 		principal := "e2e-connector-discover-" + rand.String(6)
 		header := connectorHeader(t, principal)
 
@@ -129,7 +129,7 @@ func TestAC4_10SessionsWithoutHelper(t *testing.T) {
 		assert.Zero(t, sessionRows(t, principal), "no sessions row")
 	})
 
-	t.Run("[AC-4-10] a client without the session header lists, enables, calls, completes an approval and disables", func(t *testing.T) {
+	t.Run("a client without the session header lists, enables, calls, completes an approval and disables", func(t *testing.T) {
 		session := connectConnector(t, endpoint, "alice")
 		require.Equal(t, revisionLegacy, session.session.InitializeResult().ProtocolVersion)
 
@@ -167,7 +167,7 @@ func TestAC4_10SessionsWithoutHelper(t *testing.T) {
 		assert.NotContains(t, listedTools(t, t.Context(), session.session), name+"__echo")
 	})
 
-	t.Run("[AC-4-10] two clients without the session header get separate sessions", func(t *testing.T) {
+	t.Run("two clients without the session header get separate sessions", func(t *testing.T) {
 		first := connectConnector(t, endpoint, "alice")
 		second := connectConnector(t, endpoint, "alice")
 		require.NotEqual(t, first.toolgateSession(), second.toolgateSession())
@@ -179,7 +179,7 @@ func TestAC4_10SessionsWithoutHelper(t *testing.T) {
 			"the second session has its own enabled set")
 	})
 
-	t.Run("[AC-4-10] a DELETE of the MCP session ends the session with session.end", func(t *testing.T) {
+	t.Run("a DELETE of the MCP session ends the session with session.end", func(t *testing.T) {
 		mcpSessionID := initializeConnector(t, endpoint, "alice")
 
 		request, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, endpoint, nil)
@@ -199,7 +199,7 @@ func TestAC4_10SessionsWithoutHelper(t *testing.T) {
 			"the session ends at once, before the DELETE returns")
 	})
 
-	t.Run("[AC-4-10] the idle release of the MCP session ends the session with session.end", func(t *testing.T) {
+	t.Run("the idle release of the MCP session ends the session with session.end", func(t *testing.T) {
 		mcpSessionID := initializeConnector(t, endpoint, "alice")
 
 		require.Eventually(t, func() bool {

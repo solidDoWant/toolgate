@@ -75,7 +75,7 @@ func awaitStarted(t *testing.T, upstream *upstreamServer) {
 }
 
 func TestRuleChanges(t *testing.T) {
-	t.Run("[AC-1-25] a rule blocking a tool for one user withdraws it from that user's open session within 5 s and refuses its calls with the rule's reason; other users keep it", func(t *testing.T) {
+	t.Run("a rule blocking a tool for one user withdraws it from that user's open session within 5 s and refuses its calls with the rule's reason; other users keep it", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")

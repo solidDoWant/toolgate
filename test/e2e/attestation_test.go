@@ -191,7 +191,7 @@ func connectWithHeader(t *testing.T, endpoint string, header http.Header) *gatew
 	return observed
 }
 
-func TestAC3_16AttestedUserSessions(t *testing.T) {
+func TestAttestedUserSessions(t *testing.T) {
 	namespace := workloadNamespace(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)
@@ -229,7 +229,7 @@ func TestAC3_16AttestedUserSessions(t *testing.T) {
 		return strings.TrimSpace(identity)
 	}
 
-	t.Run("[AC-3-16] a user token plus a pod's projected token is attested in the coder workspace", func(t *testing.T) {
+	t.Run("a user token plus a pod's projected token is attested in the coder workspace", func(t *testing.T) {
 		token := workspacePodToken(t, namespace, image, "alice", "dev")
 		header := attestedHeader(t, "alice", groups, token, "claimed-ws-"+rand.String(4))
 		session := connect(t, header)
@@ -263,7 +263,7 @@ func TestAC3_16AttestedUserSessions(t *testing.T) {
 		assert.NotEqual(t, gateway.StatusBlocked, entry.Status, entry.Reason)
 	})
 
-	t.Run("[AC-3-16] a pod labelled for another user falls back to the user with the claimed workspace", func(t *testing.T) {
+	t.Run("a pod labelled for another user falls back to the user with the claimed workspace", func(t *testing.T) {
 		claimed := "claimed-ws-" + rand.String(4)
 		token := workspacePodToken(t, namespace, image, "bob", "dev")
 		header := attestedHeader(t, "alice", groups, token, claimed)
@@ -282,7 +282,7 @@ func TestAC3_16AttestedUserSessions(t *testing.T) {
 		assert.Equal(t, gateway.StatusBlocked, entry.Status, "an opt-in server needs a grant without an attestation")
 	})
 
-	t.Run("[AC-3-16] a JWT-SVID bound by the SPIFFE ID pattern attests the user", func(t *testing.T) {
+	t.Run("a JWT-SVID bound by the SPIFFE ID pattern attests the user", func(t *testing.T) {
 		svid := allowed.MintSVID(t, "/coder/alice/dev")
 
 		// The gateway fetches the bundle soon after the endpoint starts, so

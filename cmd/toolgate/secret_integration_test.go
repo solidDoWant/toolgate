@@ -177,7 +177,7 @@ func objectsHolding(t *testing.T, kube client.Client, value string) []string {
 	return found
 }
 
-func TestAC1_21SecretCommands(t *testing.T) {
+func TestSecretCommands(t *testing.T) {
 	isolateUserConfig(t)
 	t.Setenv("TOOLGATE_SESSION", "session-cli")
 	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
@@ -190,14 +190,14 @@ func TestAC1_21SecretCommands(t *testing.T) {
 	code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
 	require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
-	t.Run("[AC-1-21] toolgate secret set reads the value from stdin and never echoes it", func(t *testing.T) {
+	t.Run("toolgate secret set reads the value from stdin and never echoes it", func(t *testing.T) {
 		code, out, errOut := runCLI(t, secretValue, "secret", "set", "github-token")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 		assert.Contains(t, out, "github-token")
 		assert.NotContains(t, out+errOut, secretValue)
 	})
 
-	t.Run("[AC-1-21] toolgate secret list shows the name and dates only", func(t *testing.T) {
+	t.Run("toolgate secret list shows the name and dates only", func(t *testing.T) {
 		code, out, errOut := runCLI(t, "", "secret", "list")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 		assert.NotContains(t, out, secretValue)
@@ -228,7 +228,7 @@ func TestAC1_21SecretCommands(t *testing.T) {
 		assert.Regexp(t, `^github\s+per-user\s+stopped\s+false\s+GitHub tools$`, lines[1])
 	})
 
-	t.Run("[AC-1-21] enabling the template gives the value to the instance through a Secret object only", func(t *testing.T) {
+	t.Run("enabling the template gives the value to the instance through a Secret object only", func(t *testing.T) {
 		session := served.connectAs(t, "session-enable", "")
 
 		// envtest runs no pods, so the instance never becomes ready: the

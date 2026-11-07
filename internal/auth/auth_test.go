@@ -104,7 +104,7 @@ func (f fixture) do(t *testing.T, token string, headers map[string]string) *http
 	return response
 }
 
-func TestAC1_03BadTokensAreRefused(t *testing.T) {
+func TestBadTokensAreRefused(t *testing.T) {
 	t.Parallel()
 
 	session := map[string]string{"X-Toolgate-Session": "session-1"}
@@ -118,12 +118,12 @@ func TestAC1_03BadTokensAreRefused(t *testing.T) {
 		wantAudience bool
 	}{
 		{
-			name:       "[AC-1-03] no token",
+			name:       "no token",
 			token:      func(*tgtestutil.OIDCProvider) string { return "" },
 			wantReason: "missing token",
 		},
 		{
-			name: "[AC-1-03] expired token",
+			name: "expired token",
 			token: func(provider *tgtestutil.OIDCProvider) string {
 				return provider.MintAccessToken(t, tgtestutil.TokenClaims{
 					Subject:   "alice",
@@ -135,7 +135,7 @@ func TestAC1_03BadTokensAreRefused(t *testing.T) {
 			wantAudience: true,
 		},
 		{
-			name: "[AC-1-03] token for another audience",
+			name: "token for another audience",
 			token: func(provider *tgtestutil.OIDCProvider) string {
 				return provider.MintAccessToken(t, tgtestutil.TokenClaims{
 					Subject:  "alice",
@@ -145,7 +145,7 @@ func TestAC1_03BadTokensAreRefused(t *testing.T) {
 			wantReason: "audience not allowed",
 		},
 		{
-			name: "[AC-1-03] token from another issuer",
+			name: "token from another issuer",
 			token: func(provider *tgtestutil.OIDCProvider) string {
 				return provider.MintAccessToken(t, tgtestutil.TokenClaims{
 					Subject: "alice",
@@ -157,7 +157,7 @@ func TestAC1_03BadTokensAreRefused(t *testing.T) {
 			wantAudience: true,
 		},
 		{
-			name: "[AC-1-03] token signed by another provider",
+			name: "token signed by another provider",
 			token: func(*tgtestutil.OIDCProvider) string {
 				other := tgtestutil.StartOIDCProvider(t, tgtestutil.OIDCOptions{})
 
@@ -167,7 +167,7 @@ func TestAC1_03BadTokensAreRefused(t *testing.T) {
 			wantAudience: true,
 		},
 		{
-			name:       "[AC-1-03] not a bearer token",
+			name:       "not a bearer token",
 			token:      func(*tgtestutil.OIDCProvider) string { return "" },
 			authorize:  "Basic YWxpY2U6c2VjcmV0",
 			wantReason: "missing token",
@@ -365,7 +365,7 @@ func TestMalformedGroupsClaimIsRefused(t *testing.T) {
 	require.Len(t, f.recorder.all(), 1)
 }
 
-func TestAC1_10IdentityHeaders(t *testing.T) {
+func TestIdentityHeadersAreValidated(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -375,7 +375,7 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 		wantStatus     int
 	}{
 		{
-			name:           "[AC-1-10] session and workspace of 128 characters are accepted",
+			name:           "session and workspace of 128 characters are accepted",
 			requireSession: true,
 			headers: map[string]string{
 				"X-Toolgate-Session":   strings.Repeat("s", 128),
@@ -384,13 +384,13 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:           "[AC-1-10] session of 129 characters",
+			name:           "session of 129 characters",
 			requireSession: true,
 			headers:        map[string]string{"X-Toolgate-Session": strings.Repeat("s", 129)},
 			wantStatus:     http.StatusBadRequest,
 		},
 		{
-			name:           "[AC-1-10] workspace of 129 characters",
+			name:           "workspace of 129 characters",
 			requireSession: true,
 			headers: map[string]string{
 				"X-Toolgate-Session":   "s-1",
@@ -399,13 +399,13 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "[AC-1-10] session with YAML characters",
+			name:           "session with YAML characters",
 			requireSession: true,
 			headers:        map[string]string{"X-Toolgate-Session": "a: b"},
 			wantStatus:     http.StatusBadRequest,
 		},
 		{
-			name:           "[AC-1-10] workspace with a slash",
+			name:           "workspace with a slash",
 			requireSession: true,
 			headers: map[string]string{
 				"X-Toolgate-Session":   "s-1",
@@ -414,7 +414,7 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "[AC-1-10] workspace with a newline",
+			name:           "workspace with a newline",
 			requireSession: true,
 			headers: map[string]string{
 				"X-Toolgate-Session":   "s-1",
@@ -423,7 +423,7 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 		},
 		{
-			name:           "[AC-1-10] empty workspace header",
+			name:           "empty workspace header",
 			requireSession: true,
 			headers: map[string]string{
 				"X-Toolgate-Session":   "s-1",
@@ -432,7 +432,7 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 			wantStatus: http.StatusOK,
 		},
 		{
-			name:           "[AC-1-10] missing session header on MCP requests",
+			name:           "missing session header on MCP requests",
 			requireSession: true,
 			headers:        map[string]string{},
 			wantStatus:     http.StatusOK,
@@ -462,7 +462,7 @@ func TestAC1_10IdentityHeaders(t *testing.T) {
 			wantStatus:     http.StatusOK,
 		},
 		{
-			name:           "[AC-1-10] invalid session header where it is not required",
+			name:           "invalid session header where it is not required",
 			requireSession: false,
 			headers:        map[string]string{"X-Toolgate-Session": "a b"},
 			wantStatus:     http.StatusBadRequest,

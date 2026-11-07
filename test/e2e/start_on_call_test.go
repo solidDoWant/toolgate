@@ -42,13 +42,13 @@ func declareTools(t *testing.T, name, start string, tools ...string) {
 	requireTemplateValid(t, kube, name)
 }
 
-func TestAC4_13StartOnFirstCall(t *testing.T) {
+func TestStartOnFirstCall(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)
 	endpoint := forwardToGateway(t, admin, pods[0])
 
-	t.Run("[AC-4-13] a call to a cataloged server with nothing running starts it, sends progress and is forwarded", func(t *testing.T) {
+	t.Run("a call to a cataloged server with nothing running starts it, sends progress and is forwarded", func(t *testing.T) {
 		name := createTemplate(t, kube, "e2e-oncall", "per-session", testServerResources(t, mcpServerImage(t), 0, nil))
 		declareTools(t, name, "", "echo")
 
@@ -67,7 +67,7 @@ func TestAC4_13StartOnFirstCall(t *testing.T) {
 		requireOneInstance(t, admin, name)
 	})
 
-	t.Run("[AC-4-13] a start failure fails the call with its reason", func(t *testing.T) {
+	t.Run("a start failure fails the call with its reason", func(t *testing.T) {
 		name := createTemplate(t, kube, "e2e-oncall-fail", "per-session", helmReleaseResources(t, map[string]any{}))
 		declareTools(t, name, "", "echo")
 
@@ -80,7 +80,7 @@ func TestAC4_13StartOnFirstCall(t *testing.T) {
 		assert.Contains(t, toolText(result), "the value image is required")
 	})
 
-	t.Run("[AC-4-13] a template with start onEnable starts on enable", func(t *testing.T) {
+	t.Run("a template with start onEnable starts on enable", func(t *testing.T) {
 		name := createTemplate(t, kube, "e2e-onenable", "per-session", testServerResources(t, mcpServerImage(t), 0, nil))
 		declareTools(t, name, catalog.StartOnEnable, "echo", "env")
 
