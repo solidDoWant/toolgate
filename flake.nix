@@ -134,6 +134,10 @@
 
             # Link and anchor check for the Markdown docs (make docs-check).
             pkgs.lychee
+
+            # The web UI's stylesheet (make ui-css): Tailwind CSS v4's
+            # standalone CLI, so the build needs no Node.
+            pkgs.tailwindcss_4
           ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
             # Headless browser for the UI's browser tests (chromedp). nixpkgs
             # builds Chromium for Linux only; elsewhere the tests skip.

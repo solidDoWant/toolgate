@@ -1,0 +1,101 @@
+/* Input of the web UI's stylesheet. `make ui-css` builds it with the
+   Tailwind CSS standalone CLI into static/toolgate.css, which the binary
+   embeds. Edit this file, legacy.css or the templates, never the output. */
+@layer theme, base, legacy, components, utilities;
+
+/* No preflight: the pages not yet on the shared components rely on the
+   browser's default margins and lists, as before. */
+@import "tailwindcss/theme.css" layer(theme) source(none);
+@import "./legacy.css" layer(legacy);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../templates";
+@source "../static/ui.js";
+
+/* The colour tokens of legacy.css as Tailwind colours, so both themes
+   follow the same variables: bg-surface, text-muted, border-border... */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-focus: var(--focus);
+  --color-code: var(--code-bg);
+  --color-ok: var(--ok-bg);
+  --color-ok-text: var(--ok-text);
+  --color-warn: var(--warn-bg);
+  --color-warn-text: var(--warn-text);
+  --color-bad: var(--bad-bg);
+  --color-bad-text: var(--bad-text);
+  --color-neutral: var(--neutral-bg);
+  --color-neutral-text: var(--neutral-text);
+}
+
+@layer components {
+  /* Without preflight, a class that sets display would show a hidden
+     element, such as a token input's textarea. */
+  [hidden] {
+    display: none !important;
+  }
+
+  /* Buttons of the shared components. */
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-muted bg-surface px-3 py-1.5 text-sm font-semibold text-text no-underline hover:bg-neutral cursor-pointer;
+  }
+  .btn-primary {
+    @apply border-accent bg-accent text-accent-text hover:bg-accent hover:brightness-110;
+  }
+  .btn-small {
+    @apply px-2 py-0.5 text-xs;
+  }
+  /* A quiet destructive action: text in the danger colour until hovered. */
+  .btn-quiet-danger {
+    @apply border-transparent bg-transparent text-danger hover:border-danger hover:bg-bad;
+  }
+
+  /* Compact form controls inside the shared components. */
+  .field-label {
+    @apply mb-1 block text-sm font-medium;
+  }
+  .field-help {
+    @apply mt-1 text-xs text-muted;
+  }
+  .control {
+    @apply m-0 block rounded-md border border-muted bg-surface px-2.5 py-1.5 text-sm text-text;
+  }
+
+  /* The segmented control: radio buttons drawn as one row of buttons. */
+  .segmented {
+    @apply m-0 inline-flex overflow-hidden rounded-md border border-muted p-0;
+  }
+  .segmented label {
+    @apply m-0 cursor-pointer border-r border-muted px-3 py-1.5 text-sm font-normal last:border-r-0 has-checked:bg-accent has-checked:text-accent-text has-focus-visible:outline-3 has-focus-visible:outline-focus;
+  }
+  .segmented input {
+    @apply sr-only;
+  }
+
+  /* The token input: chips and a text box. Without JavaScript its textarea
+     shows instead, one item per line. */
+  .token-input {
+    @apply flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-muted bg-surface px-1.5 py-1 focus-within:outline-3 focus-within:outline-focus;
+  }
+  .token-input input {
+    @apply m-0 min-w-24 flex-1 border-0 bg-transparent p-0.5 text-sm text-text outline-none focus-visible:outline-none;
+  }
+  .token {
+    @apply inline-flex items-center gap-1 rounded-full bg-neutral px-2 py-0.5 font-mono text-xs text-neutral-text;
+  }
+  .token button {
+    @apply m-0 border-0 bg-transparent p-0 text-sm leading-none text-neutral-text hover:bg-transparent hover:text-danger;
+  }
+
+  dialog.modal::backdrop {
+    background: rgb(0 0 0 / 0.45);
+  }
+}

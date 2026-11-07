@@ -44,6 +44,7 @@ jobs:
       acceptance: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') && 'true' || steps.filter.outputs.acceptance }}
       docs: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') && 'true' || steps.filter.outputs.docs }}
       plugin: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/master') && 'true' || steps.filter.outputs.plugin }}
+      ui: ${{ steps.filter.outputs.ui }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: filter
@@ -65,6 +66,8 @@ jobs:
               - '{**/*.md,scripts/docs/**}'
             plugin:
               - '{plugin/**,.claude-plugin/**,scripts/plugin-check.sh,.github/workflows/ci.yml}'
+            ui:
+              - 'internal/ui/**'
 
   # The test tiers run as parallel jobs, inside the flake's dev shell, so CI
   # uses exactly the toolchain developers and agents use.
@@ -269,11 +272,31 @@ jobs:
           export TEST_GUARD_PR_LABELS
           make test-guard
 
+  # Screenshots of every web UI page (make ui-screenshots), uploaded for a
+  # person to review on pull requests that change the web UI.
+  ui-screenshots:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.ui == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/nix-dev-shell
+      - name: Render the screenshots
+        run: nix develop -c make ui-screenshots UI_SCREENSHOTS_DIR=build/ui-screenshots
+      - name: Upload the screenshots
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ui-screenshots
+          path: build/ui-screenshots/
+          if-no-files-found: error
+          retention-days: 30
+
   # The single required status check. It always runs, so docs-only changes
   # still produce a passing `checks`; it fails if any job failed or was
   # cancelled, and passes when each succeeded or was skipped.
   checks:
-    needs: [changes, lint, unit, integration, e2e, e2e-scoreboard, scoreboard-tests, docs, plugin, test-guard]
+    needs: [changes, lint, unit, integration, e2e, e2e-scoreboard, scoreboard-tests, docs, plugin, test-guard, ui-screenshots]
     if: always()
     runs-on: ubuntu-latest
     steps:

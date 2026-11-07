@@ -89,7 +89,7 @@ An instance is outdated when it runs an old version of its template. A ready, ou
 
 If the instance stopped or changed before the request arrived, the page tells the user and shows the current list. If the template was deleted, or the owner lost access, or the instance is idle with no session that uses it, the gateway stops the instance and does not start a new one.
 
-The navigation shows the Blocks link only to admins.
+The sidebar shows the Blocks link only to admins.
 
 ## The Sessions pages
 
@@ -162,14 +162,14 @@ When audit payloads are on, the event page also shows the payload of the event. 
 
 `/ui/blocks` is only for admins. A user who is not an admin gets 403.
 
-The page has two parts. The first part lists the temporary blocks that are live now, and a form that adds one. The second part lists the `ToolgateRule` objects that the gateway reads from git. This list is read-only, and each rule shows if it is valid. To change a rule, change it in git.
+The page starts with a "New block" button. Under it are two tables. The first table lists the temporary blocks that are live now. The second table lists the `ToolgateRule` objects that the gateway reads from git. This list is read-only, and each rule shows if it is valid. To change a rule, change it in git. Times show as relative times, such as "in 3 h". Hold the pointer over a time to see the exact UTC time.
 
-A temporary block refuses the tools that match it, for every user, until it expires. The form has these fields:
+A temporary block refuses the tools that match it, for every user, until it expires. "New block" opens the form in a dialog. If the browser does not run JavaScript, the button opens the same form on its own page, `/ui/blocks/new`. The form has these fields:
 
-- Principals, groups, workspaces, sessions, servers and tools. Write one item on each line. An item is a glob, and `*` matches any run of characters.
-- Attestation: `attested` or `user`.
+- Principals, groups, workspaces, sessions, servers and tools. Type an item and press Enter to add it. Select × on an item to remove it. An item is a glob, and `*` matches any run of characters. Without JavaScript, write one item on each line.
+- Attestation: any, `attested` or `user`.
+- A duration from 1 minute to 30 days: a number and a unit (minutes, hours or days).
 - A reason of up to 1024 characters. Users see it in the refusal.
-- A duration from 1 minute to 30 days, in minutes.
 
 You must set at least one match field. Each list can have 64 items of 256 characters. At most 1000 blocks can be live. The gateway writes a `block.create` event to the audit log, and open sessions get the change within 5 seconds.
 

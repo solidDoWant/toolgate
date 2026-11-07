@@ -1,0 +1,45 @@
+{{/* block-form: the "New block" form, in the Blocks page's dialog and on
+its own page. It takes the page. */}}
+{{define "block-form"}}<form method="post" action="/ui/blocks" id="block-form" class="m-0">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+{{if .Data.Error}}<p class="flash error m-0 mb-4" role="alert">{{.Data.Error}}</p>{{end}}
+<p class="m-0 mb-4 text-sm text-muted">Set at least one match field. Items are globs: <code>*</code> matches any run of characters. Press Enter to add an item.</p>
+<div class="grid grid-cols-1 gap-x-4 gap-y-3 md:grid-cols-2">
+{{template "token-input" (dict "Name" "principals" "Label" "Principals" "Help" "User or service account IDs." "Value" .Data.Form.Principals "Placeholder" "Add a principal")}}
+{{template "token-input" (dict "Name" "groups" "Label" "Groups" "Help" "Identity provider groups." "Value" .Data.Form.Groups "Placeholder" "Add a group")}}
+{{template "token-input" (dict "Name" "workspaces" "Label" "Workspaces" "Help" "Workspace IDs." "Value" .Data.Form.Workspaces "Placeholder" "Add a workspace")}}
+{{template "token-input" (dict "Name" "sessions" "Label" "Sessions" "Help" "Session IDs." "Value" .Data.Form.Sessions "Placeholder" "Add a session")}}
+{{template "token-input" (dict "Name" "servers" "Label" "Servers" "Help" "MCP server names." "Value" .Data.Form.Servers "Placeholder" "Add a server")}}
+{{template "token-input" (dict "Name" "tools" "Label" "Tools" "Help" "Written as server__tool." "Value" .Data.Form.Tools "Placeholder" "Add a tool")}}
+<fieldset class="m-0 border-0 p-0">
+<legend class="field-label">Attestation</legend>
+<div class="segmented">
+<label><input type="radio" name="attestation" value=""{{if eq .Data.Form.Attestation ""}} checked{{end}}>Any</label>
+<label><input type="radio" name="attestation" value="attested"{{if eq .Data.Form.Attestation "attested"}} checked{{end}}>Attested</label>
+<label><input type="radio" name="attestation" value="user"{{if eq .Data.Form.Attestation "user"}} checked{{end}}>User</label>
+</div>
+<p class="field-help">Which sessions the block matches.</p>
+</fieldset>
+<fieldset class="m-0 border-0 p-0">
+<legend class="field-label">Duration</legend>
+<div class="flex gap-2">
+<input type="number" id="field-duration" name="duration" min="1" max="43200" value="{{.Data.Form.Duration}}" required class="control w-24" aria-label="Duration" aria-describedby="help-duration">
+<select id="field-unit" name="unit" class="control w-auto" aria-label="Unit">
+<option value="minutes"{{if eq .Data.Form.Unit "minutes"}} selected{{end}}>minutes</option>
+<option value="hours"{{if eq .Data.Form.Unit "hours"}} selected{{end}}>hours</option>
+<option value="days"{{if eq .Data.Form.Unit "days"}} selected{{end}}>days</option>
+</select>
+</div>
+<p id="help-duration" class="field-help">From 1 minute to 30 days. A block can't end early.</p>
+</fieldset>
+<div class="md:col-span-2">
+<label for="field-reason" class="field-label">Reason</label>
+<textarea id="field-reason" name="reason" rows="3" maxlength="1024" required class="control w-full" aria-describedby="help-reason">{{.Data.Form.Reason}}</textarea>
+<p id="help-reason" class="field-help">Up to 1024 characters.</p>
+</div>
+</div>
+<div class="mt-5 flex justify-end gap-2">
+<a href="/ui/blocks" class="btn" data-close-dialog>Cancel</a>
+<button type="submit" class="btn btn-primary">Add block</button>
+</div>
+</form>{{end}}

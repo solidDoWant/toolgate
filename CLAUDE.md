@@ -37,7 +37,7 @@ Call out any change touching these in the PR description.
 - **Storage:** `pgx/v5`, `pressly/goose` embedded forward-only migrations, `sqlc` for queries. S3 through the AWS SDK v2.
 - **Secrets:** `github.com/tink-crypto/tink-go/v2` (AEAD). Keychain: `github.com/zalando/go-keyring`.
 - **YAML:** `sigs.k8s.io/yaml` and the unstructured types. **Telemetry:** OpenTelemetry Go SDK, `log/slog` JSON logs, Prometheus metrics.
-- **Web UI:** `html/template` + vendored htmx. No JavaScript build step.
+- **Web UI:** `html/template` + vendored htmx. No JavaScript build step. Tailwind CSS v4 through its standalone CLI (`make ui-css`); pages use the shared components in `internal/ui/templates/components.html`.
 - **Nix flake** dev shell; **golangci-lint**; **Helm** chart in `deploy/charts/toolgate`.
 
 ## Project Structure
@@ -53,6 +53,8 @@ Run `make help` for the full list, and keep it and this section current as targe
 - `make fmt` / `make lint` (`lint-fix`): format; run every linter and check, reporting all failures before exiting non-zero.
 - `make test`: unit tests with `-race`.
 - `make generate` / `make check-generate`: regenerate CRDs, deepcopy and sqlc code, or fail on drift.
+- `make ui-css`: build the web UI's stylesheet with the Tailwind CSS standalone CLI. `make generate` runs it too.
+- `make ui-screenshots`: render every web UI page with seeded data (light and dark, 1280×800 and 390×844) into PNGs in `bin/ui-screenshots`. CI uploads them on PRs that change `internal/ui/`.
 - `make generate-docs`: regenerate the gateway configuration reference (`docs/admin/configuration.md`) from the doc comments in `internal/config`. `make generate` runs it too.
 - `make test-integration`: `integration`-tagged tests against PostgreSQL and S3 in Docker, and a local Kubernetes API server (envtest, binaries from the dev shell).
 - `make test-e2e`: a new kind cluster with Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server; deleted afterwards. Agents set `E2E_CLUSTER=toolgate-<issue>` (`docs/dev/e2e-tests.md`).

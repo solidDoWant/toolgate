@@ -79,3 +79,33 @@ func outcomeBadge(outcome string) outcomeView {
 
 	return outcomeView{Label: label, Class: class}
 }
+
+// relativeFuture describes at, a moment expected after now such as an
+// expiry, as a distance from now: "in 5 min". A moment already past reads
+// "now".
+func relativeFuture(now, at time.Time) timeView {
+	if at.IsZero() {
+		return timeView{}
+	}
+
+	view := timeView{UTC: at.UTC().Format("2006-01-02 15:04:05") + " UTC", ISO: at.UTC().Format(time.RFC3339)}
+	left := at.Sub(now)
+
+	switch {
+	case left < time.Minute:
+		view.Text = "now"
+	case left < time.Hour:
+		view.Text = fmt.Sprintf("in %d min", int(left/time.Minute))
+	case left < 24*time.Hour:
+		view.Text = fmt.Sprintf("in %d h", int(left/time.Hour))
+	default:
+		view.Text = fmt.Sprintf("in %d d", int(left/(24*time.Hour)))
+	}
+
+	return view
+}
+
+// timeUntil is relativeFuture against the clock, for templates.
+func timeUntil(at time.Time) timeView {
+	return relativeFuture(time.Now(), at)
+}

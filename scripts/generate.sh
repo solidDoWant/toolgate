@@ -6,7 +6,8 @@
 #   - sqlc.yaml: query code, with sqlc;
 #   - internal/config: the gateway configuration reference in docs/admin/;
 #   - internal/apidoc: the OpenAPI document of the /api/v1/ routes, docs/dev/openapi.yaml;
-#   - the chart's values.yaml: the chart values reference in docs/admin/.
+#   - the chart's values.yaml: the chart values reference in docs/admin/;
+#   - internal/ui/styles: the web UI's stylesheet, with Tailwind CSS.
 # Generated code is committed and never edited by hand.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -31,6 +32,10 @@ if [[ -d internal/apidoc/docgen ]]; then
 fi
 if [[ -f deploy/charts/toolgate/values.yaml ]]; then
 	./scripts/chart-values-docs.sh
+	ran=1
+fi
+if [[ -f internal/ui/styles/app.css ]]; then
+	./scripts/build-ui-css.sh
 	ran=1
 fi
 if [[ -f internal/ui/static/SHA256SUMS ]]; then

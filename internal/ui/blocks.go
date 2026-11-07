@@ -52,7 +52,11 @@ type blockForm struct {
 	Principals, Groups, Workspaces, Sessions, Servers, Tools string
 	Attestation                                              string
 	Reason                                                   string
-	Minutes                                                  string
+	// Duration and Unit (minutes, hours or days) are the form's lifetime.
+	// Minutes is the lifetime in minutes, which a form without Duration
+	// sends instead.
+	Duration, Unit string
+	Minutes        string
 }
 
 func readBlockForm(request *http.Request) blockForm {
@@ -65,6 +69,8 @@ func readBlockForm(request *http.Request) blockForm {
 		Tools:       request.PostFormValue("tools"),
 		Attestation: request.PostFormValue("attestation"),
 		Reason:      request.PostFormValue("reason"),
+		Duration:    request.PostFormValue("duration"),
+		Unit:        request.PostFormValue("unit"),
 		Minutes:     request.PostFormValue("minutes"),
 	}
 }
@@ -147,17 +153,43 @@ func (f blockForm) parse() (v1alpha1.RuleMatch, string, time.Duration, error) {
 		return match, "", 0, fmt.Errorf("the reason is longer than %d characters", MaxBlockReasonLength)
 	}
 
-	minutes, err := strconv.Atoi(strings.TrimSpace(f.Minutes))
+	lifetime, err := f.lifetime()
 	if err != nil {
-		return match, "", 0, errors.New("the duration must be a whole number of minutes")
+		return match, "", 0, err
 	}
 
-	// Compare in minutes so a huge value can't overflow a Duration.
-	if minutes < int(MinBlockDuration/time.Minute) || minutes > int(MaxBlockDuration/time.Minute) {
-		return match, "", 0, errors.New("the duration must be from 1 minute to 30 days (43200 minutes)")
+	return match, reason, lifetime, nil
+}
+
+// blockUnits are the units of a block's duration, in minutes.
+var blockUnits = map[string]int{"minutes": 1, "hours": 60, "days": 24 * 60}
+
+// lifetime reads the duration and its unit, or the minutes of a form
+// without a duration, and bounds it.
+func (f blockForm) lifetime() (time.Duration, error) {
+	amount, unit := f.Duration, f.Unit
+	if strings.TrimSpace(amount) == "" {
+		amount, unit = f.Minutes, "minutes"
 	}
 
-	return match, reason, time.Duration(minutes) * time.Minute, nil
+	perUnit, ok := blockUnits[unit]
+	if !ok {
+		return 0, errors.New("the duration's unit must be minutes, hours or days")
+	}
+
+	count, err := strconv.Atoi(strings.TrimSpace(amount))
+	if err != nil {
+		return 0, errors.New("the duration must be a whole number")
+	}
+
+	maxMinutes := int(MaxBlockDuration / time.Minute)
+
+	// Bound the count before multiplying, so a huge value can't overflow.
+	if count < 1 || count > maxMinutes || count*perUnit > maxMinutes {
+		return 0, errors.New("the duration must be from 1 minute to 30 days (43200 minutes)")
+	}
+
+	return time.Duration(count*perUnit) * time.Minute, nil
 }
 
 // blockRow is one live temporary block as the page shows it.
@@ -281,8 +313,19 @@ func (u *UI) blocksPage(ctx context.Context) (blocksPage, error) {
 	return page, nil
 }
 
+// newBlockForm is the form's starting values: a one-hour block.
+func newBlockForm() blockForm {
+	return blockForm{Duration: "1", Unit: "hours"}
+}
+
 func (u *UI) blocks(writer http.ResponseWriter, request *http.Request) {
-	u.showBlocks(writer, request, http.StatusOK, blockForm{Minutes: "60"}, "")
+	u.showBlocks(writer, request, http.StatusOK, newBlockForm(), "")
+}
+
+// newBlock is the "New block" form on its own page, for a browser without
+// JavaScript, where the dialog can't open.
+func (u *UI) newBlock(writer http.ResponseWriter, request *http.Request) {
+	u.renderStatus(writer, request, http.StatusOK, "block_new", "New block", blocksPage{Form: newBlockForm()})
 }
 
 func (u *UI) showBlocks(writer http.ResponseWriter, request *http.Request, status int, form blockForm, problem string) {
@@ -296,6 +339,14 @@ func (u *UI) showBlocks(writer http.ResponseWriter, request *http.Request, statu
 
 	page.Form = form
 	page.Error = problem
+
+	// A failed form shows again on its own page, with the problem and the
+	// values the browser sent, whether it came from the dialog or not.
+	if problem != "" {
+		u.renderStatus(writer, request, status, "block_new", "New block", page)
+
+		return
+	}
 
 	u.renderStatus(writer, request, status, "blocks", "Blocks", page)
 }

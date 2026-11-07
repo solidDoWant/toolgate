@@ -1,55 +1,36 @@
+{{define "heading"}}{{template "page-header" (dict "Title" "Blocks" "Summary" "Temporary blocks stop matching tool calls until they end. Standing rules come from git." "ActionLabel" "New block" "ActionHref" "/ui/blocks/new" "ActionDialog" "new-block")}}{{end}}
 {{define "content"}}
-<h2>Temporary blocks</h2>
+<h2 class="m-0 mb-2 text-base font-semibold">Temporary blocks</h2>
 {{if .Data.Blocks}}
-<div class="table-wrap"><table id="blocks">
-<thead><tr><th>ID</th><th>Match</th><th>Reason</th><th>Created by</th><th>Created</th><th>Ends</th></tr></thead>
-<tbody>
-{{range .Data.Blocks}}<tr>
-<td>{{.ID}}</td><td>{{.Match}}</td><td>{{.Reason}}</td><td>{{template "who" .Who}}</td>
-<td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
+{{template "table-start" (dict "ID" "blocks" "Label" "Temporary blocks" "Columns" (list "ID" "Match" "Reason" "Created by" "Created" "Ends"))}}
+{{range .Data.Blocks}}<tr class="border-b border-border last:border-b-0 hover:bg-code">
+<td class="px-3 py-2 align-top font-mono text-xs">{{.ID}}</td>
+<td class="px-3 py-2 align-top">{{.Match}}</td>
+<td class="px-3 py-2 align-top">{{.Reason}}</td>
+<td class="px-3 py-2 align-top">{{template "who" .Who}}</td>
+<td class="px-3 py-2 align-top whitespace-nowrap">{{template "reltime" (since .CreatedAt)}}</td>
+<td class="px-3 py-2 align-top whitespace-nowrap">{{template "reltime" (until .ExpiresAt)}}</td>
 </tr>
-{{end}}</tbody>
-</table></div>
+{{end}}{{template "table-end"}}
 {{else}}
-<p class="empty">No temporary blocks are live.</p>
+{{template "empty-state" (dict "Text" "No temporary blocks are live." "ActionLabel" "New block" "ActionHref" "/ui/blocks/new" "ActionDialog" "new-block")}}
 {{end}}
-<h3>Add a temporary block</h3>
-{{if .Data.Error}}<p class="flash error" role="alert">{{.Data.Error}}</p>{{end}}
-<form method="post" action="/ui/blocks" id="block-form">
-<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-<p>Set at least one field. Write one item per line. Items are globs: <code>*</code> matches any run of characters.</p>
-<p><label>Principals<br><textarea name="principals" rows="2">{{.Data.Form.Principals}}</textarea></label></p>
-<p><label>Groups<br><textarea name="groups" rows="2">{{.Data.Form.Groups}}</textarea></label></p>
-<p><label>Workspaces<br><textarea name="workspaces" rows="2">{{.Data.Form.Workspaces}}</textarea></label></p>
-<p><label>Sessions<br><textarea name="sessions" rows="2">{{.Data.Form.Sessions}}</textarea></label></p>
-<p><label>Servers<br><textarea name="servers" rows="2">{{.Data.Form.Servers}}</textarea></label></p>
-<p><label>Tools (<code>server__tool</code>)<br><textarea name="tools" rows="2">{{.Data.Form.Tools}}</textarea></label></p>
-<p><label>Attestation
-<select name="attestation">
-<option value=""{{if eq .Data.Form.Attestation ""}} selected{{end}}>any</option>
-<option value="attested"{{if eq .Data.Form.Attestation "attested"}} selected{{end}}>attested</option>
-<option value="user"{{if eq .Data.Form.Attestation "user"}} selected{{end}}>user</option>
-</select></label></p>
-<p><label>Reason (up to 1024 characters)<br><textarea name="reason" rows="2" maxlength="1024" required>{{.Data.Form.Reason}}</textarea></label></p>
-<p><label>Duration in minutes (1 to 43200, which is 30 days)
-<input type="number" name="minutes" min="1" max="43200" value="{{.Data.Form.Minutes}}" required></label></p>
-<p>A block ends at its expiry. You can't end it early.</p>
-<button type="submit" class="primary">Add block</button>
-</form>
-<h2>Standing rules</h2>
-<p>These <code>ToolgateRule</code> objects come from git. This page only shows them.</p>
+<h2 class="m-0 mb-1 text-base font-semibold">Standing rules</h2>
+<p class="m-0 mb-2 text-sm text-muted">These <code>ToolgateRule</code> objects come from git. This page only shows them.</p>
 {{if .Data.Rules}}
-<div class="table-wrap"><table id="rules">
-<thead><tr><th>Rule</th><th>Match</th><th>Reason</th><th>Expires</th><th>Valid</th></tr></thead>
-<tbody>
-{{range .Data.Rules}}<tr>
-<td>{{.Namespace}}/{{.Name}}</td><td>{{.Match}}</td><td>{{.Reason}}</td>
-<td>{{with .Expires}}{{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{else}}never{{end}}</td>
-<td>{{if .Valid}}<span class="badge badge-ok">valid</span>{{else}}<span class="badge badge-bad">invalid: {{.Message}}</span>{{end}}</td>
+{{template "table-start" (dict "ID" "rules" "Label" "Standing rules" "Columns" (list "Rule" "Match" "Reason" "Expires" "Valid"))}}
+{{range .Data.Rules}}<tr class="border-b border-border last:border-b-0 hover:bg-code">
+<td class="px-3 py-2 align-top">{{.Namespace}}/{{.Name}}</td>
+<td class="px-3 py-2 align-top">{{.Match}}</td>
+<td class="px-3 py-2 align-top">{{.Reason}}</td>
+<td class="px-3 py-2 align-top whitespace-nowrap">{{with .Expires}}{{template "reltime" (until .)}}{{else}}never{{end}}</td>
+<td class="px-3 py-2 align-top">{{if .Valid}}{{template "badge" "valid"}}{{else}}<span class="badge badge-bad">invalid: {{.Message}}</span>{{end}}</td>
 </tr>
-{{end}}</tbody>
-</table></div>
+{{end}}{{template "table-end"}}
 {{else}}
-<p class="empty">There are no standing rules.</p>
+{{template "empty-state" (dict "Text" "There are no standing rules.")}}
 {{end}}
+{{template "dialog-start" (dict "ID" "new-block" "Title" "New block")}}
+{{template "block-form" .}}
+{{template "dialog-end"}}
 {{end}}

@@ -1,0 +1,6 @@
+{{define "heading"}}{{template "page-header" (dict "Title" "New block" "Summary" "Stop matching tool calls for a set time, while an incident lasts.")}}{{end}}
+{{define "content"}}
+{{template "card-start" (dict)}}
+{{template "block-form" .}}
+{{template "card-end"}}
+{{end}}

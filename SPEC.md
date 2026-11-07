@@ -332,7 +332,7 @@ Claude Code reloads the settings file during the session. Hooks delivered this w
 
 ## 14. Web UI
 
-Server-rendered Go `html/template` pages, with htmx (a pinned, vendored copy) for partial updates and no JavaScript build step. Sign-in uses OIDC authorization code with PKCE and a server-side session in PostgreSQL (cookie `__Host-toolgate`, `SameSite=Lax`, CSRF tokens on every form).
+Server-rendered Go `html/template` pages, with htmx (a pinned, vendored copy) for partial updates and no JavaScript build step. The styles use Tailwind CSS v4: its standalone tool builds the stylesheet in `make`, and the binary embeds it, so nothing needs Node. Pages sit in one app shell (a sidebar on a desktop, a menu button on a phone) and use shared template components. Every form also works without JavaScript. Sign-in uses OIDC authorization code with PKCE and a server-side session in PostgreSQL (cookie `__Host-toolgate`, `SameSite=Lax`, CSRF tokens on every form).
 
 Pages:
 - **Servers:** the user's catalog view, their instances and status; restart an outdated instance.

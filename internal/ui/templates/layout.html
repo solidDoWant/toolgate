@@ -9,34 +9,49 @@
 <link rel="stylesheet" href="/ui/static/toolgate.css">
 <script src="/ui/static/htmx-2.0.7.min.js" defer></script>
 <script src="/ui/static/copy.js" defer></script>
+<script src="/ui/static/ui.js" defer></script>
 </head>
-<body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
-<header class="site-header">
-<span class="brand">toolgate</span>
-{{if not .SignedOut}}<form method="post" action="/ui/logout" class="logout">
-<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-<span class="user">{{.User}}</span>
-<button type="submit" class="secondary">Sign out</button>
-</form>
-{{end}}</header>
-{{if not .SignedOut}}<nav aria-label="Main">
-<a href="/ui/servers"{{if eq .Section "servers"}} aria-current="page"{{end}}>Servers</a>
-<a href="/ui/sessions"{{if eq .Section "sessions"}} aria-current="page"{{end}}>Sessions</a>
-<a href="/ui/grants"{{if eq .Section "grants"}} aria-current="page"{{end}}>Grants</a>
-<a href="/ui/approvals"{{if eq .Section "approvals"}} aria-current="page"{{end}}>Approvals</a>
-<a href="/ui/workspaces"{{if eq .Section "workspaces"}} aria-current="page"{{end}}>Workspaces</a>
-{{if .Secrets}}<a href="/ui/secrets"{{if eq .Section "secrets"}} aria-current="page"{{end}}>Secrets</a>
-{{end}}<a href="/ui/audit"{{if eq .Section "audit"}} aria-current="page"{{end}}>Audit</a>
-<a href="/ui/setup"{{if eq .Section "setup"}} aria-current="page"{{end}}>Setup</a>
-{{if .Admin}}<a href="/ui/blocks"{{if eq .Section "blocks"}} aria-current="page"{{end}}>Blocks</a>
+<body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}' class="md:flex md:min-h-screen">
+{{/* A page for a browser without a session shows no nav, user or sign-out. */}}{{if .SignedOut}}<header class="border-b border-border bg-surface px-4 py-2 md:w-56 md:shrink-0 md:border-r md:border-b-0 md:px-5 md:pt-5"><span class="text-lg font-bold tracking-wide">toolgate</span></header>
+{{else}}<input type="checkbox" id="menu-toggle" class="peer sr-only md:hidden" aria-controls="sidebar" aria-label="Menu">
+<header class="flex items-center justify-between border-b border-border bg-surface px-4 py-2 md:hidden">
+<span class="text-lg font-bold tracking-wide">toolgate</span>
+<label for="menu-toggle" class="btn m-0 peer-focus-visible:outline-3" aria-hidden="true">Menu</label>
+</header>
+<aside id="sidebar" class="hidden flex-col border-b border-border bg-surface peer-checked:flex md:sticky md:top-0 md:flex md:h-screen md:w-56 md:shrink-0 md:border-r md:border-b-0">
+<div class="hidden px-5 pt-5 pb-3 text-lg font-bold tracking-wide md:block">toolgate</div>
+<nav aria-label="Main" class="flex flex-1 flex-col gap-4 overflow-y-auto px-3 py-3">
+{{template "nav-group" "Use"}}
+{{template "nav-link" (navLink .Section "servers" "/ui/servers" "Servers" 0)}}
+{{template "nav-link" (navLink .Section "sessions" "/ui/sessions" "Sessions" 0)}}
+{{template "nav-link" (navLink .Section "workspaces" "/ui/workspaces" "Workspaces" 0)}}
+{{if .Secrets}}{{template "nav-link" (navLink .Section "secrets" "/ui/secrets" "Secrets" 0)}}{{end}}
+{{template "nav-link" (navLink .Section "setup" "/ui/setup" "Setup" 0)}}
+</ul></div>
+{{template "nav-group" "Review"}}
+{{template "nav-link" (navLink .Section "approvals" "/ui/approvals" "Approvals" .Approvals)}}
+{{template "nav-link" (navLink .Section "grants" "/ui/grants" "Grants" 0)}}
+{{template "nav-link" (navLink .Section "audit" "/ui/audit" "Audit" 0)}}
+</ul></div>
+{{if .Admin}}{{template "nav-group" "Admin"}}
+{{template "nav-link" (navLink .Section "blocks" "/ui/blocks" "Blocks" 0)}}
+</ul></div>
 {{end}}</nav>
-{{end}}<main>
-<h1>{{.Title}}</h1>
+<form method="post" action="/ui/logout" class="logout m-0 flex items-center justify-between gap-2 border-t border-border px-4 py-3">
+<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+<span class="min-w-0 truncate text-sm text-muted" title="{{.User}}">{{.User}}</span>
+<button type="submit" class="btn btn-small">Sign out</button>
+</form>
+</aside>
+{{end}}<main class="mx-auto w-full max-w-6xl min-w-0 flex-1 px-4 py-4 md:px-8 md:py-6">
+{{/* A page on the shared components defines heading as its page header. */}}{{block "heading" .}}<h1>{{.Title}}</h1>{{end}}
 {{template "content" .}}
 </main>
 </body>
 </html>
 {{end}}
+{{define "nav-group"}}<div><p class="m-0 mb-1 px-2 text-xs font-semibold tracking-wider text-muted uppercase">{{.}}</p><ul class="m-0 flex list-none flex-col gap-0.5 p-0">{{end}}
+{{define "nav-link"}}<li><a href="{{.Href}}" class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm text-text no-underline hover:bg-neutral aria-[current=page]:bg-accent aria-[current=page]:font-semibold aria-[current=page]:text-accent-text"{{if .Current}} aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="rounded-full bg-warn px-2 text-xs font-semibold text-warn-text" title="{{.Count}} waiting for you">{{.Count}}</span>{{end}}</a></li>{{end}}
 
 {{define "availability"}}<div>Verified workspace without a list: <span class="badge {{if .VerifiedDefault}}badge-ok{{else}}badge-bad{{end}}">{{if .VerifiedDefault}}allowed{{else}}blocked{{end}}</span></div>
 {{range .Lists}}<div>Workspace {{template "ws" (workspace .Workspace)}}: <span class="badge {{if .Allowed}}badge-ok{{else}}badge-bad{{end}}">{{if .Allowed}}allowed{{else}}blocked{{end}}</span></div>
@@ -44,6 +59,5 @@
 <div><a href="/ui/workspaces">Change on the Workspaces page</a></div>{{end}}
 {{define "who"}}<span class="who" title="{{.Hover}}">{{.Text}}</span>{{if .Copyable}} <details class="copy-id"><summary>ID</summary><input readonly size="24" aria-label="Full ID" value="{{.Raw}}"></details>{{end}}{{end}}
 {{define "ws"}}<span title="{{.ID}}">{{.Label}}</span>{{end}}
-{{define "reltime"}}{{if .Text}}<time datetime="{{.ISO}}" title="{{.UTC}}">{{.Text}}</time>{{end}}{{end}}
 {{define "outcome"}}<span class="badge {{.Class}}">{{.Label}}</span>{{end}}
 {{define "access"}}{{if .Everyone}}Everyone{{else}}{{range .UserPatterns}}<div>Users <code>{{.}}</code></div>{{end}}{{range .GroupPatterns}}<div>Group <code>{{.}}</code></div>{{end}}{{if not (or .UserPatterns .GroupPatterns)}}Listed users and groups{{end}}{{end}}{{end}}

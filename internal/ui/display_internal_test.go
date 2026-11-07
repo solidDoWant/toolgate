@@ -38,6 +38,33 @@ func TestRelativeTime(t *testing.T) {
 	assert.Equal(t, timeView{}, relativeTime(now, time.Time{}))
 }
 
+func TestRelativeFuture(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+
+	for _, test := range []struct {
+		name string
+		at   time.Time
+		want string
+	}{
+		{"the past", now.Add(-time.Minute), "now"},
+		{"seconds", now.Add(59 * time.Second), "now"},
+		{"one minute", now.Add(time.Minute), "in 1 min"},
+		{"last minute of the hour", now.Add(59 * time.Minute), "in 59 min"},
+		{"one hour", now.Add(time.Hour), "in 1 h"},
+		{"hours", now.Add(23 * time.Hour), "in 23 h"},
+		{"one day", now.Add(24 * time.Hour), "in 1 d"},
+		{"days", now.Add(30 * 24 * time.Hour), "in 30 d"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			view := relativeFuture(now, test.at.In(time.FixedZone("x", 3600)))
+			assert.Equal(t, test.want, view.Text)
+			assert.Equal(t, test.at.UTC().Format("2006-01-02 15:04:05")+" UTC", view.UTC)
+		})
+	}
+
+	assert.Equal(t, timeView{}, relativeFuture(now, time.Time{}))
+}
+
 func TestOutcomeBadge(t *testing.T) {
 	for outcome, want := range map[string]outcomeView{
 		"ok":       {"ok", "badge-ok"},

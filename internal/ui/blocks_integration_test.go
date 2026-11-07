@@ -164,6 +164,97 @@ func TestBlocksPage(t *testing.T) {
 		assert.Equal(t, 2, env.countRows(t, "temporary_blocks"))
 	})
 
+	t.Run("the duration takes a number and a unit, bounded at 30 days", func(t *testing.T) {
+		env := startUIEnv(t, "toolgate-admins")
+		admin, token := env.adminBrowser(t)
+
+		for _, test := range []struct {
+			duration, unit string
+			want           int
+			lifetime       time.Duration
+		}{
+			{"1", "minutes", http.StatusSeeOther, time.Minute},
+			{"2", "hours", http.StatusSeeOther, 2 * time.Hour},
+			{"30", "days", http.StatusSeeOther, 30 * 24 * time.Hour},
+			{"720", "hours", http.StatusSeeOther, 30 * 24 * time.Hour},
+			{"43200", "minutes", http.StatusSeeOther, 30 * 24 * time.Hour},
+			{"31", "days", http.StatusBadRequest, 0},
+			{"721", "hours", http.StatusBadRequest, 0},
+			{"43201", "minutes", http.StatusBadRequest, 0},
+			{"0", "hours", http.StatusBadRequest, 0},
+			{"1", "weeks", http.StatusBadRequest, 0},
+			{"9223372036854775807", "days", http.StatusBadRequest, 0},
+		} {
+			t.Run(test.duration+" "+test.unit, func(t *testing.T) {
+				_, err := env.pool.Exec(t.Context(), `DELETE FROM temporary_blocks`)
+				require.NoError(t, err)
+
+				form := validBlock(token)
+				delete(form, "minutes")
+				form.Set("duration", test.duration)
+				form.Set("unit", test.unit)
+
+				require.Equal(t, test.want, post(t, admin, env.server.URL+"/ui/blocks", form).StatusCode)
+
+				if test.want != http.StatusSeeOther {
+					assert.Zero(t, env.countRows(t, "temporary_blocks"))
+
+					return
+				}
+
+				var lifetime time.Duration
+				require.NoError(t, env.pool.QueryRow(t.Context(),
+					`SELECT expires_at - created_at FROM temporary_blocks`).Scan(&lifetime))
+				assert.Equal(t, test.lifetime, lifetime)
+			})
+		}
+	})
+
+	t.Run("the new block form has its own page that posts to the Blocks page", func(t *testing.T) {
+		env := startUIEnv(t, "toolgate-admins")
+		admin, token := env.adminBrowser(t)
+		user := env.insertSession(t, "user-session", []string{"dev"})
+
+		assert.Equal(t, http.StatusForbidden, get(t, user, env.server.URL+"/ui/blocks/new").StatusCode)
+
+		response := get(t, admin, env.server.URL+"/ui/blocks/new")
+		require.Equal(t, http.StatusOK, response.StatusCode)
+
+		page := readBody(t, response)
+		assert.Contains(t, page, `<form method="post" action="/ui/blocks" id="block-form"`)
+		assert.Contains(t, page, `name="csrf_token" value="`+token+`"`)
+
+		for _, field := range []string{"principals", "groups", "workspaces", "sessions", "servers", "tools", "reason"} {
+			assert.Contains(t, page, `<label for="field-`+field+`"`, field)
+			assert.Contains(t, page, `<textarea id="field-`+field+`" name="`+field+`"`, field)
+		}
+
+		for _, value := range []string{"", "attested", "user"} {
+			assert.Contains(t, page, `<input type="radio" name="attestation" value="`+value+`"`)
+		}
+
+		assert.Contains(t, page, `name="duration"`)
+		assert.Contains(t, page, `<option value="days"`)
+		assert.NotContains(t, page, "<dialog", "the page is the form without the dialog")
+	})
+
+	t.Run("a refused form shows again with the problem and what was typed", func(t *testing.T) {
+		env := startUIEnv(t, "toolgate-admins")
+		admin, token := env.adminBrowser(t)
+
+		form := validBlock(token)
+		form.Set("reason", "")
+		form.Set("groups", "oncall")
+
+		response := post(t, admin, env.server.URL+"/ui/blocks", form)
+		require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+		page := readBody(t, response)
+		assert.Contains(t, page, "a reason is required")
+		assert.Contains(t, page, ">oncall</textarea>")
+		assert.Contains(t, page, "github\nwiki</textarea>")
+	})
+
 	t.Run("the 1001st live block is refused and an expired one doesn't count", func(t *testing.T) {
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
