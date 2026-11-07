@@ -1,11 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.4.5
 
-- MCP sessions are now shared between gateway replicas through PostgreSQL. A request can reach any replica, and a session survives when a replica stops or restarts. Claude Code does not initialize again after an HTTP 404, so before this change it lost its session in these cases. You do not need session affinity any more. See `docs/admin/connectors.md`. The upgrade that adds this ends open Claude Code sessions one last time. During the rollout, old and new replicas do not know each other's sessions, so the open sessions get HTTP 404. Users must start a new session after the upgrade.
-- The toolgate plugin did not connect in workspaces that sign in with `TOOLGATE_TOKEN_COMMAND`, or that use `TOOLGATE_ATTESTATION_TOKEN_FILE` or `TOOLGATE_ATTESTATION_TOKEN_REQUEST`. Claude Code removes these variables from the plugin's `headersHelper`. The new command `toolgate configure` saves these settings in the toolgate configuration file, and the client reads them from there when the variables are not set. Coder templates must run `toolgate configure` and give the token command `--agent-token-file`. See `docs/admin/coder.md`.
-- The gateway now serves `GET /api/v1/settings`, so settings profiles reach Claude Code. Before, every session start showed "the settings profile could not be fetched: the gateway answered 404 Not Found". The `toolgate` command now treats a 404 from an older gateway as "no profile".
-- The gateway connects to remote MCP servers, which run outside toolgate. It sends each user's own key in a header that the template fills in from the user's secrets. If the secret is missing, or the server refuses it, the user gets a message with the `toolgate secret set` command. See "Remote servers" in `docs/admin/templates-and-rules.md`.
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. In this patch release, all gateway replicas share MCP sessions through PostgreSQL, and the gateway sends tool calls to remote MCP servers. The release also fixes the plugin in Coder workspaces and the settings profiles of Claude Code.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.5`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.5`. Follow `docs/admin/quick-start.md`.
+- Users download the `toolgate` command for their system from the files of this release, and put it on their `PATH`. Then they install the Claude Code plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+- Tell your users to start a new Claude Code session after the upgrade. The upgrade ends all open Claude Code sessions one time. During the rollout, old and new replicas do not know the sessions of each other, so the open sessions get HTTP 404.
+- You can remove session affinity from your gateway Service or ingress. The replicas now share sessions, so a request can reach any replica. The chart value `config.service.sessionAffinity` stays `None` by default. See `docs/admin/connectors.md`.
+- If a Coder template uses `TOOLGATE_TOKEN_COMMAND`, `TOOLGATE_ATTESTATION_TOKEN_FILE` or `TOOLGATE_ATTESTATION_TOKEN_REQUEST`, change it to run `toolgate configure`. Give the token command `--agent-token-file`. Claude Code removes these variables from the `headersHelper` of the plugin, so the plugin did not connect. See `docs/admin/coder.md`.
+- The gateway keeps shared MCP sessions in the database table `mcp_sessions`. Version 0.4.4 added this table. If you upgrade from a version before 0.4.4, the gateway adds the table when it starts. You do not have to do anything for this.
+
+### Servers and sessions
+
+- MCP sessions are now shared between gateway replicas through PostgreSQL. A request can reach any replica, and a session continues when a replica stops or restarts. Claude Code does not start a session again after HTTP 404, so before this change it lost its session in these cases. Messages from a server, such as a changed tool list or a question to the user, also reach the session on any replica. Only the requests that were in progress on a stopped replica fail. See `docs/admin/connectors.md`. ([#510](https://github.com/solidDoWant/toolgate/pull/510), [#514](https://github.com/solidDoWant/toolgate/pull/514), [#513](https://github.com/solidDoWant/toolgate/pull/513), [#522](https://github.com/solidDoWant/toolgate/pull/522))
+- The gateway connects to remote MCP servers. A remote server runs outside toolgate. The gateway sends the own key of each user in a header, and the template fills in the header from the secrets of the user. Each user sees the tool list that the server gives to that user, and tool search uses it. If the secret is missing, or the server refuses it, the user gets a message with the `toolgate secret set` command. See "Remote servers" in `docs/admin/templates-and-rules.md`. ([#501](https://github.com/solidDoWant/toolgate/pull/501), [#511](https://github.com/solidDoWant/toolgate/pull/511), [#512](https://github.com/solidDoWant/toolgate/pull/512), [#515](https://github.com/solidDoWant/toolgate/pull/515), [#520](https://github.com/solidDoWant/toolgate/pull/520))
+
+### Claude Code plugin and CLI
+
+- The new command `toolgate configure` saves the sign-in and attestation settings in the toolgate configuration file `config.json`. The `toolgate` command reads them from there when the environment variables `TOOLGATE_TOKEN_COMMAND`, `TOOLGATE_ATTESTATION_TOKEN_FILE` and `TOOLGATE_ATTESTATION_TOKEN_REQUEST` are not set. Before, the plugin did not connect in workspaces that used these variables, because Claude Code removes them from the `headersHelper` of the plugin. ([#521](https://github.com/solidDoWant/toolgate/pull/521))
+- Settings profiles now reach Claude Code. The gateway serves `GET /api/v1/settings`. Before, each session start showed "the settings profile could not be fetched: the gateway answered 404 Not Found". The `toolgate` command now reads a 404 from an older gateway as "no profile". ([#518](https://github.com/solidDoWant/toolgate/pull/518))
+
+Internal work: end-to-end tests for two gateway replicas with no session affinity and for a remote server that needs a bearer token.
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.4
 
