@@ -236,6 +236,8 @@ Routes register through one helper that states the access level: `public`, `user
 
 **htmx 2.0.7**, minified, vendored at `internal/ui/static/htmx-2.0.7.min.js`, embedded, and served at `/ui/static/htmx-2.0.7.min.js` with a one-year cache. `make vendor-htmx` downloads `https://registry.npmjs.org/htmx.org/-/htmx.org-2.0.7.tgz`, checks it against the registry's `integrity` value, and extracts `dist/htmx.min.js`. Its SHA-256 is in `internal/ui/static/SHA256SUMS`, which `make check-generate` checks. The version in the file name means a browser never mixes a cached old copy with new pages.
 
+**Styles:** `internal/ui/static/toolgate.css`, hand-written, embedded and served from `/ui/static/`. We chose it over a vendored classless library (for example Pico CSS) because the UI has a few dozen elements, so a library adds a pinned download and a second thing to audit for little gain, and the CSP stays `default-src 'self'` with no inline styles. Colours are CSS variables with a light and a dark set chosen by `prefers-color-scheme`. Status words become badges through the template function `badge`, which picks the colour class; unknown words get the neutral class. The nav marks the current page with `aria-current="page"`.
+
 **Headers** on every UI response: `Content-Security-Policy: default-src 'self'; frame-ancestors 'none'` (the pages have no inline script, and no other site may frame the approve button), and `Cache-Control: no-store` on pages.
 
 ## 6. Instance restart and resolvers

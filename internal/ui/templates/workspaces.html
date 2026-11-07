@@ -1,6 +1,6 @@
 {{define "content"}}
 {{with .Data}}
-{{with .Error}}<p class="error">{{.}}</p>
+{{with .Error}}<p class="flash error">{{.}}</p>
 {{end}}{{if .StepUpURL}}<p>Adding servers, clearing a list while the default for verified workspaces is all, changing a default to all, and changing the default for unverified sessions from nothing to only these servers need a fresh sign-in.</p>
 <a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
 {{end}}
@@ -23,11 +23,11 @@
 {{else}}<p>You have access to no servers.</p>
 {{end}}</fieldset>
 <p class="note">{{.Note}}</p>
-<button type="submit">Save defaults</button>
+<button type="submit" class="primary">Save defaults</button>
 </form>
 <h2>Workspace lists</h2>
 {{if .Lists}}
-<table id="workspace-lists">
+<div class="table-wrap"><table id="workspace-lists">
 <thead><tr><th>Workspace</th><th>Servers</th><th>Updated</th><th></th></tr></thead>
 <tbody>
 {{range .Lists}}<tr>
@@ -37,7 +37,7 @@
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="workspace" value="{{.}}">
 <input type="hidden" name="server" value="{{$server}}">
-<button type="submit">Remove</button>
+<button type="submit" class="danger">Remove</button>
 </form></li>{{end}}</ul>{{else}}no servers{{end}}</td>
 <td>{{.UpdatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
 <td><form method="post" action="/ui/workspaces/allow">
@@ -49,13 +49,13 @@
 <form method="post" action="/ui/workspaces/clear">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="workspace" value="{{.Workspace}}">
-<button type="submit">Clear the list</button>
+<button type="submit" class="danger">Clear the list</button>
 </form></td>
 </tr>
 {{end}}</tbody>
-</table>
+</table></div>
 {{else}}
-<p>You have no workspace lists.</p>
+<p class="empty">You have no workspace lists.</p>
 {{end}}
 {{if .OpenWorkspaces}}<h2>Workspaces of your open sessions</h2>
 <ul id="open-workspaces">

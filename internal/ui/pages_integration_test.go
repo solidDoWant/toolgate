@@ -258,7 +258,7 @@ func TestServersPage(t *testing.T) {
 
 			assert.Contains(t, body, "<td>github</td>")
 			assert.Contains(t, body, "Only from an attested environment.")
-			assert.Contains(t, body, "<td>outdated</td>")
+			assert.Contains(t, body, `<span class="badge badge-warn">outdated</span>`)
 			assert.Equal(t, test.wantShared, strings.Contains(body, "<td>wiki</td>"), "shared instances only for admins")
 			assert.Equal(t, test.wantShared, strings.Contains(body, `href="/ui/blocks"`), "the Blocks link only for admins")
 

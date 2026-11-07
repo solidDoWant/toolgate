@@ -67,3 +67,15 @@ func TestNavLinksToSecretsOnlyWhenThePageIsRegistered(t *testing.T) {
 func contains(body, substring string) bool {
 	return len(body) >= len(substring) && strings.Contains(body, substring)
 }
+
+func TestBadgeClassColoursStatuses(t *testing.T) {
+	tests := map[string]string{
+		"ready": "badge-ok", "approved": "badge-ok", "attested": "badge-ok",
+		"starting": "badge-warn", "pending": "badge-warn",
+		"blocked": "badge-bad", "failed": "badge-bad", "denied": "badge-bad", "expired": "badge-bad", "revoked": "badge-bad",
+		"unverified": "badge-neutral", "": "badge-neutral",
+	}
+	for status, want := range tests {
+		assert.Equal(t, want, badgeClass(status), status)
+	}
+}
