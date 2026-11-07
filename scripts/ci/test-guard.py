@@ -46,6 +46,7 @@ Found = collections.namedtuple("Found", "skip_calls")
 
 
 def load_scoreboard():
+    sys.dont_write_bytecode = True  # keep the import from leaving a __pycache__ in the checkout
     path = pathlib.Path(__file__).resolve().parent.parent / "acceptance-scoreboard.py"
     spec = importlib.util.spec_from_file_location("acceptance_scoreboard", path)
     module = importlib.util.module_from_spec(spec)

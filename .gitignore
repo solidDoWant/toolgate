@@ -8,3 +8,5 @@
 /.pm/
 /.claude/tasks/
 /.claude/worktrees/
+
+__pycache__/
