@@ -60,6 +60,8 @@ type Settings struct {
 	Subject       string `json:"subject"`
 	Email         string `json:"email,omitempty"`
 	EmailVerified bool   `json:"emailVerified"`
+	// Name is the ID token's name claim, for display.
+	Name string `json:"name,omitempty"`
 	// TokenStore is where the refresh token is kept: "keychain" or "file".
 	// Every later load and save uses only this store. A config.json from
 	// before this field existed has none, and keeps the keychain-then-file
@@ -265,6 +267,7 @@ func readIdentity(ctx context.Context, provider *oidc.Provider, token *oauth2.To
 	// A claim of another type is not shown.
 	_ = json.Unmarshal(claims[settings.EmailClaim], &settings.Email)
 	_ = json.Unmarshal(claims["email_verified"], &settings.EmailVerified)
+	_ = json.Unmarshal(claims["name"], &settings.Name)
 
 	return nil
 }

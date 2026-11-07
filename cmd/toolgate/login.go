@@ -144,12 +144,39 @@ func status(stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	_, _ = fmt.Fprintf(stdout, "Gateway:   %s\nPrincipal: %s\n", settings.Gateway, settings.Subject)
-	if settings.Email != "" {
+	_, _ = fmt.Fprintf(stdout, "Gateway:   %s\nPrincipal: %s\n", settings.Gateway, principalLine(settings))
+	if settings.Email != "" && !settings.EmailVerified {
 		_, _ = fmt.Fprintf(stdout, "Email:     %s\n", emailDisplay(settings))
 	}
 
 	return 0
+}
+
+// principalLine shows the person first and the raw subject second, as
+// `Name <email> (sub abc)`. Only an email the IdP verified identifies the
+// person.
+func principalLine(settings login.Settings) string {
+	email := ""
+	if settings.EmailVerified {
+		email = settings.Email
+	}
+
+	var who string
+
+	switch {
+	case settings.Name != "" && email != "":
+		who = settings.Name + " <" + email + ">"
+	case email != "":
+		who = email
+	default:
+		who = settings.Name
+	}
+
+	if who == "" {
+		return settings.Subject
+	}
+
+	return who + " (sub " + settings.Subject + ")"
 }
 
 // emailDisplay is the email, followed by "(unverified)" unless the IdP

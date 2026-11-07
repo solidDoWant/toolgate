@@ -31,7 +31,7 @@
 <thead><tr><th>Workspace</th><th>Servers</th><th>Updated</th><th></th></tr></thead>
 <tbody>
 {{range .Lists}}<tr>
-<td>{{.Workspace}}</td>
+<td>{{template "ws" (workspace .Workspace)}}</td>
 <td>{{if .Servers}}<ul>{{range $server := .Servers}}<li>{{$server}}
 <form method="post" action="/ui/workspaces/deny">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
@@ -59,7 +59,7 @@
 {{end}}
 {{if .OpenWorkspaces}}<h2>Workspaces of your open sessions</h2>
 <ul id="open-workspaces">
-{{range .OpenWorkspaces}}<li>{{.}}
+{{range .OpenWorkspaces}}<li>{{template "ws" (workspace .)}}
 <form method="post" action="/ui/workspaces/allow">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="workspace" value="{{.}}">

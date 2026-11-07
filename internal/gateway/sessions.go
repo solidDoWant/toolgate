@@ -122,6 +122,7 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity, searc
 			Attestation: identity.Attestation,
 			Kind:        identity.Kind,
 			Email:       identity.Email,
+			Name:        identity.Name,
 			Groups:      snapshotGroups(identity),
 			ToolSearch:  searchMode,
 		})
@@ -131,6 +132,10 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity, searc
 
 		if createErr != nil {
 			return fmt.Errorf("create session: %w", createErr)
+		}
+
+		if err := recordProfile(ctx, queries, identity); err != nil {
+			return err
 		}
 
 		found = true
@@ -278,7 +283,7 @@ func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity
 	queries := db.New(s.pool)
 	groups := snapshotGroups(identity)
 
-	if session.Email != identity.Email || !slices.Equal(session.Groups, groups) {
+	if session.Email != identity.Email || session.Name != identity.Name || !slices.Equal(session.Groups, groups) {
 		updated, err := queries.UpsertSession(ctx, db.UpsertSessionParams{
 			Principal:   identity.Principal,
 			SessionID:   identity.Session,
@@ -286,11 +291,16 @@ func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity
 			Attestation: session.Attestation,
 			Kind:        session.Kind,
 			Email:       identity.Email,
+			Name:        identity.Name,
 			Groups:      groups,
 			ToolSearch:  searchMode,
 		})
 		if err != nil {
 			return db.Session{}, fmt.Errorf("update session snapshot: %w", err)
+		}
+
+		if err := recordProfile(ctx, queries, identity); err != nil {
+			return db.Session{}, err
 		}
 
 		return updated, nil
@@ -327,4 +337,23 @@ func snapshotGroups(identity auth.Identity) []string {
 	}
 
 	return identity.Groups
+}
+
+// recordProfile stores the display fields of a user's verified claims, so
+// pages can show the person instead of the raw subject. Other kinds of
+// principal have no profile, and a token with no display claims leaves the
+// last profile alone.
+func recordProfile(ctx context.Context, queries *db.Queries, identity auth.Identity) error {
+	if identity.Kind != auth.KindUser || (identity.Email == "" && identity.Name == "" && identity.Username == "") {
+		return nil
+	}
+
+	err := queries.UpsertPrincipalProfile(ctx, db.UpsertPrincipalProfileParams{
+		Principal: identity.Principal, Email: identity.Email, Name: identity.Name, Username: identity.Username,
+	})
+	if err != nil {
+		return fmt.Errorf("record principal profile: %w", err)
+	}
+
+	return nil
 }

@@ -49,7 +49,7 @@ func (e *uiEnv) insertAudit(t *testing.T, row auditRow) string {
 	return fmt.Sprintf("%d-%d", row.at.UnixMicro(), id)
 }
 
-var toolCell = regexp.MustCompile(`(?s)<tr>(?:<td>[^<]*</td>){6}<td>([^<]*)</td>`)
+var toolCell = regexp.MustCompile(`(?s)<tr>(?:<td>(?:[^<]|<span[^>]*>[^<]*</span>|<details.*?</details>)*</td>){6}<td>([^<]*)</td>`)
 
 // toolsOn lists the tool column of the events a page shows, in order.
 func toolsOn(page string) []string {

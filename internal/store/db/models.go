@@ -126,6 +126,14 @@ type McpSession struct {
 	EndedAt           pgtype.Timestamptz
 }
 
+type PrincipalProfile struct {
+	Principal string
+	Email     string
+	Name      string
+	Username  string
+	UpdatedAt pgtype.Timestamptz
+}
+
 type ScopeEntry struct {
 	ID        int64
 	ScopeID   int64

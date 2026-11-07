@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/solidDoWant/toolgate/internal/principal"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
@@ -22,13 +23,16 @@ const (
 
 // sessionRow is one open session as the pages show it.
 type sessionRow struct {
-	ID          int64
-	Principal   string
-	SessionID   string
-	Workspace   string
-	Attestation string
-	CreatedAt   time.Time
-	LastSeenAt  time.Time
+	ID        int64
+	Principal string
+	// Who is Principal as people read it.
+	Who            principal.Display
+	SessionID      string
+	Workspace      string
+	WorkspaceLabel workspaceLabel
+	Attestation    string
+	CreatedAt      time.Time
+	LastSeenAt     time.Time
 }
 
 type sessionsPage struct {
@@ -53,13 +57,14 @@ type sessionPage struct {
 
 func toSessionRow(row db.Session) sessionRow {
 	return sessionRow{
-		ID:          row.ID,
-		Principal:   row.Principal,
-		SessionID:   row.SessionID,
-		Workspace:   row.Workspace,
-		Attestation: row.Attestation,
-		CreatedAt:   row.CreatedAt.Time.UTC(),
-		LastSeenAt:  row.LastSeenAt.Time.UTC(),
+		ID:             row.ID,
+		Principal:      row.Principal,
+		SessionID:      row.SessionID,
+		Workspace:      row.Workspace,
+		WorkspaceLabel: labelWorkspace(row.Workspace),
+		Attestation:    row.Attestation,
+		CreatedAt:      row.CreatedAt.Time.UTC(),
+		LastSeenAt:     row.LastSeenAt.Time.UTC(),
 	}
 }
 
@@ -85,8 +90,16 @@ func (u *UI) sessions(writer http.ResponseWriter, request *http.Request) {
 	}
 
 	data := sessionsPage{ShowPrincipal: session.Admin, Sessions: make([]sessionRow, 0, len(rows))}
+	principals := make([]string, 0, len(rows))
+
 	for _, row := range rows {
 		data.Sessions = append(data.Sessions, toSessionRow(row))
+		principals = append(principals, row.Principal)
+	}
+
+	names := u.namesFor(ctx, session.Principal, principals...)
+	for index := range data.Sessions {
+		data.Sessions[index].Who = names.show(data.Sessions[index].Principal)
 	}
 
 	u.render(writer, request, "sessions", "Sessions", data)
@@ -141,6 +154,8 @@ func (u *UI) sessionPageHandler(writer http.ResponseWriter, request *http.Reques
 	}
 
 	data := sessionPage{Session: toSessionRow(row), Servers: make([]string, 0, len(servers)), Decisions: make([]decisionRow, 0, len(events))}
+
+	data.Session.Who = u.namesFor(ctx, session.Principal, row.Principal).show(row.Principal)
 
 	for _, server := range servers {
 		data.Servers = append(data.Servers, server.TemplateNs+"/"+server.TemplateName)

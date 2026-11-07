@@ -37,6 +37,8 @@
 {{end}}
 
 {{define "availability"}}<div>Verified workspace without a list: <span class="badge {{if .VerifiedDefault}}badge-ok{{else}}badge-bad{{end}}">{{if .VerifiedDefault}}allowed{{else}}blocked{{end}}</span></div>
-{{range .Lists}}<div>Workspace <code>{{.Workspace}}</code>: <span class="badge {{if .Allowed}}badge-ok{{else}}badge-bad{{end}}">{{if .Allowed}}allowed{{else}}blocked{{end}}</span></div>
+{{range .Lists}}<div>Workspace {{template "ws" (workspace .Workspace)}}: <span class="badge {{if .Allowed}}badge-ok{{else}}badge-bad{{end}}">{{if .Allowed}}allowed{{else}}blocked{{end}}</span></div>
 {{end}}<div>Unverified session: <span class="badge {{if .Unverified}}badge-ok{{else}}badge-bad{{end}}">{{if .Unverified}}allowed{{else}}blocked{{end}}</span></div>
 <div><a href="/ui/workspaces">Change on the Workspaces page</a></div>{{end}}
+{{define "who"}}<span class="who" title="{{.Hover}}">{{.Text}}</span>{{if .Copyable}} <details class="copy-id"><summary>ID</summary><input readonly size="24" aria-label="Full ID" value="{{.Raw}}"></details>{{end}}{{end}}
+{{define "ws"}}<span title="{{.ID}}">{{.Label}}</span>{{end}}

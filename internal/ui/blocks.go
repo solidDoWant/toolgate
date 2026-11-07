@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/principal"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -164,6 +166,8 @@ type blockRow struct {
 	Match     string
 	Reason    string
 	CreatedBy string
+	// Who is CreatedBy as people read it.
+	Who       principal.Display
 	CreatedAt time.Time
 	ExpiresAt time.Time
 }
@@ -227,6 +231,18 @@ func (u *UI) blocksPage(ctx context.Context) (blocksPage, error) {
 			ID: row.ID, Match: describeMatch(match), Reason: row.Reason, CreatedBy: row.CreatedBy,
 			CreatedAt: row.CreatedAt.Time, ExpiresAt: row.ExpiresAt.Time,
 		})
+	}
+
+	creators := make([]string, 0, len(page.Blocks))
+	for _, block := range page.Blocks {
+		creators = append(creators, block.CreatedBy)
+	}
+
+	self, _ := SessionFrom(ctx)
+	names := u.namesFor(ctx, self.Principal, creators...)
+
+	for index := range page.Blocks {
+		page.Blocks[index].Who = names.show(page.Blocks[index].CreatedBy)
 	}
 
 	if u.options.Rules == nil {

@@ -143,8 +143,8 @@ func TestLoginThenStatusShowsEmail(t *testing.T) {
 
 		require.Equal(t, 0, run([]string{"status"}, &stdout, &statusErr), "stderr: %s", statusErr.String())
 		assert.Contains(t, stdout.String(), "Gateway:   "+gatewayURL)
-		assert.Contains(t, stdout.String(), "Principal: alice")
-		assert.Contains(t, stdout.String(), "Email:     alice@example.com\n")
+		assert.Contains(t, stdout.String(), "Principal: alice@example.com (sub alice)\n")
+		assert.NotContains(t, stdout.String(), "Email:")
 	})
 }
 

@@ -14,7 +14,7 @@
 <thead><tr><th>Time (UTC)</th><th>Type</th><th>Principal</th><th>Workspace</th><th>Session</th><th>Server</th><th>Tool</th><th></th></tr></thead>
 <tbody>
 {{range .Data.Events}}<tr>
-<td>{{.OccurredAt.Format "2006-01-02 15:04:05.000000"}}</td><td>{{.Type}}</td><td>{{.Principal}}</td><td>{{.Workspace}}</td><td>{{.Session}}</td><td>{{.Server}}</td><td>{{.Tool}}</td>
+<td>{{.OccurredAt.Format "2006-01-02 15:04:05.000000"}}</td><td>{{.Type}}</td><td>{{template "who" .Who}}</td><td>{{template "ws" .WorkspaceLabel}}</td><td>{{.Session}}</td><td>{{.Server}}</td><td>{{.Tool}}</td>
 <td><a href="/ui/audit/events/{{.Key}}">Open</a></td>
 </tr>
 {{end}}</tbody>

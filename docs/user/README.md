@@ -107,7 +107,7 @@ You can also give only the host name, or the host name and port, for example `to
 
 toolgate saves the gateway URL in the file `toolgate/config.json` in your user configuration directory. If you sign in again later, you can leave out `--gateway`.
 
-To see who is signed in, run `toolgate status`. It shows the gateway URL, your principal (your user ID at the identity provider) and your email address. If your identity provider did not verify the email address, "(unverified)" follows it. The gateway decides what you can use. `toolgate status` only shows information.
+To see who is signed in, run `toolgate status`. It shows the gateway URL and your principal. Your name and email address come first, and your user ID at the identity provider follows as `sub`. The email address appears there only if your identity provider verified it. If it did not, `toolgate status` shows the address on its own line with "(unverified)". The gateway decides what you can use. `toolgate status` only shows information.
 
 ## See the servers that you can use
 
