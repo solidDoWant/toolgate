@@ -27,6 +27,9 @@ type MCPServerTemplate struct {
 // MCPServerTemplateSpec describes the server and who may use it.
 //
 // +kubebuilder:validation:XValidation:rule="!has(self.__namespace__) || self.__namespace__ != 'shared' || self.scope == 'shared'",message="namespace: shared is allowed only with scope: shared"
+// +kubebuilder:validation:XValidation:rule="!has(self.remote) || (!has(self.endpoint) && !has(self.resources) && !has(self.healthCheck))",message="remote cannot be set together with endpoint, resources or healthCheck"
+// +kubebuilder:validation:XValidation:rule="!has(self.remote) || self.scope == 'per-user'",message="remote requires scope: per-user"
+// +kubebuilder:validation:XValidation:rule="has(self.remote) || has(self.endpoint)",message="endpoint is required unless remote is set"
 type MCPServerTemplateSpec struct {
 	// Description is shown to users and the model in the catalog.
 	// +optional
@@ -84,9 +87,10 @@ type MCPServerTemplateSpec struct {
 	// +optional
 	ToolFilter *ToolFilter `json:"toolFilter,omitempty"`
 
-	// Endpoint is where the instance serves MCP.
-	// +required
-	Endpoint Endpoint `json:"endpoint"`
+	// Endpoint is where the instance serves MCP. It is required unless
+	// Remote is set.
+	// +optional
+	Endpoint Endpoint `json:"endpoint,omitzero"`
 
 	// Resources are the Kubernetes objects applied for each instance.
 	// +optional
@@ -98,6 +102,35 @@ type MCPServerTemplateSpec struct {
 	// it, only the MCP ping runs.
 	// +optional
 	HealthCheck *HealthCheck `json:"healthCheck,omitempty"`
+
+	// Remote makes the template a remote server: toolgate starts nothing
+	// and connects to an MCP server that already runs elsewhere. It needs
+	// scope: per-user and excludes endpoint, resources and healthCheck.
+	// +optional
+	Remote *RemoteServer `json:"remote,omitempty"`
+}
+
+// RemoteServer is an MCP server toolgate connects to but doesn't start.
+type RemoteServer struct {
+	// URL is the server's Streamable HTTP endpoint: https://, or http://
+	// only to a cluster-internal host (ending in .svc or
+	// .svc.cluster.local).
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	URL string `json:"url"`
+
+	// Headers are sent with every request, keyed by header name. Values
+	// may use ${secret:NAME} and ${principal.*}, filled in for each user.
+	// +optional
+	// +kubebuilder:validation:MaxProperties=32
+	// +kubebuilder:validation:XValidation:rule="self.all(key, size(key) <= 256 && size(self[key]) <= 4096)",message="each header name must be at most 256 characters and each value at most 4096"
+	Headers map[string]string `json:"headers,omitempty"`
+
+	// Timeout bounds each request to the server, 1s to 5m.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1s') && duration(self) <= duration('5m')",message="timeout must be between 1s and 5m"
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }
 
 // HealthCheck is an HTTP check toolgate runs against a ready instance. While

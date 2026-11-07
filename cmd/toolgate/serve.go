@@ -123,8 +123,9 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	searchMetrics := embeddings.NewMetrics()
 
-	// With scale-to-zero on, every replica records when it needs embeddings,
-	// so that the leader starts the embeddings server and keeps it running.
+	// With scale-to-zero on, every replica records when it needs embeddings
+	// and when a session with tool search on starts or resumes, so that the
+	// leader starts the embeddings server and keeps it running.
 	var embeddingsDemand func(context.Context)
 
 	var embeddingsScaledDown func(context.Context) bool
@@ -228,6 +229,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		SessionIdleTimeout:   testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
 		ToolSearch:           cfg.ToolSearch,
 		Embedder:             searchEmbedder,
+
+		ToolSearchSessionStarted: embeddingsDemand,
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {

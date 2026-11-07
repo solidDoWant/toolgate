@@ -132,7 +132,9 @@ spec:
                 maxLength: 1024
                 type: string
               endpoint:
-                description: Endpoint is where the instance serves MCP.
+                description: |-
+                  Endpoint is where the instance serves MCP. It is required unless
+                  Remote is set.
                 properties:
                   path:
                     description: Path is the HTTP path of the MCP endpoint.
@@ -264,6 +266,43 @@ spec:
                 x-kubernetes-validations:
                 - message: namespace must be one of per-instance, shared
                   rule: self in ['per-instance', 'shared']
+              remote:
+                description: |-
+                  Remote makes the template a remote server: toolgate starts nothing
+                  and connects to an MCP server that already runs elsewhere. It needs
+                  scope: per-user and excludes endpoint, resources and healthCheck.
+                properties:
+                  headers:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      Headers are sent with every request, keyed by header name. Values
+                      may use ${secret:NAME} and ${principal.*}, filled in for each user.
+                    maxProperties: 32
+                    type: object
+                    x-kubernetes-validations:
+                    - message: each header name must be at most 256 characters and
+                        each value at most 4096
+                      rule: self.all(key, size(key) <= 256 && size(self[key]) <= 4096)
+                  timeout:
+                    description: Timeout bounds each request to the server, 1s to
+                      5m.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: timeout must be between 1s and 5m
+                      rule: duration(self) >= duration('1s') && duration(self) <=
+                        duration('5m')
+                  url:
+                    description: |-
+                      URL is the server's Streamable HTTP endpoint: https://, or http://
+                      only to a cluster-internal host (ending in .svc or
+                      .svc.cluster.local).
+                    maxLength: 2048
+                    minLength: 1
+                    type: string
+                required:
+                - url
+                type: object
               resources:
                 description: Resources are the Kubernetes objects applied for each
                   instance.
@@ -365,13 +404,19 @@ spec:
                 maxProperties: 256
                 type: object
             required:
-            - endpoint
             - scope
             type: object
             x-kubernetes-validations:
             - message: 'namespace: shared is allowed only with scope: shared'
               rule: '!has(self.__namespace__) || self.__namespace__ != ''shared''
                 || self.scope == ''shared'''
+            - message: remote cannot be set together with endpoint, resources or healthCheck
+              rule: '!has(self.remote) || (!has(self.endpoint) && !has(self.resources)
+                && !has(self.healthCheck))'
+            - message: 'remote requires scope: per-user'
+              rule: '!has(self.remote) || self.scope == ''per-user'''
+            - message: endpoint is required unless remote is set
+              rule: has(self.remote) || has(self.endpoint)
           status:
             description: |-
               Status is the status every toolgate resource has: toolgate reports

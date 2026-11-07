@@ -27,17 +27,6 @@ func (q *Queries) GetEmbeddingsServer(ctx context.Context) (GetEmbeddingsServerR
 	return i, err
 }
 
-const liveToolSearchSessionExists = `-- name: LiveToolSearchSessionExists :one
-SELECT EXISTS (SELECT 1 FROM sessions WHERE ended_at IS NULL AND tool_search)::boolean
-`
-
-func (q *Queries) LiveToolSearchSessionExists(ctx context.Context) (bool, error) {
-	row := q.db.QueryRow(ctx, liveToolSearchSessionExists)
-	var column_1 bool
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const recordEmbeddingsDemand = `-- name: RecordEmbeddingsDemand :exec
 UPDATE embeddings_server SET last_demand_at = $1::timestamptz WHERE last_demand_at < $1::timestamptz
 `

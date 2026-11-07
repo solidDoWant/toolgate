@@ -365,6 +365,23 @@ func TestEnableServer(t *testing.T) {
 		assert.Empty(t, fixture.auditEvents(t, "server.enable", "github"))
 	})
 
+	t.Run("a remote server is refused as not supported, starts nothing and is audited", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+		template := fixture.addRemoteTemplate("mail-archiver")
+
+		client := fixture.connectObserved(t, alice())
+		result := awaitEnable(t, startEnable(t, client.session, "mail-archiver"))
+
+		assert.Equal(t, "Server `mail-archiver` is a remote server, and this gateway version can't connect to remote servers yet.", result.err)
+		assert.Empty(t, fixture.instancesOf(t, template))
+		assert.Empty(t, fixture.enabledServers(t, "alice", "session-1"))
+
+		events := fixture.auditEvents(t, "server.enable", "mail-archiver")
+		require.Len(t, events, 1)
+		assert.Equal(t, "refuse", events[0]["decision"])
+		assert.Equal(t, "remote-unsupported", events[0]["reason"])
+	})
+
 	t.Run("a set secret lets the enable go ahead", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
@@ -462,6 +479,22 @@ const testStartTimeout = 15 * time.Second
 func (f *mcpFixture) addEnableTemplate(name, scope string, access v1alpha1.Access) *v1alpha1.MCPServerTemplate {
 	template := f.addTemplate(name, scope, access)
 	template.Spec.StartTimeout = &metav1.Duration{Duration: testStartTimeout}
+	f.catalog.Set(template, nil)
+
+	return template
+}
+
+// addRemoteTemplate offers a valid per-user remote template whose header
+// names a secret alice hasn't set.
+func (f *mcpFixture) addRemoteTemplate(name string) *v1alpha1.MCPServerTemplate {
+	template := f.addEnableTemplate(name, "per-user", anyone)
+	template.Spec.Endpoint = v1alpha1.Endpoint{}
+	template.Spec.Resources = nil
+	template.Spec.Remote = &v1alpha1.RemoteServer{
+		URL:     "http://" + name + ".email.svc.cluster.local:5000/mcp",
+		Headers: map[string]string{"Authorization": "Bearer ${secret:" + name + "-api-key}"},
+	}
+	template.Spec.DeclaredTools = []v1alpha1.DeclaredTool{{Name: "echo"}}
 	f.catalog.Set(template, nil)
 
 	return template

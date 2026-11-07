@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The gateway can accept access tokens from more than one OIDC issuer, with the new chart value `config.oidc.additionalIssuers` (`oidcAdditionalIssuers` in the gateway configuration). Use it when your identity provider gives each client its own issuer, as Authentik does.
+- With `embeddings.server.scaleToZero.enabled`, the gateway now stops the embeddings server when nobody searched or started a session with tool search on for `idleTimeout`. Before, an open but idle Claude Code session kept the server running for about two hours more.
 - The web UI hides the Secrets link in its navigation when the gateway has no secrets keyset, instead of linking to a page that returns 404.
 - The Helm chart has the new values `config.oidc.cliClientID` and `config.oidc.cliScopes`. With `cliClientID` set, `toolgate login` needs no `--client-id`.
 - The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should.

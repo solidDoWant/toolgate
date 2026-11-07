@@ -109,6 +109,7 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 	}
 
 	problems = append(problems, validateHealthCheck(spec)...)
+	problems = append(problems, validateRemote(spec.Remote)...)
 
 	return problems
 }
