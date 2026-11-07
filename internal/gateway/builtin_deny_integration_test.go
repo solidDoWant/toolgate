@@ -16,7 +16,7 @@ import (
 
 const toolDeny = "toolgate_deny"
 
-func TestBuiltinDeny(t *testing.T) {
+func TestAC4_16BuiltinDeny(t *testing.T) {
 	for _, test := range []struct {
 		name string
 		// target is the deny's target argument: workspace or session.
