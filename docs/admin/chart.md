@@ -135,10 +135,12 @@ toolgate does not rename the objects of a template. Several instances share this
 
 The chart can run the embeddings server of tool search (see [Tool search](tool-search.md)). The server holds its memory all the time. If you set `embeddings.server.scaleToZero.enabled` to `true`, the gateway scales the server to zero replicas when tool search is not in use. It scales the server back to one replica when tool search is needed again.
 
+Tool search is in use when the gateway sends a request to the server (a search, or the embedding of tools in a sync), and when a session with tool search on starts or resumes. Nothing else counts. A Claude Code session that is open but sends no searches does not hold the server up. See [Tool search](tool-search.md#scale-the-embeddings-server-to-zero).
+
 | Value | Meaning |
 |---|---|
 | `embeddings.server.scaleToZero.enabled` | Let the gateway scale the embeddings server. The default is `false`. It has no effect if `embeddings.server.enabled` is `false`. |
-| `embeddings.server.scaleToZero.idleTimeout` | How long tool search must be idle before the gateway scales the server to zero. The default is `15m`. Use hours (`h`), minutes (`m`) and seconds (`s`), for example `1h30m`. The value must be from `1m` to `24h`. |
+| `embeddings.server.scaleToZero.idleTimeout` | How long tool search must be idle before the gateway scales the server to zero. The time starts at the last search, sync or session start. The default is `15m`. Use hours (`h`), minutes (`m`) and seconds (`s`), for example `1h30m`. The value must be from `1m` to `24h`. |
 
 The chart refuses to render if one of these is true:
 

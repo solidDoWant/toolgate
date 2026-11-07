@@ -16,7 +16,16 @@ const (
 	reasonMissingSecret = "missing-secret"
 	reasonLimit         = "limit"
 	reasonFirstCall     = "first-call"
+	reasonRemote        = "remote-unsupported"
 )
+
+// remoteUnsupported is the refusal of enabling a remote template. This
+// gateway accepts remote templates in its catalog but can't connect to
+// them yet, and they have nothing to launch, so enabling one must start
+// nothing.
+func remoteUnsupported(server string) error {
+	return fmt.Errorf("Server `%s` is a remote server, and this gateway version can't connect to remote servers yet.", server) //nolint:staticcheck // A sentence for the model.
+}
 
 // enableForCall is the policy and enable part of a call of a
 // server the session hasn't enabled: it decides policy for the tool, asks
@@ -52,6 +61,10 @@ func (m *metaTools) enableForCall(ctx context.Context, request *mcp.CallToolRequ
 
 	if !decision.Allowed {
 		return m.refuseCall(ctx, current, server, tool, refusalDetails(decision), decision.Reason)
+	}
+
+	if template.Spec.Remote != nil {
+		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonRemote}, remoteUnsupported(server).Error())
 	}
 
 	if err := m.checkSecrets(ctx, current, template); err != nil {

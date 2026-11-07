@@ -112,13 +112,12 @@ func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
 
 	// Adding the template makes the leader embed its tools, which starts the
 	// server; wait until the search rows exist and the server is idle again.
-	warmID := "e2e-" + rand.String(8)
-	warm := connectGatewayWithHeader(t, endpoint, "alice", warmID, toolSearch)
+	// The session stays open and live but sends nothing more, as an idle
+	// Claude Code session does, and must not hold the server up.
+	warm := connectGatewayWithHeader(t, endpoint, "alice", "e2e-"+rand.String(8), toolSearch)
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		assert.NotEmpty(collect, searchTools(t, warm, "echo").Tools, "the search rows are built by the leader")
 	}, 2*time.Minute, time.Second)
-	require.NoError(t, warm.session.Close())
-	idleOut(t, admin, warmID)
 	requireDown(t)
 
 	t.Run("a search while the server is scaled down uses words only and counts scaled_down, not error", func(t *testing.T) {
@@ -148,10 +147,20 @@ func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
 			}, 3*time.Minute, 2*time.Second)
 		})
 
-		t.Run("after the session ends and the idle timeout passes the server is back at zero", func(t *testing.T) {
-			require.NoError(t, session.session.Close())
-			idleOut(t, admin, sessionID)
+		t.Run("once the session stops searching the server is back at zero while the session stays live", func(t *testing.T) {
 			requireDown(t)
+
+			_, err := session.session.ListTools(t.Context(), nil)
+			require.NoError(t, err, "the session is still open")
+		})
+
+		t.Run("a new session with tool search on starts the server before its first search", func(t *testing.T) {
+			connectGatewayWithHeader(t, endpoint, "alice", "e2e-"+rand.String(8), toolSearch)
+
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				desired, _ := embeddingsReplicas(t.Context(), collect, admin)
+				assert.EqualValues(collect, 1, desired)
+			}, deadline, time.Second)
 		})
 	})
 }

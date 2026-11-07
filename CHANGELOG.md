@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- With `embeddings.server.scaleToZero.enabled`, the gateway now stops the embeddings server when nobody searched or started a session with tool search on for `idleTimeout`. Before, an open but idle Claude Code session kept the server running for about two hours more.
+
 ## 0.4.4
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes sign-in failures when several Claude Code sessions start at the same time, and two problems in the web UI. The Helm chart also gets values for the client ID and scopes of the `toolgate` command.
