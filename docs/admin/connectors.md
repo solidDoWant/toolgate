@@ -100,7 +100,11 @@ A connector does not send the `X-Toolgate-Session` header of the toolgate plugin
 
 The session ends when the connector deletes its MCP session, or when the MCP session has no requests for 30 minutes. The gateway then writes `session.end` and stops the per-session instances of the session. The session never resumes.
 
-Only the replica that started an MCP session knows it. If a request reaches another replica, or the replica stops, the connector gets HTTP 404 and connects again. It then gets a new session with no enabled servers. The old session ends after `sessionIdleTimeout`. To prevent this, configure session affinity on the `Mcp-Session-Id` header in the proxy in front of the gateway. For example, use an Istio `DestinationRule` with `consistentHash.httpHeaderName: Mcp-Session-Id`.
+The gateway stores each MCP session in PostgreSQL when the connector sends `initialize`. A replica that gets a request for a session it does not hold reads the session and serves the request. So you do not need session affinity. A request can reach any replica. A replica can stop or restart, and the connector keeps its session and its enabled servers. Only the requests that were in progress on the stopped replica fail.
+
+A GET stream of the connector stays open on one replica. When that replica stops, the connector opens the stream again on another replica. The new stream gets a `list_changed` notification at once, so the connector does not miss a change that happened in between.
+
+Do not configure affinity on the `Mcp-Session-Id` header. Affinity does not make sessions more correct. It only means that fewer requests change the replica. The chart value `config.service.sessionAffinity` is `None` by default.
 
 ## What users need to know
 
