@@ -43,7 +43,7 @@ type Deleter interface {
 }
 
 // Teardown moves failed and stopped instances through stopping to stopped,
-// deleting their namespaces (docs/design/phase-1.md §2).
+// deleting their namespaces.
 type Teardown struct {
 	Pool *pgxpool.Pool
 	// Reader reads instance namespaces.

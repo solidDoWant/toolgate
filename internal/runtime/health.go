@@ -21,7 +21,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 )
 
-// Health check settings (docs/design/phase-1.md §7).
+// Health check settings.
 const (
 	// DefaultHealthInterval is how often the reconciler pings each ready
 	// instance.
@@ -403,7 +403,7 @@ func (m *Monitor) logger() *slog.Logger {
 }
 
 // MCPMonitorConnector is the MonitorConnector that speaks MCP over
-// Streamable HTTP (docs/design/phase-4.md §8, "Monitoring").
+// Streamable HTTP.
 //
 // On 2025-11-25 the session pings, and gets `list_changed` on its stream.
 // On 2026-07-28, which has no `ping`, each health check connects a fresh

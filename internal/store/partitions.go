@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Audit partition upkeep settings (docs/design/phase-3.md §7).
+// Audit partition upkeep settings.
 const (
 	// DefaultAuditPartitionInterval is how often the leader creates the
 	// audit partitions for the current and the next month.

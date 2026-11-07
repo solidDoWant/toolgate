@@ -10,7 +10,7 @@ import (
 
 // CatalogCleaner deletes tool catalog rows that are no longer needed: those
 // of templates that no longer exist, and, for each template, every row older
-// than the newest two generations (docs/design/phase-4.md §2, "Cleanup").
+// than the newest two generations.
 // Only the leader runs it, on its full passes.
 type CatalogCleaner struct {
 	Queries *db.Queries

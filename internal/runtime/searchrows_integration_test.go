@@ -46,7 +46,7 @@ func searchNames(t *testing.T, queries *db.Queries, uid string) []string {
 	return names
 }
 
-// Row 189: two ready writes of one template at once.
+// Two ready writes of one template at once.
 func TestConcurrentReadyWritesRebuildSearchRows(t *testing.T) {
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())
@@ -194,7 +194,7 @@ func assertNotified(t *testing.T, events <-chan store.Event, uid string) {
 	}
 }
 
-// Row 190: a new leader rebuilds every template's rows.
+// A new leader rebuilds every template's rows.
 func TestNewLeaderRebuildsAllSearchRows(t *testing.T) {
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())

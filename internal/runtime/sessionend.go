@@ -28,9 +28,8 @@ const DefaultSessionIdleTimeout = 2 * time.Hour
 // set, when no window is configured.
 const DefaultSessionResumeWindow = 24 * time.Hour
 
-// SessionEnder ends idle sessions (docs/design/phase-1.md §2, "Ending a
-// session") and forgets the enabled sets of sessions that ended longer ago
-// than the resume window (docs/design/phase-3.md §11). Only the reconciler
+// SessionEnder ends idle sessions and forgets the enabled sets of sessions that ended longer ago
+// than the resume window. Only the reconciler
 // runs it, on its full passes. Ending a session keeps its enabled set, and
 // the stop decider stops the session's per-session instances because the
 // session is no longer live.
@@ -125,7 +124,7 @@ func (e *SessionEnder) end(ctx context.Context, id int64, timeout pgtype.Interva
 // an idle end: ended_at, session.end with its enabled servers and reason, the
 // session additions and pending requests, and a notification on
 // session:<id>. The gateway uses it for a session tied to an MCP session
-// that closed (docs/design/phase-4.md §9). A session that already ended is
+// that closed. A session that already ended is
 // left as it is.
 func EndSession(ctx context.Context, pool *pgxpool.Pool, auditOutput io.Writer, id int64, reason string) error {
 	if auditOutput == nil {
@@ -203,8 +202,7 @@ func endSession(ctx context.Context, pool *pgxpool.Pool, auditOutput io.Writer, 
 
 // endSessionAdditions deletes the session additions of a session that is
 // ending and expires its pending server requests, writing access.expire and
-// notifying approval:<id> for each, in the ending transaction
-// (docs/design/phase-3.md §10, "State"). A restart reuses the sessions row,
+// notifying approval:<id> for each, in the ending transaction. A restart reuses the sessions row,
 // so nothing of the old session may apply to it.
 func endSessionAdditions(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, ended db.Session) error {
 	queries := db.New(tx)
@@ -214,7 +212,7 @@ func endSessionAdditions(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, 
 	}
 
 	// The session's deny entries stay until it is forgotten, so a resume
-	// can't undo a deny (docs/design/phase-4.md §2, "Ending a session").
+	// can't undo a deny.
 	if err := queries.DeleteSessionScopeEntries(ctx, db.DeleteSessionScopeEntriesParams{
 		SessionPk: pgtype.Int8{Int64: ended.ID, Valid: true}, Effect: "allow",
 	}); err != nil {

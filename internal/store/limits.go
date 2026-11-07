@@ -11,7 +11,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// Row limits of docs/design/phase-2.md §2.
+// Row limits.
 const (
 	// MaxLiveGrantsPerPrincipal is the most live grants one principal has.
 	MaxLiveGrantsPerPrincipal = 100

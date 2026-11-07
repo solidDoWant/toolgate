@@ -18,7 +18,7 @@ import (
 )
 
 // RebuildToolSearch rebuilds the tool search rows of one template inside the
-// caller's transaction (docs/design/phase-4.md §5). It takes the template's
+// caller's transaction. It takes the template's
 // advisory lock first, so two rebuilds of one template run in turn. Then it
 // deletes the template's rows and inserts one row for each curated tool of
 // its catalog list, and notifies `toolsearch:<uid>`.
@@ -33,8 +33,7 @@ func RebuildToolSearch(ctx context.Context, tx pgx.Tx, uid string, template *v1a
 // RebuildToolSearchEmbedded is RebuildToolSearch with vectors: when embedder
 // is not nil, it embeds each row's document text and stores the vector with
 // the model name. If the endpoint fails, the rows keep an empty vector, the
-// failure is counted and logged, and the rebuild still succeeds
-// (docs/design/phase-4.md §5, "Optional embeddings").
+// failure is counted and logged, and the rebuild still succeeds.
 func RebuildToolSearchEmbedded(ctx context.Context, tx pgx.Tx, uid string, template *v1alpha1.MCPServerTemplate, embedder *embeddings.Client, log *slog.Logger) error {
 	queries := db.New(tx)
 

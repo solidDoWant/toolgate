@@ -172,7 +172,7 @@ func (h *healthHarness) waitForInstanceEvent(t *testing.T) {
 	}
 }
 
-// Row 20: the upstream announces `list_changed`. The reconciler re-lists,
+// The upstream announces `list_changed`. The reconciler re-lists,
 // checks and stores the tools, and notifies `instance:<id>`.
 func TestMonitorUpstreamToolListChanged(t *testing.T) {
 	harness := newHealthHarness(t)
@@ -196,7 +196,7 @@ func TestMonitorUpstreamToolListChanged(t *testing.T) {
 	assert.ElementsMatch(t, []string{"search", "fetch"}, names)
 }
 
-// Row 12, the reconciler's part: an instance that stops answering after
+// The reconciler's part: an instance that stops answering after
 // ready fails after 3 health checks in a row, with a reason, and notifies.
 // The session keeps the server enabled.
 func TestMonitorInstanceFailsAfterReady(t *testing.T) {

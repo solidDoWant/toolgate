@@ -6,7 +6,7 @@ SELECT * FROM user_scopes WHERE principal = @principal FOR UPDATE;
 -- name: SetUserScopeDefaults :exec
 -- Sets both defaults. The default list is stored as unverified_default none
 -- with unverified_list true; a write of none or all sets unverified_list
--- false (docs/design/phase-4.md §2).
+-- false.
 UPDATE user_scopes
 SET verified_default = @verified_default, unverified_default = @unverified_default, unverified_list = @unverified_list, updated_at = now()
 WHERE id = @id;
