@@ -19,9 +19,8 @@ import (
 )
 
 // objectFailureBound is how long an object's Ready condition must be False
-// before it counts as failed, plus one reconciler pass
-// (docs/design/phase-3.md §6), both scaled, plus time for Flux to reconcile
-// the change, the write and the fan-out.
+// before it counts as failed, plus one reconciler pass, both scaled, plus
+// time for Flux to reconcile the change, the write and the fan-out.
 func objectFailureBound() time.Duration {
 	return scaled(runtime.ReadyFailureHold) + scaled(runtime.DefaultPassInterval) + 20*time.Second
 }

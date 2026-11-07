@@ -59,7 +59,7 @@ test-integration: ## Run the integration-tagged tests (GO_TEST_JSON=file also wr
 	timeout 30m ./scripts/ci/go-test-json.sh -race -count=1 -tags integration -timeout 25m ./...
 
 .PHONY: search-eval
-search-eval: ## Score the tool search fixture (AC-4-03) against any embeddings endpoint: make search-eval EMBED_URL=http://host EMBED_MODEL=name. Prints the words-only and hybrid scores and each miss. Needs Docker for PostgreSQL. Never gates CI.
+search-eval: ## Score the tool search fixture against any embeddings endpoint: make search-eval EMBED_URL=http://host EMBED_MODEL=name. Prints the words-only and hybrid scores and each miss. Needs Docker for PostgreSQL. Never gates CI.
 	@test -n "$(EMBED_URL)" && test -n "$(EMBED_MODEL)" || { echo "usage: make search-eval EMBED_URL=<url> EMBED_MODEL=<model>" >&2; exit 2; }
 	SEARCH_EVAL_EMBED_URL='$(EMBED_URL)' SEARCH_EVAL_EMBED_MODEL='$(EMBED_MODEL)' timeout 15m go test -tags integration -count=1 -v -timeout 14m -run '^TestSearchEval$$' ./internal/gateway/
 

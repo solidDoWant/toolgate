@@ -7,7 +7,7 @@ For: people who change the telemetry ingest or its tests.
 ## How it was recorded
 
 - Claude Code 2.1.318, started with `claude -p` and the model `sonnet`.
-- The prompt asked it to run `echo toolgate-fixture` with the Bash tool and to reply with the output. The session made one built-in tool call. It made no toolgate tool call, because the ingest, content removal and usage paths are the same for every tool. The link from a Claude Code tool span to the gateway's spans is checked by hand (AC-3-07).
+- The prompt asked it to run `echo toolgate-fixture` with the Bash tool and to reply with the output. The session made one built-in tool call. It made no toolgate tool call, because the ingest, content removal and usage paths are the same for every tool. The link from a Claude Code tool span to the gateway's spans is checked by hand.
 - The settings were the `SettingsProfile` of [Telemetry](../admin/telemetry.md), with `OTEL_EXPORTER_OTLP_PROTOCOL=http/json` so that the files can be read as text, and a 2 s export interval. A local OTLP sink wrote each request body to a file, in arrival order.
 - `content-on/` has `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` and `OTEL_LOG_TOOL_CONTENT` set to `1`. `content-off/` has none of them.
 - The only edit: the `user.id` value, a hash of the account, is zeros. The files have no email, account ID, organization ID or local path.

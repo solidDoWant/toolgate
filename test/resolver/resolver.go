@@ -1,4 +1,4 @@
-// Package resolver is the test resolver (docs/design/phase-2.md §6): an HTTP
+// Package resolver is the test resolver: an HTTP
 // handler that answers each request with the next value of a counter and an
 // expiry the test sets. The e2e tests serve it in the test process; the
 // command in cmd/resolver serves it on its own.
