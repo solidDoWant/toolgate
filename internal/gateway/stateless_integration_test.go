@@ -121,7 +121,15 @@ func TestStatelessClient(t *testing.T) {
 		assert.Equal(t, "private", listed.CacheScope, "tool lists are never shared")
 		assert.Zero(t, listed.TTLMs)
 
-		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
+		// Keep the instance not ready until the enable has reported progress,
+		// so a fast ready mark cannot end the wait before its first report.
+		results := startEnable(t, client.session, "github")
+		instance := fixture.awaitInstance(t, fixture.catalogTemplate(t, "github"), "user:alice")
+		require.Eventually(t, func() bool { return len(client.progressMessages()) > 0 }, waitTimeout, 10*time.Millisecond,
+			"the enable reports progress while it waits")
+		fixture.markReady(t, instance.ID, "echo")
+		require.Empty(t, awaitEnable(t, results).err)
+
 		assert.ElementsMatch(t, append(metaToolNames, "github__echo"), toolNames(t, client.session))
 		require.Eventually(t, func() bool { return client.listChangedCount() > 0 }, waitTimeout, 10*time.Millisecond,
 			"the enable sends list_changed on the listen stream")
