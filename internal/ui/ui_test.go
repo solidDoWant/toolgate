@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -173,5 +175,31 @@ func TestCrossOriginPostsAreRefusedBeforeAnythingElse(t *testing.T) {
 			assert.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 			assert.False(t, handled)
 		})
+	}
+}
+
+func TestTemplatesNeedNoRelaxedContentSecurityPolicy(t *testing.T) {
+	layout, err := os.ReadFile("templates/layout.html")
+	require.NoError(t, err)
+
+	config := `<meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false}'>`
+	require.Contains(t, string(layout), config)
+	assert.Less(t, strings.Index(string(layout), config), strings.Index(string(layout), "htmx-2.0.7.min.js"), "the config comes before the htmx script")
+
+	css, err := os.ReadFile("static/toolgate.css")
+	require.NoError(t, err)
+	assert.Contains(t, string(css), ".htmx-indicator")
+
+	files, err := filepath.Glob("templates/*.html")
+	require.NoError(t, err)
+	require.NotEmpty(t, files)
+
+	// The layout loads the one vendored script by src; nothing else may be a script.
+	forbidden := regexp.MustCompile(`(?i)<style|\sstyle\s*=|<script[^>]*>\s*[^<\s]|\shx-on|javascript:`)
+
+	for _, file := range files {
+		content, err := os.ReadFile(file)
+		require.NoError(t, err)
+		assert.NotRegexp(t, forbidden, string(content), file)
 	}
 }
