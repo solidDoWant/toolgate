@@ -37,6 +37,10 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	defer closeDB()
 
+	if err := checkVectorVisible(ctx, pool); err != nil {
+		return err
+	}
+
 	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
@@ -182,4 +186,33 @@ func CreateAuditPartitions(ctx context.Context, pool *pgxpool.Pool, at time.Time
 
 		return nil
 	})
+}
+
+// checkVectorVisible fails with a clear error when the vector extension is
+// installed but its type can't be resolved on the connection's search_path.
+// Without the check, the migration that uses the type fails with a bare
+// "type does not exist" error. A database without the extension passes: the
+// migration installs it.
+func checkVectorVisible(ctx context.Context, pool *pgxpool.Pool) error {
+	var (
+		schema      *string
+		searchPath  string
+		visibleType bool
+	)
+
+	err := pool.QueryRow(ctx, `SELECT
+		(SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'vector'),
+		current_setting('search_path'),
+		to_regtype('vector') IS NOT NULL`).Scan(&schema, &searchPath, &visibleType)
+	if err != nil {
+		return fmt.Errorf("check the vector extension: %w", err)
+	}
+
+	if schema == nil || visibleType {
+		return nil
+	}
+
+	return fmt.Errorf("the vector type isn't visible on search_path %q; the extension is installed in schema %q. "+
+		"Install it in the schema on the search_path (CREATE EXTENSION vector SCHEMA <schema>) or add %q to search_path",
+		searchPath, *schema, *schema)
 }

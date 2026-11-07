@@ -34,8 +34,8 @@ const splitRoleSQL = `
 CREATE ROLE toolgate_migrator LOGIN PASSWORD '%[1]s';
 CREATE ROLE toolgate_app LOGIN PASSWORD '%[1]s';
 CREATE SCHEMA toolgate AUTHORIZATION toolgate_migrator;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA toolgate;
+CREATE EXTENSION IF NOT EXISTS vector SCHEMA toolgate;
 ALTER ROLE toolgate_migrator SET search_path = toolgate;
 ALTER ROLE toolgate_app SET search_path = toolgate;
 GRANT USAGE ON SCHEMA toolgate TO toolgate_app;
@@ -158,7 +158,7 @@ func TestSeparateMigrationCredential(t *testing.T) {
 		_, _ = psql(t, postgresNamespace, superuser, "postgres", "DROP ROLE IF EXISTS toolgate_app, toolgate_migrator")
 	})
 
-	output, err := psql(t, postgresNamespace, superuser, database, fmt.Sprintf(splitRoleSQL, password))
+	output, err := psql(t, postgresNamespace, superuser, database, "SET search_path = public;\n"+fmt.Sprintf(splitRoleSQL, password))
 	require.NoError(t, err, output)
 
 	connection := func(role string) string {
