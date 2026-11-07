@@ -109,6 +109,10 @@ type MCPOptions struct {
 	// ToolSearch is the gateway's default for tool search mode, used by a
 	// request that sends no X-Toolgate-Tool-Search header.
 	ToolSearch bool
+	// MetaToolsEnableDisable says when sessions list the enable and disable
+	// tools: "auto" (the default) lists them outside tool search mode,
+	// "always" in every mode, "never" in none.
+	MetaToolsEnableDisable string
 	// Embedder embeds search queries for tool search; nil means words only.
 	Embedder *embeddings.Client
 	// ToolSearchSessionStarted is called after a request starts or resumes
@@ -334,6 +338,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
 		embedder:             options.Embedder,
+		enableDisable:        options.MetaToolsEnableDisable,
 	}
 
 	if tools.workspaces == nil {
@@ -611,7 +616,12 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			e.release(newSessionID, held)
 		}()
 	} else {
-		held.tools.setCurrent(current)
+		// A request that changes the mode of a live session changes its tool
+		// list, so the client is told to list again.
+		changed := held.tools.setCurrent(current)
+		if changed {
+			go e.router.notifyToolListChanged(mcpSessionID)
+		}
 	}
 
 	ctx := context.WithValue(request.Context(), requestContextCtxKey{}, current)
