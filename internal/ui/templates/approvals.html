@@ -1,18 +1,45 @@
 {{define "content"}}
 <div id="approvals" hx-get="/ui/approvals" hx-trigger="every 5s" hx-select="#approvals" hx-swap="outerHTML">
-{{if .Data}}
+{{if .Data.Approvals}}
 <div class="table-wrap"><table>
 <thead><tr><th>Server</th><th>Tool</th><th>Session</th><th>Workspace</th><th>Requested</th><th>Expires</th><th></th></tr></thead>
 <tbody>
-{{range .Data}}<tr id="approval-{{.ID}}">
+{{range .Data.Approvals}}<tr id="approval-{{.ID}}">
 <td>{{.Server}}</td><td>{{.Tool}}</td><td>{{.Session}}</td><td>{{.Workspace}}</td>
 <td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
 <td><a href="/ui/approvals/{{.ID}}">Open</a></td>
 </tr>
 {{end}}</tbody>
 </table></div>
-{{else}}
+{{end}}
+{{if .Data.AccessRequests}}
+<h2>Access changes</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Change</th><th>Asked by</th><th>Requested</th><th>Expires</th><th></th></tr></thead>
+<tbody>
+{{range .Data.AccessRequests}}<tr id="access-request-{{.ID}}">
+<td>{{.Change}}</td><td>{{.AskedBy}}</td>
+<td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
+<td><a href="/ui/approvals/{{.ID}}">Open</a></td>
+</tr>
+{{end}}</tbody>
+</table></div>
+{{end}}
+{{if not (or .Data.Approvals .Data.AccessRequests)}}
 <p class="empty">No approvals are waiting for you.</p>
+{{end}}
+{{if .Data.Recent}}
+<h2>Recent access changes</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Change</th><th>Asked by</th><th>Result</th><th>Requested</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Recent}}<tr id="recent-access-request-{{.ID}}">
+<td>{{.Change}}</td><td>{{.AskedBy}}</td><td>{{.Status}}</td>
+<td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
+<td><a href="/ui/approvals/{{.ID}}">Open</a></td>
+</tr>
+{{end}}</tbody>
+</table></div>
 {{end}}
 </div>
 {{end}}

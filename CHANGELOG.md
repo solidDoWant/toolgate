@@ -8,6 +8,7 @@
 
 ### Fixes
 
+- The Approvals page of the web UI now lists your pending access requests, for example changes to workspace lists and defaults, in an "Access changes" section. Before, it listed only tool call approvals.
 - The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`.
 
 ## 0.4.5
