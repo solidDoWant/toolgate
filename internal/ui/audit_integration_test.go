@@ -241,9 +241,9 @@ func toolsInBrowser(ctx context.Context) []string {
 	return tools
 }
 
-// [AC-2-05] In a browser, filtering the audit log by principal, workspace,
+// In a browser, filtering the audit log by principal, workspace,
 // session, server, tool and time returns exactly the matching events.
-func TestAC2_05AuditFilters(t *testing.T) {
+func TestAuditFilters(t *testing.T) {
 	env := startUIEnv(t, "admins")
 	env.insertSession(t, "browser-audit", []string{"admins"})
 

@@ -43,7 +43,7 @@ func workspaceEnvironment(home string, extra ...string) []string {
 	return append([]string{"HOME=" + home, "PATH=" + os.Getenv("PATH")}, extra...)
 }
 
-func TestAC3_20DeviceSignInFromAWorkspace(t *testing.T) {
+func TestDeviceSignInFromAWorkspace(t *testing.T) {
 	provider := oidcProvider(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)
@@ -120,7 +120,7 @@ func TestAC3_20DeviceSignInFromAWorkspace(t *testing.T) {
 		return values, errOutput.String() + string(out), err
 	}
 
-	t.Run("[AC-3-20] a later toolgate headers gets a token and the session acts as the user", func(t *testing.T) {
+	t.Run("a later toolgate headers gets a token and the session acts as the user", func(t *testing.T) {
 		values, details, err := runHeaders()
 		require.NoError(t, err, details)
 
@@ -134,7 +134,7 @@ func TestAC3_20DeviceSignInFromAWorkspace(t *testing.T) {
 		require.True(t, found, "the server lists only for the signed-in user")
 	})
 
-	t.Run("[AC-3-20] after the IdP revokes the refresh token, headers says to sign in again", func(t *testing.T) {
+	t.Run("after the IdP revokes the refresh token, headers says to sign in again", func(t *testing.T) {
 		provider.RevokeRefreshTokens(subject)
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {

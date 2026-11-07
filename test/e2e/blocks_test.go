@@ -39,11 +39,11 @@ func pageText(browser context.Context, publicURL, path string) (string, error) {
 	return chromedp.Run(browser, testutil.BodyText())
 }
 
-func TestAC2_01NonAdminHasNoBlocksPage(t *testing.T) {
+func TestNonAdminHasNoBlocksPage(t *testing.T) {
 	admin := adminClient(t)
 	publicURL := webUI(t, forwardToGateway(t, admin, gatewayPods(t, admin)[0]))
 
-	t.Run("[AC-2-01] a user signs in through the IdP, and without the admin group sees no Blocks link and gets 403 from /ui/blocks", func(t *testing.T) {
+	t.Run("a user signs in through the IdP, and without the admin group sees no Blocks link and gets 403 from /ui/blocks", func(t *testing.T) {
 		browser := signInToUI(t, publicURL, e2eUser)
 
 		hasLink, err := chromedp.Run(browser, chromedp.Evaluate[bool](`document.querySelector('a[href="/ui/blocks"]') !== null`))
@@ -55,7 +55,7 @@ func TestAC2_01NonAdminHasNoBlocksPage(t *testing.T) {
 		assert.Contains(t, body, "Only admins can open this page.")
 	})
 
-	t.Run("[AC-2-01] an admin sees the link and the page", func(t *testing.T) {
+	t.Run("an admin sees the link and the page", func(t *testing.T) {
 		browser := signInToUI(t, publicURL, e2eAdmin)
 
 		hasLink, err := chromedp.Run(browser, chromedp.Evaluate[bool](`document.querySelector('a[href="/ui/blocks"]') !== null`))
@@ -68,7 +68,7 @@ func TestAC2_01NonAdminHasNoBlocksPage(t *testing.T) {
 	})
 }
 
-func TestAC2_15StandingRulesShown(t *testing.T) {
+func TestStandingRulesShown(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	publicURL := webUI(t, forwardToGateway(t, admin, gatewayPods(t, admin)[0]))
@@ -85,7 +85,7 @@ func TestAC2_15StandingRulesShown(t *testing.T) {
 		_ = kube.Delete(context.WithoutCancel(t.Context()), rule, client.PropagationPolicy(metav1.DeletePropagationBackground))
 	})
 
-	t.Run("[AC-2-15] the Blocks page lists the rule from the cluster, valid, with no form to change it", func(t *testing.T) {
+	t.Run("the Blocks page lists the rule from the cluster, valid, with no form to change it", func(t *testing.T) {
 		browser := signInToUI(t, publicURL, e2eAdmin)
 
 		var body string
@@ -115,7 +115,7 @@ func blockLifetime() time.Duration {
 	return scaled(e2eBlockMinutes * time.Minute)
 }
 
-func TestAC2_14TemporaryBlock(t *testing.T) {
+func TestTemporaryBlock(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -126,7 +126,7 @@ func TestAC2_14TemporaryBlock(t *testing.T) {
 	pods := gatewayPods(t, admin)
 	publicURL := webUI(t, forwardToGateway(t, admin, pods[0]))
 
-	t.Run("[AC-2-14] an admin's block applies to open sessions within 5 s and ends by itself at its expiry", func(t *testing.T) {
+	t.Run("an admin's block applies to open sessions within 5 s and ends by itself at its expiry", func(t *testing.T) {
 		session := connectGateway(t, forwardToGateway(t, admin, pods[len(pods)-1]), "alice", "e2e-"+rand.String(8))
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
 

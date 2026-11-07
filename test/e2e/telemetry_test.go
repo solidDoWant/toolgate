@@ -370,7 +370,7 @@ func fixtureDeltas(t *testing.T) (tokens map[string]float64, cost float64) {
 	return tokens, lastCost - firstCost
 }
 
-func TestAC3_06UsageQueries(t *testing.T) {
+func TestUsageQueries(t *testing.T) {
 	telemetryEnv(t, "TOOLGATE_E2E_PROMETHEUS_URL")
 	telemetryEnv(t, "TOOLGATE_E2E_OTLP_FORWARD_TO")
 
@@ -381,7 +381,7 @@ func TestAC3_06UsageQueries(t *testing.T) {
 	require.Len(t, wantTokens, 4)
 	require.Positive(t, wantCost)
 
-	t.Run("[AC-3-06] the documented queries sum the fixture's tokens and cost per user, workspace and session", func(t *testing.T) {
+	t.Run("the documented queries sum the fixture's tokens and cost per user, workspace and session", func(t *testing.T) {
 		// increase() extrapolates a cumulative counter's growth over its
 		// samples by at most half a scrape interval at each end, so the sum
 		// is the growth up to a factor of 1.5.
@@ -443,14 +443,14 @@ func normalizedContent() map[string]bool {
 	return names
 }
 
-func TestAC3_05TelemetryIdentity(t *testing.T) {
+func TestTelemetryIdentity(t *testing.T) {
 	telemetryEnv(t, "TOOLGATE_E2E_PROMETHEUS_URL")
 	telemetryEnv(t, "TOOLGATE_E2E_OTLP_FORWARD_TO")
 
 	user := "ident-" + randomHex(t, 4)
 	sent := replayTelemetry(t, user)
 
-	t.Run("[AC-3-05] a metric carries the verified principal and workspace, not the client's", func(t *testing.T) {
+	t.Run("a metric carries the verified principal and workspace, not the client's", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			series, err := promQuery(t, `claude_code_token_usage_tokens_total{user_id="`+user+`"}`, time.Now())
 			require.NoError(collect, err)
@@ -471,7 +471,7 @@ func TestAC3_05TelemetryIdentity(t *testing.T) {
 		}
 	})
 
-	t.Run("[AC-3-05] a log event carries the verified principal and workspace and no content", func(t *testing.T) {
+	t.Run("a log event carries the verified principal and workspace and no content", func(t *testing.T) {
 		loki := telemetryEnv(t, "TOOLGATE_E2E_LOKI_URL")
 		removed := normalizedContent()
 
@@ -520,7 +520,7 @@ func TestAC3_05TelemetryIdentity(t *testing.T) {
 		assert.True(t, events["tool_result"], "events: %v", events)
 	})
 
-	t.Run("[AC-3-05] a span carries the verified principal and workspace, no content attribute and no tool.output event", func(t *testing.T) {
+	t.Run("a span carries the verified principal and workspace, no content attribute and no tool.output event", func(t *testing.T) {
 		tempo := telemetryEnv(t, "TOOLGATE_E2E_TEMPO_URL")
 		removed := map[string]bool{}
 

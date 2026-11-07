@@ -374,7 +374,7 @@ func TestMCPEndpointRefusesUnauthenticated(t *testing.T) {
 }
 
 func TestListServers(t *testing.T) {
-	t.Run("[AC-1-06] returns exactly the templates the identity may use, with scope, enabled state and status", func(t *testing.T) {
+	t.Run("returns exactly the templates the identity may use, with scope, enabled state and status", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		bySubject := fixture.addTemplate("by-subject", "per-user", v1alpha1.Access{Users: []string{"alice"}, Environments: "any"})

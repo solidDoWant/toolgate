@@ -119,8 +119,8 @@ func writeSettingsFile(t *testing.T, path string, values map[string]any) {
 	require.NoError(t, os.WriteFile(path, content, 0o600))
 }
 
-func TestAC1_28SettingsSync(t *testing.T) {
-	t.Run("[AC-1-28] the SessionStart hook writes the profile's keys, leaves user edits, removes dropped keys and keeps other keys", func(t *testing.T) {
+func TestSettingsSync(t *testing.T) {
+	t.Run("the SessionStart hook writes the profile's keys, leaves user edits, removes dropped keys and keeps other keys", func(t *testing.T) {
 		isolateUserConfig(t)
 		t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 

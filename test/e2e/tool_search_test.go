@@ -18,13 +18,13 @@ import (
 	"github.com/solidDoWant/toolgate/internal/gateway"
 )
 
-func TestAC4_01ToolSearch(t *testing.T) {
+func TestToolSearch(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)
 	endpoint := forwardToGateway(t, admin, pods[0])
 
-	t.Run("[AC-4-01] with search on the list holds the meta tools and find_tools, a search finds tools of several servers, and a call enables and runs", func(t *testing.T) {
+	t.Run("with search on the list holds the meta tools and find_tools, a search finds tools of several servers, and a call enables and runs", func(t *testing.T) {
 		first := createTemplate(t, kube, "e2e-search-a", "per-session", testServerResources(t, mcpServerImage(t), 0, nil))
 		second := createTemplate(t, kube, "e2e-search-b", "per-session", testServerResources(t, mcpServerImage(t), 0, nil))
 		declareTools(t, first, "", "echo")

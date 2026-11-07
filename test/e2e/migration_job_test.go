@@ -128,7 +128,7 @@ func (o *jobObservation) observe(t *testing.T, admin *kubernetes.Clientset, stop
 	}()
 }
 
-func TestAC3_15SeparateMigrationCredential(t *testing.T) {
+func TestSeparateMigrationCredential(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -239,7 +239,7 @@ func TestAC3_15SeparateMigrationCredential(t *testing.T) {
 		}
 	}
 
-	t.Run("[AC-3-15] the Job migrates before the first gateway pod starts and the schema is current", func(t *testing.T) {
+	t.Run("the Job migrates before the first gateway pod starts and the schema is current", func(t *testing.T) {
 		requireJobBeforePods(t, upgrade())
 
 		latest, err := psql(t, postgresNamespace, superuser, database, "SELECT max(version_id) FROM toolgate.goose_db_version")
@@ -256,7 +256,7 @@ func TestAC3_15SeparateMigrationCredential(t *testing.T) {
 		assert.Equal(t, strconv.Itoa(version), latest)
 	})
 
-	t.Run("[AC-3-15] the app role cannot change the schema, and enable and a call work", func(t *testing.T) {
+	t.Run("the app role cannot change the schema, and enable and a call work", func(t *testing.T) {
 		output, err := psql(t, postgresNamespace, "toolgate_app", database, "CREATE TABLE toolgate.stolen (id int)")
 		require.Error(t, err)
 		assert.Contains(t, output, "permission denied")
@@ -288,7 +288,7 @@ func TestAC3_15SeparateMigrationCredential(t *testing.T) {
 		}, time.Minute, time.Second)
 	})
 
-	t.Run("[AC-3-15] helm upgrade runs the hook again before the new pods", func(t *testing.T) {
+	t.Run("helm upgrade runs the hook again before the new pods", func(t *testing.T) {
 		requireJobBeforePods(t, upgrade("--set-json", `config.extraEnv=[{"name":"TOOLGATE_E2E_ROLLOUT","value":"`+rand.String(6)+`"}]`))
 	})
 }

@@ -162,7 +162,7 @@ func decodeIdentity(t *testing.T, body []byte) auth.Identity {
 	return identity
 }
 
-func TestAC1_04PodSignIn(t *testing.T) {
+func TestPodSignIn(t *testing.T) {
 	t.Parallel()
 
 	runnerPod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
@@ -173,7 +173,7 @@ func TestAC1_04PodSignIn(t *testing.T) {
 	}}
 	runner := podToken{namespace: "ci", serviceAccount: "runner", podName: "runner-abc", podUID: "pod-uid-1", audiences: []string{"toolgate"}}
 
-	t.Run("[AC-1-04] pod in an allowed namespace is attested", func(t *testing.T) {
+	t.Run("pod in an allowed namespace is attested", func(t *testing.T) {
 		t.Parallel()
 
 		f, server := newPodFixture(t, []string{"ci"}, runnerPod)
@@ -189,7 +189,7 @@ func TestAC1_04PodSignIn(t *testing.T) {
 		assert.Equal(t, "s-1", identity.Session)
 	})
 
-	t.Run("[AC-1-04] pod in a namespace that isn't allowed gets 401", func(t *testing.T) {
+	t.Run("pod in a namespace that isn't allowed gets 401", func(t *testing.T) {
 		t.Parallel()
 
 		f, server := newPodFixture(t, []string{"other"}, runnerPod)
@@ -202,7 +202,7 @@ func TestAC1_04PodSignIn(t *testing.T) {
 		assert.Equal(t, "namespace not allowed", refusals[0].Reason)
 	})
 
-	t.Run("[AC-1-04] token with another audience gets 401", func(t *testing.T) {
+	t.Run("token with another audience gets 401", func(t *testing.T) {
 		t.Parallel()
 
 		f, server := newPodFixture(t, []string{"ci"}, runnerPod)

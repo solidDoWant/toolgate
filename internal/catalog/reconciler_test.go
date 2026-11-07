@@ -76,22 +76,22 @@ func TestReconcilerReportsInvalidTemplates(t *testing.T) {
 		reason   string
 	}{
 		{
-			name:     "[AC-1-23] secret outside a Secret",
+			name:     "secret outside a Secret",
 			template: newTemplate("github", catalog.ScopePerSession, podWithEnv("${secret:github-token}")),
 			reason:   "${secret:github-token} is allowed only in the data or stringData values of a Secret",
 		},
 		{
-			name:     "[AC-1-24] cluster-scoped kind",
+			name:     "cluster-scoped kind",
 			template: newTemplate("github", catalog.ScopePerSession, `{"apiVersion":"v1","kind":"Namespace","metadata":{"name":"n"}}`),
 			reason:   "v1 Namespace is cluster-scoped",
 		},
 		{
-			name:     "[AC-1-24] kind whose CRD isn't installed",
+			name:     "kind whose CRD isn't installed",
 			template: newTemplate("github", catalog.ScopePerSession, `{"apiVersion":"example.com/v1","kind":"Widget","metadata":{"name":"n"}}`),
 			reason:   "example.com/v1 Widget is not installed in the cluster",
 		},
 		{
-			name:     "[AC-1-14] shared template using a principal",
+			name:     "shared template using a principal",
 			template: newTemplate("github", catalog.ScopeShared, podWithEnv("${principal.id}")),
 			reason:   "a shared template may not use ${principal.id}",
 		},
@@ -104,10 +104,10 @@ func TestReconcilerReportsInvalidTemplates(t *testing.T) {
 	}
 }
 
-// TestAC1_23SecretOutsideSecretIsInvalid checks that the reconciler marks a
+// TestSecretOutsideSecretIsInvalid checks that the reconciler marks a
 // template using ${secret:...} outside a Secret invalid, with the reason in
 // its status, and does not offer it.
-func TestAC1_23SecretOutsideSecretIsInvalid(t *testing.T) {
+func TestSecretOutsideSecretIsInvalid(t *testing.T) {
 	template := newTemplate("github", catalog.ScopePerSession, podWithEnv("${secret:github-token}"))
 
 	requireReconciledInvalid(t, template, "${secret:github-token} is allowed only in the data or stringData values of a Secret")

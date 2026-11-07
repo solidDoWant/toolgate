@@ -22,7 +22,7 @@ func (f *mcpFixture) curate(t *testing.T, server string, change func(*v1alpha1.M
 }
 
 func TestToolCuration(t *testing.T) {
-	t.Run("[AC-4-04] a hidden tool is absent from the list and refused by either name, recorded and not forwarded", func(t *testing.T) {
+	t.Run("a hidden tool is absent from the list and refused by either name, recorded and not forwarded", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")
@@ -61,7 +61,7 @@ func TestToolCuration(t *testing.T) {
 		assert.Empty(t, fixture.auditRows(t, "tool.result"))
 	})
 
-	t.Run("[AC-4-05] a renamed tool is called by its exposed name and reaches the upstream by its own", func(t *testing.T) {
+	t.Run("a renamed tool is called by its exposed name and reaches the upstream by its own", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")

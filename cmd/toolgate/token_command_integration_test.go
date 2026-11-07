@@ -19,7 +19,7 @@ import (
 
 const coderAudience = "coder-toolgate"
 
-func TestAC3_21SignInThroughTokenCommand(t *testing.T) {
+func TestSignInThroughTokenCommand(t *testing.T) {
 	isolateUserConfig(t)
 
 	served := startServeWithAudiences(t, coderAudience)
@@ -74,7 +74,7 @@ func TestAC3_21SignInThroughTokenCommand(t *testing.T) {
 		return result
 	}
 
-	t.Run("[AC-3-21] a token from TOOLGATE_TOKEN_COMMAND signs the CLI in as the user, with no saved sign-in", func(t *testing.T) {
+	t.Run("a token from TOOLGATE_TOKEN_COMMAND signs the CLI in as the user, with no saved sign-in", func(t *testing.T) {
 		t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+mint(alice))
 
 		session := connect(t)
@@ -91,7 +91,7 @@ func TestAC3_21SignInThroughTokenCommand(t *testing.T) {
 		assert.NotContains(t, mustJSON(t, result.Content), "isn't in your catalog")
 	})
 
-	t.Run("[AC-3-21] a user outside the group is refused the group-only server", func(t *testing.T) {
+	t.Run("a user outside the group is refused the group-only server", func(t *testing.T) {
 		t.Setenv("TOOLGATE_SESSION", "coder-session-bob")
 		t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+mint(bob))
 
@@ -101,7 +101,7 @@ func TestAC3_21SignInThroughTokenCommand(t *testing.T) {
 		assert.Contains(t, mustJSON(t, result.Content), "isn't in your catalog", "the groups come from the token")
 	})
 
-	t.Run("[AC-3-21] tokens the gateway must refuse get 401", func(t *testing.T) {
+	t.Run("tokens the gateway must refuse get 401", func(t *testing.T) {
 		good := mint(alice)
 		parts := strings.Split(good, ".")
 		require.Len(t, parts, 3)

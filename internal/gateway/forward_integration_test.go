@@ -202,7 +202,7 @@ func (f *mcpFixture) auditRows(t *testing.T, eventType string) []auditRow {
 }
 
 func TestCallForwarding(t *testing.T) {
-	t.Run("[AC-1-08] a call returns the upstream result and writes tool.decision and tool.result with full identity", func(t *testing.T) {
+	t.Run("a call returns the upstream result and writes tool.decision and tool.result with full identity", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")

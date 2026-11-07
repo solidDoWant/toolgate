@@ -91,7 +91,7 @@ func insertEvent(t *testing.T, queries *db.Queries, eventType, principal string)
 	}))
 }
 
-func TestAC3_10AuditTail(t *testing.T) {
+func TestAuditTail(t *testing.T) {
 	isolateUserConfig(t)
 	t.Setenv("TOOLGATE_ADMIN_GROUP", tailAdminGroup)
 
@@ -127,7 +127,7 @@ func TestAC3_10AuditTail(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
 	})
 
-	t.Run("[AC-3-10] toolgate audit tail streams the user's own events, and all events for an admin", func(t *testing.T) {
+	t.Run("toolgate audit tail streams the user's own events, and all events for an admin", func(t *testing.T) {
 		code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
 		require.Equal(t, 0, code, "stderr: %s", signInStderr)
 

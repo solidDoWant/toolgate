@@ -53,8 +53,8 @@ func identityThroughGateway(t *testing.T, provider *testutil.OIDCProvider, heade
 	return identity, recorder.Code
 }
 
-func TestAC1_02HeadersRefreshesTheAccessToken(t *testing.T) {
-	t.Run("[AC-1-02] after sign-in, toolgate headers prints a working token each time without a new sign-in", func(t *testing.T) {
+func TestHeadersRefreshesTheAccessToken(t *testing.T) {
+	t.Run("after sign-in, toolgate headers prints a working token each time without a new sign-in", func(t *testing.T) {
 		isolateUserConfig(t)
 		t.Setenv("TOOLGATE_SESSION", "session-1")
 		t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
@@ -143,7 +143,7 @@ func TestHeadersWithoutSignIn(t *testing.T) {
 	assert.Contains(t, stderr, "Run toolgate login.")
 }
 
-func TestAC3OtelHeadersPrintsTokenAndWorkspaceWithoutSession(t *testing.T) {
+func TestOtelHeadersPrintsTokenAndWorkspaceWithoutSession(t *testing.T) {
 	isolateUserConfig(t)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("TOOLGATE_SESSION", "")

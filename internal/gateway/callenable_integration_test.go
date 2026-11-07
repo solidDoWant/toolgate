@@ -162,7 +162,7 @@ func TestCallEnables(t *testing.T) {
 		assert.Equal(t, policy.StepWorkspaceScope, decisions[0].Details["step"])
 	})
 
-	t.Run("[AC-4-17] disable drops a server at once, and a verified workspace's enable outside the list asks", func(t *testing.T) {
+	t.Run("disable drops a server at once, and a verified workspace's enable outside the list asks", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 

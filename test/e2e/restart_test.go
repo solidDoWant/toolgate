@@ -74,7 +74,7 @@ func signInToUI(t *testing.T, publicURL string, user testutil.OIDCUser) context.
 	return browser
 }
 
-func TestAC2_06RestartFromTheUI(t *testing.T) {
+func TestRestartFromTheUI(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -85,7 +85,7 @@ func TestAC2_06RestartFromTheUI(t *testing.T) {
 	pods := gatewayPods(t, admin)
 	publicURL := webUI(t, forwardToGateway(t, admin, pods[0]))
 
-	t.Run("[AC-2-06] a user restarts their outdated instance; the new one runs the current version and the session keeps the server", func(t *testing.T) {
+	t.Run("a user restarts their outdated instance; the new one runs the current version and the session keeps the server", func(t *testing.T) {
 		session := connectGateway(t, forwardToGateway(t, admin, pods[1]), "alice", "e2e-"+rand.String(8))
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
 

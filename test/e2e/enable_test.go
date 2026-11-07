@@ -480,7 +480,7 @@ func requireOneInstance(t *testing.T, admin *kubernetes.Clientset, template stri
 	return namespaces[0]
 }
 
-func TestAC1_07EnableAndDisable(t *testing.T) {
+func TestEnableAndDisable(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -493,7 +493,7 @@ func TestAC1_07EnableAndDisable(t *testing.T) {
 
 	var namespace corev1.Namespace
 
-	t.Run("[AC-1-07] a per-session enable gets progress, then list_changed, and tools named server__tool", func(t *testing.T) {
+	t.Run("a per-session enable gets progress, then list_changed, and tools named server__tool", func(t *testing.T) {
 		tools := enable(t, session, name)
 		assert.ElementsMatch(t, prefixedTools(name), tools)
 
@@ -509,7 +509,7 @@ func TestAC1_07EnableAndDisable(t *testing.T) {
 		assert.Subset(t, listed, prefixedTools(name))
 	})
 
-	t.Run("[AC-1-07] the instance namespace is Pod Security restricted with default-deny networking", func(t *testing.T) {
+	t.Run("the instance namespace is Pod Security restricted with default-deny networking", func(t *testing.T) {
 		namespace = requireOneInstance(t, admin, name)
 		assert.Equal(t, "restricted", namespace.Labels["pod-security.kubernetes.io/enforce"])
 
@@ -519,7 +519,7 @@ func TestAC1_07EnableAndDisable(t *testing.T) {
 		assert.ElementsMatch(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}, policy.Spec.PolicyTypes)
 	})
 
-	t.Run("[AC-1-11] disable removes the tools and deletes the unused per-session namespace", func(t *testing.T) {
+	t.Run("disable removes the tools and deletes the unused per-session namespace", func(t *testing.T) {
 		require.NotEmpty(t, namespace.Name, "the enable subtest found the namespace")
 
 		result := callServerTool(t.Context(), session.session, gateway.ToolDisableServer, name)
@@ -536,7 +536,7 @@ func TestAC1_07EnableAndDisable(t *testing.T) {
 	})
 }
 
-func TestAC1_13PerUserScope(t *testing.T) {
+func TestPerUserScope(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -546,7 +546,7 @@ func TestAC1_13PerUserScope(t *testing.T) {
 
 	pods := gatewayPods(t, admin)
 
-	t.Run("[AC-1-13] two sessions of one user enabling at the same moment share one instance", func(t *testing.T) {
+	t.Run("two sessions of one user enabling at the same moment share one instance", func(t *testing.T) {
 		first := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 		second := connectGateway(t, forwardToGateway(t, admin, pods[1]), "alice", "e2e-"+rand.String(8))
 
@@ -560,7 +560,7 @@ func TestAC1_13PerUserScope(t *testing.T) {
 		requireOneInstance(t, admin, name)
 	})
 
-	t.Run("[AC-1-13] another user gets a separate instance", func(t *testing.T) {
+	t.Run("another user gets a separate instance", func(t *testing.T) {
 		bob := connectGateway(t, forwardToGateway(t, admin, pods[0]), "bob", "e2e-"+rand.String(8))
 		assert.ElementsMatch(t, prefixedTools(name), enable(t, bob, name))
 
@@ -570,12 +570,12 @@ func TestAC1_13PerUserScope(t *testing.T) {
 	})
 }
 
-func TestAC1_14SharedScope(t *testing.T) {
+func TestSharedScope(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
 
-	t.Run("[AC-1-14] all users share one instance of a shared server", func(t *testing.T) {
+	t.Run("all users share one instance of a shared server", func(t *testing.T) {
 		name := createTemplate(t, kube, "e2e-shared", "shared", testServerResources(t, image, 0, nil))
 		requireTemplateValid(t, kube, name)
 
@@ -589,7 +589,7 @@ func TestAC1_14SharedScope(t *testing.T) {
 		requireOneInstance(t, admin, name)
 	})
 
-	t.Run("[AC-1-14] a shared template that uses a principal variable is invalid and not offered", func(t *testing.T) {
+	t.Run("a shared template that uses a principal variable is invalid and not offered", func(t *testing.T) {
 		resources := testServerResources(t, image, 0, map[string]string{"OWNER": "${principal.id}"})
 		name := createTemplate(t, kube, "e2e-shared-invalid", "shared", resources)
 

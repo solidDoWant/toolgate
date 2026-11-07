@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 
-func TestAC1_09RenderedVariables(t *testing.T) {
+func TestRenderedVariables(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -30,7 +30,7 @@ func TestAC1_09RenderedVariables(t *testing.T) {
 	workspace := "e2e-workspace-" + rand.String(6)
 	session := connectGatewayInWorkspace(t, forwardToGateway(t, admin, pods[0]), "alice", sessionID, workspace)
 
-	t.Run("[AC-1-09] the instance's environment holds the session's rendered identity", func(t *testing.T) {
+	t.Run("the instance's environment holds the session's rendered identity", func(t *testing.T) {
 		assert.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
 
 		namespace := requireOneInstance(t, admin, name)

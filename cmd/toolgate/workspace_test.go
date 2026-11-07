@@ -142,7 +142,7 @@ func TestWorkspaceList(t *testing.T) {
 	assert.Equal(t, "workload", gateway.headers[0].Get("X-Toolgate-Attestation"))
 }
 
-func TestAC4_11WorkspaceListUnverifiedAllowList(t *testing.T) {
+func TestWorkspaceListUnverifiedAllowList(t *testing.T) {
 	gateway := &fakeWorkspaceGateway{listBody: `{"current":null,"defaults":{"verified":"none","unverified":"list",` +
 		`"unverifiedServers":["github","k8s"]},"workspaces":[]}`}
 	run := runWorkspaceWith(t, gateway, testNow, "list")
@@ -192,11 +192,11 @@ func TestWorkspaceChanges(t *testing.T) {
 			map[string]any{"action": "defaults", "verified": "all", "unverified": "none"}},
 		{"defaults one side", "", []string{"defaults", "--unverified", "all"},
 			map[string]any{"action": "defaults", "unverified": "all"}},
-		{"[AC-4-11] defaults --unverified list", "", []string{"defaults", "--unverified", "list"},
+		{"defaults --unverified list", "", []string{"defaults", "--unverified", "list"},
 			map[string]any{"action": "defaults", "unverified": "list"}},
-		{"[AC-4-11] allow --unverified", "cur", []string{"allow", "--unverified", "github", "k8s"},
+		{"allow --unverified", "cur", []string{"allow", "--unverified", "github", "k8s"},
 			map[string]any{"action": "allow", "unverified": true, "servers": []any{"github", "k8s"}}},
-		{"[AC-4-11] deny --unverified", "cur", []string{"deny", "k8s", "--unverified"},
+		{"deny --unverified", "cur", []string{"deny", "k8s", "--unverified"},
 			map[string]any{"action": "deny", "unverified": true, "servers": []any{"k8s"}}},
 	}
 

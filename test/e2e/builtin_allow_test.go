@@ -155,7 +155,7 @@ func scopeOfSession(scopes gateway.ListScopesResult, session string) (gateway.Se
 	return gateway.SessionSummary{}, false
 }
 
-func TestAC4_15ToolgateAllow(t *testing.T) {
+func TestToolgateAllow(t *testing.T) {
 	namespace := workloadNamespace(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)
@@ -187,7 +187,7 @@ func TestAC4_15ToolgateAllow(t *testing.T) {
 			arguments: map[string]any{"session": target, "servers": []string{server}},
 		},
 	} {
-		t.Run("[AC-4-15] toolgate_allow for "+test.name+" returns a link and an elicitation, and applies only after the step-up approval", func(t *testing.T) {
+		t.Run("toolgate_allow for "+test.name+" returns a link and an elicitation, and applies only after the step-up approval", func(t *testing.T) {
 			applied := func(scopes gateway.ListScopesResult) bool {
 				if workspace, ok := test.arguments["workspace"].(string); ok {
 					scope, found := scopeOfWorkspace(scopes, workspace)
@@ -227,7 +227,7 @@ func TestAC4_15ToolgateAllow(t *testing.T) {
 		})
 	}
 
-	t.Run("[AC-4-15] the session-scoped allow is gone after that session ends", func(t *testing.T) {
+	t.Run("the session-scoped allow is gone after that session ends", func(t *testing.T) {
 		require.Equal(t, "1", strings.TrimSpace(gatewayQuery(t, admin, "SELECT count(*) FROM session_additions a JOIN sessions s ON s.id = a.session_pk "+
 			"WHERE s.principal = 'alice' AND s.session_id = '"+target+"' AND s.ended_at IS NULL")), "the approved allow is in place")
 

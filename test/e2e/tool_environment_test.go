@@ -96,7 +96,7 @@ func connectWithToken(t *testing.T, endpoint, token, session string) *gatewaySes
 	return observed
 }
 
-func TestAC2_10PerToolEnvironment(t *testing.T) {
+func TestPerToolEnvironment(t *testing.T) {
 	image := mcpServerImage(t)
 	namespace := workloadNamespace(t)
 	admin := adminClient(t)
@@ -126,7 +126,7 @@ func TestAC2_10PerToolEnvironment(t *testing.T) {
 
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
 
-	t.Run("[AC-2-10] a tool marked environments: attested is missing from the laptop user's tool list", func(t *testing.T) {
+	t.Run("a tool marked environments: attested is missing from the laptop user's tool list", func(t *testing.T) {
 		laptop := connectGateway(t, endpoint, "alice", "e2e-"+rand.String(8))
 		enable(t, laptop, name)
 
@@ -135,7 +135,7 @@ func TestAC2_10PerToolEnvironment(t *testing.T) {
 		assert.NotContains(t, listed, name+"__"+attestedTool)
 	})
 
-	t.Run("[AC-2-10] the same tool is present for an attested pod", func(t *testing.T) {
+	t.Run("the same tool is present for an attested pod", func(t *testing.T) {
 		pod := connectWithToken(t, endpoint, podToken(t, namespace, image), "e2e-"+rand.String(8))
 		enable(t, pod, name)
 

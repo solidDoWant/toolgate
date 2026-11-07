@@ -13,7 +13,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testutil"
 )
 
-func TestAC3_11Sessions(t *testing.T) {
+func TestSessionsCommand(t *testing.T) {
 	isolateUserConfig(t)
 
 	served := startServeWithSecrets(t)
@@ -24,7 +24,7 @@ func TestAC3_11Sessions(t *testing.T) {
 	code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
 	require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
-	t.Run("[AC-3-11] toolgate sessions lists the user's open sessions and their enabled servers", func(t *testing.T) {
+	t.Run("toolgate sessions lists the user's open sessions and their enabled servers", func(t *testing.T) {
 		_ = served.connectAs(t, "session-one", "laptop-widgets")
 		_ = served.connectAs(t, "session-two", "")
 

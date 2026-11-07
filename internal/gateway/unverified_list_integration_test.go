@@ -35,11 +35,11 @@ func unverifiedDefaults(value string) workspacesapi.Change {
 	return workspacesapi.Change{Action: "defaults", Unverified: workspacesapi.Unverified{Default: value}}
 }
 
-// [AC-4-11] A user sets an allow list for their unverified sessions. Such a
+// A user sets an allow list for their unverified sessions. Such a
 // session lists and can enable only those servers. Adding a server needs an
 // approved request; removing one withdraws it within 5 s.
-func TestAC4_11UnverifiedAllowList(t *testing.T) {
-	t.Run("[AC-4-11] list with two servers: an unverified session lists and enables only those", func(t *testing.T) {
+func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
+	t.Run("list with two servers: an unverified session lists and enables only those", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		for _, name := range []string{"github", "gitlab", "jira"} {
 			fixture.addEnableTemplate(name, "per-user", aliceAndBob)
@@ -71,7 +71,7 @@ func TestAC4_11UnverifiedAllowList(t *testing.T) {
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
 	})
 
-	t.Run("[AC-4-11] adding a server needs an approved request, and an open session sees it within 5 s", func(t *testing.T) {
+	t.Run("adding a server needs an approved request, and an open session sees it within 5 s", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		for _, name := range []string{"github", "jira"} {
 			fixture.addEnableTemplate(name, "per-user", aliceAndBob)
@@ -100,7 +100,7 @@ func TestAC4_11UnverifiedAllowList(t *testing.T) {
 		assert.Equal(t, id, last.Details["via"])
 	})
 
-	t.Run("[AC-4-11] removing a server withdraws it within 5 s, without a request", func(t *testing.T) {
+	t.Run("removing a server withdraws it within 5 s, without a request", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.startUpstream(t, "github")
@@ -124,7 +124,7 @@ func TestAC4_11UnverifiedAllowList(t *testing.T) {
 		assert.Empty(t, api.list(t, unverifiedAlice()).Defaults.UnverifiedServers)
 	})
 
-	t.Run("[AC-4-11] none to list with servers and list to all widen; all to list narrows", func(t *testing.T) {
+	t.Run("none to list with servers and list to all widen; all to list narrows", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -159,7 +159,7 @@ func TestAC4_11UnverifiedAllowList(t *testing.T) {
 		assert.Equal(t, []any{"github"}, last.Details["unverifiedServers"])
 	})
 
-	t.Run("[AC-4-11] the list holds at most 64 servers", func(t *testing.T) {
+	t.Run("the list holds at most 64 servers", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 
 		servers := make([]string, 0, gateway.MaxUnverifiedServers+1)
@@ -182,7 +182,7 @@ func TestAC4_11UnverifiedAllowList(t *testing.T) {
 		assert.Len(t, api.list(t, unverifiedAlice()).Defaults.UnverifiedServers, 64)
 	})
 
-	t.Run("[AC-4-11] an allow needs access to the server and names no tools", func(t *testing.T) {
+	t.Run("an allow needs access to the server and names no tools", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 

@@ -46,7 +46,7 @@ func gatewayQuery(t *testing.T, admin *kubernetes.Clientset, sql string) string 
 	return output
 }
 
-func TestAC3_14ObjectHealthAfterReady(t *testing.T) {
+func TestObjectHealthAfterReady(t *testing.T) {
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -58,7 +58,7 @@ func TestAC3_14ObjectHealthAfterReady(t *testing.T) {
 	pods := gatewayPods(t, admin)
 	session := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 
-	t.Run("[AC-3-14] an OCIRepository that turns Ready=False after ready withdraws the tools with its reason, and the instance is repaired", func(t *testing.T) {
+	t.Run("an OCIRepository that turns Ready=False after ready withdraws the tools with its reason, and the instance is repaired", func(t *testing.T) {
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
 
 		old := requireOneInstance(t, admin, name)

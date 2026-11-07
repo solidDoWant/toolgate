@@ -27,8 +27,8 @@ func enabledIn(t *testing.T, session *mcp.ClientSession) []string {
 	return names
 }
 
-func TestAC1_16Reconnect(t *testing.T) {
-	t.Run("[AC-1-16] a client reconnecting with the same session ID finds its servers enabled and listed", func(t *testing.T) {
+func TestReconnectKeepsTheSession(t *testing.T) {
+	t.Run("a client reconnecting with the same session ID finds its servers enabled and listed", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -45,8 +45,8 @@ func TestAC1_16Reconnect(t *testing.T) {
 	})
 }
 
-func TestAC1_17ReplicaLoss(t *testing.T) {
-	t.Run("[AC-1-17] when the replica holding the stream goes away, the client continues on another with no duplicate instance", func(t *testing.T) {
+func TestReplicaLossKeepsTheSession(t *testing.T) {
+	t.Run("when the replica holding the stream goes away, the client continues on another with no duplicate instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		github := fixture.addEnableTemplate("github", "per-user", anyone)
 		other := fixture.replica(t)

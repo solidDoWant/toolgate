@@ -80,7 +80,7 @@ func startAllow(t *testing.T, client *elicitingClient, arguments map[string]any)
 }
 
 func TestBuiltinAllow(t *testing.T) {
-	t.Run("[AC-4-14] without elicitation an allow inserts one pending scope request, returns its link and changes nothing", func(t *testing.T) {
+	t.Run("without elicitation an allow inserts one pending scope request, returns its link and changes nothing", func(t *testing.T) {
 		fixture := newBuiltinFixture(t)
 		curatedGithub(fixture)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -319,7 +319,7 @@ func TestBuiltinAllow(t *testing.T) {
 	})
 }
 
-func TestAC4_14BuiltinTools(t *testing.T) {
+func TestBuiltinToolsAllowed(t *testing.T) {
 	calls := []struct {
 		tool      string
 		arguments map[string]any
@@ -330,7 +330,7 @@ func TestAC4_14BuiltinTools(t *testing.T) {
 	}
 
 	for _, call := range calls {
-		t.Run("[AC-4-14] "+call.tool+" works in a session that allows toolgate", func(t *testing.T) {
+		t.Run(call.tool+" works in a session that allows toolgate", func(t *testing.T) {
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -346,7 +346,7 @@ func TestAC4_14BuiltinTools(t *testing.T) {
 			require.Len(t, fixture.auditRows(t, "tool.result"), 1)
 		})
 
-		t.Run("[AC-4-14] row 208: "+call.tool+" is refused at step 4 where toolgate isn't allowed, with tool.decision", func(t *testing.T) {
+		t.Run("row 208: "+call.tool+" is refused at step 4 where toolgate isn't allowed, with tool.decision", func(t *testing.T) {
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			// A verified workspace whose list doesn't hold toolgate.
@@ -365,7 +365,7 @@ func TestAC4_14BuiltinTools(t *testing.T) {
 			assert.Empty(t, fixture.scopeEntryRows(t))
 		})
 
-		t.Run("[AC-4-14] "+call.tool+" is refused by a rule naming toolgate", func(t *testing.T) {
+		t.Run(call.tool+" is refused by a rule naming toolgate", func(t *testing.T) {
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -384,7 +384,7 @@ func TestAC4_14BuiltinTools(t *testing.T) {
 	}
 
 	for _, tool := range []string{toolAllow, toolDeny} {
-		t.Run("[AC-4-14] row 207: "+tool+" refuses another user's session and writes nothing", func(t *testing.T) {
+		t.Run("row 207: "+tool+" refuses another user's session and writes nothing", func(t *testing.T) {
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -404,7 +404,7 @@ func TestAC4_14BuiltinTools(t *testing.T) {
 		})
 	}
 
-	t.Run("[AC-4-14] the same allow through the tool and the API makes the same request", func(t *testing.T) {
+	t.Run("the same allow through the tool and the API makes the same request", func(t *testing.T) {
 		for _, target := range []map[string]any{
 			{"workspace": "coder/alice/other"},
 			{"session": "session-2"},
@@ -436,7 +436,7 @@ func TestAC4_14BuiltinTools(t *testing.T) {
 		}
 	})
 
-	t.Run("[AC-4-14] rows 243, 244: the same deny through the tool and the API gives the same rows for every target, and a clear after them", func(t *testing.T) {
+	t.Run("rows 243, 244: the same deny through the tool and the API gives the same rows for every target, and a clear after them", func(t *testing.T) {
 		scenarios := []struct {
 			name   string
 			listed bool

@@ -54,7 +54,7 @@ func replaceUpstreamTools(t *testing.T, admin *kubernetes.Clientset, template, n
 	require.NoError(t, err)
 }
 
-func TestAC4_07UpstreamRevisions(t *testing.T) {
+func TestUpstreamRevisions(t *testing.T) {
 	kube := templateClient(t)
 	admin := adminClient(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
@@ -69,7 +69,7 @@ func TestAC4_07UpstreamRevisions(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run("[AC-4-07] an upstream that speaks "+test.mode+" is served on "+test.revision, func(t *testing.T) {
+		t.Run("an upstream that speaks "+test.mode+" is served on "+test.revision, func(t *testing.T) {
 			server := revisionTemplate(t, kube, test.mode)
 			requireTemplateValid(t, kube, server)
 

@@ -81,7 +81,7 @@ func toolCall(t *testing.T, session *mcp.ClientSession, name string, arguments m
 	return text.String(), result.IsError
 }
 
-func TestAC4_04ToolFiltering(t *testing.T) {
+func TestToolFiltering(t *testing.T) {
 	kube := templateClient(t)
 	admin := adminClient(t)
 
@@ -97,7 +97,7 @@ func TestAC4_04ToolFiltering(t *testing.T) {
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
 
 	for _, server := range []string{allowList, denyList} {
-		t.Run("[AC-4-04] hidden tools of "+server+" are absent and refused by name, and never forwarded", func(t *testing.T) {
+		t.Run("hidden tools of "+server+" are absent and refused by name, and never forwarded", func(t *testing.T) {
 			session := connectGateway(t, endpoint, "alice", "e2e-"+rand.String(8))
 			enable(t, session, server)
 
@@ -114,7 +114,7 @@ func TestAC4_04ToolFiltering(t *testing.T) {
 	}
 }
 
-func TestAC4_05ToolOverrides(t *testing.T) {
+func TestToolOverrides(t *testing.T) {
 	kube := templateClient(t)
 	admin := adminClient(t)
 
@@ -127,7 +127,7 @@ func TestAC4_05ToolOverrides(t *testing.T) {
 
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
 
-	t.Run("[AC-4-05] the client sees the override and the upstream receives its own name", func(t *testing.T) {
+	t.Run("the client sees the override and the upstream receives its own name", func(t *testing.T) {
 		session := connectGateway(t, endpoint, "alice", "e2e-"+rand.String(8))
 		enable(t, session, server)
 
@@ -158,7 +158,7 @@ func TestAC4_05ToolOverrides(t *testing.T) {
 		assert.Equal(t, 1, upstreamCalls(t, admin, server)["echo"], "only the renamed call reached the upstream")
 	})
 
-	t.Run("[AC-4-05] an override name over the 64-character limit makes the template invalid", func(t *testing.T) {
+	t.Run("an override name over the 64-character limit makes the template invalid", func(t *testing.T) {
 		long := curatedTemplate(t, kube, func(spec *v1alpha1.MCPServerTemplateSpec) {
 			spec.Tools = map[string]v1alpha1.ToolOverride{"echo": {Name: strings.Repeat("a", 60)}}
 		})

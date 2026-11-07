@@ -135,12 +135,12 @@ func requireToolsBack(t *testing.T, session *gatewaySession, name string) {
 	}, enableTimeout, time.Second, "the server's tools come back")
 }
 
-func TestAC3_13HealthCheckRepair(t *testing.T) {
+func TestHealthCheckRepair(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)
 
-	t.Run("[AC-3-13] replace: the unhealthy instance is withdrawn, refused and replaced, and the tools come back", func(t *testing.T) {
+	t.Run("replace: the unhealthy instance is withdrawn, refused and replaced, and the tools come back", func(t *testing.T) {
 		name := createHealthTemplate(t, kube, "e2e-health-replace", runtime.OnFailureReplace, 3, nil)
 		session := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
@@ -158,7 +158,7 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 		requireToolsBack(t, session, name)
 	})
 
-	t.Run("[AC-3-13] reapply: deleted objects are applied again, the instance keeps its ID, and the tools come back once the check passes", func(t *testing.T) {
+	t.Run("reapply: deleted objects are applied again, the instance keeps its ID, and the tools come back once the check passes", func(t *testing.T) {
 		// A scaled recheck reapplies again within seconds while the check
 		// fails, so the most repairs the CRD allows leave time to set the
 		// check passing before they run out.
@@ -183,7 +183,7 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 		assert.Equal(t, instance.Name, requireOneInstance(t, admin, name).Name, "the instance kept its ID")
 	})
 
-	t.Run("[AC-3-13] none: no repair; the tools stay withdrawn until the check passes", func(t *testing.T) {
+	t.Run("none: no repair; the tools stay withdrawn until the check passes", func(t *testing.T) {
 		name := createHealthTemplate(t, kube, "e2e-health-none", runtime.OnFailureNone, 3, nil)
 		session := connectGateway(t, forwardToGateway(t, admin, pods[0]), "alice", "e2e-"+rand.String(8))
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
@@ -204,7 +204,7 @@ func TestAC3_13HealthCheckRepair(t *testing.T) {
 		requireToolsBack(t, session, name)
 	})
 
-	t.Run("[AC-3-13] after maxRepairs repairs the instance fails and is torn down", func(t *testing.T) {
+	t.Run("after maxRepairs repairs the instance fails and is torn down", func(t *testing.T) {
 		// Every instance answers 503 from the start, so each replacement
 		// turns unhealthy again.
 		name := createHealthTemplate(t, kube, "e2e-health-giveup", runtime.OnFailureReplace, 1,

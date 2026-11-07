@@ -101,11 +101,11 @@ func (g grantsUI) create(t *testing.T, f *mcpFixture, principal string, form url
 	return grants[0].ID
 }
 
-// [AC-2-07] A signed-in laptop user can't enable an opt-in server. After
+// A signed-in laptop user can't enable an opt-in server. After
 // creating a grant for it on the Grants page they can. After the grant is
 // revoked or expires, enabling is refused, and an already enabled server's
 // tools are withdrawn within 5 s.
-func TestAC2_07Grant(t *testing.T) {
+func TestGrantEnablesOptInServer(t *testing.T) {
 	t.Run("revoked", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
@@ -168,9 +168,9 @@ func TestAC2_07Grant(t *testing.T) {
 	})
 }
 
-// [AC-2-08] A grant narrowed to one session on the Grants page lets that
+// A grant narrowed to one session on the Grants page lets that
 // session enable the server and no other session of the same user.
-func TestAC2_08SessionNarrowedGrant(t *testing.T) {
+func TestSessionNarrowedGrant(t *testing.T) {
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", optInForAlice)
 	fixture.startUpstream(t, "github")

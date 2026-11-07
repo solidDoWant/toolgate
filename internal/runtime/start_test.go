@@ -485,7 +485,7 @@ func TestStarterStartingTimeout(t *testing.T) {
 		return pod
 	}
 
-	t.Run("[AC-1-18] an image that can't be pulled fails at startTimeout with the image problem", func(t *testing.T) {
+	t.Run("an image that can't be pulled fails at startTimeout with the image problem", func(t *testing.T) {
 		fixture := newStarterFixture(t, testTemplate(), "starting", waitingPod())
 
 		fixture.now = fixture.instance.AttemptStartedAt.Time.Add(5*time.Minute - time.Nanosecond)
@@ -563,10 +563,10 @@ func TestStarterLateResultAfterTimeout(t *testing.T) {
 	assert.Equal(t, 1, writes, "only the timeout wrote")
 }
 
-// TestAC1_20LongToolNames: a server exposing a tool whose prefixed name is
+// TestLongToolNames: a server exposing a tool whose prefixed name is
 // over 64 characters is marked failed with a reason saying so; at exactly
 // 64 it becomes ready.
-func TestAC1_20LongToolNames(t *testing.T) {
+func TestLongToolNames(t *testing.T) {
 	tests := []struct {
 		name   string
 		length int
@@ -581,7 +581,7 @@ func TestAC1_20LongToolNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run("[AC-1-20] "+test.name, func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			fixture := newStarterFixture(t, testTemplate(), "starting", readyPod())
 			fixture.starter.ListTools = func(context.Context, string) ([]*mcp.Tool, string, error) {
 				return []*mcp.Tool{{Name: strings.Repeat("x", test.length)}}, runtime.RevisionStateful, nil

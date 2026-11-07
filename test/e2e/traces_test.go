@@ -47,7 +47,7 @@ func descendsFrom(span *tracepb.Span, byID map[string]*tracepb.Span, ancestor st
 	return false
 }
 
-func TestAC1_29Traces(t *testing.T) {
+func TestTraces(t *testing.T) {
 	receiver := otlpReceiver(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)
@@ -71,7 +71,7 @@ func TestAC1_29Traces(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, result.IsError, "the call failed: %v", result.Content)
 
-	t.Run("[AC-1-29] the policy, render, apply and forward spans descend from the request's traceparent", func(t *testing.T) {
+	t.Run("the policy, render, apply and forward spans descend from the request's traceparent", func(t *testing.T) {
 		wanted := []string{"toolgate.policy", "toolgate.render", "toolgate.apply", "toolgate.forward"}
 
 		// The gateway exports spans in batches, every few seconds.

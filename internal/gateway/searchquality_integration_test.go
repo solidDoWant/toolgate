@@ -16,8 +16,8 @@ import (
 	toolruntime "github.com/solidDoWant/toolgate/internal/runtime"
 )
 
-func TestAC4_18SearchQualityInUse(t *testing.T) {
-	t.Run("[AC-4-18] a call at rank 3 is a hit, a replaced search a re-search, an idle search no call, and no row holds the query", func(t *testing.T) {
+func TestSearchQualityInUse(t *testing.T) {
+	t.Run("a call at rank 3 is a hit, a replaced search a re-search, an idle search no call, and no row holds the query", func(t *testing.T) {
 		metrics := toolruntime.NewMetrics()
 		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Metrics = metrics })
 		template := fixture.addEnableTemplate("github", "per-user", anyone)

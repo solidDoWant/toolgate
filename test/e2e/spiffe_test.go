@@ -103,7 +103,7 @@ func serverEntry(t require.TestingT, ctx context.Context, session *mcp.ClientSes
 	return gateway.ServerEntry{}, false
 }
 
-func TestAC3_09SPIFFE(t *testing.T) {
+func TestSPIFFESignIn(t *testing.T) {
 	allowed := testutil.NewSPIFFETrustDomain(t, "allowed.test")
 	other := testutil.NewSPIFFETrustDomain(t, "other.test")
 	spiffeBundleEndpoint(t, allowed)
@@ -152,7 +152,7 @@ func TestAC3_09SPIFFE(t *testing.T) {
 		assert.Equal(collect, http.StatusOK, initializeStatus(collect, t.Context(), endpoint, devToken))
 	}, 2*time.Minute, time.Second)
 
-	t.Run("[AC-3-09] an SVID from the allowed trust domain is attested", func(t *testing.T) {
+	t.Run("an SVID from the allowed trust domain is attested", func(t *testing.T) {
 		session := connectWithToken(t, endpoint, devToken, "e2e-"+rand.String(8))
 
 		entry, found := serverEntry(t, t.Context(), session.session, name)
@@ -160,7 +160,7 @@ func TestAC3_09SPIFFE(t *testing.T) {
 		assert.NotEqual(t, gateway.StatusBlocked, entry.Status, "an attested-only server passes without a grant: %s", entry.Reason)
 	})
 
-	t.Run("[AC-3-09] the workspace is the SPIFFE ID's path and a rule matches it", func(t *testing.T) {
+	t.Run("the workspace is the SPIFFE ID's path and a rule matches it", func(t *testing.T) {
 		scratch := connectWithToken(t, endpoint, allowed.MintSVID(t, "/owner/alice/workspace/scratch-1"), "e2e-"+rand.String(8))
 
 		// The rule reaches the gateway's cache through a watch.
@@ -172,7 +172,7 @@ func TestAC3_09SPIFFE(t *testing.T) {
 		}, time.Minute, time.Second)
 	})
 
-	t.Run("[AC-3-09] an SVID from another trust domain gets 401", func(t *testing.T) {
+	t.Run("an SVID from another trust domain gets 401", func(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, initializeStatus(t, t.Context(), endpoint, other.MintSVID(t, "/owner/alice/workspace/dev")))
 	})
 }

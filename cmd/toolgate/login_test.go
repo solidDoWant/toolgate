@@ -115,8 +115,8 @@ func signInApproving(t *testing.T, provider *testutil.OIDCProvider, subject stri
 	}
 }
 
-func TestAC1_02LoginThenStatusShowsEmail(t *testing.T) {
-	t.Run("[AC-1-02] login with the device flow, then status shows the email", func(t *testing.T) {
+func TestLoginThenStatusShowsEmail(t *testing.T) {
+	t.Run("login with the device flow, then status shows the email", func(t *testing.T) {
 		dir := isolateUserConfig(t)
 
 		provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})

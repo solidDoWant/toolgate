@@ -89,11 +89,11 @@ func (f *stopFixture) sessionEnds(t *testing.T, session db.Session) int {
 	return count
 }
 
-func TestAC1_15SessionIdleExpiry(t *testing.T) {
+func TestSessionIdleExpiry(t *testing.T) {
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 
-	t.Run("[AC-1-15] an idle session ends and its per-session instance stops", func(t *testing.T) {
+	t.Run("an idle session ends and its per-session instance stops", func(t *testing.T) {
 		template := fixture.template("idle-session", "per-session", 0, everyone)
 		session := fixture.session(t, "idle-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -120,7 +120,7 @@ func TestAC1_15SessionIdleExpiry(t *testing.T) {
 		require.Equal(t, 1, fixture.sessionEnds(t, session), "an ended session isn't ended again")
 	})
 
-	t.Run("[AC-1-15] a session with a request inside the idle timeout stays", func(t *testing.T) {
+	t.Run("a session with a request inside the idle timeout stays", func(t *testing.T) {
 		template := fixture.template("active-session", "per-session", 0, everyone)
 		session := fixture.session(t, "active-user", "s1", "", "staff")
 		fixture.enable(t, session, template)
@@ -141,7 +141,7 @@ func TestAC1_15SessionIdleExpiry(t *testing.T) {
 		fixture.requireRunning(t, instance)
 	})
 
-	t.Run("[AC-1-15] a per-user instance stops after its idleStop once its owner's session ended", func(t *testing.T) {
+	t.Run("a per-user instance stops after its idleStop once its owner's session ended", func(t *testing.T) {
 		template := fixture.template("idle-user-server", "per-user", 30*time.Minute, everyone)
 		session := fixture.session(t, "owner", "s1", "", "staff")
 		fixture.enable(t, session, template)

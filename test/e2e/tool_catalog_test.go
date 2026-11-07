@@ -22,13 +22,13 @@ import (
 // while the instance is still starting.
 const startDelay = 20 * time.Second
 
-func TestAC4_12ToolCatalog(t *testing.T) {
+func TestToolCatalog(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)
 	endpoint := forwardToGateway(t, admin, pods[0])
 
-	t.Run("[AC-4-12] declared tools are listed while the instance starts; the real list follows with list_changed", func(t *testing.T) {
+	t.Run("declared tools are listed while the instance starts; the real list follows with list_changed", func(t *testing.T) {
 		name := createTemplate(t, kube, "e2e-catalog-declared", "per-user", testServerResources(t, mcpServerImage(t), startDelay, nil))
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -63,7 +63,7 @@ func TestAC4_12ToolCatalog(t *testing.T) {
 		}, time.Minute, 500*time.Millisecond, "the session gets list_changed")
 	})
 
-	t.Run("[AC-4-12] a learned list is listed to another user while their instance starts", func(t *testing.T) {
+	t.Run("a learned list is listed to another user while their instance starts", func(t *testing.T) {
 		name := createTemplate(t, kube, "e2e-catalog-learned", "per-user", testServerResources(t, mcpServerImage(t), startDelay, nil))
 		requireTemplateStartsOnEnable(t, kube, name)
 
