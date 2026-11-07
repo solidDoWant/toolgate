@@ -221,3 +221,21 @@ func refusedAtTemplateTime(message string) require.ErrorAssertionFunc {
 		assert.Contains(t, err.Error(), message)
 	}
 }
+
+func TestOwnerDetailsOnInstanceObjectsCanBeTurnedOff(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{name: "on by default", want: "false"},
+		{name: "turned off", args: []string{"--set", "config.instanceOwnerDetails=false"}, want: "true"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := gatewayEnv(t, renderQuickStart(t, test.args...))
+			assert.Equal(t, test.want, env["TOOLGATE_INSTANCE_OMIT_OWNER_DETAILS"])
+		})
+	}
+}

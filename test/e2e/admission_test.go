@@ -13,6 +13,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes"
 )
@@ -231,5 +232,12 @@ func TestGatewayWritesAreConfined(t *testing.T) {
 	t.Run("deleting a writable namespace without the instance label is refused", func(t *testing.T) {
 		err := gateway.CoreV1().Namespaces().Delete(t.Context(), helmNamespace, metav1.DeleteOptions{})
 		refusedWith("may delete only namespaces labelled toolgate.soliddowant.dev/instance")(t, err)
+	})
+
+	t.Run("updating an instance namespace's annotations is refused", func(t *testing.T) {
+		patch := []byte(`{"metadata":{"annotations":{"toolgate.soliddowant.dev/owner-subject":"someone-else"}}}`)
+		_, err := gateway.CoreV1().Namespaces().Patch(t.Context(), instanceNamespace, types.MergePatchType, patch, metav1.PatchOptions{})
+		require.Error(t, err)
+		assert.True(t, apierrors.IsForbidden(err), "refused, got %v", err)
 	})
 }

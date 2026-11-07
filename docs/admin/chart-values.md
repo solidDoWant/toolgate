@@ -32,6 +32,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.image.repository | string | `"ghcr.io/soliddowant/toolgate"` | Gateway image repository. |
 | config.image.tag | string | `""` | Image tag. Empty means the chart's `appVersion`. |
 | config.imagePullSecrets | list | `[]` | Secrets that hold credentials for pulling the image, as a list of `{name: ...}` objects. |
+| config.instanceOwnerDetails | bool | `true` | Put the owner's verified email and name on the annotations of instance namespaces and objects. Set it to `false` to keep personal data off cluster objects. The owner's subject is annotated either way. |
 | config.limits.instances | int | `200` | Maximum number of MCP server instances that the gateway runs at the same time, for all users and shared instances together. At least 1. |
 | config.limits.instancesPerUser | int | `20` | Maximum number of MCP server instances that run for one user at the same time. Per-session and per-user instances count for the user who started them. Shared instances do not count. At least 1. |
 | config.logging.level | string | `"info"` | Lowest level of the JSON log lines: `debug`, `info`, `warn` or `error`. |
