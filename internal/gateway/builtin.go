@@ -16,7 +16,7 @@ import (
 )
 
 // BuiltinServerName is the name of the built-in server, whose tools manage
-// the caller's own workspace scope (docs/design/phase-4.md §7).
+// the caller's own workspace scope.
 const BuiltinServerName = catalog.ReservedServerName
 
 // builtinUID is the UID of the built-in server's in-memory template. No
@@ -184,7 +184,7 @@ type scopeToolInput struct {
 }
 
 // denyScope runs toolgate_deny: the same deny as the API and the CLI, for
-// the caller's own identity (docs/design/phase-4.md §7, "toolgate_deny").
+// the caller's own identity.
 func (m *metaTools) denyScope(ctx context.Context, current requestContext, arguments json.RawMessage) (*mcp.CallToolResult, string) {
 	input, refusal := parseScopeToolInput(arguments)
 	if refusal != "" {

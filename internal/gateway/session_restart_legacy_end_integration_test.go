@@ -13,8 +13,8 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// Row 247 / row 240: a session ended by a 0.3 leader keeps its allow
-// entries until the 0.4 leader's pass. If the session restarts (resume)
+// A session ended by an older gateway during a rolling upgrade keeps its
+// allow entries until the new leader's pass. If the session restarts (resume)
 // before that pass, the entries must still not apply to the restarted
 // session, and the pass must still remove them.
 func TestSessionRestartAfterLegacyEndClearsAllowEntries(t *testing.T) {

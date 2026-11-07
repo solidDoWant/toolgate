@@ -12,8 +12,8 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// restoreServers brings back the servers a resumed session kept
-// (docs/design/phase-3.md §11). It decides policy again for each, as Enable
+// restoreServers brings back the servers a resumed session kept.
+// It decides policy again for each, as Enable
 // step 1 does, and runs the insert part of Enable step 4 without waiting. A
 // server refused now, no longer offered, or over an instance limit is
 // removed from the set with server.disable naming the reason, so resuming

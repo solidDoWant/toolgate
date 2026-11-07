@@ -18,7 +18,7 @@ import (
 )
 
 // scopeChangeBound is how soon after a scoping write open sessions must get
-// list_changed (docs/design/phase-3.md §10, "The 5 s bound").
+// list_changed.
 const scopeChangeBound = 5 * time.Second
 
 func withWorkspaceScoping(options *gateway.MCPOptions) {

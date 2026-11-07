@@ -496,7 +496,7 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 
 				if scenario.listed {
 					// With verified_default all, a clear widens, so it
-					// goes through phase 3's change request.
+					// goes through a change request.
 					id := api.requestChange(t, attestedAlice(), workspacesapi.Change{Action: "clear"})
 					require.NoError(t, api.approve(t, id))
 				}

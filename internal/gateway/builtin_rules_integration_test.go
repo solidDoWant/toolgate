@@ -17,7 +17,7 @@ import (
 )
 
 // A rule or temporary block names a built-in tool by its exact name or as
-// toolgate__<tool> (docs/design/phase-4.md §6 and §7). Either refuses its
+// toolgate__<tool>. Either refuses its
 // calls and leaves it out of tools/list and toolgate_find_tools.
 func TestBuiltinToolRules(t *testing.T) {
 	for _, test := range []struct {

@@ -18,7 +18,7 @@ import (
 )
 
 // policyChangeBound is how soon after a grant or temporary block changes or
-// expires open sessions must get list_changed (docs/design/phase-2.md §3).
+// expires open sessions must get list_changed.
 const policyChangeBound = 5 * time.Second
 
 var rowCounter atomic.Int64

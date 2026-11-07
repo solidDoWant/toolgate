@@ -49,7 +49,7 @@ func parseScopeToolInput(arguments json.RawMessage) (scopeToolInput, string) {
 	return input, ""
 }
 
-// allowScope runs toolgate_allow (docs/design/phase-4.md §7): it finds or
+// allowScope runs toolgate_allow: it finds or
 // inserts the caller's scope request through the same method as the API,
 // then asks the client to open the approval page and waits for the
 // decision. Nothing changes until the user approves the request with a
@@ -175,7 +175,7 @@ func (m *metaTools) scopeTimeoutMessage(items []string, id string) string {
 	return fmt.Sprintf("Nobody allowed `%s` within %s (request `%s`).", strings.Join(items, "`, `"), durationWords(m.approvalTimeout), id)
 }
 
-// waitForScopeRequest waits as docs/design/phase-3.md §10 step 4 waits: it
+// waitForScopeRequest waits as a session addition request waits: it
 // subscribes before it reads, then re-reads the request on every
 // approval:<id> notification, missed event and tick, until it is decided
 // or its approvalTimeout passes. It returns the final status.

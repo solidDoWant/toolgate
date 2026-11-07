@@ -324,7 +324,7 @@ func TestWorkspaceLists(t *testing.T) {
 		assert.Less(t, time.Since(started), scopeChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, elsewhere.session))
 
-		// A deny also inserts a deny entry (docs/design/phase-4.md §7), so the
+		// A deny also inserts a deny entry, so the
 		// refusal names the deny.
 		refused := callTool(t, elsewhere.session, "github__echo", map[string]any{"text": "out"})
 		require.True(t, refused.IsError)
@@ -384,8 +384,7 @@ func TestWorkspaceLists(t *testing.T) {
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
 
-		// Phase 4 drops phase 3's 409: the deny inserts a deny entry
-		// (docs/design/phase-4.md §7, row 206).
+		// A deny inserts a deny entry, so it doesn't conflict with the list.
 		api.applyChange(t, attestedAlice(), workspacesapi.Change{Action: "deny", Servers: []string{"github"}})
 		assert.Empty(t, api.lists(t, attestedAlice()))
 
@@ -403,8 +402,7 @@ func TestWorkspaceLists(t *testing.T) {
 		client := fixture.connectObserved(t, attestedAlice())
 		assertBlockedInWorkspace(t, listServers(t, client.session), "slack")
 
-		// With the default all, clearing the list widens; the deny entry stays
-		// (row 243).
+		// With the default all, clearing the list widens; the deny entry stays.
 		id := api.requestChange(t, attestedAlice(), workspacesapi.Change{Action: "clear"})
 		assert.Equal(t, map[string][]string{aliceWorkspace: {}}, api.lists(t, attestedAlice()))
 		require.NoError(t, api.approve(t, id))

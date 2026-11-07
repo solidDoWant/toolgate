@@ -26,13 +26,13 @@ import (
 )
 
 // PendingApprovalLimit is the most pending approvals one principal may
-// have (docs/design/phase-2.md §2, "Approvals").
+// have.
 const PendingApprovalLimit = 100
 
 // DefaultApprovalTimeout is the approvalTimeout when MCPOptions sets none.
 const DefaultApprovalTimeout = 10 * time.Minute
 
-// Refusal reasons of calls that need approval (docs/design/phase-2.md §4).
+// Refusal reasons of calls that need approval.
 const (
 	reasonApprovalPending = "approval-pending"
 	reasonApprovalTimeout = "approval-timeout"
@@ -80,8 +80,8 @@ func canonicalArguments(arguments json.RawMessage) (json.RawMessage, []byte, err
 	return canonical, sum[:], nil
 }
 
-// approvalCall is one call of a tool that needs approval, with what step 1
-// of docs/design/phase-2.md §4 looks approvals up by.
+// approvalCall is one call of a tool that needs approval, with what the
+// approval lookup uses as its key.
 type approvalCall struct {
 	current   requestContext
 	request   *mcp.CallToolRequest
@@ -95,8 +95,8 @@ func (c approvalCall) server() string { return c.template.Name }
 
 func (c approvalCall) proxiedName() string { return ProxiedToolName(c.template.Name, c.tool) }
 
-// callWithApproval runs a call whose decision has NeedsApproval
-// (docs/design/phase-2.md §4). It replaces phase 1's call steps 3 and 4.
+// callWithApproval runs a call whose decision has NeedsApproval.
+// It replaces the plain policy and run steps of an ordinary call.
 func (m *metaTools) callWithApproval(ctx context.Context, current requestContext, request *mcp.CallToolRequest, template *v1alpha1.MCPServerTemplate, tool string) (*mcp.CallToolResult, error) {
 	server := template.Name
 
@@ -144,7 +144,7 @@ func (m *metaTools) callWithApproval(ctx context.Context, current requestContext
 	}
 }
 
-// refusePending is step 3 of docs/design/phase-2.md §4: the call fails
+// refusePending refuses a call that waits for no one: it fails
 // with a link to the approval, which stays pending for a retry.
 func (m *metaTools) refusePending(ctx context.Context, call approvalCall, id string) (*mcp.CallToolResult, error) {
 	return m.refuseCall(ctx, call.current, call.server(), call.tool,
@@ -153,8 +153,8 @@ func (m *metaTools) refusePending(ctx context.Context, call approvalCall, id str
 			call.proxiedName(), id, m.approvalURL(id)))
 }
 
-// foundApproval is the approval step 1 of docs/design/phase-2.md §4 found
-// or inserted for a call.
+// foundApproval is the approval that the lookup found or inserted for a
+// call.
 type foundApproval struct {
 	approval db.Approval
 	usable   bool
@@ -163,7 +163,7 @@ type foundApproval struct {
 	inserted bool
 }
 
-// findOrRequestApproval is step 1 of docs/design/phase-2.md §4: it finds
+// findOrRequestApproval is the first step of an approval call: it finds
 // the call's approval, in the order the one named by RequestState, a usable
 // approved one, a pending one, or inserts a pending one. A non-nil result
 // ends the call.
@@ -306,7 +306,7 @@ var beforeApprovalUse func()
 // errRefusedInUse rolls back the use of an approval when a check refuses.
 var errRefusedInUse = errors.New("refused")
 
-// useApproval is step 6 of docs/design/phase-2.md §4. In one transaction it
+// useApproval is the last step of an approval call. In one transaction it
 // checks the server is still enabled and its live instance ready, uses the
 // approval, decides again with fresh policy state and writes the allow;
 // then it forwards the canonical arguments. Any refusal rolls back, so the
@@ -407,7 +407,7 @@ func (m *metaTools) useApproval(ctx context.Context, call approvalCall, approval
 	return result, true, err
 }
 
-// enabledInTx re-runs phase 1 call step 1 inside the use transaction: the
+// enabledInTx re-runs the enabled check of an ordinary call inside the use transaction: the
 // session must still have the server enabled.
 func (m *metaTools) enabledInTx(ctx context.Context, queries *db.Queries, call approvalCall) (*v1alpha1.MCPServerTemplate, bool, map[string]any, string) {
 	server := call.server()
@@ -436,7 +436,7 @@ func (m *metaTools) enabledInTx(ctx context.Context, queries *db.Queries, call a
 		fmt.Sprintf("Server `%s` isn't enabled in this session. Call `%s` first.", server, ToolEnableServer)
 }
 
-// readyInTx re-runs phase 1 call step 2 inside the use transaction: it
+// readyInTx re-runs the ready-instance check of an ordinary call inside the use transaction: it
 // re-selects the live instance, which must be ready.
 func (m *metaTools) readyInTx(ctx context.Context, queries *db.Queries, call approvalCall, template *v1alpha1.MCPServerTemplate) (db.Instance, map[string]any, string, error) {
 	server := template.Name

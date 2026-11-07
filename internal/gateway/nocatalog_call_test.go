@@ -10,9 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// §3 "If none exists, the template has no catalog list. Such a server
-// behaves as in phase 3: an enable or a call starts it and waits", and row
-// 235 / §4 step 5: a failed row of an older generation doesn't block calls;
+// A template with no catalog list starts on an enable or a call, which waits.
+// A failed row of an older generation doesn't block calls;
 // the call inserts a pending row of the current generation and waits.
 func TestCallStartsNoCatalogServerAfterOlderGenerationFailure(t *testing.T) {
 	const scopeKey = "session:alice:session-1"

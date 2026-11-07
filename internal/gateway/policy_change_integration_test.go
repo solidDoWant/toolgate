@@ -19,7 +19,7 @@ import (
 )
 
 // ruleChangeBound is how soon after a rule change open sessions must get
-// list_changed (SPEC.md §10).
+// list_changed.
 const ruleChangeBound = 5 * time.Second
 
 func blockToolFor(principal, tool, reason string) *v1alpha1.ToolgateRule {

@@ -47,7 +47,7 @@ func validateScopeItem(item string) error {
 
 // scopeItems parses validated items. A tool's exposed name is mapped to its
 // upstream name by the server's curation, from its last valid generation
-// while the current one is invalid (docs/design/phase-4.md §6). A server
+// while the current one is invalid. A server
 // with no valid generation keeps the name as given: a deny only narrows, so
 // it needs no access check.
 func (w *Workspaces) scopeItems(items []string) []scopeItem {
@@ -68,7 +68,7 @@ func (w *Workspaces) scopeItems(items []string) []scopeItem {
 }
 
 // deny applies a validated deny in tx, after the target and the user_scopes
-// row are locked (docs/design/phase-4.md §7, "toolgate_deny"). It narrows at
+// row are locked. It narrows at
 // once, with any default and with or without a list, and deny entries don't
 // count toward the allow-entry limit.
 func (w *Workspaces) deny(ctx context.Context, tx pgx.Tx, identity auth.Identity, change WorkspaceChange,
@@ -109,7 +109,7 @@ func (w *Workspaces) deny(ctx context.Context, tx pgx.Tx, identity auth.Identity
 		}
 
 		// A session tool deny keeps the session's allow entry: the deny
-		// entry already refuses the tool, and §7 deletes nothing for it.
+		// entry already refuses the tool, and a deny deletes nothing for it.
 		if item.Tool != "" && change.Session != "" {
 			continue
 		}

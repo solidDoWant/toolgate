@@ -24,7 +24,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
-// Grant bounds (docs/design/phase-2.md §2 and §5, "Grant form").
+// Grant bounds.
 const (
 	MinGrantLifetime = time.Minute
 	MaxGrantLifetime = 7 * 24 * time.Hour
@@ -76,7 +76,7 @@ type GrantRequest struct {
 }
 
 // Grants creates, revokes and lists a user's grants for the web UI with the
-// rules of docs/design/phase-2.md §2.
+// grant rules.
 type Grants struct {
 	database    *pgxpool.Pool
 	catalog     *catalog.Catalog

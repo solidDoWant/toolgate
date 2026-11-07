@@ -133,13 +133,13 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 
 		id := api.requestChange(t, unverifiedAlice(), unverifiedDefaults("list"))
 		kind, _, _ := fixture.accessRequestRow(t, id)
-		assert.Equal(t, "scope", kind, "phase 3's change request can't hold list")
+		assert.Equal(t, "scope", kind, "a change request can't hold list")
 		assert.Equal(t, "none", api.list(t, unverifiedAlice()).Defaults.Unverified)
 
 		require.NoError(t, api.approveScope(t, aliceIdentity(), id))
 		assert.Equal(t, "list", api.list(t, unverifiedAlice()).Defaults.Unverified)
 
-		// list is stored as none, so a move to all widens (row 241).
+		// list is stored as none, so a move to all widens.
 		id = api.requestChange(t, unverifiedAlice(), unverifiedDefaults("all"))
 		kind, _, _ = fixture.accessRequestRow(t, id)
 		assert.Equal(t, "change", kind)

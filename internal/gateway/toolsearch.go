@@ -23,7 +23,7 @@ import (
 // ToolFindTools is the name of the search tool of search mode.
 const ToolFindTools = "toolgate_find_tools"
 
-// Limits of tool search (docs/design/phase-4.md §5).
+// Limits of tool search.
 const (
 	maxQueryChars    = 2000
 	maxQueryWords    = 64

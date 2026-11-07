@@ -26,8 +26,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 )
 
-// MaxEnabledServers is the number of servers one session may have enabled
-// (docs/design/phase-1.md §7).
+// MaxEnabledServers is the number of servers one session may have enabled.
 const MaxEnabledServers = 32
 
 // progressInterval is the longest time a waiting enable goes without a
@@ -80,7 +79,7 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 	decision := m.decide(ctx, policy.Request{Identity: current.identity, Template: template, State: state})
 
 	// In a verified workspace, a refusal by the workspace-scope step alone
-	// asks the user for a session addition (docs/design/phase-3.md §10).
+	// asks the user for a session addition.
 	requestID := ""
 
 	if m.asksForAddition(current, decision) {
@@ -434,7 +433,7 @@ func (m *metaTools) recordEnable(ctx context.Context, tx pgx.Tx, current request
 
 // startsOnCall reports whether template's instance starts on the first call
 // rather than on enable: its start is `onCall` (the default) and it has a
-// catalog list (docs/design/phase-4.md §3, "Starting").
+// catalog list.
 func (m *metaTools) startsOnCall(ctx context.Context, template *v1alpha1.MCPServerTemplate) (bool, error) {
 	if template.Spec.Start == catalog.StartOnEnable || template.UID == "" {
 		return false, nil
@@ -494,8 +493,8 @@ type instanceLimitError struct {
 func (e *instanceLimitError) Error() string { return e.message }
 
 // checkInstanceLimits takes the gateway-wide insert lock, then counts live
-// instances against the per-user and the gateway limits
-// (docs/design/phase-1.md §7, "Instance limits"). Only the insert path calls
+// instances against the per-user and the gateway limits.
+// Only the insert path calls
 // it, after the (template, scope key) lock.
 func (m *metaTools) checkInstanceLimits(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate) error {
 	if err := queries.LockInstanceInsert(ctx); err != nil {
@@ -570,7 +569,7 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 }
 
 // lockSession takes the sessions row lock and restarts the session when it
-// ended since the request resolved it (docs/design/phase-1.md §2), deleting
+// ended since the request resolved it, deleting
 // the enabled set the ended session kept.
 func (m *metaTools) lockSession(ctx context.Context, tx pgx.Tx, current requestContext) error {
 	queries := db.New(tx)
