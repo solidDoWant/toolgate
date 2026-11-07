@@ -107,6 +107,9 @@ type MCPOptions struct {
 	ToolSearch bool
 	// Embedder embeds search queries for tool search; nil means words only.
 	Embedder *embeddings.Client
+	// ToolSearchSessionStarted is called after a request starts or resumes
+	// a session with tool search on. Nil does nothing.
+	ToolSearchSessionStarted func(ctx context.Context)
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -231,7 +234,10 @@ func NewMCPHandler(options MCPOptions) http.Handler {
 	}
 
 	endpoint := &mcpEndpoint{
-		sessions:   &sessionStore{pool: options.Database, auditOutput: auditOutput, now: now},
+		sessions: &sessionStore{
+			pool: options.Database, auditOutput: auditOutput, now: now,
+			toolSearchStarted: options.ToolSearchSessionStarted,
+		},
 		logger:     logger,
 		toolSearch: options.ToolSearch,
 		bindings:   make(map[string]*mcpSession),
