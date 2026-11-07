@@ -3,6 +3,7 @@
 ## Unreleased
 
 - The web UI hides the Secrets link in its navigation when the gateway has no secrets keyset, instead of linking to a page that returns 404.
+- The Helm chart has the new values `config.oidc.cliClientID` and `config.oidc.cliScopes`. With `cliClientID` set, `toolgate login` needs no `--client-id`.
 - The web UI no longer logs a Content Security Policy error in the browser, and its loading indicators now hide as they should.
 
 ## 0.4.3
