@@ -49,6 +49,9 @@ type UpstreamOptions struct {
 	HTTPClient *http.Client
 	// DisableStandaloneSSE leaves out the 2025-11-25 GET stream.
 	DisableStandaloneSSE bool
+	// Remote, for a remote server, holds the headers sent on every request
+	// and records a refusal. Nil sends no extra headers.
+	Remote *RemoteAuth
 
 	// listenEnded, when set, is called once the response stream of a
 	// 2026-07-28 `subscriptions/listen` request ends.
@@ -164,6 +167,8 @@ func connectOn(ctx context.Context, endpoint, revision string, options UpstreamO
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
+
+	httpClient = withRemoteAuth(httpClient, options.Remote)
 
 	if record != nil || options.listenEnded != nil {
 		recorded := *httpClient
