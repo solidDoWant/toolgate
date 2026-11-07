@@ -348,11 +348,18 @@ type Endpoint struct {
 	// +kubebuilder:validation:Maximum=65535
 	Port int32 `json:"port"`
 
-	// Path is the HTTP path of the MCP endpoint.
+	// Path is the HTTP path of the MCP endpoint. It defaults to /mcp; set / to
+	// use the server root.
 	// +optional
+	// +kubebuilder:default=/mcp
 	// +kubebuilder:validation:MaxLength=1024
 	Path string `json:"path,omitempty"`
 }
+
+// DefaultEndpointPath is the endpoint path used when a template leaves it unset.
+// The API server fills it in through the CRD default; code that reads a
+// template that skipped defaulting applies it too.
+const DefaultEndpointPath = "/mcp"
 
 // MCPServerTemplateList is a list of MCPServerTemplate.
 //
