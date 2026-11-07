@@ -35,8 +35,8 @@ func scaledHealthInterval() time.Duration {
 	return scaled(healthInterval)
 }
 
-// unhealthyBound is interval × failureThreshold plus one timeout
-// (docs/design/phase-3.md §6), plus time for the write and the fan-out.
+// unhealthyBound is interval × failureThreshold plus one timeout, plus time for
+// the write and the fan-out.
 func unhealthyBound() time.Duration {
 	return scaledHealthInterval() + healthTimeout + 10*time.Second
 }

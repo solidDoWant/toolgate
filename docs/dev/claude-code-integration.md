@@ -6,7 +6,7 @@ For: developers who work on the `toolgate` client commands (`toolgate headers` a
 
 Claude Code does not give the session ID to a `headersHelper`. The `CLAUDE_CODE_SESSION_ID` variable is not in the environment of the helper. Claude Code gives the session ID to a SessionStart hook, on standard input and in `CLAUDE_CODE_SESSION_ID`.
 
-For this reason, `toolgate headers` uses the fallback in [`SPEC.md`](../../SPEC.md) §13:
+For this reason, `toolgate headers` uses the fallback in the "Client: CLI and Claude Code plugin" section of [`SPEC.md`](../../SPEC.md):
 
 1. The SessionStart hook (`toolgate hook session-start`) writes the session ID to the file `$XDG_RUNTIME_DIR/toolgate/<claude pid>`.
 2. `toolgate headers` walks up its parent processes, finds the Claude Code process, and reads the file for that process ID.

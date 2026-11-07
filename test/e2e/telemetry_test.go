@@ -35,7 +35,7 @@ import (
 const telemetryFixture = "../fixtures/otlp/content-on"
 
 // contentAttributes are the attributes the ingest removes by default,
-// as the design lists them (docs/design/phase-3.md §3).
+// as the design lists them.
 var contentAttributes = []string{
 	"prompt", "prompt_text", "user_prompt", "response", "response.model_output", "new_context",
 	"system_reminders", "system_prompt_preview", "user_system_prompt", "tool_parameters", "tool_input",
