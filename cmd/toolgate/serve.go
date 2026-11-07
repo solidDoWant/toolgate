@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,6 +34,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/sessionsapi"
+	"github.com/solidDoWant/toolgate/internal/settings"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
@@ -171,6 +174,16 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return authenticator.Middleware(next, false)
 	})
 
+	profiles := &lateReader{}
+
+	(&settings.Handler{
+		Reader:     profiles,
+		Namespaces: cfg.WatchedNamespaces(),
+		Log:        logger,
+	}).Register(server, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
+
 	if cfg.UIEnabled() {
 		// The built-in server is offered only with the web UI, where
 		// widening a scope can take a step-up.
@@ -270,6 +283,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			catalog:         templates,
 			rules:           rules,
 			ruleLister:      ruleView,
+			profiles:        profiles,
 			secrets:         userSecrets(broker),
 			registerMetrics: server.RegisterMetrics,
 			metrics:         metrics,
@@ -572,6 +586,32 @@ func readSmallFile(path string, limit int64) ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+// lateReader reads from the manager's informer cache once the manager exists.
+// Before that, and on a gateway that runs no manager, it lists nothing.
+type lateReader struct {
+	source atomic.Pointer[client.Reader]
+}
+
+func (r *lateReader) set(reader client.Reader) { r.source.Store(&reader) }
+
+func (r *lateReader) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	source := r.source.Load()
+	if source == nil {
+		return apierrors.NewNotFound(schema.GroupResource{}, key.Name)
+	}
+
+	return (*source).Get(ctx, key, obj, opts...)
+}
+
+func (r *lateReader) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	source := r.source.Load()
+	if source == nil {
+		return nil
+	}
+
+	return (*source).List(ctx, list, opts...)
 }
 
 // ruleLister lists the ToolgateRule objects from the manager's informer

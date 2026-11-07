@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The gateway now serves `GET /api/v1/settings`, so settings profiles reach Claude Code. Before, every session start showed "the settings profile could not be fetched: the gateway answered 404 Not Found". The `toolgate` command now treats a 404 from an older gateway as "no profile".
+
 ## 0.4.4
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes sign-in failures when several Claude Code sessions start at the same time, and two problems in the web UI. The gateway can now accept access tokens from more than one OIDC issuer. The Helm chart also gets values for the client ID and scopes of the `toolgate` command.

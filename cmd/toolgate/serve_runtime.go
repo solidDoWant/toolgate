@@ -46,6 +46,8 @@ type runtimeOptions struct {
 	rules   *policy.Rules
 	// ruleLister gets the manager's cache for the Blocks page. Nil is fine.
 	ruleLister *ruleLister
+	// profiles gets the manager's cache for the settings route. Nil is fine.
+	profiles *lateReader
 	// secrets reads the users' secrets for instance renders.
 	secrets         runtime.SecretGetter
 	registerMetrics func(...prometheus.Collector) error
@@ -115,6 +117,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	managerOptions.Cache = cache.Options{ByObject: map[client.Object]cache.ByObject{
 		&v1alpha1.MCPServerTemplate{}: {Namespaces: catalog.CacheNamespaces(watched)},
 		&v1alpha1.ToolgateRule{}:      {Namespaces: catalog.CacheNamespaces(watched)},
+		&v1alpha1.SettingsProfile{}:   {Namespaces: catalog.CacheNamespaces(watched)},
 	}}
 
 	if skipControllerNameValidation {
@@ -150,6 +153,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 
 	if options.ruleLister != nil {
 		options.ruleLister.set(mgr.GetClient(), watched)
+	}
+
+	if options.profiles != nil {
+		options.profiles.set(mgr.GetCache())
 	}
 
 	if err := setupCatalog(mgr, options.catalog, options.rules, watched, validator, logger); err != nil {
