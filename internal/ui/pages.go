@@ -50,9 +50,11 @@ var pageTemplates = map[string]*template.Template{
 
 // page is what the layout renders around a page's content.
 type page struct {
-	Title     string
-	User      string
-	Admin     bool
+	Title string
+	User  string
+	Admin bool
+	// Secrets is true when the Secrets page is registered, so the nav links to it.
+	Secrets   bool
 	CSRFToken string
 	Data      any
 }
@@ -81,6 +83,7 @@ func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, sta
 		Title:     title,
 		User:      user,
 		Admin:     session.Admin,
+		Secrets:   u.options.Secrets != nil,
 		CSRFToken: session.CSRFTokenValue(),
 		Data:      data,
 	})
