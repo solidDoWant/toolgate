@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Fails a pull request that deletes or skips a checklist scenario test
 (`make test-guard`, the `test-guard` CI job).
 
