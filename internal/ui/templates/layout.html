@@ -14,8 +14,8 @@
 <a href="/ui/grants">Grants</a>
 <a href="/ui/approvals">Approvals</a>
 <a href="/ui/workspaces">Workspaces</a>
-<a href="/ui/secrets">Secrets</a>
-<a href="/ui/audit">Audit</a>
+{{if .Secrets}}<a href="/ui/secrets">Secrets</a>
+{{end}}<a href="/ui/audit">Audit</a>
 {{if .Admin}}<a href="/ui/blocks">Blocks</a>
 {{end}}<form method="post" action="/ui/logout" class="logout">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">

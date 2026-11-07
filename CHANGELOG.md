@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The web UI hides the Secrets link in its navigation when the gateway has no secrets keyset, instead of linking to a page that returns 404.
+
 ## 0.4.3
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. In this patch release, the Helm chart creates no network policies. The cluster owner writes them.
