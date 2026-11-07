@@ -233,9 +233,10 @@ type Config struct {
 	MCPPublicURL string `json:"mcpPublicURL" env:"TOOLGATE_MCP_PUBLIC_URL"`
 
 	// The client ID that the web UI signs users in with, using the
-	// authorization code grant with PKCE. It is a separate client from
-	// `oidcCLIClientID`, and the IdP must allow the redirect URI `publicURL`
-	// plus `/ui/auth/callback`. Both clients must give a user the same
+	// authorization code grant with PKCE. It may be the same client as
+	// `oidcCLIClientID` when the IdP gives one issuer per client (for example
+	// Authentik); otherwise use a separate client. The IdP must allow the
+	// redirect URI `publicURL` plus `/ui/auth/callback`. Both clients must give a user the same
 	// subject (`sub`). The web UI is on only when this is set.
 	OIDCUIClientID string `json:"oidcUIClientID" env:"TOOLGATE_OIDC_UI_CLIENT_ID"`
 

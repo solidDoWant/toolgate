@@ -52,6 +52,12 @@ settings from `config`.
 {{- $env = append $env (dict "name" $name "value" .) }}
 {{- end }}
 {{- end }}
+{{- with $config.oidc.cliClientID }}
+{{- $env = append $env (dict "name" "TOOLGATE_OIDC_CLI_CLIENT_ID" "value" .) }}
+{{- end }}
+{{- with $config.oidc.cliScopes }}
+{{- $env = append $env (dict "name" "TOOLGATE_OIDC_CLI_SCOPES" "value" (join "," .)) }}
+{{- end }}
 {{- with $config.ui }}
 {{- range $setting, $name := dict "publicURL" "TOOLGATE_PUBLIC_URL" "clientID" "TOOLGATE_OIDC_UI_CLIENT_ID" "clientSecretFile" "TOOLGATE_OIDC_UI_CLIENT_SECRET_FILE" "adminGroup" "TOOLGATE_ADMIN_GROUP" }}
 {{- with index $.Values.config.ui $setting }}
