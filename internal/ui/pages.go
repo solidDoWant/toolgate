@@ -152,8 +152,8 @@ func (u *UI) servers(writer http.ResponseWriter, request *http.Request) {
 	})
 }
 
-// restartInstance requests the restart of an outdated instance
-// (docs/design/phase-2.md §6, "Restart"). Another user's instance, or a
+// restartInstance requests the restart of an outdated instance.
+// Another user's instance, or a
 // shared one for a non-admin, gives 404. If the instance isn't live, ready
 // and outdated any more, the Servers page says so.
 func (u *UI) restartInstance(writer http.ResponseWriter, request *http.Request) {

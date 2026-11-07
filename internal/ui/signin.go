@@ -21,7 +21,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// login starts a sign-in (docs/design/phase-2.md §5, step 1): it stores the
+// login starts a sign-in: it stores the
 // state, nonce and PKCE verifier in ui_logins, sets the per-sign-in state
 // cookie and redirects to the IdP.
 func (u *UI) login(writer http.ResponseWriter, request *http.Request) {
@@ -154,7 +154,7 @@ func failure(reason string, err error) *signInFailure {
 	return &signInFailure{reason: reason, err: err}
 }
 
-// callback completes a sign-in (docs/design/phase-2.md §5, steps 2–5).
+// callback completes a sign-in.
 func (u *UI) callback(writer http.ResponseWriter, request *http.Request) {
 	writer.Header().Set("Cache-Control", "no-store")
 
@@ -259,8 +259,8 @@ func (u *UI) completeSignIn(writer http.ResponseWriter, request *http.Request) (
 	return login.ReturnTo, nil
 }
 
-// completeStepUp runs the step-up checks (docs/design/phase-2.md §5,
-// "Step-up") and records the fresh sign-in: on the session the step-up
+// completeStepUp runs the step-up checks
+// and records the fresh sign-in: on the session the step-up
 // started from, or on a new session when there was none.
 func (u *UI) completeStepUp(writer http.ResponseWriter, request *http.Request, login db.UiLogin, identity signedInIdentity) *signInFailure {
 	ctx := request.Context()

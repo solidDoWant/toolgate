@@ -6,7 +6,7 @@ import (
 )
 
 // Failed sign-ins are recorded at most refusalLimit times per refusalWindow
-// for each remote address (docs/design/phase-1.md §7).
+// for each remote address.
 const (
 	refusalLimit  = 10
 	refusalWindow = time.Minute

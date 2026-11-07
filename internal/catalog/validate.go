@@ -1,6 +1,6 @@
 // Package catalog reads MCPServerTemplate objects, validates them beyond the
 // CEL rules in their CRD, reports the result in their status, and serves the
-// valid templates to the rest of the gateway (SPEC.md §8 and §9).
+// valid templates to the rest of the gateway.
 package catalog
 
 import (
@@ -37,8 +37,7 @@ const maxReasonLength = 1024
 var serverNamePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,30}$`)
 
 // sharedNamespaceKinds are the kinds whose names and selectors toolgate can
-// check, the only kinds a `namespace: shared` template may contain
-// (docs/design/phase-1.md §7).
+// check, the only kinds a `namespace: shared` template may contain.
 var sharedNamespaceKinds = map[schema.GroupKind]bool{
 	{Group: "", Kind: "Pod"}:                            true,
 	{Group: "apps", Kind: "Deployment"}:                 true,
@@ -114,7 +113,7 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 	return problems
 }
 
-// Health check bounds (docs/design/phase-3.md §6). The CRD's CEL rules check
+// Health check bounds. The CRD's CEL rules check
 // the same ones.
 const (
 	minHealthInterval = 10 * time.Second
@@ -289,8 +288,8 @@ const instanceIDVariable = "${instance.id}"
 const instanceLabel = "toolgate.soliddowant.dev/instance"
 
 // validateSharedNames checks that a `namespace: shared` template tells its
-// instances apart by itself, because toolgate never renames objects
-// (docs/design/phase-1.md §7): every name and the endpoint Service contain
+// instances apart by itself, because toolgate never renames objects:
+// every name and the endpoint Service contain
 // ${instance.id}, and every selector of a known kind selects the instance
 // label.
 func validateSharedNames(template *v1alpha1.MCPServerTemplate) []string {

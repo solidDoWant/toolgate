@@ -20,7 +20,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
-// Paths of the Approvals pages (docs/design/phase-2.md §5, "Pages").
+// Paths of the Approvals pages.
 const (
 	ApprovalsPath = "/ui/approvals"
 	// DefaultApprovalTimeout is the approvalTimeout when Options sets none.

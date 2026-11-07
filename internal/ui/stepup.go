@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// Step-up bounds (docs/design/phase-2.md §5 "Step-up" and §11).
+// Step-up bounds.
 const (
 	// StepUpMaxAge is how old a session's sign-in may be when a grant is
 	// created or a call approved.

@@ -19,7 +19,7 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
 
-// Attested user sessions (docs/design/phase-3.md §10): a user token in
+// Attested user sessions: a user token in
 // Authorization plus a workload token in AttestationHeader that is bound to
 // that user.
 const (

@@ -17,7 +17,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// Audit page bounds (docs/design/phase-2.md §5).
+// Audit page bounds.
 const (
 	// AuditPageSize is the number of rows on one page of the audit log.
 	AuditPageSize = 100

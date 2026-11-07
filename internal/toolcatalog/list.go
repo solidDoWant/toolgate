@@ -41,7 +41,7 @@ func DeclaredTools(template *v1alpha1.MCPServerTemplate) []*mcp.Tool {
 // CatalogList returns the upstream tools of the template's catalog list, and
 // whether the template has one: the first of its declared tools, the learned
 // list of its current generation, and the learned list of the newest older
-// generation (docs/design/phase-4.md §3). Learned holds the stored lists in
+// generation. Learned holds the stored lists in
 // any order. Curate the result before showing it.
 func CatalogList(template *v1alpha1.MCPServerTemplate, learned []Learned) ([]*mcp.Tool, bool, error) {
 	tools, _, found, err := CatalogListGeneration(template, learned)

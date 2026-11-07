@@ -1,5 +1,5 @@
-// Package ui serves the gateway's web UI under `/ui/` (docs/design/phase-2.md
-// §5): browser sign-in with the IdP, UI sessions, and the route helper that
+// Package ui serves the gateway's web UI under `/ui/`:
+// browser sign-in with the IdP, UI sessions, and the route helper that
 // gives every page an access level.
 package ui
 
@@ -50,7 +50,7 @@ const (
 	LoginCookiePrefix = "__Host-toolgate-login-"
 )
 
-// Time bounds and limits (docs/design/phase-2.md §11).
+// Time bounds and limits.
 const (
 	SessionLifetime = 8 * time.Hour
 	loginLifetime   = 10 * time.Minute

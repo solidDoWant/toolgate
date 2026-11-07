@@ -20,7 +20,7 @@ import (
 )
 
 // ServiceAccountAudience is the audience a projected service-account token
-// must carry for the gateway (SPEC.md §6).
+// must carry for the gateway.
 const ServiceAccountAudience = "toolgate"
 
 const (

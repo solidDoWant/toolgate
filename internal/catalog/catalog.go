@@ -139,7 +139,7 @@ func (c *Catalog) Delete(key types.NamespacedName) []types.NamespacedName {
 }
 
 // SetBuiltin adds the in-memory template of the built-in server, whose name
-// is ReservedServerName (docs/design/phase-4.md §7). It is offered, listed
+// is ReservedServerName. It is offered, listed
 // and running under its own key like any valid template. A real template
 // with that name stays invalid and is never served. nil removes it.
 func (c *Catalog) SetBuiltin(template *v1alpha1.MCPServerTemplate) {
@@ -269,7 +269,7 @@ func (c *Catalog) Offered(server string) (*v1alpha1.MCPServerTemplate, error) {
 
 // Curation returns the generation whose curation maps the named server's
 // tool names: the current one when it is valid, otherwise the last valid
-// generation, as calls use it (docs/design/phase-4.md §6). A server with no
+// generation, as calls use it. A server with no
 // valid generation, or one that counts as deleted, has none. A copy is
 // returned.
 func (c *Catalog) Curation(server string) (*v1alpha1.MCPServerTemplate, bool) {

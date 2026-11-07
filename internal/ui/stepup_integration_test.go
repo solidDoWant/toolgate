@@ -209,7 +209,7 @@ func TestStepUpFailsClosedWithoutAuthTime(t *testing.T) {
 	assert.Contains(t, body(t, response), "Sign in again to continue")
 }
 
-// [design row 63] The form page asks for a step-up past 4 minutes, and a
+// The form page asks for a step-up past 4 minutes, and a
 // POST past 5 minutes changes nothing and redirects to a step-up that
 // returns to the form.
 func TestStepUpFormAndSubmit(t *testing.T) {

@@ -44,7 +44,7 @@ func TestCatalogListOrder(t *testing.T) {
 		return result
 	}
 
-	// Row 187: the generation changes and no row exists for it.
+	// The generation changes and no row exists for it.
 	got, found := catalogNames(t, at(4), learned)
 	assert.True(t, found)
 	assert.Equal(t, []string{"newer-than-template"}, got, "the newest older generation")
@@ -59,7 +59,7 @@ func TestCatalogListOrder(t *testing.T) {
 	assert.False(t, found, "a row of a newer generation isn't used")
 	assert.Empty(t, got)
 
-	// Row 188: declared tools come first.
+	// Declared tools come first.
 	got, found = catalogNames(t, at(2, "declared"), learned)
 	assert.True(t, found)
 	assert.Equal(t, []string{"declared"}, got)

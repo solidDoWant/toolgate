@@ -1,5 +1,5 @@
 // Package auth authenticates requests to the gateway and builds their
-// identity (SPEC.md §5–§6). Users sign in with an access token from the IdP,
+// identity. Users sign in with an access token from the IdP,
 // which is checked against the IdP's JWKS, the configured audience and its
 // expiry. The X-Toolgate-Session and X-Toolgate-Workspace headers are checked
 // after the token.
@@ -53,14 +53,13 @@ const (
 	maxRefusalList  = 8
 )
 
-// Attestation levels (SPEC.md §6).
+// Attestation levels.
 const (
 	AttestationUser     = "user"
 	AttestationAttested = "attested"
 )
 
-// Identity kinds: which verifier accepted the bearer token
-// (docs/design/phase-3.md §10).
+// Identity kinds: which verifier accepted the bearer token.
 const (
 	KindUser           = "user"
 	KindServiceAccount = "service-account"
@@ -308,7 +307,7 @@ func (a *Authenticator) Collectors() []prometheus.Collector {
 // session header is optional, and a request without it leaves
 // Identity.Session empty for the endpoint to fill in. The 401 of an MCP
 // request names the protected resource metadata, if it is set, so a
-// standard MCP client can find the IdP (docs/design/phase-4.md §9). next
+// standard MCP client can find the IdP. next
 // finds the identity with IdentityFrom.
 func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -570,7 +569,7 @@ func (a *Authenticator) identityFromClaims(subject string, claims map[string]jso
 
 	identity := Identity{Principal: subject, Kind: KindUser, Attestation: AttestationUser}
 
-	// An unverified email is treated as absent (docs/design/phase-1.md §7).
+	// An unverified email is treated as absent.
 	var verifiedEmail bool
 	if raw, ok := claims[a.claims.emailVerified]; ok {
 		_ = json.Unmarshal(raw, &verifiedEmail)

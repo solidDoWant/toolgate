@@ -16,8 +16,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// MaxShownPayloadBytes is how much of a payload a page shows
-// (docs/design/phase-2.md §8).
+// MaxShownPayloadBytes is how much of a payload a page shows.
 const MaxShownPayloadBytes = 1 << 20
 
 const (

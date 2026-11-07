@@ -26,7 +26,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
-// Temporary block bounds (docs/design/phase-2.md §2 and §11).
+// Temporary block bounds.
 const (
 	// MaxBlockListItems is the most items in one list of a block's match.
 	MaxBlockListItems = 64

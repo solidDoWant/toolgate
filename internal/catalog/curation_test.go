@@ -11,8 +11,7 @@ import (
 
 // Curation follows the generation calls use: the current one while valid,
 // the last valid one while the current one is invalid, and none for a server
-// with no valid generation or one that counts as deleted
-// (docs/design/phase-4.md §6, row 246).
+// with no valid generation or one that counts as deleted.
 func TestCatalogCurationUsesLastValidGenerationWhileInvalid(t *testing.T) {
 	templates := catalog.New()
 

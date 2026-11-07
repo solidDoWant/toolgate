@@ -336,7 +336,7 @@ func (e *uiEnv) countRows(t *testing.T, table string) int {
 	return count
 }
 
-// [design row 62] A sign-in started on one replica completes on another.
+// A sign-in started on one replica completes on another.
 func TestSignInCompletesOnAnotherReplica(t *testing.T) {
 	env := startUIEnv(t, "toolgate-admins")
 	browser := env.browser(t)
@@ -552,7 +552,7 @@ func hashOf(value string) []byte {
 	return sum[:]
 }
 
-// [design row 64] A session idle for 1 h or older than 8 h no longer works:
+// A session idle for 1 h or older than 8 h no longer works:
 // a GET redirects to sign-in and a POST gets 401.
 func TestEndedSessionsAreRefused(t *testing.T) {
 	env := startUIEnv(t, "admins")
