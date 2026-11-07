@@ -91,3 +91,40 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "toolgate.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- if include "toolgate.embeddingsScaleToZero" . }}
+---
+# Scaling the embeddings server between 0 and 1: its scale and the
+# Deployment's status, for that one Deployment only. No list or watch.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "toolgate.embeddingsName" . }}-scaler
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "toolgate.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    resourceNames: [{{ include "toolgate.embeddingsName" . | quote }}]
+    verbs: ["get", "patch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: [{{ include "toolgate.embeddingsName" . | quote }}]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "toolgate.embeddingsName" . }}-scaler
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "toolgate.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "toolgate.embeddingsName" . }}-scaler
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "toolgate.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
