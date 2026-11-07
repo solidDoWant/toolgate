@@ -96,7 +96,7 @@ func TestSessionPages(t *testing.T) {
 	env.insertDecision(t, "tool.decision", "dave", "other-session", "other-session", now.Add(-time.Minute))
 
 	list := func(browser *http.Client) string {
-		response := get(t, browser, env.server.URL+"/ui/sessions")
+		response := get(t, browser, env.server.URL+"/ui/sessions?user=all")
 		require.Equal(t, http.StatusOK, response.StatusCode)
 
 		return readBody(t, response)
@@ -214,7 +214,7 @@ func TestSessionsPage(t *testing.T) {
 	assert.Equal(t, int64(404), open(t, otherURL))
 
 	signInAs(t, "ac-admin")
-	require.Equal(t, int64(200), open(t, "/ui/sessions"))
+	require.Equal(t, int64(200), open(t, "/ui/sessions?user=all"))
 	assert.ElementsMatch(t, []string{mineURL, otherURL}, links())
 	assert.Equal(t, int64(200), open(t, otherURL))
 }

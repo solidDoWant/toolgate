@@ -27,7 +27,7 @@ func TestSessionsPageShowsPeopleInsteadOfSubjects(t *testing.T) {
 		Principal: hashed, Email: "fred@example.com", Name: "Fred",
 	}))
 
-	response := get(t, admin, env.server.URL+"/ui/sessions")
+	response := get(t, admin, env.server.URL+"/ui/sessions?user=all")
 	require.Equal(t, http.StatusOK, response.StatusCode)
 
 	page := readBody(t, response)
