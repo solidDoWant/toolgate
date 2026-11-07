@@ -236,7 +236,13 @@ A remote template has these rules:
 
 The Kubernetes API server refuses a template that breaks the rules for `scope`, `endpoint`, `resources`, `healthCheck` or `remote.timeout`. The gateway checks the URL and the header values, and puts the reason for a problem in the `Valid` condition. The reason names the header, but it never shows the value. The gateway never writes header values into a status, an event or a log.
 
-This gateway version accepts valid remote templates, but it cannot connect to them yet. When a user enables a remote server, or calls one of its tools, the gateway refuses with a message that says so. It starts nothing.
+When a user enables a remote server, the gateway first makes sure that the user set each secret that the headers name. If a secret is missing, the user gets the message `Secret NAME isn't set. Run toolgate secret set NAME.`, and nothing starts. A missing secret is not a server error.
+
+Then the gateway connects to the URL with the headers of that user and lists the tools. Each user gets an own connection, which uses only the secrets of that user. One user's headers never go with a call of another user. The tool list is also kept for each user. Tool names, `tools:` overrides, rules, grants, the audit log and access lists work as for servers that toolgate starts.
+
+If the server answers 401 or 403, the user gets the message that the server refused the credential, with the `toolgate secret set` command to set the secret again. A new secret value takes effect at the next connection. A remote server counts toward no instance limit, and it gets no namespace. The connection closes when no session of the user has the server turned on and `idleStop` has passed, or when the template changes.
+
+The gateway pods open the connection to the remote server. If the cluster has network policies, the cluster owner must allow traffic from the gateway pods to the remote host.
 
 ## When a template is invalid
 

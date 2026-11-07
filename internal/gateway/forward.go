@@ -68,6 +68,9 @@ type UpstreamEndpoint func(instance db.Instance, template *v1alpha1.MCPServerTem
 type upstreams struct {
 	endpoint   UpstreamEndpoint
 	httpClient *http.Client
+	// secrets returns a principal's secrets, which fill a remote server's
+	// headers. Nil means remote servers can't be reached.
+	secrets func(principal string) runtime.SecretSource
 
 	mu       sync.Mutex
 	sessions map[string]*upstreamSession
@@ -76,15 +79,35 @@ type upstreams struct {
 type upstreamSession struct {
 	mu      sync.Mutex
 	session *mcp.ClientSession
+	// remote holds the owner's headers of a remote server's session, and
+	// records whether the server refused them. It is nil otherwise.
+	remote *runtime.RemoteAuth
 }
 
-func newUpstreams(endpoint UpstreamEndpoint, httpClient *http.Client) *upstreams {
-	return &upstreams{endpoint: endpoint, httpClient: httpClient, sessions: make(map[string]*upstreamSession)}
+func newUpstreams(endpoint UpstreamEndpoint, httpClient *http.Client, secrets func(principal string) runtime.SecretSource) *upstreams {
+	return &upstreams{endpoint: endpoint, httpClient: httpClient, secrets: secrets, sessions: make(map[string]*upstreamSession)}
 }
+
+// errRemoteNotOwner refuses a forwarding session to a remote server's
+// instance for anyone but its owner: the session sends the owner's
+// credential.
+var errRemoteNotOwner = errors.New("a remote server's instance serves only its owner")
+
+// errNoSecretSource is the connect error of a remote server on a gateway
+// that can't read user secrets.
+var errNoSecretSource = errors.New("the gateway can't read user secrets")
 
 // session returns the forwarding session to instance, connecting it when
-// there is none.
-func (u *upstreams) session(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*mcp.ClientSession, error) {
+// there is none. A remote server's session sends the headers filled in
+// from the secrets of the instance's owner, who must be caller; it is
+// returned with them.
+func (u *upstreams) session(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, caller runtime.Identity) (*mcp.ClientSession, *runtime.RemoteAuth, error) {
+	// An instance is keyed by its ID, and a remote server's instance
+	// belongs to one user: only that user's calls may use its headers.
+	if template.Spec.Remote != nil && (instance.OwnerPrincipal == "" || caller.PrincipalID != instance.OwnerPrincipal) {
+		return nil, nil, errRemoteNotOwner
+	}
+
 	u.mu.Lock()
 
 	entry, found := u.sessions[instance.ID]
@@ -99,7 +122,24 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 	defer entry.mu.Unlock()
 
 	if entry.session != nil {
-		return entry.session, nil
+		return entry.session, entry.remote, nil
+	}
+
+	var remote *runtime.RemoteAuth
+
+	if template.Spec.Remote != nil {
+		if u.secrets == nil {
+			return nil, nil, errNoSecretSource
+		}
+
+		// The headers are filled in at each connect, so a secret set
+		// again takes effect at the next connect.
+		header, _, err := runtime.RemoteHeaders(ctx, template, caller, u.secrets(instance.OwnerPrincipal))
+		if err != nil {
+			return nil, nil, err
+		}
+
+		remote = &runtime.RemoteAuth{Header: header}
 	}
 
 	// Replicas ignore list_changed on forwarding sessions: the reconciler
@@ -110,14 +150,19 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 	session, _, err := runtime.ConnectUpstream(connectCtx, u.endpoint(instance, template), instance.McpRevision, runtime.UpstreamOptions{
 		Implementation: &mcp.Implementation{Name: "toolgate", Version: version.Get()},
 		HTTPClient:     u.httpClient,
+		Remote:         remote,
 	})
 	if err != nil {
-		return nil, err
+		if remote != nil && remote.Refused() {
+			return nil, remote, fmt.Errorf("%w: %w", runtime.ErrCredentialRefused, err)
+		}
+
+		return nil, nil, err
 	}
 
-	entry.session = session
+	entry.session, entry.remote = session, remote
 
-	return session, nil
+	return session, remote, nil
 }
 
 // upstreamConnectContext returns a context for connecting to an upstream
@@ -158,7 +203,7 @@ func (u *upstreams) drop(id string, session *mcp.ClientSession) {
 	defer entry.mu.Unlock()
 
 	if entry.session == session {
-		entry.session = nil
+		entry.session, entry.remote = nil, nil
 
 		_ = session.Close()
 	}
@@ -193,7 +238,7 @@ func (m *metaTools) dropUnlessReady(id string) {
 
 	entry.mu.Lock()
 	session := entry.session
-	entry.session = nil
+	entry.session, entry.remote = nil, nil
 	entry.mu.Unlock()
 
 	// Close waits for the calls in flight on the session. They finish with
@@ -455,7 +500,7 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 			return nil, err
 		}
 	} else {
-		result, outcome = m.forward(ctx, instance, template, tool, arguments)
+		result, outcome = m.forward(ctx, current, instance, template, tool, arguments)
 		observationOf(ctx).forwarded(outcome)
 	}
 
@@ -498,16 +543,25 @@ func (m *metaTools) decide(ctx context.Context, request policy.Request) policy.D
 // forward calls tool on the instance's upstream session. outcome is "ok",
 // "error" (the tool reported an error), "too-large" or "failed" (the
 // upstream call itself failed).
-func (m *metaTools) forward(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, string) {
+func (m *metaTools) forward(ctx context.Context, current requestContext, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, string) {
 	ctx, span := tracer(ctx).Start(ctx, "toolgate.forward", trace.WithAttributes(
 		attribute.String("toolgate.server", template.Name), attribute.String("toolgate.tool", tool)))
 	defer span.End()
 
 	ctx, budget := upstreamlimit.WithBudget(ctx, upstreamResponseBudget)
 
-	session, err := m.upstreams.session(ctx, instance, template)
+	session, remote, err := m.upstreams.session(ctx, instance, template, remoteIdentity(current))
 	if err != nil {
 		span.SetStatus(codes.Error, "connect")
+
+		var missing *runtime.MissingSecretError
+
+		switch {
+		case errors.As(err, &missing):
+			return errorResult(missing.Error()), "failed"
+		case errors.Is(err, runtime.ErrCredentialRefused):
+			return errorResult(runtime.CredentialRefusedReason(template)), "failed"
+		}
 
 		return errorResult(fmt.Sprintf("Server `%s` can't be reached. Try again, or call `%s` to see its status.", template.Name, ToolServerStatus)), "failed"
 	}
@@ -534,6 +588,14 @@ func (m *metaTools) forward(ctx context.Context, instance db.Instance, template 
 			m.upstreams.drop(instance.ID, session)
 		}
 
+		// A refused credential stays refused until the user sets the
+		// secret again, which the next connect reads.
+		if remote != nil && remote.Refused() {
+			m.upstreams.drop(instance.ID, session)
+
+			return errorResult(runtime.CredentialRefusedReason(template)), "failed"
+		}
+
 		// The response was cut off at the budget.
 		if budget.Exceeded() {
 			return tooLarge()
@@ -552,6 +614,19 @@ func (m *metaTools) forward(ctx context.Context, instance db.Instance, template 
 	}
 
 	return result, "ok"
+}
+
+// remoteIdentity is the identity a remote server's headers are filled in
+// for: the caller's verified identity, never a claimed field beyond what
+// the header variables may name.
+func remoteIdentity(current requestContext) runtime.Identity {
+	return runtime.Identity{
+		PrincipalID:     current.identity.Principal,
+		PrincipalEmail:  current.identity.Email,
+		PrincipalName:   current.session.Name,
+		PrincipalGroups: current.identity.Groups,
+		Kind:            current.identity.Kind,
+	}
 }
 
 // enabledTemplate returns the template of the session's enabled server
