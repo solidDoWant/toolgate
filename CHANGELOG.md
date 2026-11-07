@@ -1,29 +1,53 @@
 # Changelog
 
-## Unreleased
+## 0.4.7
 
-### Features
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release changes three template rules, so read the upgrade notes before you upgrade. It also adds a Quick setup page and an install script, new Sessions and Audit pages in the web UI, and a list of the servers for the model.
 
-- Instance namespaces and objects now carry labels and annotations for their owner, workspace, session and scope. See "Labels and annotations on instance objects" in `docs/admin/instances.md`.
+To install toolgate:
 
-- The gateway now tells the model which servers it can use: a short list in the MCP instructions, and the same names in the descriptions of `toolgate_find_tools` and `toolgate_list_servers`. Write each template's `description` for the model.
-
-- The Sessions page of the web UI now shows who runs each session, where (with a verified or unverified badge), which client and version, and whether the session is active, idle, ended or resumable. You can filter by state, workspace and, as an admin, user.
-
-- A template's `scope` is now optional. Without it, toolgate uses the broadest scope that the template's variables allow, and the `Valid` condition says which scope and why. A remote server no longer has to be `per-user`: one with no headers, or with fixed headers, can be `shared`, and all users then share one connection. See "Scope" in `docs/admin/templates-and-rules.md`.
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.7`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.7`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
 
 ### Upgrade notes for admins
 
-- Entries in `access.users` and `access.groups` of a template are now glob patterns. `users: ["*"]` makes a server available to every signed-in user. Entries without `*`, `?`, `[`, `]`, `{`, `}` or `\` match exactly, as before. An entry that is not a valid pattern makes the template invalid. See "Who can use a server" in `docs/admin/templates-and-rules.md`.
+- If a template leaves `endpoint.path` unset and its server serves MCP at the root, set `path: /`. `endpoint.path` now defaults to `/mcp`. Before, an unset path meant the server root. ([#563](https://github.com/solidDoWant/toolgate/pull/563))
+- Make sure that each entry in `access.users` and `access.groups` of your templates means what you want as a glob pattern. These entries are now glob patterns. For example, `users: ["*"]` makes a server available to every signed-in user. An entry without `*`, `?`, `[`, `]`, `{`, `}` or `\` matches exactly, as before. An entry that is not a valid pattern makes the template invalid. See "Who can use a server" in `docs/admin/templates-and-rules.md`. ([#561](https://github.com/solidDoWant/toolgate/pull/561))
+- If a `per-user` template uses `${session.id}` or `${workspace.id}`, set `scope: per-session` on it. Such a `per-user` template is now invalid, because one instance for each user cannot use the ID of one session or one workspace. ([#565](https://github.com/solidDoWant/toolgate/pull/565))
+- If your users or prompts call `toolgate_enable_server` or `toolgate_disable_server` in tool search mode, set the chart value `config.metaTools.enableDisable` to `always`. Sessions in tool search mode no longer list these two tools. A call to a tool of an allowed server already turns the server on. A call to a tool of a server that the workspace blocks asks the user for access. See `docs/admin/tool-search.md`. ([#546](https://github.com/solidDoWant/toolgate/pull/546))
 
-- `endpoint.path` of a template now defaults to `/mcp`. Before, an unset path meant the server root. If a template left `path` unset and its server serves MCP at the root, set `path: /`.
-- Breaking change: a `per-user` template that uses `${session.id}` or `${workspace.id}` is now invalid. Set `scope: per-session` on it.
-- Sessions in tool search mode no longer list `toolgate_enable_server` and `toolgate_disable_server`. A call to a tool of an allowed server already turns the server on. A call to a tool of a server that the workspace blocks asks the user for access. To list the two tools in every mode, as before, set `config.metaTools.enableDisable` to `always`. See `docs/admin/tool-search.md`.
-- The web UI and `toolgate status` now show people by name and email instead of their long OIDC user ID. The full ID stays on hover.
+### Templates and rules
+
+- The `scope` of a template is now optional. Without it, toolgate uses the broadest scope that the variables of the template allow. The `Valid` condition says which scope it chose and why. A remote server no longer has to be `per-user`. A remote server with no headers, or with fixed headers, can be `shared`, and all users then share one connection. See "Scope" in `docs/admin/templates-and-rules.md`. ([#565](https://github.com/solidDoWant/toolgate/pull/565))
+
+### Servers and sessions
+
+- The gateway now tells the model which servers it can use. It puts a short list in the MCP instructions, and the same names in the descriptions of `toolgate_find_tools` and `toolgate_list_servers`. Write the `description` of each template for the model. ([#543](https://github.com/solidDoWant/toolgate/pull/543))
+- The namespaces and objects of an instance now have labels and annotations for their owner, workspace, session and scope. An instance is one running copy of a server. To leave the email and the name of the owner off these objects, set the chart value `config.instanceOwnerDetails` to `false`. See "Labels and annotations on instance objects" in `docs/admin/instances.md`. ([#547](https://github.com/solidDoWant/toolgate/pull/547))
+
+### Web UI
+
+- The new Quick setup page (`/ui/setup`) shows the commands that install and set up toolgate, each with a Copy button. The gateway also serves `/install.sh`. This script installs the `toolgate` command in the same version as the gateway, checks its SHA-256 checksum, installs the plugin and offers to sign you in. To see what it does without any change, run it with `--dry-run`. ([#530](https://github.com/solidDoWant/toolgate/pull/530))
+- The web UI and `toolgate status` now show people by name and email instead of their long OIDC user ID. The full ID stays on hover. ([#548](https://github.com/solidDoWant/toolgate/pull/548))
+- The Sessions page now shows who runs each session, where it runs (with a verified or unverified badge), which client and version it uses, and its state: active, idle, ended or resumable. It also shows the servers of each session and its tool calls, refusals and pending approvals in the last hour. You can filter by state, by workspace and, as an admin, by user. ([#554](https://github.com/solidDoWant/toolgate/pull/554), [#555](https://github.com/solidDoWant/toolgate/pull/555))
+- The page of one session now shows its servers with their status, its effective scope and its last 50 tool calls. The owner of an open session can deny a server for that session only, with "Deny for this session". This does the same as `toolgate workspace deny --session`. ([#556](https://github.com/solidDoWant/toolgate/pull/556), [#557](https://github.com/solidDoWant/toolgate/pull/557))
+- The Audit pages now show one readable line for each event, with an outcome badge. You can filter by server, tool, workspace, session, user, outcome, category and time, and click a value to filter on it. The page shows the number of matching events, and you can export them as JSON Lines. The page of one event shows its fields, its payload and the related events. ([#553](https://github.com/solidDoWant/toolgate/pull/553))
+- The Servers page now shows the scope, the environments, the secrets that are needed and the workspace availability of each server you can use. A detail page for each server lists its tools. ([#538](https://github.com/solidDoWant/toolgate/pull/538))
+
+### Claude Code plugin and CLI
+
+- `toolgate login --gateway` and `toolgate configure --gateway` now accept a bare host or `host:port`, for example `toolgate.example.com`. toolgate adds `https://`. The plugin setting still needs the full URL that starts with `https://`. ([#531](https://github.com/solidDoWant/toolgate/pull/531))
 
 ### Fixes
 
-- The Approvals page of the web UI now lists your pending access requests, for example changes to workspace lists and defaults, in an "Access changes" section. Before, it listed only tool call approvals.
+- The Approvals page of the web UI now lists your pending access requests, for example changes to workspace lists and defaults, in an "Access changes" section. Before, it listed only tool call approvals. ([#536](https://github.com/solidDoWant/toolgate/pull/536))
+- Sessions without a verified workspace now show the servers that the workspace scope blocks as `blocked`, with the fix, in `toolgate_list_servers`, `toolgate_server_status` and `toolgate_find_tools`. Before, the list was empty and the status said "isn't in your catalog". ([#537](https://github.com/solidDoWant/toolgate/pull/537))
+
+Internal work: a test of the gateway no longer fails at random ([#559](https://github.com/solidDoWant/toolgate/pull/559)).
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
 
 ## 0.4.6
 
@@ -38,14 +62,9 @@ To install toolgate:
 
 - If the gateway connects to PostgreSQL with a client certificate that expires after a short time, for example a cert-manager certificate that is valid for one hour, upgrade to this version. Versions 0.4.0 to 0.4.5 stop working when that certificate expires.
 
-### New
-
-- The Servers page of the web UI now shows the scope, the environments, the secrets that are needed and the workspace availability of each server you can use, and a detail page with its tools.
-
 ### Fixes
 
 - The gateway now reads the PostgreSQL client certificate files again for each new database connection. Before, it read them one time when it started. When the first certificate expired, the database refused every new connection, and the gateway pods stopped being ready. The error was `remote error: tls: expired certificate`. See "Client certificates that change" in `docs/admin/chart.md`. ([#525](https://github.com/solidDoWant/toolgate/pull/525))
-- Sessions without a verified workspace now show the servers that the workspace scope blocks as `blocked`, with the fix, in `toolgate_list_servers`, `toolgate_server_status` and `toolgate_find_tools`. Before, the list was empty and the status said "isn't in your catalog".
 
 ### Web UI
 
@@ -54,6 +73,7 @@ To install toolgate:
 ### Known issues
 
 - Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- Sessions that the gateway cannot verify do not show servers that the workspace blocks. They show an empty list, or say that the server is "not in your catalog". ([#532](https://github.com/solidDoWant/toolgate/issues/532))
 - The `/ui/approvals` page of the web UI does not list pending access requests for changes to workspaces and defaults. ([#533](https://github.com/solidDoWant/toolgate/issues/533))
 - `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
