@@ -296,6 +296,15 @@ type Config struct {
 	// never what is allowed. The chart sets it from `config.toolSearch`.
 	ToolSearch bool `json:"toolSearch" env:"TOOLGATE_TOOL_SEARCH"`
 
+	// Whether a session lists `toolgate_enable_server` and
+	// `toolgate_disable_server`. `auto` lists them when tool search mode is
+	// off and hides them when it is on: in search mode a call to a tool of an
+	// allowed server turns the server on, so the model needs no enable. `always`
+	// lists them in every mode. `never` lists them in none. A call to a hidden
+	// tool is refused with a message. The chart sets it from
+	// `config.metaTools.enableDisable`.
+	MetaToolsEnableDisable string `json:"metaToolsEnableDisable" env:"TOOLGATE_META_TOOLS_ENABLE_DISABLE"`
+
 	// The base URL of an endpoint that speaks the OpenAI embeddings API
 	// (`POST <url>/v1/embeddings`), such as Hugging Face text-embeddings-
 	// inference or Ollama run in the cluster. If it is set, tool search ranks
@@ -633,6 +642,7 @@ func Default() Config {
 		SessionIdleTimeout:     Duration(2 * time.Hour),
 		SessionResumeWindow:    Duration(24 * time.Hour),
 		ApprovalTimeout:        Duration(10 * time.Minute),
+		MetaToolsEnableDisable: "auto",
 
 		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
 
@@ -1076,6 +1086,12 @@ func (c Config) Validate() []error {
 
 	if c.ApprovalTimeout < Duration(time.Minute) || c.ApprovalTimeout > Duration(time.Hour) {
 		problems = append(problems, errors.New("approvalTimeout: must be from 1m to 1h"))
+	}
+
+	switch c.MetaToolsEnableDisable {
+	case "auto", "always", "never":
+	default:
+		problems = append(problems, errors.New("metaToolsEnableDisable: must be auto, always or never"))
 	}
 
 	problems = append(problems, c.validateToolSearchEmbeddings()...)

@@ -67,11 +67,16 @@ func newSessionTools(server *mcp.Server, call mcp.ToolHandler, current requestCo
 	return &sessionTools{server: server, call: call, current: current, offered: make(map[string][]byte)}
 }
 
-func (s *sessionTools) setCurrent(current requestContext) {
+// setCurrent records the latest request of the session and reports whether
+// its tool search mode differs from the previous request's.
+func (s *sessionTools) setCurrent(current requestContext) (modeChanged bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	modeChanged = s.current.session.ID != 0 && s.current.searchMode != current.searchMode
 	s.current = current
+
+	return modeChanged
 }
 
 func (s *sessionTools) currentRequest() requestContext {
@@ -332,8 +337,8 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 		result, err := next(ctx, method, request)
 		if method == "tools/list" && err == nil {
 			if extra := request.GetExtra(); extra != nil && extra.TokenInfo != nil {
-				if current, ok := extra.TokenInfo.Extra[requestContextKey].(requestContext); ok && !current.searchMode {
-					hideFindTools(result)
+				if current, ok := extra.TokenInfo.Extra[requestContextKey].(requestContext); ok {
+					hideMetaTools(result, hiddenMetaTools(current.searchMode, m.enableDisable))
 				}
 			}
 		}
@@ -342,18 +347,48 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 	}
 }
 
-// hideFindTools removes toolgate_find_tools from a tools/list result: outside
-// search mode it isn't listed.
-func hideFindTools(result mcp.Result) {
+// hiddenMetaTools returns the meta tools a session in the given mode doesn't
+// list: toolgate_find_tools outside search mode, and the enable and disable
+// tools as the setting says.
+func hiddenMetaTools(searchMode bool, enableDisable string) map[string]bool {
+	hidden := map[string]bool{}
+
+	if !searchMode {
+		hidden[ToolFindTools] = true
+	}
+
+	if enableDisableHidden(searchMode, enableDisable) {
+		hidden[ToolEnableServer] = true
+		hidden[ToolDisableServer] = true
+	}
+
+	return hidden
+}
+
+// enableDisableHidden reports whether the enable and disable tools are
+// hidden in the mode under the setting.
+func enableDisableHidden(searchMode bool, setting string) bool {
+	switch setting {
+	case "always":
+		return false
+	case "never":
+		return true
+	default:
+		return searchMode
+	}
+}
+
+// hideMetaTools removes the hidden tools from a tools/list result.
+func hideMetaTools(result mcp.Result, hidden map[string]bool) {
 	list, ok := result.(*mcp.ListToolsResult)
-	if !ok {
+	if !ok || len(hidden) == 0 {
 		return
 	}
 
 	kept := make([]*mcp.Tool, 0, len(list.Tools))
 
 	for _, tool := range list.Tools {
-		if tool.Name != ToolFindTools {
+		if !hidden[tool.Name] {
 			kept = append(kept, tool)
 		}
 	}

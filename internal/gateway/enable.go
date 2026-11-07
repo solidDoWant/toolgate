@@ -66,6 +66,10 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 		return nil, EnableResult{}, errNoIdentity
 	}
 
+	if m.enableDisableHidden(current) {
+		return nil, EnableResult{}, hiddenEnableDisableError(ToolEnableServer)
+	}
+
 	template, err := m.catalog.Offered(input.Name)
 	if err != nil {
 		return nil, EnableResult{}, notOffered(input.Name, err)
@@ -198,6 +202,10 @@ func (m *metaTools) disableServer(ctx context.Context, request *mcp.CallToolRequ
 	current, ok := requestContextOf(request)
 	if !ok {
 		return nil, DisableResult{}, errNoIdentity
+	}
+
+	if m.enableDisableHidden(current) {
+		return nil, DisableResult{}, hiddenEnableDisableError(ToolDisableServer)
 	}
 
 	result := DisableResult{Name: input.Name}
@@ -739,4 +747,16 @@ func notOffered(name string, err error) error {
 
 func notInCatalog(name string) error {
 	return fmt.Errorf("Server `%s` isn't in your catalog. Call `%s` to see the servers you can use.", name, ToolListServers) //nolint:staticcheck // A sentence for the model.
+}
+
+// enableDisableHidden reports whether the request's session doesn't list the
+// enable and disable tools.
+func (m *metaTools) enableDisableHidden(current requestContext) bool {
+	return enableDisableHidden(current.searchMode, m.enableDisable)
+}
+
+// hiddenEnableDisableError is the refusal of a call to an enable or disable
+// tool this session doesn't list, such as from a cached tool list.
+func hiddenEnableDisableError(tool string) error {
+	return fmt.Errorf("`%s` isn't available in this session. Call `%s` to find tools, then call the tool you need: its server starts when you call it. If a server isn't allowed in your workspace, calling one of its tools asks for access.", tool, ToolFindTools) //nolint:staticcheck // A sentence for the model.
 }

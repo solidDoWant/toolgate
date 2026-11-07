@@ -6,6 +6,10 @@
 
 - The gateway now tells the model which servers it can use: a short list in the MCP instructions, and the same names in the descriptions of `toolgate_find_tools` and `toolgate_list_servers`. Write each template's `description` for the model.
 
+### Upgrade notes for admins
+
+- Sessions in tool search mode no longer list `toolgate_enable_server` and `toolgate_disable_server`. A call to a tool of an allowed server already turns the server on. A call to a tool of a server that the workspace blocks asks the user for access. To list the two tools in every mode, as before, set `config.metaTools.enableDisable` to `always`. See `docs/admin/tool-search.md`.
+
 ## 0.4.6
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes the database connection when the PostgreSQL client certificate changes. It also gives the web UI a new look.
@@ -18,6 +22,10 @@ To install toolgate:
 ### Upgrade notes for admins
 
 - If the gateway connects to PostgreSQL with a client certificate that expires after a short time, for example a cert-manager certificate that is valid for one hour, upgrade to this version. Versions 0.4.0 to 0.4.5 stop working when that certificate expires.
+
+### New
+
+- The Servers page of the web UI now shows the scope, the environments, the secrets that are needed and the workspace availability of each server you can use, and a detail page with its tools.
 
 ### Fixes
 

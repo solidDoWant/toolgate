@@ -137,6 +137,8 @@ A stop decision runs in a transaction that takes the same advisory lock as enabl
 
 **Locks.** Enable and the reconciler's stop decision take `pg_advisory_xact_lock(hashtextextended(<template_ns>/<template_name>/<scope_key>, 0))`. A request that changes a session's enabled set first locks its `sessions` row. The lock order is always the `sessions` row first, then the advisory lock. Ending a session takes only the `sessions` row lock.
 
+In tool search mode (phase 4) the gateway does not list the enable and disable tools by default: a call enables, so they only cost context. The setting `metaToolsEnableDisable` (`auto`, `always`, `never`) decides; see `SPEC.md`.
+
 **Enable** (`toolgate_enable_server`):
 1. Decide policy with the request's own identity. If refused, write `server.enable` (refuse, with the rule) and return an error naming the rule.
 2. Check that every `${secret:…}` the template names exists for the principal. If one is missing, return the AC-1-22 message, for example "Secret `github-token` isn't set. Run `toolgate secret set github-token`.", and write nothing else.
