@@ -209,7 +209,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	server.Handle(gateway.MCPPath, authenticator.Middleware(gateway.NewMCPHandler(gateway.MCPOptions{
+	mcpHandler := gateway.NewMCPHandler(gateway.MCPOptions{
 		Metrics:       metrics,
 		Database:      server.Database(),
 		Catalog:       templates,
@@ -231,7 +231,11 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		Embedder:             searchEmbedder,
 
 		ToolSearchSessionStarted: embeddingsDemand,
-	}), true))
+	})
+	server.Handle(gateway.MCPPath, authenticator.Middleware(mcpHandler, true))
+	// The GET streams end when shutdown starts, so their clients reconnect
+	// to another replica while requests in progress finish.
+	server.RegisterOnShutdown(mcpHandler.Shutdown)
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {
 		logger.Error("gateway failed to start", "error", err)
