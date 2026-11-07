@@ -274,6 +274,7 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 
 		if decision.Step == policy.StepWorkspaceScope {
 			entry.Reason = notInWorkspaceReason
+
 			switch {
 			case current.identity.Attestation != auth.AttestationAttested:
 				entry.Reason = notInUnverifiedReason
