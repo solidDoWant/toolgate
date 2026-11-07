@@ -234,6 +234,7 @@ func New(options Options, registrar Registrar) *UI {
 	u.Handle("GET /ui/sessions", User, http.HandlerFunc(u.sessions))
 	u.Handle("GET /ui/sessions/{id}", User, http.HandlerFunc(u.sessionPageHandler))
 	u.Handle("GET /ui/audit", User, http.HandlerFunc(u.audit))
+	u.Handle("GET /ui/audit/export", User, http.HandlerFunc(u.auditExport))
 	u.Handle("GET /ui/audit/events/{key}", User, http.HandlerFunc(u.auditEventPage))
 	u.Handle("GET /ui/audit/events/{key}/payload", User, http.HandlerFunc(u.auditEventPayload))
 

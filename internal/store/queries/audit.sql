@@ -66,6 +66,8 @@ WHERE (occurred_at, id) IN (
 -- name: ListAuditEventsPage :many
 -- Lists one page of audit events for the web UI, newest first. An empty
 -- filter matches everything. A null cursor starts at the newest event.
+-- types is the allowed event types (empty: all). outcome is empty,
+-- refused, error or approval.
 SELECT id, occurred_at, type, principal, workspace, session, attestation,
        server, tool, trace_id, request_id, details
 FROM audit_events
@@ -76,10 +78,71 @@ WHERE occurred_at >= @from_time::timestamptz
   AND (@session::text = '' OR session = @session)
   AND (@server::text = '' OR server = @server)
   AND (@tool::text = '' OR tool = @tool)
+  AND (cardinality(@types::text[]) = 0 OR type = ANY(@types::text[]))
+  AND (@outcome::text = ''
+       OR (@outcome::text = 'refused'
+           AND ((type = 'tool.decision' AND details->>'decision' = 'refuse')
+                OR type IN ('auth.refuse', 'access.deny', 'approval.deny')))
+       OR (@outcome::text = 'error'
+           AND ((type = 'tool.result' AND details->>'outcome' IS DISTINCT FROM 'ok')
+                OR type = 'instance.fail'))
+       OR (@outcome::text = 'approval' AND type LIKE 'approval.%'))
   AND (sqlc.narg(before_at)::timestamptz IS NULL
        OR (occurred_at, id) < (sqlc.narg(before_at)::timestamptz, @before_id::bigint))
 ORDER BY occurred_at DESC, id DESC
 LIMIT @page_size;
+
+-- name: CountAuditEvents :one
+-- Counts the events a filter matches, for the match count of the audit page.
+SELECT count(*)::bigint
+FROM audit_events
+WHERE occurred_at >= @from_time::timestamptz
+  AND occurred_at < @to_time::timestamptz
+  AND (@principal::text = '' OR principal = @principal)
+  AND (@workspace::text = '' OR workspace = @workspace)
+  AND (@session::text = '' OR session = @session)
+  AND (@server::text = '' OR server = @server)
+  AND (@tool::text = '' OR tool = @tool)
+  AND (cardinality(@types::text[]) = 0 OR type = ANY(@types::text[]))
+  AND (@outcome::text = ''
+       OR (@outcome::text = 'refused'
+           AND ((type = 'tool.decision' AND details->>'decision' = 'refuse')
+                OR type IN ('auth.refuse', 'access.deny', 'approval.deny')))
+       OR (@outcome::text = 'error'
+           AND ((type = 'tool.result' AND details->>'outcome' IS DISTINCT FROM 'ok')
+                OR type = 'instance.fail'))
+       OR (@outcome::text = 'approval' AND type LIKE 'approval.%'))
+;
+
+-- name: ListAuditFilterOptions :many
+-- Lists the distinct values of one filter field among the events of the
+-- time range that the principal filter allows, for the pickers of the audit
+-- page. kind is server, tool, workspace, session or principal.
+SELECT value::text AS value
+FROM (
+    SELECT DISTINCT CASE @kind::text
+        WHEN 'server' THEN server
+        WHEN 'tool' THEN tool
+        WHEN 'workspace' THEN workspace
+        WHEN 'session' THEN session
+        ELSE principal END AS value
+    FROM audit_events
+    WHERE occurred_at >= @from_time::timestamptz
+      AND occurred_at < @to_time::timestamptz
+      AND (@principal::text = '' OR principal = @principal)
+) AS options
+WHERE value <> ''
+ORDER BY value
+LIMIT 200;
+
+-- name: ListSessionPageIDs :many
+-- Returns the row IDs of the sessions with the given session IDs, for links
+-- from the audit page. A non-empty principal limits the result to that
+-- principal's sessions.
+SELECT id, session_id
+FROM sessions
+WHERE session_id = ANY(@session_ids::text[])
+  AND (@principal::text = '' OR principal = @principal);
 
 -- name: GetAuditEvent :one
 -- Returns one audit event by its primary key, without its payload.
@@ -105,3 +168,18 @@ WHERE type = 'approval.request'
   AND details->>'approval' = @approval_id::text
 ORDER BY occurred_at, id
 LIMIT 1;
+
+-- name: ListRelatedAuditEvents :many
+-- Lists the events of the same request or trace as an event, oldest first,
+-- within a day of it. A non-empty principal limits the result to that
+-- principal's events.
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at >= @from_time::timestamptz
+  AND occurred_at < @to_time::timestamptz
+  AND (@principal::text = '' OR principal = @principal)
+  AND ((@request_id::text <> '' AND request_id = @request_id)
+       OR (@trace_id::text <> '' AND trace_id = @trace_id))
+ORDER BY occurred_at, id
+LIMIT 50;

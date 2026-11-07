@@ -11,6 +11,57 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAuditEvents = `-- name: CountAuditEvents :one
+SELECT count(*)::bigint
+FROM audit_events
+WHERE occurred_at >= $1::timestamptz
+  AND occurred_at < $2::timestamptz
+  AND ($3::text = '' OR principal = $3)
+  AND ($4::text = '' OR workspace = $4)
+  AND ($5::text = '' OR session = $5)
+  AND ($6::text = '' OR server = $6)
+  AND ($7::text = '' OR tool = $7)
+  AND (cardinality($8::text[]) = 0 OR type = ANY($8::text[]))
+  AND ($9::text = ''
+       OR ($9::text = 'refused'
+           AND ((type = 'tool.decision' AND details->>'decision' = 'refuse')
+                OR type IN ('auth.refuse', 'access.deny', 'approval.deny')))
+       OR ($9::text = 'error'
+           AND ((type = 'tool.result' AND details->>'outcome' IS DISTINCT FROM 'ok')
+                OR type = 'instance.fail'))
+       OR ($9::text = 'approval' AND type LIKE 'approval.%'))
+`
+
+type CountAuditEventsParams struct {
+	FromTime  pgtype.Timestamptz
+	ToTime    pgtype.Timestamptz
+	Principal string
+	Workspace string
+	Session   string
+	Server    string
+	Tool      string
+	Types     []string
+	Outcome   string
+}
+
+// Counts the events a filter matches, for the match count of the audit page.
+func (q *Queries) CountAuditEvents(ctx context.Context, arg CountAuditEventsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countAuditEvents,
+		arg.FromTime,
+		arg.ToTime,
+		arg.Principal,
+		arg.Workspace,
+		arg.Session,
+		arg.Server,
+		arg.Tool,
+		arg.Types,
+		arg.Outcome,
+	)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const deleteAuditEventsBefore = `-- name: DeleteAuditEventsBefore :execrows
 DELETE FROM audit_events AS target
 WHERE (target.occurred_at, target.id) IN (
@@ -216,10 +267,19 @@ WHERE occurred_at >= $1::timestamptz
   AND ($5::text = '' OR session = $5)
   AND ($6::text = '' OR server = $6)
   AND ($7::text = '' OR tool = $7)
-  AND ($8::timestamptz IS NULL
-       OR (occurred_at, id) < ($8::timestamptz, $9::bigint))
+  AND (cardinality($8::text[]) = 0 OR type = ANY($8::text[]))
+  AND ($9::text = ''
+       OR ($9::text = 'refused'
+           AND ((type = 'tool.decision' AND details->>'decision' = 'refuse')
+                OR type IN ('auth.refuse', 'access.deny', 'approval.deny')))
+       OR ($9::text = 'error'
+           AND ((type = 'tool.result' AND details->>'outcome' IS DISTINCT FROM 'ok')
+                OR type = 'instance.fail'))
+       OR ($9::text = 'approval' AND type LIKE 'approval.%'))
+  AND ($10::timestamptz IS NULL
+       OR (occurred_at, id) < ($10::timestamptz, $11::bigint))
 ORDER BY occurred_at DESC, id DESC
-LIMIT $10
+LIMIT $12
 `
 
 type ListAuditEventsPageParams struct {
@@ -230,6 +290,8 @@ type ListAuditEventsPageParams struct {
 	Session   string
 	Server    string
 	Tool      string
+	Types     []string
+	Outcome   string
 	BeforeAt  pgtype.Timestamptz
 	BeforeID  int64
 	PageSize  int32
@@ -252,6 +314,8 @@ type ListAuditEventsPageRow struct {
 
 // Lists one page of audit events for the web UI, newest first. An empty
 // filter matches everything. A null cursor starts at the newest event.
+// types is the allowed event types (empty: all). outcome is empty,
+// refused, error or approval.
 func (q *Queries) ListAuditEventsPage(ctx context.Context, arg ListAuditEventsPageParams) ([]ListAuditEventsPageRow, error) {
 	rows, err := q.db.Query(ctx, listAuditEventsPage,
 		arg.FromTime,
@@ -261,6 +325,8 @@ func (q *Queries) ListAuditEventsPage(ctx context.Context, arg ListAuditEventsPa
 		arg.Session,
 		arg.Server,
 		arg.Tool,
+		arg.Types,
+		arg.Outcome,
 		arg.BeforeAt,
 		arg.BeforeID,
 		arg.PageSize,
@@ -289,6 +355,60 @@ func (q *Queries) ListAuditEventsPage(ctx context.Context, arg ListAuditEventsPa
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAuditFilterOptions = `-- name: ListAuditFilterOptions :many
+SELECT value::text AS value
+FROM (
+    SELECT DISTINCT CASE $1::text
+        WHEN 'server' THEN server
+        WHEN 'tool' THEN tool
+        WHEN 'workspace' THEN workspace
+        WHEN 'session' THEN session
+        ELSE principal END AS value
+    FROM audit_events
+    WHERE occurred_at >= $2::timestamptz
+      AND occurred_at < $3::timestamptz
+      AND ($4::text = '' OR principal = $4)
+) AS options
+WHERE value <> ''
+ORDER BY value
+LIMIT 200
+`
+
+type ListAuditFilterOptionsParams struct {
+	Kind      string
+	FromTime  pgtype.Timestamptz
+	ToTime    pgtype.Timestamptz
+	Principal string
+}
+
+// Lists the distinct values of one filter field among the events of the
+// time range that the principal filter allows, for the pickers of the audit
+// page. kind is server, tool, workspace, session or principal.
+func (q *Queries) ListAuditFilterOptions(ctx context.Context, arg ListAuditFilterOptionsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listAuditFilterOptions,
+		arg.Kind,
+		arg.FromTime,
+		arg.ToTime,
+		arg.Principal,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		items = append(items, value)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -477,6 +597,124 @@ func (q *Queries) ListExpiredAuditEvents(ctx context.Context, arg ListExpiredAud
 	for rows.Next() {
 		var i ListExpiredAuditEventsRow
 		if err := rows.Scan(&i.OccurredAt, &i.ID, &i.PayloadRef); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRelatedAuditEvents = `-- name: ListRelatedAuditEvents :many
+SELECT id, occurred_at, type, principal, workspace, session, attestation,
+       server, tool, trace_id, request_id, details
+FROM audit_events
+WHERE occurred_at >= $1::timestamptz
+  AND occurred_at < $2::timestamptz
+  AND ($3::text = '' OR principal = $3)
+  AND (($4::text <> '' AND request_id = $4)
+       OR ($5::text <> '' AND trace_id = $5))
+ORDER BY occurred_at, id
+LIMIT 50
+`
+
+type ListRelatedAuditEventsParams struct {
+	FromTime  pgtype.Timestamptz
+	ToTime    pgtype.Timestamptz
+	Principal string
+	RequestID string
+	TraceID   string
+}
+
+type ListRelatedAuditEventsRow struct {
+	ID          int64
+	OccurredAt  pgtype.Timestamptz
+	Type        string
+	Principal   string
+	Workspace   string
+	Session     string
+	Attestation string
+	Server      string
+	Tool        string
+	TraceID     string
+	RequestID   string
+	Details     []byte
+}
+
+// Lists the events of the same request or trace as an event, oldest first,
+// within a day of it. A non-empty principal limits the result to that
+// principal's events.
+func (q *Queries) ListRelatedAuditEvents(ctx context.Context, arg ListRelatedAuditEventsParams) ([]ListRelatedAuditEventsRow, error) {
+	rows, err := q.db.Query(ctx, listRelatedAuditEvents,
+		arg.FromTime,
+		arg.ToTime,
+		arg.Principal,
+		arg.RequestID,
+		arg.TraceID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRelatedAuditEventsRow{}
+	for rows.Next() {
+		var i ListRelatedAuditEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OccurredAt,
+			&i.Type,
+			&i.Principal,
+			&i.Workspace,
+			&i.Session,
+			&i.Attestation,
+			&i.Server,
+			&i.Tool,
+			&i.TraceID,
+			&i.RequestID,
+			&i.Details,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionPageIDs = `-- name: ListSessionPageIDs :many
+SELECT id, session_id
+FROM sessions
+WHERE session_id = ANY($1::text[])
+  AND ($2::text = '' OR principal = $2)
+`
+
+type ListSessionPageIDsParams struct {
+	SessionIds []string
+	Principal  string
+}
+
+type ListSessionPageIDsRow struct {
+	ID        int64
+	SessionID string
+}
+
+// Returns the row IDs of the sessions with the given session IDs, for links
+// from the audit page. A non-empty principal limits the result to that
+// principal's sessions.
+func (q *Queries) ListSessionPageIDs(ctx context.Context, arg ListSessionPageIDsParams) ([]ListSessionPageIDsRow, error) {
+	rows, err := q.db.Query(ctx, listSessionPageIDs, arg.SessionIds, arg.Principal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSessionPageIDsRow{}
+	for rows.Next() {
+		var i ListSessionPageIDsRow
+		if err := rows.Scan(&i.ID, &i.SessionID); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -131,11 +131,15 @@ When a call or an enable needs a grant, the refusal links to this form, filled w
 
 `/ui/audit` lists audit events, newest first, 100 on a page. A user sees only their own events. An admin sees all events.
 
-You can filter by principal, workspace, session, server and tool. Each filter must match exactly. An admin can also filter by principal. For a user, the gateway ignores the principal filter.
+Each row is one line: when (for example "3 min ago", with the exact UTC time on hover), an outcome badge (ok, refused, error, pending, approved or denied), a short sentence for what happened, who did it, the workspace (with a "verified" badge when it is verified), the session, and the server and tool. People show as on the other pages. Click the event sentence, the user, workspace, session, server or tool in a row to filter by it. The session links to its page when the session is still open.
 
-You can also set a time range. The default is the last 24 hours. A range can be at most 31 days, so a query reads at most two monthly partitions of the audit table. A longer range gives an error. All times are in UTC.
+You filter with lists, not free text. The lists for server, tool, workspace, session and (for admins) user hold the values found in the chosen time range. You can also filter by outcome (refused, errors, approvals), by category (tool calls, access and scope changes, sign-ins, server lifecycle) and by exact event type. The event type list is a multi-select with a readable name for each type and the raw type on hover. With a category and event types, the filter keeps the chosen types that belong to the category. Each filter must match exactly. For a user, the gateway ignores the user filter and shows only that user's events. The filters are in the URL (`?type=a&type=b`), so you can share a link.
 
-The link "Open" on the row of an open session shows one event at `/ui/audit/events/` followed by a key: the time in Unix microseconds, a hyphen, and the event ID. The event is shown to its principal and to admins. Anyone else gets 404, so the key tells them nothing.
+The time presets are the last hour, the last 24 hours (the default), today and the last 7 days. For a custom range, give "From" and "To" in UTC. A range can be at most 31 days, so a query reads at most two monthly partitions of the audit table. A longer range gives an error.
+
+The page shows how many events match. "Export as JSON Lines" downloads all events of the current filter, newest first, one JSON object per line. It follows the same rules as the page: a user gets only their own events.
+
+The link "Details" on a row shows one event at `/ui/audit/events/` followed by a key: the time in Unix microseconds, a hyphen, and the event ID. The page shows the summary, the fields as a list, the payload (when stored), the stored JSON (collapsed) and the related events of the same request or trace. The event is shown to its principal and to admins. Anyone else gets 404, so the key tells them nothing.
 
 When audit payloads are on, the event page also shows the payload of the event. The gateway reads a payload from S3 itself and sends it to the browser. It makes no presigned URLs, so browsers do not need to reach S3. The page shows the first 1 MiB of the payload as text. Under it, "Download the payload" gives `/ui/audit/events/` followed by the key and `/payload`. That link downloads the whole payload as a JSON file. It has the headers `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`. The same people can open it as can open the event page.
 
