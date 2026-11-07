@@ -25,7 +25,7 @@ const ReservedServerName = "toolgate"
 
 const reservedNameReason = "The server name `" + ReservedServerName + "` is reserved for the built-in server."
 
-// Curation bounds (docs/design/phase-4.md §6). The CRD's CEL rules check the
+// Curation bounds. The CRD's CEL rules check the
 // same ones.
 const (
 	maxFilterNames       = 512

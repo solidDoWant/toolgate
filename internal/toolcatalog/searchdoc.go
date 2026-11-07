@@ -15,7 +15,7 @@ const MaxSearchTextBytes = 4 << 10
 
 // SearchParts are the four weighted parts of a tool's search document, as
 // plain text. The database turns each into a weighted tsvector, with weights
-// A, B, C and C in this order (docs/design/phase-4.md §5).
+// A, B, C and C in this order.
 type SearchParts struct {
 	// Name is the exposed name and the upstream name with their word
 	// boundaries turned into spaces.

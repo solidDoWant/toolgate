@@ -303,7 +303,7 @@ func TestSVIDOfExactly2048BytesIsAccepted(t *testing.T) {
 	waitForBundle(t, f, key.sign(t, svidClaims{subject: id}))
 }
 
-// Row 79: a failing fetch keeps the last good bundle for 24 h.
+// A failing fetch keeps the last good bundle for 24 h.
 func TestLastGoodBundleVerifiesFor24Hours(t *testing.T) {
 	t.Parallel()
 
@@ -347,7 +347,7 @@ func TestSVIDsAreRefusedUntilTheFirstFetchSucceeds(t *testing.T) {
 	waitForBundle(t, f, token)
 }
 
-// Row 80: an unknown key ID fetches the bundle once, at most every 30 s.
+// An unknown key ID fetches the bundle once, at most every 30 s.
 func TestRotatedKeyFetchesTheBundleAtMostEvery30Seconds(t *testing.T) {
 	t.Parallel()
 
@@ -378,7 +378,7 @@ func TestRotatedKeyFetchesTheBundleAtMostEvery30Seconds(t *testing.T) {
 	assert.Equal(t, fetches+1, endpoint.fetches.Load(), "one fetch for the unknown key ID")
 }
 
-// Row 82: an IdP token with a spiffe:// subject goes to the SPIFFE
+// An IdP token with a spiffe:// subject goes to the SPIFFE
 // verifier and is refused.
 func TestIdPTokenWithSPIFFESubjectIsRefused(t *testing.T) {
 	t.Parallel()
@@ -394,7 +394,7 @@ func TestIdPTokenWithSPIFFESubjectIsRefused(t *testing.T) {
 	}
 }
 
-// Row 84: trust domains are read at start, so one left out of the
+// Trust domains are read at start, so one left out of the
 // configuration refuses its SVIDs.
 func TestRemovedTrustDomainIsRefused(t *testing.T) {
 	t.Parallel()

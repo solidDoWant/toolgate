@@ -175,7 +175,7 @@ func TestReconcilerIgnoresUnwatchedNamespaces(t *testing.T) {
 
 // A valid template edited into an invalid one isn't offered, new enables get
 // the validation reason, and running instances keep the last valid
-// generation (docs/design/phase-1.md §4, "Template becomes invalid").
+// generation.
 func TestReconcilerKeepsLastValidGenerationForRunningInstances(t *testing.T) {
 	template := newTemplate("github", catalog.ScopePerUser, serviceResource)
 	template.Spec.Description = "generation 1"

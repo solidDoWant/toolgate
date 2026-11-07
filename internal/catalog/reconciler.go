@@ -65,8 +65,7 @@ func CacheNamespaces(namespaces []string) map[string]cache.Config {
 
 // SetupWithManager registers the reconciler with mgr. Unless the validator
 // already has a mapper, it reads the cluster's REST mappings once, here, so
-// a CRD installed after the gateway starts needs a gateway restart
-// (docs/design/phase-2.md §7).
+// a CRD installed after the gateway starts needs a gateway restart.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if len(r.Namespaces) == 0 {
 		return fmt.Errorf("catalog: no namespaces to watch")

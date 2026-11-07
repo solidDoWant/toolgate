@@ -18,7 +18,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
 
-// WorkspacesPath is the Workspaces page (docs/design/phase-3.md §10).
+// WorkspacesPath is the Workspaces page.
 const WorkspacesPath = "/ui/workspaces"
 
 // unverifiedDefaultNote is the defaults form's warning about sessions that

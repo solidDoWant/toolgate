@@ -32,7 +32,7 @@ func (e *uiEnv) requestScope(t *testing.T, target gateway.ScopeTarget, items ...
 
 // The approval page shows a scope request with its target, a before-and-
 // after list and the asking session, and applies it only after a fresh
-// step-up (docs/design/phase-4.md §7, "Nothing changes until approval").
+// step-up.
 func TestScopeRequestApprovalPage(t *testing.T) {
 	env := startUIEnv(t, "admins")
 	env.addGrantTemplates()

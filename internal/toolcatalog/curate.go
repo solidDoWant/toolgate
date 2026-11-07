@@ -1,6 +1,6 @@
 // Package toolcatalog curates the tools of a server: it hides tools, renames
 // them and rewrites their descriptions as the server's template says, and it
-// checks the result (docs/design/phase-4.md §6).
+// checks the result.
 package toolcatalog
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 )
 
-// Tool list limits (docs/design/phase-1.md §3).
+// Tool list limits.
 const (
 	// MaxTools is the most tools one server may list.
 	MaxTools = 512

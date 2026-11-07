@@ -26,7 +26,7 @@ import (
 // SPIFFEAudience is the audience a JWT-SVID must carry for the gateway.
 const SPIFFEAudience = "toolgate"
 
-// Bundle fetching and SVID limits (docs/design/phase-3.md §4).
+// Bundle fetching and SVID limits.
 const (
 	spiffeScheme = "spiffe://"
 	// MaxSPIFFEIDBytes is the SPIFFE limit on the length of an ID.

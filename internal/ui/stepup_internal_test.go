@@ -67,7 +67,7 @@ func TestSessionFreshFor(t *testing.T) {
 	}
 }
 
-// [design row 63] A POST whose sign-in is older than 5 minutes changes
+// A POST whose sign-in is older than 5 minutes changes
 // nothing and redirects to a step-up that returns to the form.
 func TestRequireStepUp(t *testing.T) {
 	tests := []struct {

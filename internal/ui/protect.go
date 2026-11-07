@@ -10,7 +10,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/secrets"
 )
 
-// Response headers and limits of every UI route (docs/design/phase-2.md §5).
+// Response headers and limits of every UI route.
 const (
 	// ContentSecurityPolicy allows only the gateway's own scripts, styles
 	// and images, and no framing by any site.

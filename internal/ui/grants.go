@@ -65,7 +65,7 @@ func (u *UI) registerGrants() {
 
 // GrantLink returns the function that builds the link of a policy refusal
 // that needs a grant: the grant form at publicURL, filled with the server,
-// the tool and the session (docs/design/phase-2.md §4, "Links").
+// the tool and the session.
 func GrantLink(publicURL string) func(server, tool, session string) string {
 	base := strings.TrimSuffix(publicURL, "/") + NewGrantPath
 
