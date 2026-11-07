@@ -87,6 +87,11 @@ func (ca *certAuthority) issue(tb testing.TB, commonName string, usage x509.ExtK
 }
 
 func (ca *certAuthority) issueE(commonName string, usage x509.ExtKeyUsage, hosts ...string) (keyPair, error) {
+	return ca.issueUntilE(time.Now().Add(24*time.Hour), commonName, usage, hosts...)
+}
+
+// issueUntilE is issueE for a certificate that expires at notAfter.
+func (ca *certAuthority) issueUntilE(notAfter time.Time, commonName string, usage x509.ExtKeyUsage, hosts ...string) (keyPair, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return keyPair{}, err
@@ -101,7 +106,7 @@ func (ca *certAuthority) issueE(commonName string, usage x509.ExtKeyUsage, hosts
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
+		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{usage},
 	}
