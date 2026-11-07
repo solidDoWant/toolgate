@@ -33,9 +33,11 @@ func (q *Queries) AddInstanceRepair(ctx context.Context, arg AddInstanceRepairPa
 
 const countLiveInstances = `-- name: CountLiveInstances :one
 SELECT count(*) FROM instances
-WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped')
+WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped') AND namespace <> ''
 `
 
+// Remote servers' instances (no namespace) run nothing and count toward no
+// limit.
 func (q *Queries) CountLiveInstances(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countLiveInstances)
 	var count int64
@@ -46,7 +48,7 @@ func (q *Queries) CountLiveInstances(ctx context.Context) (int64, error) {
 const countLiveInstancesOfOwner = `-- name: CountLiveInstancesOfOwner :one
 SELECT count(*) FROM instances
 WHERE owner_principal = $1 AND owner_principal <> ''
-  AND desired = 'running' AND status NOT IN ('stopping', 'stopped')
+  AND desired = 'running' AND status NOT IN ('stopping', 'stopped') AND namespace <> ''
 `
 
 func (q *Queries) CountLiveInstancesOfOwner(ctx context.Context, ownerPrincipal string) (int64, error) {

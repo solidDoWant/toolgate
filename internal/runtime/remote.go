@@ -175,9 +175,10 @@ func withRemoteAuth(httpClient *http.Client, auth *RemoteAuth) *http.Client {
 	return &copied
 }
 
-// credentialRefusedReason is the failure reason of a remote instance whose
-// server refused the user's credential.
-func credentialRefusedReason(template *v1alpha1.MCPServerTemplate) string {
+// CredentialRefusedReason is the failure reason of a remote instance, and
+// the message of a refused call, when the server refuses the user's
+// credential. It names the secret to set again, never a header value.
+func CredentialRefusedReason(template *v1alpha1.MCPServerTemplate) string {
 	names := SecretNamesInHeaders(template)
 	if len(names) == 0 {
 		return "The remote server refused the request (401 or 403)."
@@ -289,7 +290,7 @@ func (s *Starter) checkRemote(ctx context.Context, instance db.Instance, templat
 
 	switch {
 	case errors.Is(err, ErrCredentialRefused):
-		return s.fail(ctx, instance, StatusStarting, credentialRefusedReason(template))
+		return s.fail(ctx, instance, StatusStarting, CredentialRefusedReason(template))
 	case errors.Is(err, ErrToolListTooLarge):
 		return s.fail(ctx, instance, StatusStarting, toolListTooLargeReason)
 	case err != nil:

@@ -231,6 +231,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		Embedder:             searchEmbedder,
 
 		ToolSearchSessionStarted: embeddingsDemand,
+		Secrets:                  runtime.BrokerSecrets(userSecrets(broker)),
 	}), true))
 
 	if err := registerOTLPIngest(server, cfg, authenticator, logger); err != nil {

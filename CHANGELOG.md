@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The gateway connects to remote MCP servers, which run outside toolgate. It sends each user's own key in a header that the template fills in from the user's secrets. If the secret is missing, or the server refuses it, the user gets a message with the `toolgate secret set` command. See "Remote servers" in `docs/admin/templates-and-rules.md`.
+
 ## 0.4.4
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes sign-in failures when several Claude Code sessions start at the same time, and two problems in the web UI. The gateway can now accept access tokens from more than one OIDC issuer. The Helm chart also gets values for the client ID and scopes of the `toolgate` command.
