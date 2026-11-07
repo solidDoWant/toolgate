@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/url"
 	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/client/attestation"
@@ -61,7 +60,7 @@ func attestationSource() attestation.Source {
 func configure(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("configure", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	flags.String("gateway", "", "gateway URL")
+	flags.String("gateway", "", "gateway URL or host[:port]; https:// is added when there is no scheme")
 	flags.String("token-command", "", "command that prints the user's access token (as "+tokencommand.Env+")")
 	flags.String("attestation-token-file", "", "path of the workload token file (as "+attestation.TokenFileEnv+")")
 	flags.String("attestation-token-request", "", "directory for a TokenRequest token (as "+attestation.TokenRequestEnv+")")
@@ -101,7 +100,7 @@ func configure(args []string, stdout, stderr io.Writer) int {
 
 		switch set.Name {
 		case "gateway":
-			settings.Gateway = strings.TrimSuffix(value, "/")
+			settings.Gateway = value
 		case "token-command":
 			settings.TokenCommand = value
 		case "attestation-token-file":
@@ -111,7 +110,7 @@ func configure(args []string, stdout, stderr io.Writer) int {
 		}
 	})
 
-	if err := validateConfigured(settings); err != nil {
+	if err := validateConfigured(&settings); err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate configure: %v\n", err)
 
 		return 2
@@ -128,12 +127,14 @@ func configure(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func validateConfigured(settings login.Settings) error {
+func validateConfigured(settings *login.Settings) error {
 	if settings.Gateway != "" {
-		parsed, err := url.Parse(settings.Gateway)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return fmt.Errorf("gateway URL %q is not an http or https URL", settings.Gateway)
+		gateway, err := login.NormalizeGatewayURL(settings.Gateway)
+		if err != nil {
+			return err
 		}
+
+		settings.Gateway = gateway
 	}
 
 	if settings.AttestationTokenFile != "" && settings.AttestationTokenRequest != "" {
