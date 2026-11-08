@@ -69,6 +69,16 @@
     @apply m-0 block rounded-md border border-muted bg-surface px-2.5 py-1.5 text-sm text-text;
   }
 
+  /* A filter bar's controls (selects, popover buttons, the Filter button)
+     share one height, so they sit on one baseline. */
+  form[role="search"] .control,
+  form[role="search"] .btn {
+    @apply box-border h-9 items-center;
+  }
+  form[role="search"] summary.control {
+    @apply flex;
+  }
+
   /* The segmented control: radio buttons drawn as one row of buttons. */
   .segmented {
     @apply m-0 inline-flex overflow-hidden rounded-md border border-muted p-0;
@@ -173,4 +183,17 @@
   dialog.modal::backdrop {
     background: rgb(0 0 0 / 0.45);
   }
+}
+
+/* The copy button next to a shortened ID: icon-sized, on the ID's line. It is
+   outside a layer so it wins over the base button style. */
+button.copy-id-button {
+  display: inline-flex;
+  padding: 0.125rem;
+  border: 0;
+  background: transparent;
+  line-height: 1;
+}
+button.copy-id-button:hover {
+  background: var(--neutral-bg);
 }

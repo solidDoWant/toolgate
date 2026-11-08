@@ -55,11 +55,11 @@
 {{define "nav-group"}}<div><p class="m-0 mb-1 px-2 text-xs font-semibold tracking-wider text-muted uppercase">{{.}}</p><ul class="m-0 flex list-none flex-col gap-0.5 p-0">{{end}}
 {{define "nav-link"}}<li><a href="{{.Href}}" class="flex items-center justify-between rounded-md px-2 py-1.5 text-sm text-text no-underline hover:bg-neutral aria-[current=page]:bg-accent aria-[current=page]:font-semibold aria-[current=page]:text-accent-text"{{if .Current}} aria-current="page"{{end}}>{{.Label}}{{if .Count}} <span class="rounded-full bg-warn px-2 text-xs font-semibold text-warn-text" title="{{.Count}} waiting for you">{{.Count}}</span>{{end}}</a></li>{{end}}
 
-{{define "availability"}}<div>Verified workspace without a list: <span class="badge {{if .VerifiedDefault}}badge-ok{{else}}badge-bad{{end}}">{{if .VerifiedDefault}}allowed{{else}}blocked{{end}}</span></div>
-{{range .Lists}}<div>Workspace {{template "ws" (workspace .Workspace)}}: <span class="badge {{if .Allowed}}badge-ok{{else}}badge-bad{{end}}">{{if .Allowed}}allowed{{else}}blocked{{end}}</span></div>
-{{end}}<div>Unverified session: <span class="badge {{if .Unverified}}badge-ok{{else}}badge-bad{{end}}">{{if .Unverified}}allowed{{else}}blocked{{end}}</span></div>
+{{define "availability"}}<div>Verified workspaces: <span class="badge {{if .VerifiedDefault}}badge-ok{{else}}badge-bad{{end}}">{{if .VerifiedDefault}}allowed{{else}}blocked{{end}}</span></div>
+{{range .Lists}}<div>{{template "ws" (workspace .Workspace)}}: <span class="badge {{if .Allowed}}badge-ok{{else}}badge-bad{{end}}">{{if .Allowed}}allowed{{else}}blocked{{end}}</span></div>
+{{end}}<div>Other machines: <span class="badge {{if .Unverified}}badge-ok{{else}}badge-bad{{end}}">{{if .Unverified}}allowed{{else}}blocked{{end}}</span></div>
 <div><a href="/ui/workspaces">Change on the Workspaces page</a></div>{{end}}
 {{define "who"}}<span class="who" title="{{.Hover}}">{{.Text}}</span>{{if .Copyable}} <details class="copy-id"><summary>ID</summary><input readonly size="24" aria-label="Full ID" value="{{.Raw}}"></details>{{end}}{{end}}
 {{define "ws"}}<span title="{{.ID}}">{{.Label}}</span>{{end}}
 {{define "outcome"}}<span class="badge {{.Class}}">{{.Label}}</span>{{end}}
-{{define "access"}}{{if .Everyone}}Everyone{{else}}{{range .UserPatterns}}<div>Users <code>{{.}}</code></div>{{end}}{{range .GroupPatterns}}<div>Group <code>{{.}}</code></div>{{end}}{{if not (or .UserPatterns .GroupPatterns)}}Listed users and groups{{end}}{{end}}{{end}}
+{{define "access"}}{{if .Everyone}}Everyone{{else}}<span class="inline-flex flex-wrap gap-1">{{range .UserPatterns}}{{template "chip" (dict "Label" "users" "Value" .)}} {{end}}{{range .GroupPatterns}}{{template "chip" (dict "Label" "group" "Value" .)}} {{end}}{{if not (or .UserPatterns .GroupPatterns)}}Only the users and groups the admin named{{end}}</span>{{end}}{{end}}

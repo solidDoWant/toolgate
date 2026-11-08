@@ -1,36 +1,35 @@
+{{define "heading"}}<p class="m-0 mb-2 text-sm"><a href="/ui/servers">All servers</a></p>
+{{template "page-header" (dict "Title" .Data.Server.Name "Summary" .Data.Server.Description)}}{{end}}
 {{define "content"}}
 {{with .Data}}{{with .Server}}
-<p><a href="/ui/servers">All servers</a></p>
-<p>{{.Description}}</p>
-<ul class="facts">
-<li>Scope: <span class="badge badge-neutral">{{.Scope}}</span> {{scopeHelp .Scope}}</li>
-<li>Access: {{template "access" .}}</li>
-<li>Environments: <span class="badge {{environmentBadge .Environments}}">{{.Environments}}</span> {{environmentHelp .Environments}}</li>
-<li>Kind: {{if .Remote}}remote{{else}}launched{{end}}</li>
-<li>Status: <span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</li>
-{{range .Secrets}}<li>Needs secret <code>{{.Name}}</code>: {{if .Set}}set{{else}}not set{{end}}</li>
-{{end}}</ul>
+<dl class="mb-6 grid grid-cols-1 gap-4 rounded-lg border border-border bg-surface p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+<div><dt class="text-muted">Scope</dt><dd class="m-0"><span class="badge badge-neutral">{{.Scope}}</span> {{scopeHelp .Scope}}</dd></div>
+<div><dt class="text-muted">Access</dt><dd class="m-0">{{template "access" .}}</dd></div>
+<div><dt class="text-muted">Environments</dt><dd class="m-0"><span class="badge {{environmentBadge .Environments}}">{{.Environments}}</span> {{environmentHelp .Environments}}</dd></div>
+<div><dt class="text-muted">Kind</dt><dd class="m-0">{{if .Remote}}remote{{else}}launched{{end}}</dd></div>
+<div><dt class="text-muted">Status</dt><dd class="m-0">{{template "badge" .Status}}{{with .Reason}} {{.}}{{end}}</dd></div>
+{{range .Secrets}}<div><dt class="text-muted">Secret <code>{{.Name}}</code></dt><dd class="m-0">{{if .Set}}set{{else}}not set{{end}}</dd></div>
+{{end}}</dl>
 {{end}}
-{{if .Workspaces}}<h2>In your workspaces</h2>
+{{if .Workspaces}}{{template "card-start" (dict "Title" "In your workspaces")}}
 {{template "availability" .Server.Availability}}
+{{template "card-end"}}
 {{end}}
-<h2>Tools</h2>
+<h2 class="m-0 mb-2 text-base font-semibold">Tools</h2>
 {{if .Tools}}
-<div class="table-wrap"><table id="tools">
-<thead><tr><th>Tool</th><th>Description</th><th>Notes</th></tr></thead>
-<tbody>
+{{template "table-start" (dict "ID" "tools" "Label" "Tools" "Columns" (list "Tool" "Description" "Notes"))}}
 {{range .Tools}}<tr>
-<td><code>{{.Name}}</code></td><td>{{.Description}}</td>
-<td>{{if .Blocked}}<span class="badge badge-bad">blocked</span> {{end}}{{if .ApprovalRequired}}<span class="badge badge-warn">needs approval</span> {{end}}{{with .Environments}}<span class="badge {{environmentBadge .}}" title="{{environmentHelp .}}">{{.}}</span>{{end}}</td>
+<td data-label="Tool"><code>{{.Name}}</code></td>
+<td data-label="Description">{{.Description}}</td>
+<td data-label="Notes">{{if .Blocked}}<span class="badge badge-bad">blocked</span> {{end}}{{if .ApprovalRequired}}<span class="badge badge-warn">needs approval</span> {{end}}{{with .Environments}}<span class="badge {{environmentBadge .}}" title="{{environmentHelp .}}">{{.}}</span>{{end}}</td>
 </tr>
-{{end}}</tbody>
-</table></div>
+{{end}}{{template "table-end"}}
 {{else}}
-<p class="empty">The tool list is not known yet.{{if .Server.Remote}} It shows your own list once you are connected.{{end}}</p>
+{{if .Server.Remote}}{{template "empty-state" (dict "Text" "The tool list is not known yet. It shows your own list once you are connected.")}}{{else}}{{template "empty-state" (dict "Text" "The tool list is not known yet.")}}{{end}}
 {{end}}
-<h2>Allow it from a terminal</h2>
-<p>Click a command to select it, then copy it.</p>
+{{template "card-start" (dict "Title" "Allow it from a terminal" "Summary" "Click a command to select it, then copy it.")}}
 <pre class="command">toolgate workspace allow {{.Server.Name}}</pre>
 <pre class="command">toolgate workspace allow --unverified {{.Server.Name}}</pre>
+{{template "card-end"}}
 {{end}}
 {{end}}

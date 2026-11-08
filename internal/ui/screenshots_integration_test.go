@@ -63,10 +63,21 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 	env.insertSession(t, "dev-session", []string{"toolgate-admins", "dev"})
 	env.insertSessionOf(t, "erin", "empty-session", []string{"dev"})
 
-	for index, event := range []struct{ eventType, tool string }{
-		{"tool.call", "search_issues"}, {"tool.call", "create_pull_request"}, {"tool.deny", "delete_repo"},
+	for index, event := range []struct{ tool, details string }{
+		{"search_issues", `{"decision":"allow"}`}, {"create_pull_request", `{"decision":"allow"}`}, {"delete_repo", `{"decision":"refuse","rule":"no-deletes"}`},
 	} {
-		env.insertCallEvent(t, event.eventType, "dave", "laptop-7f3a", "github", event.tool, `{}`, now.Add(-time.Duration(index+1)*7*time.Minute))
+		env.insertCallEvent(t, "tool.decision", "dave", "laptop-7f3a", "github", event.tool, event.details, now.Add(-time.Duration(index+1)*7*time.Minute))
+	}
+
+	for index, event := range []struct{ eventType, tool, details string }{
+		{"tool.decision", "delete_repo", `{"decision":"refuse","rule":"no-deletes"}`},
+		{"tool.result", "search_issues", `{"outcome":"ok","duration_ms":420}`},
+		{"tool.decision", "create_pull_request", `{"decision":"allow"}`},
+	} {
+		env.insertAudit(t, auditRow{
+			at: now.Add(-time.Duration(index+1) * 5 * time.Minute), principal: "dave", workspace: "acme/web", session: "laptop-7f3a",
+			server: "github", tool: event.tool, eventType: event.eventType, details: event.details,
+		})
 	}
 
 	_, err = env.pool.Exec(t.Context(), `INSERT INTO temporary_blocks (id, match, reason, created_by, created_at, expires_at) VALUES
@@ -110,10 +121,15 @@ func TestUIScreenshots(t *testing.T) {
 		// cookie is the UI session the page opens with: the admin's by
 		// default, or one of a user who has nothing, for empty states.
 		cookie string
+		// servers is the state of the fake catalog: "seeded" unless set.
+		servers string
 		// before runs before the page loads, to change the seeded data.
 		before func()
 	}{
 		{name: "servers", path: "/ui/servers"},
+		{name: "servers-empty", path: "/ui/servers", servers: "empty"},
+		{name: "server", path: "/ui/servers/github"},
+		{name: "server-no-tools", path: "/ui/servers/mail"},
 		{name: "sessions", path: "/ui/sessions"},
 		{name: "workspaces", path: "/ui/workspaces"},
 		{name: "secrets", path: "/ui/secrets", before: func() { seedScreenshotSecrets(t, env) }},
@@ -130,6 +146,11 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "grants", path: "/ui/grants", cookie: "dev-session"},
 		{name: "grant-new", path: "/ui/grants/new", cookie: "dev-session"},
 		{name: "audit", path: "/ui/audit"},
+		{name: "audit-filters", path: "/ui/audit?outcome=refused&server=github&type=tool.decision"},
+		{name: "audit-event-types", path: "/ui/audit", prepare: chromedp.Click(chromedp.CSS(`#filter details[data-popover] summary`))},
+		{name: "audit-custom-range", path: "/ui/audit?range=custom"},
+		{name: "audit-empty", path: "/ui/audit?server=github&tool=no-such-tool"},
+		{name: "audit-more-filters", path: "/ui/audit?server=github", prepare: chromedp.Click(chromedp.CSS(`#more-filters summary`))},
 		{name: "blocks", path: "/ui/blocks"},
 		{name: "blocks-dialog", path: "/ui/blocks", prepare: chromedp.Click(chromedp.CSS(`main a[data-dialog="new-block"]`))},
 		{name: "grants-dialog", path: "/ui/grants", cookie: "dev-session", prepare: chromedp.Click(chromedp.CSS(`main a[data-dialog="new-grant"]`))},
@@ -170,6 +191,12 @@ func TestUIScreenshots(t *testing.T) {
 					Name: ui.SessionCookie, Value: cookie, URL: env.server.URL + "/", Path: "/", Secure: &secure, HTTPOnly: &secure,
 				})
 				require.NoError(t, err)
+				state := page.servers
+				if state == "" {
+					state = "seeded"
+				}
+
+				env.servers.setScreenshotState(state)
 
 				if page.before != nil {
 					page.before()

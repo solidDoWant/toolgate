@@ -1,4 +1,5 @@
-// Copy buttons for the command blocks on the Quick setup page.
+// Copy buttons: the command blocks on the Quick setup page, and the icon
+// button next to a shortened ID.
 (function () {
   "use strict";
 
@@ -15,6 +16,20 @@
   }
 
   document.addEventListener("click", function (event) {
+    var idButton = event.target.closest("button[data-copy-text]");
+    if (idButton) {
+      var holder = document.createElement("span");
+      holder.textContent = idButton.getAttribute("data-copy-text");
+      document.body.appendChild(holder);
+      copyText(holder.textContent, holder).then(
+        function () { idButton.setAttribute("title", "Copied"); },
+        function () { idButton.setAttribute("title", "Copy failed"); }
+      ).finally(function () {
+        holder.remove();
+        window.setTimeout(function () { idButton.setAttribute("title", "Copy the full ID"); }, 2000);
+      });
+      return;
+    }
     var button = event.target.closest("button.copy");
     if (!button) {
       return;
