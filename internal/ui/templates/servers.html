@@ -1,26 +1,20 @@
-{{define "heading"}}{{template "page-header" (dict "Title" "Servers" "Summary" "The MCP servers offered to you, and the instances running for you.")}}{{end}}
+{{define "heading"}}{{template "page-header" (dict "Title" "Servers" "Summary" "The MCP servers offered to you, and the instances running for you. Select a server for its access, kind and workspace details.")}}{{end}}
 {{define "content"}}
 {{with .Data.Notice}}<p class="flash notice" role="status">{{.}}</p>
 {{end}}{{if .Data.Servers}}
-{{if and .Data.Workspaces .Data.Admin}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools" "In your workspaces" "Instances"))}}
-{{else if .Data.Workspaces}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools" "In your workspaces"))}}
-{{else if .Data.Admin}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools" "Instances"))}}
-{{else}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools"))}}
+{{if .Data.Admin}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Scope" "Environments" "Status" "Tools" "Instances"))}}
+{{else}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Scope" "Environments" "Status" "Tools"))}}
 {{end}}{{range .Data.Servers}}<tr>
-<td data-label="Server"><a href="/ui/servers/{{.Name}}" class="font-medium">{{.Name}}</a></td>
-<td data-label="Description">{{.Description}}</td>
+<td data-label="Server"><a href="/ui/servers/{{.Name}}" class="font-medium">{{.Name}}</a>{{with .Description}}<div class="text-muted">{{.}}</div>{{end}}</td>
 <td data-label="Scope"><span class="badge badge-neutral" title="{{scopeHelp .Scope}}">{{.Scope}}</span></td>
-<td data-label="Access">{{template "access" .}}</td>
 <td data-label="Environments"><span class="badge {{environmentBadge .Environments}}" title="{{environmentHelp .Environments}}">{{.Environments}}</span></td>
-<td data-label="Kind">{{if .Remote}}<span class="badge badge-neutral">remote</span>{{else}}launched{{end}}{{range .Secrets}}<br>needs secret <code>{{.Name}}</code>: {{if .Set}}set{{else}}not set{{end}}{{end}}</td>
 <td data-label="Status"><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</td>
 <td data-label="Tools">{{if ge .ToolCount 0}}{{.ToolCount}}{{else}}unknown{{end}}</td>
-{{if $.Data.Workspaces}}<td data-label="In your workspaces">{{template "availability" .Availability}}</td>{{end}}
 {{if $.Data.Admin}}<td data-label="Instances">{{.Instances}}</td>{{end}}
 </tr>
 {{end}}{{template "table-end"}}
 {{template "card-start" (dict "Title" "What the words mean")}}
-<dl class="legend m-0">
+<dl class="m-0 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm [&_dt]:font-medium [&_dd]:m-0">
 <dt>per-session</dt><dd>{{scopeHelp "per-session"}}</dd>
 <dt>per-user</dt><dd>{{scopeHelp "per-user"}}</dd>
 <dt>shared</dt><dd>{{scopeHelp "shared"}}</dd>

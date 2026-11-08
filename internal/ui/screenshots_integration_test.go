@@ -82,6 +82,7 @@ func TestUIScreenshots(t *testing.T) {
 		prepare chromedp.Action[chromedp.Void]
 	}{
 		{name: "servers", path: "/ui/servers"},
+		{name: "server", path: "/ui/servers/github"},
 		{name: "sessions", path: "/ui/sessions"},
 		{name: "workspaces", path: "/ui/workspaces"},
 		{name: "secrets", path: "/ui/secrets"},

@@ -300,8 +300,6 @@ func TestServersPage(t *testing.T) {
 
 			assert.Contains(t, body, `<a href="/ui/servers/github" class="font-medium">github</a>`)
 			assert.Contains(t, body, "Only from an attested environment.")
-			assert.Equal(t, 1, strings.Count(body, `data-label="Access">Everyone</td>`), "only the server open to every user shows Everyone")
-			assert.Contains(t, body, "<div>Users <code>*@example.com</code></div><div>Group <code>dev-*</code></div>")
 			assert.Contains(t, body, `<span class="badge badge-warn">outdated</span>`)
 			assert.Equal(t, test.wantShared, strings.Contains(body, `data-label="Server">wiki</td>`), "shared instances only for admins")
 			assert.Equal(t, test.wantShared, strings.Contains(body, `href="/ui/blocks"`), "the Blocks link only for admins")
