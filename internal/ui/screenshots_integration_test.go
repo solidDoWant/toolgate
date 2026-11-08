@@ -112,7 +112,7 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "servers", path: "/ui/servers"},
 		{name: "sessions", path: "/ui/sessions"},
 		{name: "workspaces", path: "/ui/workspaces"},
-		{name: "workspaces-choose", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`main label[for="choose-0"]`))},
+		{name: "workspaces-choose", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`main label.btn-small[for="choose-0"]`))},
 		{name: "workspaces-only-these", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`main input[name="unverified"][value="list"]`))},
 		{name: "workspaces-empty", path: "/ui/workspaces", setup: func() func() {
 			change := gateway.WorkspaceChange{Action: gateway.WorkspaceClear, Workspace: "coder/dave/mail"}
