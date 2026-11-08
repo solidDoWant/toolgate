@@ -13,13 +13,13 @@
 <body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
 <header class="site-header">
 <span class="brand">toolgate</span>
-<form method="post" action="/ui/logout" class="logout">
+{{if not .SignedOut}}<form method="post" action="/ui/logout" class="logout">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 <span class="user">{{.User}}</span>
 <button type="submit" class="secondary">Sign out</button>
 </form>
-</header>
-<nav aria-label="Main">
+{{end}}</header>
+{{if not .SignedOut}}<nav aria-label="Main">
 <a href="/ui/servers"{{if eq .Section "servers"}} aria-current="page"{{end}}>Servers</a>
 <a href="/ui/sessions"{{if eq .Section "sessions"}} aria-current="page"{{end}}>Sessions</a>
 <a href="/ui/grants"{{if eq .Section "grants"}} aria-current="page"{{end}}>Grants</a>
@@ -30,7 +30,7 @@
 <a href="/ui/setup"{{if eq .Section "setup"}} aria-current="page"{{end}}>Setup</a>
 {{if .Admin}}<a href="/ui/blocks"{{if eq .Section "blocks"}} aria-current="page"{{end}}>Blocks</a>
 {{end}}</nav>
-<main>
+{{end}}<main>
 <h1>{{.Title}}</h1>
 {{template "content" .}}
 </main>

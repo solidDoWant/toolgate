@@ -236,6 +236,7 @@ type UiLogin struct {
 	StepUp        bool
 	UiSessionHash []byte
 	CreatedAt     pgtype.Timestamptz
+	Restarted     bool
 }
 
 type UiSession struct {

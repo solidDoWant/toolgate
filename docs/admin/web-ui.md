@@ -48,17 +48,23 @@ A sign-in to the UI lasts 8 hours. It ends earlier when the user does nothing fo
 
 The gateway stores each sign-in in progress in PostgreSQL for 10 minutes, so the IdP can send the browser back to any replica. While more than 10,000 sign-ins are in progress, `/ui/login` refuses new ones.
 
+Each sign-in sets a cookie in the browser. When the IdP sends the browser back, this cookie must match the sign-in. If it does not match, the gateway does not complete that sign-in. This check stops a link from another browser from signing the user in. The cookie is missing, for example, when the user goes back to an old page, or when 10 minutes pass at the IdP. The gateway then starts a new sign-in from the same browser, to the same page. If the sign-in is not in the database any more, the new sign-in goes to the home page. If the new sign-in fails in the same way, the user sees an error page. Then the user must allow cookies for the gateway and sign in from one tab only.
+
 A failed sign-in writes an `auth.refuse` event to the audit log. The gateway writes at most 10 of these events a minute for each remote address. The metric `toolgate_ui_auth_refusals_dropped_total` counts the events that it did not write.
 
 ## Fresh sign-in
 
-Two actions in the UI give more access: creating a grant and approving a tool call. They need a fresh sign-in, which is a sign-in less than 5 minutes old. When the sign-in is older, the UI sends the user back to the IdP with `prompt=login` and `max_age=0`. The IdP then asks the user to sign in again.
+Two actions in the UI give more access: creating a grant and approving a tool call. They need a fresh sign-in, which is a sign-in less than 5 minutes old. When the sign-in is older, the UI sends the user back to the IdP with `prompt=login` and `max_age=60`. The IdP then asks the user to sign in again.
+
+`max_age=60` tells the IdP to ask again when its own sign-in is more than 60 seconds old. The gateway does not send `max_age=0`, because some IdPs ignore the value 0. Authentik is an example. Authentik also obeys `prompt=login` only one time in each browser session. Thus, with Authentik, only `max_age` makes the user sign in again. You do not have to change a setting in Authentik for this.
 
 The IdP must put `auth_time` in the ID token. `auth_time` is the time when the user signed in. The gateway accepts a fresh sign-in only when `auth_time` meets all of these conditions:
 
 - It is at most 5 minutes old.
 - It is at most 60 seconds in the future.
 - It is not earlier than 60 seconds before the sign-in started.
+
+If `auth_time` is too old, the gateway starts a new fresh sign-in one time. If that sign-in is also too old, the user sees an error page. This happens when the IdP signs the user in with the existing IdP session and ignores both `prompt=login` and `max_age`. Then make sure that your IdP asks for the password or passkey again when it gets one of them.
 
 If the IdP does not send `auth_time`, the fresh sign-in fails. The other pages of the UI keep working, but nobody can create a grant or approve a call. If the user signs in again as a different user, the gateway refuses the sign-in and signs the user out.
 

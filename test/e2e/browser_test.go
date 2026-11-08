@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/stretchr/testify/assert"
@@ -62,15 +63,29 @@ func TestBrowserSignsInThroughGatewayIdP(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Sign in to the fake identity provider", title, "the browser shows the IdP's sign-in page")
 
+	// The gateway did not issue this state, so it answers the callback by
+	// starting a new sign-in and the browser does not stay on the callback
+	// URL. The test reads the callback from the request the browser sends.
+	callbacks := make(chan string, 1)
+
+	require.NoError(t, chromedp.Listen(browser, func(event any) {
+		if sent, ok := event.(*network.EventRequestWillBeSent); ok && strings.HasPrefix(sent.Request.URL, config.RedirectURL) {
+			select {
+			case callbacks <- sent.Request.URL:
+			default:
+			}
+		}
+	}))
+
 	require.NoError(t, chromedp.Do(browser, testutil.SignInToOIDC(user)))
 
 	var location string
 
-	require.Eventually(t, func() bool {
-		location, err = chromedp.Run(browser, chromedp.Location())
-
-		return err == nil && strings.HasPrefix(location, config.RedirectURL)
-	}, time.Minute, 200*time.Millisecond, "the IdP sends the browser back to the gateway")
+	select {
+	case location = <-callbacks:
+	case <-time.After(time.Minute):
+		require.FailNow(t, "the IdP sends the browser back to the gateway")
+	}
 
 	callback, err := url.Parse(location)
 	require.NoError(t, err)

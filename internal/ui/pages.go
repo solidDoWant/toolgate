@@ -58,6 +58,7 @@ var pageTemplates = map[string]*template.Template{
 	"workspaces":     parsePage("workspaces"),
 	"access_request": parsePage("access_request"),
 	"setup":          parsePage("setup"),
+	"signin_failed":  parsePage("signin_failed"),
 }
 
 // parsePage parses the layout and one page's content template.
@@ -148,6 +149,9 @@ type page struct {
 	// Secrets is true when the Secrets page is registered, so the nav links to it.
 	Secrets   bool
 	CSRFToken string
+	// SignedOut leaves out the user, the sign-out button and the nav, for a
+	// page shown to a browser without a session.
+	SignedOut bool
 	Data      any
 }
 
@@ -169,9 +173,7 @@ func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, sta
 		user = session.Principal
 	}
 
-	var body bytes.Buffer
-
-	err := pageTemplates[name].ExecuteTemplate(&body, "layout", page{
+	u.writePage(writer, request, status, name, page{
 		Title:     title,
 		Section:   navSection(name),
 		User:      user,
@@ -180,6 +182,13 @@ func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, sta
 		CSRFToken: session.CSRFTokenValue(),
 		Data:      data,
 	})
+}
+
+// writePage writes a page in the layout.
+func (u *UI) writePage(writer http.ResponseWriter, request *http.Request, status int, name string, content page) {
+	var body bytes.Buffer
+
+	err := pageTemplates[name].ExecuteTemplate(&body, "layout", content)
 	if err != nil {
 		u.logger.ErrorContext(request.Context(), "cannot render a web UI page", "page", name, "error", err)
 		http.Error(writer, "The gateway can't show this page. Try again later.", http.StatusInternalServerError)
