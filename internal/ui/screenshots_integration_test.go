@@ -109,10 +109,15 @@ func TestUIScreenshots(t *testing.T) {
 		name, path string
 		// prepare runs after the page loads, for example to open a dialog.
 		prepare chromedp.Action[chromedp.Void]
+		// servers is the state of the fake catalog: "seeded" unless set.
+		servers string
 		// before runs before the page loads, to change the seeded data.
 		before func()
 	}{
 		{name: "servers", path: "/ui/servers"},
+		{name: "servers-empty", path: "/ui/servers", servers: "empty"},
+		{name: "server", path: "/ui/servers/github"},
+		{name: "server-no-tools", path: "/ui/servers/mail"},
 		{name: "sessions", path: "/ui/sessions"},
 		{name: "workspaces", path: "/ui/workspaces"},
 		{name: "secrets", path: "/ui/secrets", before: func() { seedScreenshotSecrets(t, env) }},
@@ -161,6 +166,13 @@ func TestUIScreenshots(t *testing.T) {
 			))
 
 			for _, page := range pages {
+				state := page.servers
+				if state == "" {
+					state = "seeded"
+				}
+
+				env.servers.setScreenshotState(state)
+
 				if page.before != nil {
 					page.before()
 				}

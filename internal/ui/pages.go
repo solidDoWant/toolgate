@@ -268,6 +268,33 @@ type serversPage struct {
 	Owners map[string]principal.Display
 }
 
+// HasReason is true when any listed instance has a reason; the table has
+// no Reason column otherwise.
+func (p serversPage) HasReason() bool {
+	return slices.ContainsFunc(p.Instances, func(instance gateway.InstanceEntry) bool { return instance.Reason != "" })
+}
+
+// HasReadyAt is true when any listed instance has a ready time.
+func (p serversPage) HasReadyAt() bool {
+	return slices.ContainsFunc(p.Instances, func(instance gateway.InstanceEntry) bool { return instance.ReadyAt != nil })
+}
+
+// InstanceColumns are the headings of the instances table: the Reason and
+// Ready since columns show only when some instance has a value for them.
+func (p serversPage) InstanceColumns() []string {
+	columns := []string{"Server", "Scope", "Owner", "Status"}
+
+	if p.HasReason() {
+		columns = append(columns, "Reason")
+	}
+
+	if p.HasReadyAt() {
+		columns = append(columns, "Ready since")
+	}
+
+	return append(columns, "Version", "")
+}
+
 // serverRow is one server of the catalog table.
 type serverRow struct {
 	gateway.ServerInfo

@@ -80,14 +80,16 @@ toolgate takes the names from the verified claims of the ID token when a user si
 
 ## The Servers page
 
-`/ui/servers` is the first page after a sign-in. It shows two lists:
+`/ui/servers` is the first page after a sign-in. It starts with a header and then shows two tables:
 
-- The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason.
-- The running instances of the user. An admin also sees the shared instances. Each instance shows its status and if it runs an old version of its template.
+- The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason. The scope and environments labels explain themselves on hover.
+- The running instances of the user. An admin also sees the shared instances. Each instance shows its status, how long ago it became ready (hold the pointer over the time for the exact UTC time) and if it runs an old version of its template.
 
-An instance is outdated when it runs an old version of its template. A ready, outdated instance has a Restart button. The owner of the instance can use it. For a shared instance, only an admin can use it. The gateway then starts a new instance from the current version of the template and stops the old one. Sessions keep the server enabled. The tools of the server leave the tool list while the new instance starts, and come back when it is ready. The audit log gets an `instance.stop` event with the reason `restart` and the user who asked for it.
+An instance is outdated when it runs an old version of its template. The Reason and Ready since columns show only when an instance has a value for them. A ready, outdated instance has a Restart button at the end of its row. The owner of the instance can use it. For a shared instance, only an admin can use it. The gateway then starts a new instance from the current version of the template and stops the old one. Sessions keep the server enabled. The tools of the server leave the tool list while the new instance starts, and come back when it is ready. The audit log gets an `instance.stop` event with the reason `restart` and the user who asked for it.
 
 If the instance stopped or changed before the request arrived, the page tells the user and shows the current list. If the template was deleted, or the owner lost access, or the instance is idle with no session that uses it, the gateway stops the instance and does not start a new one.
+
+The server detail page (`/ui/servers/NAME`) has a header with the description, a row of labelled facts (scope, access, environments, kind, status and secrets), and cards for the workspace availability, the tools and the terminal commands. On a phone, each table row shows as a card.
 
 The sidebar shows the Blocks link only to admins.
 
@@ -103,7 +105,7 @@ The sidebar shows the Blocks link only to admins.
 - **Activity (last hour):** the tool decisions in the last hour, how many of them were refusals (`deny` or `refuse`), and the approvals that still wait for a decision. The first two numbers link to the audit page, filtered to this session. The third links to the approvals page. A session with no activity shows zeros.
 - **Tool search:** on or off.
 - **Last activity:** a relative time such as "2 min ago". The exact UTC time shows on hover.
-- **Session:** the first characters of the session ID. The full ID shows on hover and under "Copy".
+- **Session:** the first characters of the session ID. The full ID shows on hover. The small copy button next to it copies the full ID.
 
 The filters are links and menus. They are in the URL, so you can bookmark a view: `state` is `active` (the default), `recent` (last request in the last 24 hours) or `all` (all sessions inside the resume window); `workspace` is a workspace ID. The default view shows your own active sessions. An admin can also pick one user, or everyone, with `user` (a subject, or `all`). A user who is not an admin always sees only their own sessions.
 
@@ -164,7 +166,7 @@ When audit payloads are on, the event page also shows the payload of the event. 
 
 `/ui/blocks` is only for admins. A user who is not an admin gets 403.
 
-The page starts with a "New block" button. Under it are two tables. The first table lists the temporary blocks that are live now. The second table lists the `ToolgateRule` objects that the gateway reads from git. This list is read-only, and each rule shows if it is valid. To change a rule, change it in git. Times show as relative times, such as "in 3 h". Hold the pointer over a time to see the exact UTC time. A block ID shows as its first 8 characters. Hold the pointer over the ID to see all of it, or open "Copy" to copy it. The match of a block or a rule shows as one small label for each item, such as `server github` or `attestation user`.
+The page starts with a "New block" button. Under it are two tables. The first table lists the temporary blocks that are live now. The second table lists the `ToolgateRule` objects that the gateway reads from git. This list is read-only, and each rule shows if it is valid. To change a rule, change it in git. Times show as relative times, such as "in 3 h". Hold the pointer over a time to see the exact UTC time. A block ID shows as its first 8 characters. Hold the pointer over the ID to see all of it, or select the small copy button next to it to copy it. The match of a block or a rule shows as one small label for each item, such as `server github` or `attestation user`.
 
 A temporary block refuses the tools that match it, for every user, until it expires. "New block" opens the form in a dialog. If the browser does not run JavaScript, the button opens the same form on its own page, `/ui/blocks/new`. The form has these fields:
 
