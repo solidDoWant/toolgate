@@ -170,6 +170,7 @@ func TestUIScreenshots(t *testing.T) {
 					Name: ui.SessionCookie, Value: cookie, URL: env.server.URL + "/", Path: "/", Secure: &secure, HTTPOnly: &secure,
 				})
 				require.NoError(t, err)
+
 				if page.before != nil {
 					page.before()
 				}
