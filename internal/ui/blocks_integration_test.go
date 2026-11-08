@@ -17,6 +17,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/principal"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/ui"
 )
@@ -100,9 +101,13 @@ func TestBlocksPage(t *testing.T) {
 		assert.Equal(t, 1, count)
 
 		page := readBody(t, get(t, admin, env.server.URL+"/ui/blocks"))
-		assert.Contains(t, page, id)
 		assert.Contains(t, page, "Incident 7.")
-		assert.Contains(t, page, "servers: github, wiki")
+		assert.Contains(t, page, `<span class="font-mono text-xs" title="`+id+`">`+principal.Short(id)+`</span>`, "the ID shows shortened, the full ID on hover")
+		assert.Contains(t, page, `aria-label="Full ID" value="`+id+`"`, "the full ID is in a copy box")
+		assert.NotContains(t, page, ">"+id+"<", "the full ID isn't shown as text")
+		assert.Contains(t, page, `<span class="chip"><span class="chip-label">server</span> <span class="font-mono">github</span></span>`)
+		assert.Contains(t, page, `<span class="chip"><span class="chip-label">server</span> <span class="font-mono">wiki</span></span>`)
+		assert.NotContains(t, page, "servers: github", "the match shows as chips, not a joined string")
 	})
 
 	t.Run("a refused form changes nothing", func(t *testing.T) {
@@ -294,7 +299,7 @@ func TestBlocksPage(t *testing.T) {
 
 		page := readBody(t, get(t, admin, env.server.URL+"/ui/blocks"))
 		assert.Contains(t, page, "toolgate/no-deploys")
-		assert.Contains(t, page, "tools: ci__deploy")
+		assert.Contains(t, page, `<span class="chip"><span class="chip-label">tool</span> <span class="font-mono">ci__deploy</span></span>`)
 		assert.Contains(t, page, "2030-01-02 03:04:05 UTC")
 		assert.Contains(t, page, "toolgate/broken")
 		assert.Contains(t, page, "invalid: match.servers[0] is not a valid glob")

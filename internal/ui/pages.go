@@ -73,7 +73,7 @@ func parsePage(file string, partials ...string) *template.Template {
 	return template.Must(template.New(file).Funcs(template.FuncMap{
 		"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp,
 		"workspace": labelWorkspace, "since": timeSince, "until": timeUntil, "outcome": outcomeBadge,
-		"dict": dict, "list": list, "navLink": newNavLink,
+		"dict": dict, "list": list, "navLink": newNavLink, "short": principal.Short,
 	}).ParseFS(templateFiles, files...))
 }
 

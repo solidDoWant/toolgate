@@ -14,19 +14,34 @@ id of the dialog it opens with JavaScript). */}}
 </div>{{end}}
 
 {{/* table-start: ID, Label (the accessible name) and Columns (a list of
-headings; a heading "" is for the row actions). Close with table-end. */}}
-{{define "table-start"}}<div class="mb-6 overflow-x-auto rounded-lg border border-border bg-surface">
-<table id="{{.ID}}" class="w-full border-collapse text-sm"{{with .Label}} aria-label="{{.}}"{{end}}>
-<thead><tr>{{range .Columns}}<th scope="col" class="border-b border-border bg-code px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-muted uppercase">{{if .}}{{.}}{{else}}<span class="sr-only">Actions</span>{{end}}</th>{{end}}</tr></thead>
+headings; a heading "" is for the row actions). Close with table-end.
+Each row's cells carry data-label set to their column's heading. Below
+640px wide every row shows as a card: the first cell is its title, the
+other cells are label and value pairs, and the row actions come last. No
+table scrolls sideways there. */}}
+{{define "table-start"}}<div class="mb-6 rounded-lg border border-border bg-surface sm:overflow-x-auto">
+<table id="{{.ID}}" class="data-table w-full border-collapse text-sm"{{with .Label}} aria-label="{{.}}"{{end}}>
+<thead><tr>{{range .Columns}}<th scope="col">{{if .}}{{.}}{{else}}<span class="sr-only">Actions</span>{{end}}</th>{{end}}</tr></thead>
 <tbody>{{end}}
 {{define "table-end"}}</tbody>
 </table>
 </div>{{end}}
 
-{{/* row-actions-start and row-actions-end: the right-aligned cell of a
-row's actions. */}}
-{{define "row-actions-start"}}<td class="px-3 py-2 text-right whitespace-nowrap"><div class="inline-flex items-center justify-end gap-1">{{end}}
+{{/* row-actions-start and row-actions-end: the cell of a row's actions,
+right-aligned on a wide screen and at the bottom of the card on a phone. */}}
+{{define "row-actions-start"}}<td class="row-actions" data-label="Actions"><div class="inline-flex items-center justify-end gap-1">{{end}}
 {{define "row-actions-end"}}</div></td>{{end}}
+
+{{/* short-id: a long opaque ID (a string) as its first characters in
+monospace, with the full ID on hover and in a copy box. */}}
+{{define "short-id"}}<span class="font-mono text-xs" title="{{.}}">{{short .}}</span> <details class="copy-id inline-block align-baseline text-xs"><summary class="cursor-pointer text-muted">Copy</summary><input readonly size="24" aria-label="Full ID" value="{{.}}" class="control mt-1 font-mono text-xs"></details>{{end}}
+
+{{/* chip: a small labelled value, Label then Value. */}}
+{{define "chip"}}<span class="chip"><span class="chip-label">{{.Label}}</span> <span class="font-mono">{{.Value}}</span></span>{{end}}
+
+{{/* match-chips: a rule match (the matchChips function) as one chip per
+item. */}}
+{{define "match-chips"}}<span class="inline-flex flex-wrap gap-1">{{range .}}{{template "chip" .}} {{end}}</span>{{end}}
 
 {{/* row-action-confirm: a quiet destructive action that asks before it
 posts. Label (the button), Action (the URL it posts to), Question (asked
@@ -52,6 +67,12 @@ the form's own page instead. */}}
 <div class="px-5 py-4">{{end}}
 {{define "dialog-end"}}</div>
 </dialog>{{end}}
+
+{{/* dialog-footer-start and dialog-footer-end: a form's buttons. On a
+phone the footer stays at the bottom of the screen while the form
+scrolls. */}}
+{{define "dialog-footer-start"}}<div class="dialog-footer">{{end}}
+{{define "dialog-footer-end"}}</div>{{end}}
 
 {{/* token-input: Name (the form field), Label, Help, Value (the items, one
 per line) and Placeholder. The field posts one item per line, as a

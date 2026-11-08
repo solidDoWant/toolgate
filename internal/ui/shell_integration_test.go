@@ -189,5 +189,65 @@ func TestNewBlockDialogWorksFromTheKeyboard(t *testing.T) {
 	require.NoError(t, env.pool.QueryRow(t.Context(), `SELECT match::text, reason FROM temporary_blocks`).Scan(&match, &reason))
 	assert.JSONEq(t, `{"servers":["github","wiki"]}`, match)
 	assert.Equal(t, "Incident 9.", reason)
-	assert.Eventually(t, func() bool { return pageShows(ctx, "servers: github, wiki") }, time.Minute, 100*time.Millisecond)
+	assert.Eventually(t, func() bool { return pageShows(ctx, "server github") && pageShows(ctx, "server wiki") }, time.Minute, 100*time.Millisecond)
+}
+
+func TestBlocksPageOnAPhone(t *testing.T) {
+	env := startUIEnv(t, "toolgate-admins")
+	ctx := openBrowserAsAdmin(t, env)
+
+	_, err := env.pool.Exec(t.Context(), `INSERT INTO temporary_blocks (id, match, reason, created_by, expires_at)
+		VALUES ('0123456789abcdef0123456789abcdef', '{"groups":["contractors"],"tools":["github__delete_repo"],"attestation":"user"}', 'Incident 8.', 'dave', now() + interval '1 hour')`)
+	require.NoError(t, err)
+
+	require.NoError(t, chromedp.Do(ctx,
+		chromedp.EmulateViewport(390, 844),
+		toolgatetest.Navigate(env.server.URL+"/ui/blocks"),
+		chromedp.WaitVisible(`#blocks`),
+	))
+
+	t.Run("the tables show each row as a card and don't scroll sideways", func(t *testing.T) {
+		sideways, err := chromedp.Run(ctx, chromedp.Evaluate[bool](
+			`document.documentElement.scrollWidth > window.innerWidth || [...document.querySelectorAll("table")].some(table => table.parentElement.scrollWidth > table.parentElement.clientWidth)`))
+		require.NoError(t, err)
+		assert.False(t, sideways, "nothing scrolls sideways")
+
+		card, err := chromedp.Run(ctx, chromedp.Evaluate[map[string]string](`(() => {
+			const row = document.querySelector("#blocks tbody tr");
+			const cells = row.querySelectorAll("td");
+			return {
+				row: getComputedStyle(row).display,
+				heading: String(document.querySelector("#blocks thead").getBoundingClientRect().height <= 1),
+				title: getComputedStyle(cells[0], "::before").content,
+				label: getComputedStyle(cells[1], "::before").content,
+			};
+		})()`))
+		require.NoError(t, err)
+		assert.Equal(t, "block", card["row"], "a row is a card")
+		assert.Equal(t, "true", card["heading"], "the column headings are hidden")
+		assert.Equal(t, "none", card["title"], "the first cell is the card's title, without a label")
+		assert.Equal(t, `"Match"`, card["label"], "the other cells show their column's heading")
+	})
+
+	t.Run("the dialog's buttons stay on screen while its form scrolls", func(t *testing.T) {
+		require.NoError(t, chromedp.Do(ctx,
+			chromedp.Click(`main a[data-dialog="new-block"]`),
+			chromedp.WaitVisible(`#new-block #field-reason`),
+		))
+
+		layout, err := chromedp.Run(ctx, chromedp.Evaluate[map[string]bool](`(() => {
+			const dialog = document.getElementById("new-block");
+			dialog.scrollTop = 0;
+			const submit = dialog.querySelector('button[type="submit"]').getBoundingClientRect();
+			const cancel = dialog.querySelector('[data-close-dialog].btn').getBoundingClientRect();
+			const sheet = dialog.getBoundingClientRect();
+			return {
+				scrolls: dialog.scrollHeight > dialog.clientHeight,
+				shown: submit.bottom <= sheet.bottom && cancel.bottom <= sheet.bottom && submit.top >= sheet.top,
+			};
+		})()`))
+		require.NoError(t, err)
+		assert.True(t, layout["scrolls"], "the form is taller than the screen")
+		assert.True(t, layout["shown"], "Cancel and Add block are on screen with the form scrolled to the top")
+	})
 }

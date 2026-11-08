@@ -195,7 +195,7 @@ func (f blockForm) lifetime() (time.Duration, error) {
 // blockRow is one live temporary block as the page shows it.
 type blockRow struct {
 	ID        string
-	Match     string
+	Match     []chip
 	Reason    string
 	CreatedBy string
 	// Who is CreatedBy as people read it.
@@ -208,7 +208,7 @@ type blockRow struct {
 type ruleRow struct {
 	Namespace string
 	Name      string
-	Match     string
+	Match     []chip
 	Reason    string
 	Expires   *time.Time
 	Valid     bool
@@ -222,27 +222,33 @@ type blocksPage struct {
 	Error  string
 }
 
-// describeMatch writes a match as `field: a, b; field: c`.
-func describeMatch(match v1alpha1.RuleMatch) string {
-	var parts []string
+// chip is one labelled value of the chip component.
+type chip struct {
+	Label, Value string
+}
+
+// matchChips lists a match as one chip per item, such as `server github`,
+// in the order the match's fields are written.
+func matchChips(match v1alpha1.RuleMatch) []chip {
+	var chips []chip
 
 	for _, field := range []struct {
-		name  string
+		label string
 		items []string
 	}{
-		{"principals", match.Principals}, {"groups", match.Groups}, {"workspaces", match.Workspaces},
-		{"sessions", match.Sessions}, {"servers", match.Servers}, {"tools", match.Tools},
+		{"principal", match.Principals}, {"group", match.Groups}, {"workspace", match.Workspaces},
+		{"session", match.Sessions}, {"server", match.Servers}, {"tool", match.Tools},
 	} {
-		if len(field.items) > 0 {
-			parts = append(parts, field.name+": "+strings.Join(field.items, ", "))
+		for _, item := range field.items {
+			chips = append(chips, chip{Label: field.label, Value: item})
 		}
 	}
 
 	if match.Attestation != "" {
-		parts = append(parts, "attestation: "+match.Attestation)
+		chips = append(chips, chip{Label: "attestation", Value: match.Attestation})
 	}
 
-	return strings.Join(parts, "; ")
+	return chips
 }
 
 func (u *UI) blocksPage(ctx context.Context) (blocksPage, error) {
@@ -260,7 +266,7 @@ func (u *UI) blocksPage(ctx context.Context) (blocksPage, error) {
 		}
 
 		page.Blocks = append(page.Blocks, blockRow{
-			ID: row.ID, Match: describeMatch(match), Reason: row.Reason, CreatedBy: row.CreatedBy,
+			ID: row.ID, Match: matchChips(match), Reason: row.Reason, CreatedBy: row.CreatedBy,
 			CreatedAt: row.CreatedAt.Time, ExpiresAt: row.ExpiresAt.Time,
 		})
 	}
@@ -289,7 +295,7 @@ func (u *UI) blocksPage(ctx context.Context) (blocksPage, error) {
 	for index := range rules {
 		rule := &rules[index]
 		row := ruleRow{
-			Namespace: rule.Namespace, Name: rule.Name, Match: describeMatch(rule.Spec.Match), Reason: rule.Spec.Reason,
+			Namespace: rule.Namespace, Name: rule.Name, Match: matchChips(rule.Spec.Match), Reason: rule.Spec.Reason,
 			Message: "Not checked yet.",
 		}
 

@@ -3,13 +3,13 @@
 <h2 class="m-0 mb-2 text-base font-semibold">Temporary blocks</h2>
 {{if .Data.Blocks}}
 {{template "table-start" (dict "ID" "blocks" "Label" "Temporary blocks" "Columns" (list "ID" "Match" "Reason" "Created by" "Created" "Ends"))}}
-{{range .Data.Blocks}}<tr class="border-b border-border last:border-b-0 hover:bg-code">
-<td class="px-3 py-2 align-top font-mono text-xs">{{.ID}}</td>
-<td class="px-3 py-2 align-top">{{.Match}}</td>
-<td class="px-3 py-2 align-top">{{.Reason}}</td>
-<td class="px-3 py-2 align-top">{{template "who" .Who}}</td>
-<td class="px-3 py-2 align-top whitespace-nowrap">{{template "reltime" (since .CreatedAt)}}</td>
-<td class="px-3 py-2 align-top whitespace-nowrap">{{template "reltime" (until .ExpiresAt)}}</td>
+{{range .Data.Blocks}}<tr>
+<td data-label="ID">{{template "short-id" .ID}}</td>
+<td data-label="Match">{{template "match-chips" .Match}}</td>
+<td data-label="Reason">{{.Reason}}</td>
+<td data-label="Created by">{{template "who" .Who}}</td>
+<td data-label="Created" class="whitespace-nowrap">{{template "reltime" (since .CreatedAt)}}</td>
+<td data-label="Ends" class="whitespace-nowrap">{{template "reltime" (until .ExpiresAt)}}</td>
 </tr>
 {{end}}{{template "table-end"}}
 {{else}}
@@ -19,12 +19,12 @@
 <p class="m-0 mb-2 text-sm text-muted">These <code>ToolgateRule</code> objects come from git. This page only shows them.</p>
 {{if .Data.Rules}}
 {{template "table-start" (dict "ID" "rules" "Label" "Standing rules" "Columns" (list "Rule" "Match" "Reason" "Expires" "Valid"))}}
-{{range .Data.Rules}}<tr class="border-b border-border last:border-b-0 hover:bg-code">
-<td class="px-3 py-2 align-top">{{.Namespace}}/{{.Name}}</td>
-<td class="px-3 py-2 align-top">{{.Match}}</td>
-<td class="px-3 py-2 align-top">{{.Reason}}</td>
-<td class="px-3 py-2 align-top whitespace-nowrap">{{with .Expires}}{{template "reltime" (until .)}}{{else}}never{{end}}</td>
-<td class="px-3 py-2 align-top">{{if .Valid}}{{template "badge" "valid"}}{{else}}<span class="badge badge-bad">invalid: {{.Message}}</span>{{end}}</td>
+{{range .Data.Rules}}<tr>
+<td data-label="Rule">{{.Namespace}}/{{.Name}}</td>
+<td data-label="Match">{{template "match-chips" .Match}}</td>
+<td data-label="Reason">{{.Reason}}</td>
+<td data-label="Expires" class="whitespace-nowrap">{{with .Expires}}{{template "reltime" (until .)}}{{else}}never{{end}}</td>
+<td data-label="Valid">{{if .Valid}}{{template "badge" "valid"}}{{else}}<span class="badge badge-bad">invalid: {{.Message}}</span>{{end}}</td>
 </tr>
 {{end}}{{template "table-end"}}
 {{else}}

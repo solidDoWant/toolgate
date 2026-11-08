@@ -4,7 +4,7 @@ For: admins who turn on the toolgate web UI.
 
 The web UI is a set of pages under `/ui/` on the gateway's main port. Users sign in to it with your identity provider (IdP). The UI is on only when you set `config.ui.clientID` in the chart (`oidcUIClientID` in the [gateway configuration](configuration.md)).
 
-The pages follow the light or dark setting of the browser. They work on a phone screen, and tables scroll sideways when they are too wide. The UI loads no outside fonts, styles or scripts.
+The pages follow the light or dark setting of the browser. They work on a phone screen. On the Blocks page, each table row shows as a card on a phone, so you do not scroll sideways. On the other pages, wide tables scroll sideways. The UI loads no outside fonts, styles or scripts.
 
 ## Workspace scoping
 
@@ -162,7 +162,7 @@ When audit payloads are on, the event page also shows the payload of the event. 
 
 `/ui/blocks` is only for admins. A user who is not an admin gets 403.
 
-The page starts with a "New block" button. Under it are two tables. The first table lists the temporary blocks that are live now. The second table lists the `ToolgateRule` objects that the gateway reads from git. This list is read-only, and each rule shows if it is valid. To change a rule, change it in git. Times show as relative times, such as "in 3 h". Hold the pointer over a time to see the exact UTC time.
+The page starts with a "New block" button. Under it are two tables. The first table lists the temporary blocks that are live now. The second table lists the `ToolgateRule` objects that the gateway reads from git. This list is read-only, and each rule shows if it is valid. To change a rule, change it in git. Times show as relative times, such as "in 3 h". Hold the pointer over a time to see the exact UTC time. A block ID shows as its first 8 characters. Hold the pointer over the ID to see all of it, or open "Copy" to copy it. The match of a block or a rule shows as one small label for each item, such as `server github` or `attestation user`.
 
 A temporary block refuses the tools that match it, for every user, until it expires. "New block" opens the form in a dialog. If the browser does not run JavaScript, the button opens the same form on its own page, `/ui/blocks/new`. The form has these fields:
 

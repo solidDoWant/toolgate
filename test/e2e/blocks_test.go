@@ -161,7 +161,7 @@ func TestTemporaryBlock(t *testing.T) {
 		body, err := pageText(browser, publicURL, blocksPath)
 		require.NoError(t, err)
 		assert.Contains(t, body, "Incident from the e2e test.")
-		assert.Contains(t, body, "servers: "+name)
+		assert.Contains(t, body, "server "+name)
 
 		// The block ends at its expiry: the tools come back with list_changed
 		// and the session needs no new enable.
