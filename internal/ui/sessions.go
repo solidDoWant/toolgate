@@ -148,7 +148,7 @@ type sessionsPage struct {
 	// Workspaces and Users fill the filter lists.
 	Workspaces []workspaceLabel
 	Users      []userOption
-	// Links of the state filter, keeping the other filters.
+	// Links are the choices of the state filter.
 	Links []filterLink
 }
 
@@ -159,7 +159,7 @@ type userOption struct {
 
 type filterLink struct {
 	Label   string
-	URL     string
+	Value   string
 	Current bool
 }
 
@@ -353,7 +353,7 @@ func (u *UI) sessions(writer http.ResponseWriter, request *http.Request) {
 		data.Users = append(data.Users, userOption{Value: other, Text: names.show(other).Text})
 	}
 
-	data.Links = filterLinks(data)
+	data.Links = stateOptions(data)
 
 	u.render(writer, request, "sessions", "Sessions", data)
 }
@@ -402,27 +402,17 @@ func (u *UI) fillSessionActivity(ctx context.Context, sessions []sessionRow, now
 	}
 }
 
-// filterLinks builds the links of the state filter. They keep the workspace
-// and user choices.
-func filterLinks(data sessionsPage) []filterLink {
-	links := make([]filterLink, 0, 3)
+// stateOptions lists the choices of the state filter, marking the current one.
+func stateOptions(data sessionsPage) []filterLink {
+	options := make([]filterLink, 0, 3)
 
 	for _, each := range []struct{ value, label string }{
 		{filterActive, "Active"}, {filterRecent, "Last 24 hours"}, {filterAll, "All"},
 	} {
-		values := url.Values{"state": {each.value}}
-		if data.Workspace != "" {
-			values.Set("workspace", data.Workspace)
-		}
-
-		if data.ShowPrincipal && data.User != "" {
-			values.Set("user", data.User)
-		}
-
-		links = append(links, filterLink{Label: each.label, URL: "/ui/sessions?" + values.Encode(), Current: data.Filter == each.value})
+		options = append(options, filterLink{Label: each.label, Value: each.value, Current: data.Filter == each.value})
 	}
 
-	return links
+	return options
 }
 
 // sessionPageHandler shows one open session to its principal or an admin.
