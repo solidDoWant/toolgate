@@ -208,22 +208,61 @@ func (m *metaTools) describeCatalog(next mcp.MethodHandler) mcp.MethodHandler {
 // syncMetaDescriptions re-registers the two discovery meta tools when their
 // description changed, which sends list_changed to the session.
 func (m *metaTools) syncMetaDescriptions(ctx context.Context, target *sessionTools, identity auth.Identity) error {
-	summary, err := m.summary(ctx, identity)
+	find, list, err := m.metaDescriptions(ctx, identity)
 	if err != nil {
 		return err
 	}
 
-	find, list := summary.findToolsDescription(), summary.listServersDescription()
+	m.setMetaDescriptions(target, find, list)
 
+	return nil
+}
+
+// metaDescriptions reads the descriptions the two discovery meta tools
+// should have for identity.
+func (m *metaTools) metaDescriptions(ctx context.Context, identity auth.Identity) (find, list string, err error) {
+	summary, err := m.summary(ctx, identity)
+	if err != nil {
+		return "", "", err
+	}
+
+	return summary.findToolsDescription(), summary.listServersDescription(), nil
+}
+
+// setMetaDescriptions re-registers the two discovery meta tools when find
+// or list differ from their current descriptions. It reads nothing, so
+// called right after the proxied tools are applied, both changes fall
+// inside the go-sdk's list_changed debounce and send one notification.
+func (m *metaTools) setMetaDescriptions(target *sessionTools, find, list string) {
 	target.mu.Lock()
 	defer target.mu.Unlock()
 
 	if target.findDescription == find && target.listDescription == list {
-		return nil
+		return
 	}
 
 	target.findDescription, target.listDescription = find, list
 	m.registerDiscoveryTools(target.server, find, list)
+}
+
+// applySync makes target offer wanted and the discovery meta tools
+// describe the servers identity can use. Every read happens before the
+// first change, so a sync that changes both the proxied tools and the
+// descriptions sends one list_changed, not one per part.
+func (m *metaTools) applySync(ctx context.Context, target *sessionTools, identity auth.Identity, wanted map[string]*mcp.Tool) error {
+	find, list, readErr := m.metaDescriptions(ctx, identity)
+
+	// A failed summary read still applies the proxied tools: a policy
+	// change must reach the list even when the descriptions can't.
+	if err := target.apply(wanted); err != nil {
+		return err
+	}
+
+	if readErr != nil {
+		return readErr
+	}
+
+	m.setMetaDescriptions(target, find, list)
 
 	return nil
 }

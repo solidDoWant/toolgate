@@ -230,8 +230,12 @@ func TestTemporaryBlocks(t *testing.T) {
 		created := time.Now()
 		block, expiresAt := fixture.insertBlock(t, v1alpha1.RuleMatch{Servers: []string{"github"}}, "Incident 7.", time.Hour, true)
 
-		require.Eventually(t, func() bool { return first.listChangedCount() == 2 && second.listChangedCount() == 2 }, policyChangeBound, 10*time.Millisecond,
-			"not every replica sent list_changed within 5 s")
+		// Exactly one list_changed per session: the block changes both the
+		// proxied tools and the discovery meta tools' descriptions in one sync.
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			assert.Equal(collect, 2, first.listChangedCount(), "list_changed on the replica the block was made on")
+			assert.Equal(collect, 2, second.listChangedCount(), "list_changed on the other replica")
+		}, policyChangeBound, 10*time.Millisecond, "not every replica sent exactly one list_changed within 5 s")
 		assert.Less(t, time.Since(created), policyChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, first.session))
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, second.session))

@@ -81,10 +81,8 @@ func TestSessionsListShowsEachSessionState(t *testing.T) {
 		assert.Contains(t, row, "claude-code 2.1.319")
 		assert.Contains(t, row, "helper</span>")
 		assert.Contains(t, row, "badge-ok\">active</span>")
-		assert.Contains(t, row, "<td>on</td>")
 		assert.Contains(t, row, "just now")
-		assert.Contains(t, row, ">7f3a9c1e…</span>")
-		assert.Contains(t, row, `value="7f3a9c1e-1111-2222-3333-444444444444"`)
+		assert.Contains(t, row, `title="7f3a9c1e-1111-2222-3333-444444444444"`)
 		assert.Contains(t, row, ">you</span>")
 	})
 
@@ -93,19 +91,18 @@ func TestSessionsListShowsEachSessionState(t *testing.T) {
 		assert.Contains(t, row, "unverified: laptop")
 		assert.Contains(t, row, "unverified</span>")
 		assert.Contains(t, row, ">idle</span>")
-		assert.Contains(t, row, "<td>off</td>")
 		assert.Contains(t, row, "unknown client")
 		assert.Contains(t, row, "30 min ago")
 	})
 
 	t.Run("an ended helper session inside the resume window can be resumed", func(t *testing.T) {
-		row := rowFor(list("?state=all"), `value="resumable-0001"`)
+		row := rowFor(list("?state=all"), `title="resumable-0001"`)
 		assert.Contains(t, row, "resumable until 20")
 		assert.NotContains(t, row, `href="/ui/sessions/`)
 	})
 
 	t.Run("a connector session is never resumable", func(t *testing.T) {
-		row := rowFor(list("?state=all"), `value="mcp.abcdef123456"`)
+		row := rowFor(list("?state=all"), `title="mcp.abcdef123456"`)
 		assert.Contains(t, row, "connector</span>")
 		assert.Contains(t, row, ">ended</span>")
 		assert.NotContains(t, row, "resumable")
@@ -132,7 +129,8 @@ func TestSessionsListShowsEachSessionState(t *testing.T) {
 		page := list("?state=all&workspace=claimed/laptop")
 		assert.Contains(t, page, link(idle))
 		assert.NotContains(t, page, link(active))
-		assert.Contains(t, page, `href="/ui/sessions?state=active&amp;workspace=claimed%2Flaptop"`)
+		assert.Contains(t, page, `<option value="claimed/laptop" selected>`)
+		assert.Contains(t, page, `name="state" value="all" checked`)
 	})
 
 	t.Run("the empty state links to quick setup", func(t *testing.T) {

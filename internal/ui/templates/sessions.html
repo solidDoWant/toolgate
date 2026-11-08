@@ -1,38 +1,32 @@
+{{define "heading"}}{{template "page-header" (dict "Title" "Sessions" "Summary" "Each Claude Code connection to the gateway, with what it can reach and what it did in the last hour.")}}{{end}}
 {{define "content"}}
-<nav id="session-filters" aria-label="Session filters">
-{{range .Data.Links}}{{if .Current}}<strong>{{.Label}}</strong>{{else}}<a href="{{.URL}}">{{.Label}}</a>{{end}} {{end}}
-<form method="get" action="/ui/sessions">
-<input type="hidden" name="state" value="{{.Data.Filter}}">
-<label>Workspace <select name="workspace" onchange="this.form.submit()">
-<option value="">All</option>
-{{range .Data.Workspaces}}<option value="{{.ID}}"{{if eq .ID $.Data.Workspace}} selected{{end}}>{{.Label}}</option>
-{{end}}</select></label>
-{{if .Data.ShowPrincipal}}<label>User <select name="user" onchange="this.form.submit()">
+{{template "filter-bar-start" (dict "Action" "/ui/sessions" "Label" "Filter sessions")}}
+<div><span class="field-label" id="state-label">Show</span>
+<div class="segmented" role="radiogroup" aria-labelledby="state-label" id="session-filters">
+{{range .Data.Links}}<label><input type="radio" name="state" value="{{.Value}}"{{if .Current}} checked{{end}}>{{.Label}}</label>
+{{end}}</div></div>
+<div><label for="f-workspace" class="field-label">Workspace</label><select id="f-workspace" name="workspace" class="control">
+<option value="">Any workspace</option>
+{{range .Data.Workspaces}}{{if .ID}}<option value="{{.ID}}"{{if eq .ID $.Data.Workspace}} selected{{end}}>{{.Label}}</option>{{end}}
+{{end}}</select></div>
+{{if .Data.ShowPrincipal}}<div><label for="f-user" class="field-label">User</label><select id="f-user" name="user" class="control">
 <option value="all"{{if eq .Data.User "all"}} selected{{end}}>Everyone</option>
 {{range .Data.Users}}<option value="{{.Value}}"{{if eq .Value $.Data.User}} selected{{end}}>{{.Text}}</option>
-{{end}}</select></label>{{end}}
-<noscript><button type="submit">Filter</button></noscript>
-</form>
-</nav>
+{{end}}</select></div>{{end}}
+{{template "filter-bar-end"}}
 {{if .Data.Sessions}}
-<div class="table-wrap"><table id="sessions">
-<thead><tr><th>Who</th><th>Where</th><th>Client</th><th>State</th><th>Servers</th><th>Activity (last hour)</th><th>Tool search</th><th>Last activity</th><th>Session</th><th></th></tr></thead>
-<tbody>
+{{template "table-start" (dict "ID" "sessions" "Label" "Sessions" "Columns" (list "Who" "Where" "Client" "State" "Servers" "Last hour" ""))}}
 {{range .Data.Sessions}}<tr>
-<td>{{template "who" .Who}}</td>
-<td>{{template "ws" .WorkspaceLabel}} {{if .Verified}}<span class="badge badge-ok">verified</span>{{else}}<span class="badge badge-warn">unverified</span>{{end}}</td>
-<td>{{if .Client}}{{.Client}}{{else}}unknown client{{end}} <span class="badge badge-neutral">{{if .Connector}}connector{{else}}helper{{end}}</span></td>
-<td>{{if eq .State.Name "resumable"}}<span class="badge badge-neutral">resumable until {{.State.Until.UTC}}</span>{{else}}<span class="badge {{if eq .State.Name "active"}}badge-ok{{else}}badge-neutral{{end}}">{{.State.Name}}</span>{{end}}</td>
-<td>{{range .Servers}}<span class="badge badge-neutral">{{.}}</span> {{end}}<span class="running-instances">{{.Activity.RunningInstances}} running</span></td>
-<td><a href="{{.Activity.AuditURL}}">{{.Activity.ToolCalls}} calls</a>, <a href="{{.Activity.AuditURL}}">{{.Activity.Refusals}} refused</a>, <a href="/ui/approvals">{{.Activity.PendingApprovals}} pending</a></td>
-<td>{{if .ToolSearch}}on{{else}}off{{end}}</td>
-<td>{{template "reltime" (since .LastSeenAt)}}</td>
-<td><span title="{{.SessionID}}">{{.ShortID}}</span> <details class="copy-id"><summary>Copy</summary><input readonly size="24" aria-label="Full session ID" value="{{.SessionID}}"></details></td>
-<td>{{if ne .State.Name "ended"}}{{if ne .State.Name "resumable"}}<a href="/ui/sessions/{{.ID}}">Open</a>{{end}}{{end}}</td>
+<td data-label="Who">{{template "who" .Who}}</td>
+<td data-label="Where">{{template "ws" .WorkspaceLabel}} {{if .Verified}}<span class="badge badge-ok">verified</span>{{else}}<span class="badge badge-warn">unverified</span>{{end}}</td>
+<td data-label="Client"><span title="{{.SessionID}}">{{if .Client}}{{.Client}}{{else}}unknown client{{end}}</span> <span class="badge badge-neutral">{{if .Connector}}connector{{else}}helper{{end}}</span></td>
+<td data-label="State">{{if eq .State.Name "resumable"}}<span class="badge badge-neutral" title="resumable until {{.State.Until.UTC}}">resumable</span>{{else}}<span class="badge {{if eq .State.Name "active"}}badge-ok{{else}}badge-neutral{{end}}">{{.State.Name}}</span>{{end}}<div class="mt-1 text-xs text-muted whitespace-nowrap">{{template "reltime" (since .LastSeenAt)}}</div></td>
+<td data-label="Servers">{{range .Servers}}<span class="badge badge-neutral">{{.}}</span> {{end}}<span class="running-instances">{{.Activity.RunningInstances}} running</span></td>
+<td data-label="Last hour" class="whitespace-nowrap text-xs"><a href="{{.Activity.AuditURL}}" class="badge badge-neutral no-underline">{{.Activity.ToolCalls}} calls</a> <a href="{{.Activity.AuditURL}}" class="badge {{if .Activity.Refusals}}badge-bad{{else}}badge-neutral{{end}} no-underline">{{.Activity.Refusals}} refused</a> <a href="/ui/approvals" class="badge {{if .Activity.PendingApprovals}}badge-warn{{else}}badge-neutral{{end}} no-underline">{{.Activity.PendingApprovals}} pending</a></td>
+{{template "row-actions-start"}}{{if ne .State.Name "ended"}}{{if ne .State.Name "resumable"}}<a href="/ui/sessions/{{.ID}}" class="btn btn-small">Open</a>{{end}}{{end}}{{template "row-actions-end"}}
 </tr>
-{{end}}</tbody>
-</table></div>
+{{end}}{{template "table-end"}}
 {{else}}
-<p class="empty">No sessions match. Sessions appear when Claude Code connects through the toolgate plugin. See <a href="/ui/setup">Quick setup</a>.</p>
+{{template "empty-state" (dict "Text" "No sessions match. Sessions appear when Claude Code connects through the toolgate plugin." "ActionLabel" "Quick setup" "ActionHref" "/ui/setup")}}
 {{end}}
 {{end}}

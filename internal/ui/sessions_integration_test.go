@@ -56,7 +56,7 @@ func (e *uiEnv) insertDecision(t *testing.T, eventType, principal, sessionID, to
 	require.NoError(t, err)
 }
 
-var cellOfRow = regexp.MustCompile(`<td>([^<]*)</td>`)
+var cellOfRow = regexp.MustCompile(`<td data-label="[^"]*">([^<]*)</td>`)
 
 func decisionTools(page string) []string {
 	start := strings.Index(page, `id="decisions"`)
@@ -266,11 +266,11 @@ func TestSessionPageSections(t *testing.T) {
 		assert.Contains(t, page, "verified")
 		assert.Contains(t, page, "Claude Code 2.1.319")
 		assert.Contains(t, page, "helper")
-		assert.Contains(t, page, "<dt>Tool search</dt><dd>on</dd>")
+		assert.Contains(t, page, `Tool search</dt><dd class="m-0">on</dd>`)
 	})
 
 	t.Run("servers show their status and instance", func(t *testing.T) {
-		assert.Regexp(t, `default/github</a></td>\s*<td><span class="badge badge-ok">ready</span>`, page)
+		assert.Regexp(t, `default/github</a></td>\s*<td data-label="Status"><span class="badge badge-ok">ready</span>`, page)
 		assert.Regexp(t, `<span class="badge badge-bad">blocked</span> Only from an attested environment`, page)
 		assert.Contains(t, page, "namespace default")
 	})
