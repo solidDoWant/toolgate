@@ -54,6 +54,8 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 	env.insertListedSession(t, "dave", "ci-runner-12", "", "user", "claude-code", 45, 30, false)
 	require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(),
 		gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, Workspace: "coder/dave/mail", Servers: []string{"any-server", "optin-server"}}, gateway.ViaUI))
+	require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(),
+		gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, UnverifiedList: true, Servers: []string{"any-server"}}, gateway.ViaUI))
 	env.insertApproval(t, approvalID(1), "dave", time.Hour)
 	env.insertApproval(t, approvalID(2), "dave", time.Hour)
 
@@ -103,10 +105,24 @@ func TestUIScreenshots(t *testing.T) {
 		prepare chromedp.Action[chromedp.Void]
 		// before runs before the page loads, to change the seeded data.
 		before func()
+		// setup changes the seeded data before the page loads; the function
+		// it returns restores it.
+		setup func() func()
 	}{
 		{name: "servers", path: "/ui/servers"},
 		{name: "sessions", path: "/ui/sessions"},
 		{name: "workspaces", path: "/ui/workspaces"},
+		{name: "workspaces-choose", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`main label[for="choose-0"]`))},
+		{name: "workspaces-only-these", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`main input[name="unverified"][value="list"]`))},
+		{name: "workspaces-empty", path: "/ui/workspaces", setup: func() func() {
+			change := gateway.WorkspaceChange{Action: gateway.WorkspaceClear, Workspace: "coder/dave/mail"}
+			require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(), change, gateway.ViaUI))
+
+			return func() {
+				change := gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, Workspace: "coder/dave/mail", Servers: []string{"any-server", "optin-server"}}
+				require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(), change, gateway.ViaUI))
+			}
+		}},
 		{name: "secrets", path: "/ui/secrets", before: func() { seedScreenshotSecrets(t, env) }},
 		{name: "secrets-delete-confirm", path: "/ui/secrets", prepare: chromedp.Click(chromedp.CSS(`#secrets tbody tr:first-child summary`))},
 		{name: "secrets-empty", path: "/ui/secrets", before: func() {
@@ -152,6 +168,11 @@ func TestUIScreenshots(t *testing.T) {
 					page.before()
 				}
 
+				restore := func() {}
+				if page.setup != nil {
+					restore = page.setup()
+				}
+
 				steps := []chromedp.Action[chromedp.Void]{toolgatetest.Navigate(env.server.URL + page.path), chromedp.WaitReady(chromedp.CSS("main"))}
 				if page.prepare != nil {
 					steps = append(steps, page.prepare)
@@ -160,6 +181,8 @@ func TestUIScreenshots(t *testing.T) {
 				require.NoError(t, chromedp.Do(ctx, steps...), page.path)
 
 				picture, err := chromedp.Run(ctx, chromedp.CaptureScreenshot())
+
+				restore()
 				require.NoError(t, err, page.path)
 
 				file := filepath.Join(directory, fmt.Sprintf("%s-%s-%s.png", page.name, theme, viewport.name))

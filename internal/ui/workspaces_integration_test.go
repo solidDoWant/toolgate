@@ -125,7 +125,7 @@ func TestWorkspacesPage(t *testing.T) {
 		page := readBody(t, get(t, browser, env.server.URL+ui.WorkspacesPath))
 		assert.Contains(t, page, "These servers:")
 		assert.Contains(t, page, `<span class="chip font-mono">optin-server</span>`)
-		assert.Contains(t, page, "Use the default")
+		assert.Contains(t, page, "Go back to the default for this workspace?")
 		assert.Contains(t, page, `value="optin-server" checked`)
 
 		// Unchecking one server removes just it.

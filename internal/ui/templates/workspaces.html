@@ -26,33 +26,28 @@
 <h2 class="m-0 mb-2 text-base font-semibold">Your workspaces</h2>
 {{if .Cards}}
 <ul id="workspace-cards" class="m-0 mb-6 grid list-none grid-cols-1 gap-3 p-0">
-{{range .Cards}}<li class="rounded-lg border border-border bg-surface p-4">
+{{range $index, $card := .Cards}}<li class="rounded-lg border border-border bg-surface p-4">
 <div class="flex flex-wrap items-center justify-between gap-2">
 <div class="min-w-0"><span class="font-semibold">{{template "ws" .Workspace}}</span> <span class="badge badge-ok">Verified</span></div>
 {{if .HasList}}<span class="text-xs text-muted">Changed {{template "reltime" (since .UpdatedAt)}}</span>{{end}}
 </div>
 <div class="mt-2 text-sm">
 {{if .HasList}}{{if .Servers}}<span class="text-muted">These servers:</span>
-<span class="inline-flex flex-wrap gap-1 align-middle">{{range .Servers}}<span class="chip font-mono">{{.}}</span> {{end}}</span>
+<span class="inline-flex flex-wrap gap-1 align-middle">{{range .Servers}}<span class="chip font-mono"{{with index $.Data.Descriptions .}} title="{{.}}"{{end}}>{{.}}</span> {{end}}</span>
 {{else}}No servers{{end}}
 {{else if eq $.Data.VerifiedDefault "all"}}All your servers (default)
 {{else}}No servers (default){{end}}
 </div>
-<div class="mt-3 flex flex-wrap items-start gap-2">
-<details class="w-full">
-<summary class="btn btn-small list-none">Choose servers</summary>
-<form method="post" action="/ui/workspaces/servers" class="m-0 mt-3">
+<input type="checkbox" id="choose-{{$index}}" class="peer sr-only">
+<form method="post" action="/ui/workspaces/servers" class="m-0 mt-3 hidden peer-checked:block">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="workspace" value="{{.Workspace.ID}}">
 {{template "server-checkboxes" (dict "Name" "server" "Choices" .Choices)}}
 <div class="dialog-footer"><button type="submit" class="btn btn-primary">Save</button></div>
 </form>
-</details>
-{{if .HasList}}<form method="post" action="/ui/workspaces/clear" class="m-0">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<input type="hidden" name="workspace" value="{{.Workspace.ID}}">
-<button type="submit" class="btn btn-small btn-quiet-danger">Use the default</button>
-</form>{{end}}
+<div class="mt-3 flex flex-wrap items-center gap-2">
+<label for="choose-{{$index}}" class="btn btn-small m-0">Choose servers</label>
+{{if .HasList}}{{template "row-action-confirm" (dict "Label" "Use the default" "Action" "/ui/workspaces/clear" "Question" "Go back to the default for this workspace?" "Confirm" "Use the default" "CSRFToken" $.CSRFToken "Neutral" true "Fields" (dict "workspace" .Workspace.ID))}}{{end}}
 </div>
 </li>
 {{end}}</ul>
@@ -73,13 +68,14 @@
 </fieldset>
 <fieldset class="m-0 mb-4 border-0 p-0">
 <legend class="field-label">Other machines, such as your laptop</legend>
-<p class="field-help mt-0 mb-2">Sessions that don't prove where they run. A workspace's choice only limits them while this is "No servers".</p>
+<p class="field-help mt-0 mb-2">Sessions on machines toolgate can't confirm.</p>
 <div class="flex flex-col gap-1 text-sm">
 <label><input type="radio" name="unverified" value="all"{{if eq .UnverifiedDefault "all"}} checked{{end}}> All your servers</label>
 <label><input type="radio" name="unverified" value="list"{{if eq .UnverifiedDefault "list"}} checked{{end}}> Only these servers</label>
 <div id="unverified-servers" class="ml-6 mb-1 reveal-when-picked">{{template "server-checkboxes" (dict "Name" "unverified_server" "Choices" .UnverifiedChoices)}}</div>
 <label><input type="radio" name="unverified" value="none"{{if eq .UnverifiedDefault "none"}} checked{{end}}> No servers</label>
 </div>
+<p class="field-help mt-2 mb-0">Your choices for workspaces above also limit these machines only when you pick "No servers".</p>
 </fieldset>
 <button type="submit" class="btn btn-primary">Save</button>
 </form>

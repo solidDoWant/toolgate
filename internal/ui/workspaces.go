@@ -108,8 +108,10 @@ type workspacesPage struct {
 	// UnverifiedChoices are the checkboxes of "Only these servers".
 	UnverifiedChoices []serverChoice
 	Cards             []workspaceCard
-	Pending           *pendingChange
-	Error             string
+	// Descriptions are the catalog descriptions by server name.
+	Descriptions map[string]string
+	Pending      *pendingChange
+	Error        string
 }
 
 // pendingFields are the form fields kept across a step-up sign-in.
@@ -190,6 +192,7 @@ func (u *UI) renderWorkspaces(writer http.ResponseWriter, request *http.Request,
 
 	accessible := u.options.Workspaces.AccessibleServers(sessionIdentity(session))
 	descriptions := u.serverDescriptions(ctx, session)
+	data.Descriptions = descriptions
 	data.UnverifiedChoices = serverChoices(accessible, scopes.UnverifiedServers, descriptions)
 
 	listed := map[string]bool{}
