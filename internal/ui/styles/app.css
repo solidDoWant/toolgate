@@ -191,3 +191,16 @@
     background: rgb(0 0 0 / 0.45);
   }
 }
+
+/* The copy button next to a shortened ID: icon-sized, on the ID's line. It is
+   outside a layer so it wins over the base button style. */
+button.copy-id-button {
+  display: inline-flex;
+  padding: 0.125rem;
+  border: 0;
+  background: transparent;
+  line-height: 1;
+}
+button.copy-id-button:hover {
+  background: var(--neutral-bg);
+}

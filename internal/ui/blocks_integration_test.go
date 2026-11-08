@@ -103,7 +103,7 @@ func TestBlocksPage(t *testing.T) {
 		page := readBody(t, get(t, admin, env.server.URL+"/ui/blocks"))
 		assert.Contains(t, page, "Incident 7.")
 		assert.Contains(t, page, `<span class="font-mono text-xs" title="`+id+`">`+principal.Short(id)+`</span>`, "the ID shows shortened, the full ID on hover")
-		assert.Contains(t, page, `aria-label="Full ID" value="`+id+`"`, "the full ID is in a copy box")
+		assert.Contains(t, page, `data-copy-text="`+id+`"`, "a copy button holds the full ID")
 		assert.NotContains(t, page, ">"+id+"<", "the full ID isn't shown as text")
 		assert.Contains(t, page, `<span class="chip"><span class="chip-label">server</span> <span class="font-mono">github</span></span>`)
 		assert.Contains(t, page, `<span class="chip"><span class="chip-label">server</span> <span class="font-mono">wiki</span></span>`)

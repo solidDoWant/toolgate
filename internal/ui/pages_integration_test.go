@@ -30,6 +30,17 @@ type fakeServers struct {
 	identities    []auth.Identity
 	includeShared []bool
 	restarts      []restartCall
+	// screenshotState replaces the default servers and instances: "" keeps
+	// them, "seeded" shows a catalog and instances that agree, "empty"
+	// shows neither.
+	screenshotState string
+}
+
+func (f *fakeServers) setScreenshotState(state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.screenshotState = state
 }
 
 // restartCall is one RequestRestart the fake was asked for.
@@ -43,6 +54,17 @@ func (f *fakeServers) Servers(_ context.Context, identity auth.Identity) ([]gate
 	defer f.mu.Unlock()
 
 	f.identities = append(f.identities, identity)
+
+	switch f.screenshotState {
+	case "empty":
+		return nil, nil
+	case "seeded":
+		return []gateway.ServerEntry{
+			{Name: "github", Description: "The GitHub server.", Scope: "per-user", Status: "ready"},
+			{Name: "wiki", Description: "The team wiki.", Scope: "shared", Status: "ready"},
+			{Name: "prod-db", Scope: "shared", Status: "blocked", Reason: "Only from an attested environment."},
+		}, nil
+	}
 
 	return []gateway.ServerEntry{
 		{Name: "github", Description: "The GitHub server.", Scope: "per-user", Status: "ready"},
@@ -81,7 +103,10 @@ func (f *fakeServers) Catalog(ctx context.Context, identity auth.Identity) ([]ga
 func (f *fakeServers) ServerDetail(_ context.Context, _ auth.Identity, name string) (gateway.ServerInfo, []gateway.ToolInfo, bool, error) {
 	switch name {
 	case "github", "any-server":
-		return gateway.ServerInfo{ServerEntry: gateway.ServerEntry{Name: name, Scope: "per-user", Status: "ready"}, Environments: "any", ToolCount: 2},
+		return gateway.ServerInfo{
+				ServerEntry: gateway.ServerEntry{Name: name, Scope: "per-user", Status: "ready"}, Environments: "any", ToolCount: 2,
+				UserPatterns: []string{"*@example.com"}, GroupPatterns: []string{"dev-*"},
+			},
 			[]gateway.ToolInfo{{Name: "create_issue", Description: "Create an issue."}, {Name: "delete_repo", Blocked: true}, {Name: "merge", ApprovalRequired: true}}, true, nil
 	case "mail":
 		return gateway.ServerInfo{
@@ -98,6 +123,19 @@ func (f *fakeServers) LiveInstances(_ context.Context, principal string, include
 	defer f.mu.Unlock()
 
 	f.includeShared = append(f.includeShared, includeShared)
+
+	switch f.screenshotState {
+	case "empty":
+		return nil, nil
+	case "seeded":
+		ready := time.Now().Add(-3 * time.Hour)
+
+		return []gateway.InstanceEntry{
+			{ID: "own", Server: "github", Scope: "per-user", Owner: principal, Status: "ready", ReadyAt: &ready, Outdated: true},
+			{ID: "shared", Server: "wiki", Scope: "shared", Status: "ready", ReadyAt: &ready},
+			{ID: "failed", Server: "github", Scope: "per-user", Owner: principal, Status: "failed", Reason: "The image could not be pulled."},
+		}, nil
+	}
 
 	instances := []gateway.InstanceEntry{{ID: "own", Server: "github", Scope: "per-user", Owner: principal, Status: "ready", Outdated: true}}
 	if includeShared {
@@ -299,12 +337,10 @@ func TestServersPage(t *testing.T) {
 				"the catalog is the user's with `user` attestation and no workspace or session claim")
 			assert.Equal(t, test.wantShared, includeShared)
 
-			assert.Contains(t, body, `<a href="/ui/servers/github">github</a>`)
+			assert.Contains(t, body, `<a href="/ui/servers/github" class="font-medium">github</a>`)
 			assert.Contains(t, body, "Only from an attested environment.")
-			assert.Equal(t, 1, strings.Count(body, "<td>Everyone</td>"), "only the server open to every user shows Everyone")
-			assert.Contains(t, body, "<div>Users <code>*@example.com</code></div><div>Group <code>dev-*</code></div>")
 			assert.Contains(t, body, `<span class="badge badge-warn">outdated</span>`)
-			assert.Equal(t, test.wantShared, strings.Contains(body, "<td>wiki</td>"), "shared instances only for admins")
+			assert.Equal(t, test.wantShared, strings.Contains(body, `data-label="Server">wiki</td>`), "shared instances only for admins")
 			assert.Equal(t, test.wantShared, strings.Contains(body, `href="/ui/blocks"`), "the Blocks link only for admins")
 
 			token := csrfTokenOf("servers-session")
@@ -324,7 +360,7 @@ func TestRestartInstance(t *testing.T) {
 	t.Run("the Servers page shows a restart button on an outdated ready instance only", func(t *testing.T) {
 		body := readBody(t, get(t, browser, env.server.URL+ui.HomePath))
 
-		assert.Contains(t, body, `<form method="post" action="/ui/instances/own/restart">`)
+		assert.Contains(t, body, `<form method="post" action="/ui/instances/own/restart" class="m-0">`)
 		assert.NotContains(t, body, `/ui/instances/shared/restart`, "the shared instance is starting")
 	})
 

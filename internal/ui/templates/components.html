@@ -33,8 +33,9 @@ right-aligned on a wide screen and at the bottom of the card on a phone. */}}
 {{define "row-actions-end"}}</div></td>{{end}}
 
 {{/* short-id: a long opaque ID (a string) as its first characters in
-monospace, with the full ID on hover and in a copy box. */}}
-{{define "short-id"}}<span class="font-mono text-xs" title="{{.}}">{{short .}}</span> <details class="copy-id inline-block align-baseline text-xs"><summary class="cursor-pointer text-muted">Copy</summary><input readonly size="24" aria-label="Full ID" value="{{.}}" class="control mt-1 font-mono text-xs"></details>{{end}}
+monospace, with the full ID on hover, and a small icon button that copies
+the full ID. The button needs JavaScript; the full ID stays in its title. */}}
+{{define "short-id"}}<span class="whitespace-nowrap"><span class="font-mono text-xs" title="{{.}}">{{short .}}</span> <button type="button" class="copy-id-button inline-flex align-middle text-muted" data-copy-text="{{.}}" title="Copy the full ID" aria-label="Copy the full ID"><svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.500 3.500V9A1.5 1.5 0 0 0 4 10.500h1.500"/></svg></button></span>{{end}}
 
 {{/* chip: a small labelled value, Label then Value. */}}
 {{define "chip"}}<span class="chip"><span class="chip-label">{{.Label}}</span> <span class="font-mono">{{.Value}}</span></span>{{end}}
