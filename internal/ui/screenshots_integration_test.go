@@ -76,7 +76,7 @@ func seedScreenshotData(t *testing.T, env *uiEnv) (int64, int64) {
 	env.insertApproval(t, approvalID(1), "dave", time.Hour)
 	env.insertApproval(t, approvalID(2), "dave", time.Hour)
 
-	_, err := env.pool.Exec(t.Context(), `INSERT INTO grants (id, principal, template_ns, template_name, tool, session_id, created_at, expires_at) VALUES
+	_, err = env.pool.Exec(t.Context(), `INSERT INTO grants (id, principal, template_ns, template_name, tool, session_id, created_at, expires_at) VALUES
 		('c1d2e3f4a5b60718293a4b5c6d7e8f90', 'dave', 'tools', 'optin-server', '', NULL, now() - interval '10 minutes', now() + interval '50 minutes'),
 		('d1d2e3f4a5b60718293a4b5c6d7e8f91', 'dave', 'tools', 'any-server', 'deploy', 'laptop-7f3a', now() - interval '20 minutes', now() + interval '8 hours')`)
 	require.NoError(t, err)
