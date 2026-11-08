@@ -119,7 +119,7 @@ func TestSessionAddition(t *testing.T) {
 		require.Eventually(t, func() bool { return pageShows(ctx, "Sign in again to continue") }, time.Minute, 100*time.Millisecond)
 		assert.False(t, pageShows(ctx, "Always allow in this workspace"), "no approval without a fresh sign-in")
 
-		require.NoError(t, chromedp.Do(ctx, chromedp.Click(chromedp.CSS(`a.button`))))
+		require.NoError(t, chromedp.Do(ctx, chromedp.Click(chromedp.CSS(`main a.btn-primary`))))
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.SignInToOIDC(user), chromedp.WaitVisible(allowWorkspace)))
 		require.NoError(t, chromedp.Do(ctx, chromedp.Click(allowWorkspace)))
 

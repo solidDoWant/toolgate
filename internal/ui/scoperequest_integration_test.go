@@ -82,11 +82,11 @@ func TestScopeRequestApprovalPage(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.StatusCode)
 
 		page := readBody(t, response)
-		assert.Contains(t, page, "<dt>Target session</dt><dd>target-session</dd>")
-		assert.Contains(t, page, "<dt>In workspace</dt><dd><span title=\""+additionWorkspace+"\">Coder workspace mail</span></dd>")
-		assert.Contains(t, page, "<dt>Asked by session</dt><dd>asker</dd>")
-		assert.Contains(t, page, `<td id="change-before"><p>Allowed: nothing by name</p>`)
-		assert.Contains(t, page, `<td id="change-after"><p>Allowed: </p><ul class="allowed"><li>any-server</li></ul>`)
+		assert.Contains(t, page, ">Target session</dt><dd class=\"m-0 mt-0.5 text-sm\">target-session</dd>")
+		assert.Contains(t, page, ">In workspace</dt><dd class=\"m-0 mt-0.5 text-sm\"><span title=\""+additionWorkspace+"\">Coder workspace mail</span></dd>")
+		assert.Contains(t, page, ">Asked by session</dt><dd class=\"m-0 mt-0.5 text-sm\">asker</dd>")
+		assert.Contains(t, page, `<td id="change-before" data-label="Before"><p>Allowed: nothing by name</p>`)
+		assert.Contains(t, page, `<td id="change-after" data-label="After"><p>Allowed: </p><ul class="allowed"><li>any-server</li></ul>`)
 		assert.Empty(t, env.additionsOf(t, sessionPK), "nothing changes before approval")
 
 		response = post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", url.Values{ui.CSRFField: {csrfTokenOf("scope-owner")}})
@@ -126,7 +126,7 @@ func TestScopeRequestApprovalPage(t *testing.T) {
 		env.freshSignIn(t, "scope-tool")
 
 		page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
-		assert.Contains(t, page, "<dt>Target workspace</dt><dd><span title=\"coder/dave/tools\">Coder workspace tools</span></dd>")
+		assert.Contains(t, page, ">Target workspace</dt><dd class=\"m-0 mt-0.5 text-sm\"><span title=\"coder/dave/tools\">Coder workspace tools</span></dd>")
 		assert.Contains(t, page, `<li>any-server__status</li>`)
 
 		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", url.Values{ui.CSRFField: {csrfTokenOf("scope-tool")}})

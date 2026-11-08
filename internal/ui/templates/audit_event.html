@@ -1,31 +1,31 @@
+{{define "heading"}}<p class="m-0 mb-2 text-sm"><a href="/ui/audit">All audit events</a></p>
+{{template "page-header" (dict "Title" "Audit event" "Summary" "One recorded decision or change, with the details that led to it.")}}{{end}}
 {{define "content"}}
-<h2>{{if .Data.Summary.Outcome}}{{template "outcome" (outcome .Data.Summary.Outcome)}} {{end}}{{.Data.Summary.Prefix}}{{if .Data.Summary.Subject}}<code>{{.Data.Summary.Subject}}</code>{{end}}{{.Data.Summary.Suffix}}</h2>
-<dl id="event">
-<dt>When</dt><dd>{{template "reltime" .Data.Time}}</dd>
-{{range .Data.Fields}}<dt>{{.Name}}</dt><dd>{{if .URL}}<a href="{{.URL}}"{{if .Raw}} title="{{.Raw}}"{{end}}>{{.Value}}</a>{{else if .Raw}}<span title="{{.Raw}}">{{.Value}}</span>{{else}}{{.Value}}{{end}}</dd>
-{{end}}<dt>Who</dt><dd>{{template "who" .Data.Who}}</dd>
-{{if .Data.Workspace}}<dt>Workspace</dt><dd>{{template "ws" .Data.WorkspaceLabel}}</dd>
-{{end}}{{if .Data.SessionPage}}<dt>Session page</dt><dd><a href="{{.Data.SessionPage}}">Open the session</a></dd>
+<p class="m-0 mb-3 text-base font-semibold">{{if .Data.Summary.Outcome}}{{template "outcome" (outcome .Data.Summary.Outcome)}} {{end}}{{.Data.Summary.Prefix}}{{if .Data.Summary.Subject}}<code>{{.Data.Summary.Subject}}</code>{{end}}{{.Data.Summary.Suffix}}</p>
+<dl id="event" class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">
+{{template "fact-start" "When"}}{{template "reltime" .Data.Time}}{{template "fact-end"}}
+{{range .Data.Fields}}{{template "fact-start" .Name}}{{if .URL}}<a href="{{.URL}}"{{if .Raw}} title="{{.Raw}}"{{end}}>{{.Value}}</a>{{else if .Raw}}<span title="{{.Raw}}">{{.Value}}</span>{{else}}{{.Value}}{{end}}{{template "fact-end"}}
+{{end}}{{template "fact-start" "Who"}}{{template "who" .Data.Who}}{{template "fact-end"}}
+{{if .Data.Workspace}}{{template "fact-start" "Workspace"}}{{template "ws" .Data.WorkspaceLabel}}{{template "fact-end"}}
+{{end}}{{if .Data.SessionPage}}{{template "fact-start" "Session page"}}<a href="{{.Data.SessionPage}}">Open the session</a>{{template "fact-end"}}
 {{end}}</dl>
-{{if .Data.HasPayload}}<h2>Payload</h2>
-<details id="payload-box" open><summary>Arguments or result</summary>
-<pre id="payload">{{if .Data.PrettyBody}}{{.Data.PrettyBody}}{{else}}{{.Data.Payload}}{{end}}</pre></details>
-{{if .Data.PayloadTruncated}}<p class="note">Only the first 1 MiB is shown.</p>
-{{end}}<p><a href="/ui/audit/events/{{.Data.Key}}/payload">Download the payload</a></p>
-{{end}}{{with .Data.PayloadNote}}<p class="note">{{.}}</p>
+{{if .Data.HasPayload}}{{template "card-start" (dict "Title" "Payload")}}
+<details id="payload-box" open><summary class="cursor-pointer text-sm">Arguments or result</summary>
+<pre id="payload" class="mt-2 mb-0 overflow-x-auto text-xs whitespace-pre-wrap">{{if .Data.PrettyBody}}{{.Data.PrettyBody}}{{else}}{{.Data.Payload}}{{end}}</pre></details>
+{{if .Data.PayloadTruncated}}<p class="note m-0 mt-2 text-sm text-muted">Only the first 1 MiB is shown.</p>
+{{end}}<p class="m-0 mt-2 text-sm"><a href="/ui/audit/events/{{.Data.Key}}/payload">Download the payload</a></p>
+{{template "card-end"}}{{end}}{{with .Data.PayloadNote}}<p class="note m-0 mb-6 text-sm text-muted">{{.}}</p>
 {{end}}
-<h2>Raw event</h2>
-<details id="raw"><summary>Show the stored JSON</summary>
-<pre>{{.Data.Details}}</pre></details>
-{{if .Data.Related}}<h2>Related events</h2>
-<div class="table-wrap"><table id="related">
-<thead><tr><th>When</th><th>Outcome</th><th>What</th><th></th></tr></thead>
-<tbody>
-{{range .Data.Related}}<tr><td>{{template "reltime" .Time}}</td>
-<td>{{if .Summary.Outcome}}{{template "outcome" (outcome .Summary.Outcome)}}{{end}}</td>
-<td>{{.Summary.Prefix}}{{if .Summary.Subject}}<code>{{.Summary.Subject}}</code>{{end}}{{.Summary.Suffix}}</td>
-<td><a href="/ui/audit/events/{{.Key}}">Details</a></td></tr>
-{{end}}</tbody></table></div>
+{{template "card-start" (dict "Title" "Raw event")}}
+<details id="raw"><summary class="cursor-pointer text-sm">Show the stored JSON</summary>
+<pre class="mt-2 mb-0 overflow-x-auto text-xs whitespace-pre-wrap">{{.Data.Details}}</pre></details>
+{{template "card-end"}}
+{{if .Data.Related}}<h2 class="m-0 mb-2 text-base font-semibold">Related events</h2>
+{{template "table-start" (dict "ID" "related" "Label" "Related events" "Columns" (list "When" "Outcome" "What" ""))}}
+{{range .Data.Related}}<tr><td data-label="When">{{template "reltime" .Time}}</td>
+<td data-label="Outcome">{{if .Summary.Outcome}}{{template "outcome" (outcome .Summary.Outcome)}}{{end}}</td>
+<td data-label="What">{{.Summary.Prefix}}{{if .Summary.Subject}}<code>{{.Summary.Subject}}</code>{{end}}{{.Summary.Suffix}}</td>
+{{template "row-actions-start"}}<a href="/ui/audit/events/{{.Key}}" class="btn btn-small">Details</a>{{template "row-actions-end"}}</tr>
+{{end}}{{template "table-end"}}
 {{end}}
-<p><a href="/ui/audit">Back to the audit log</a></p>
 {{end}}

@@ -1,5 +1,8 @@
+{{define "heading"}}{{template "page-header" (dict "Title" .Title)}}{{end}}
 {{define "content"}}
-<p>{{.Data.Happened}}</p>
-<p>{{.Data.ToDo}}</p>
-<p><a class="button" href="{{.Data.Retry}}">Sign in again</a></p>
+{{template "card-start" (dict "Title" "")}}
+<p class="mt-0 text-sm">{{.Data.Happened}}</p>
+<p class="text-sm">{{.Data.ToDo}}</p>
+<a class="btn btn-primary" href="{{.Data.Retry}}">Sign in again</a>
+{{template "card-end"}}
 {{end}}

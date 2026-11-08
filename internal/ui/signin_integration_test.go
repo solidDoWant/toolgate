@@ -347,9 +347,9 @@ func signInFailedPage(t *testing.T, response *http.Response, retry string) strin
 	assert.Equal(t, "text/html; charset=utf-8", response.Header.Get("Content-Type"))
 
 	page := html.UnescapeString(body(t, response))
-	assert.Contains(t, page, "<h1>Sign-in failed</h1>")
+	assert.Contains(t, page, ">Sign-in failed</h1>")
 	assert.Contains(t, page, `<link rel="stylesheet" href="/ui/static/toolgate.css">`)
-	assert.Contains(t, page, `<a class="button" href="`+retry+`">Sign in again</a>`)
+	assert.Contains(t, page, `<a class="btn btn-primary" href="`+retry+`">Sign in again</a>`)
 	assert.NotContains(t, page, `aria-label="Main"`, "a signed-out page has no navigation")
 
 	return page

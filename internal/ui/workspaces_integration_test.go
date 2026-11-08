@@ -338,8 +338,8 @@ func TestChangeApprovalPage(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.StatusCode)
 
 		page := readBody(t, response)
-		assert.Contains(t, page, `<td id="change-before"><ul><li>optin-server</li></ul></td>`)
-		assert.Contains(t, page, `<td id="change-after"><ul><li>any-server</li><li>optin-server</li></ul></td>`)
+		assert.Contains(t, page, `<td id="change-before" data-label="Before"><ul><li>optin-server</li></ul></td>`)
+		assert.Contains(t, page, `<td id="change-after" data-label="After"><ul><li>any-server</li><li>optin-server</li></ul></td>`)
 		assert.Contains(t, page, "/approve")
 		assert.Contains(t, page, "/deny")
 
@@ -366,7 +366,7 @@ func TestChangeApprovalPage(t *testing.T) {
 
 		page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
 		assert.Contains(t, page, "Sign in again to continue")
-		assert.Contains(t, page, "<td>none</td><td>all</td>", "the defaults change shows before and after")
+		assert.Contains(t, page, `<td data-label="Before">none</td><td data-label="After">all</td>`, "the defaults change shows before and after")
 
 		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", url.Values{ui.CSRFField: {csrfTokenOf("change-stale")}})
 		require.Equal(t, http.StatusSeeOther, response.StatusCode)
