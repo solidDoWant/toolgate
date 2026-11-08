@@ -139,7 +139,7 @@ The Servers page of the web UI (`/ui/servers`) shows the servers that you can us
 - the status of your instance and the number of tools, when known;
 - whether your workspace defaults and lists allow the server in verified workspaces and in unverified sessions, with a link to the Workspaces page to change them.
 
-Select a server name to see its tools. Blocked tools and tools that need approval are marked. The page also shows the `toolgate workspace allow` commands for the server. Click a command to select it, then copy it.
+Select a server name to see its page. It shows these facts in one row, and then the tools of the server. Blocked tools and tools that need approval are marked. The page also shows the `toolgate workspace allow` commands for the server. Click a command to select it, then copy it.
 
 ## See your open sessions
 

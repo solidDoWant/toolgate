@@ -298,12 +298,12 @@ func TestServersPage(t *testing.T) {
 				"the catalog is the user's with `user` attestation and no workspace or session claim")
 			assert.Equal(t, test.wantShared, includeShared)
 
-			assert.Contains(t, body, `<a href="/ui/servers/github">github</a>`)
+			assert.Contains(t, body, `<a href="/ui/servers/github" class="font-medium">github</a>`)
 			assert.Contains(t, body, "Only from an attested environment.")
-			assert.Equal(t, 1, strings.Count(body, "<td>Everyone</td>"), "only the server open to every user shows Everyone")
+			assert.Equal(t, 1, strings.Count(body, `data-label="Access">Everyone</td>`), "only the server open to every user shows Everyone")
 			assert.Contains(t, body, "<div>Users <code>*@example.com</code></div><div>Group <code>dev-*</code></div>")
 			assert.Contains(t, body, `<span class="badge badge-warn">outdated</span>`)
-			assert.Equal(t, test.wantShared, strings.Contains(body, "<td>wiki</td>"), "shared instances only for admins")
+			assert.Equal(t, test.wantShared, strings.Contains(body, `data-label="Server">wiki</td>`), "shared instances only for admins")
 			assert.Equal(t, test.wantShared, strings.Contains(body, `href="/ui/blocks"`), "the Blocks link only for admins")
 
 			token := csrfTokenOf("servers-session")
@@ -323,7 +323,7 @@ func TestRestartInstance(t *testing.T) {
 	t.Run("the Servers page shows a restart button on an outdated ready instance only", func(t *testing.T) {
 		body := readBody(t, get(t, browser, env.server.URL+ui.HomePath))
 
-		assert.Contains(t, body, `<form method="post" action="/ui/instances/own/restart">`)
+		assert.Contains(t, body, `<form method="post" action="/ui/instances/own/restart" class="m-0">`)
 		assert.NotContains(t, body, `/ui/instances/shared/restart`, "the shared instance is starting")
 	})
 

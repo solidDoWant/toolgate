@@ -1,24 +1,26 @@
+{{define "heading"}}{{template "page-header" (dict "Title" "Servers" "Summary" "The MCP servers offered to you, and the instances running for you.")}}{{end}}
 {{define "content"}}
 {{with .Data.Notice}}<p class="flash notice" role="status">{{.}}</p>
-{{end}}<h2>Catalog</h2>
-{{if .Data.Servers}}
-<div class="table-wrap"><table id="catalog">
-<thead><tr><th>Server</th><th>Description</th><th>Scope</th><th>Access</th><th>Environments</th><th>Kind</th><th>Status</th><th>Tools</th>{{if .Data.Workspaces}}<th>In your workspaces</th>{{end}}{{if .Data.Admin}}<th>Instances</th>{{end}}</tr></thead>
-<tbody>
-{{range .Data.Servers}}<tr>
-<td><a href="/ui/servers/{{.Name}}">{{.Name}}</a></td><td>{{.Description}}</td>
-<td><span class="badge badge-neutral" title="{{scopeHelp .Scope}}">{{.Scope}}</span></td>
-<td>{{template "access" .}}</td>
-<td><span class="badge {{environmentBadge .Environments}}" title="{{environmentHelp .Environments}}">{{.Environments}}</span></td>
-<td>{{if .Remote}}<span class="badge badge-neutral">remote</span>{{else}}launched{{end}}{{range .Secrets}}<br>needs secret <code>{{.Name}}</code>: {{if .Set}}set{{else}}not set{{end}}{{end}}</td>
-<td><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</td>
-<td>{{if ge .ToolCount 0}}{{.ToolCount}}{{else}}unknown{{end}}</td>
-{{if $.Data.Workspaces}}<td>{{template "availability" .Availability}}</td>{{end}}
-{{if $.Data.Admin}}<td>{{.Instances}}</td>{{end}}
+{{end}}{{if .Data.Servers}}
+{{if and .Data.Workspaces .Data.Admin}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools" "In your workspaces" "Instances"))}}
+{{else if .Data.Workspaces}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools" "In your workspaces"))}}
+{{else if .Data.Admin}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools" "Instances"))}}
+{{else}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Description" "Scope" "Access" "Environments" "Kind" "Status" "Tools"))}}
+{{end}}{{range .Data.Servers}}<tr>
+<td data-label="Server"><a href="/ui/servers/{{.Name}}" class="font-medium">{{.Name}}</a></td>
+<td data-label="Description">{{.Description}}</td>
+<td data-label="Scope"><span class="badge badge-neutral" title="{{scopeHelp .Scope}}">{{.Scope}}</span></td>
+<td data-label="Access">{{template "access" .}}</td>
+<td data-label="Environments"><span class="badge {{environmentBadge .Environments}}" title="{{environmentHelp .Environments}}">{{.Environments}}</span></td>
+<td data-label="Kind">{{if .Remote}}<span class="badge badge-neutral">remote</span>{{else}}launched{{end}}{{range .Secrets}}<br>needs secret <code>{{.Name}}</code>: {{if .Set}}set{{else}}not set{{end}}{{end}}</td>
+<td data-label="Status"><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</td>
+<td data-label="Tools">{{if ge .ToolCount 0}}{{.ToolCount}}{{else}}unknown{{end}}</td>
+{{if $.Data.Workspaces}}<td data-label="In your workspaces">{{template "availability" .Availability}}</td>{{end}}
+{{if $.Data.Admin}}<td data-label="Instances">{{.Instances}}</td>{{end}}
 </tr>
-{{end}}</tbody>
-</table></div>
-<dl class="legend">
+{{end}}{{template "table-end"}}
+{{template "card-start" (dict "Title" "What the words mean")}}
+<dl class="legend m-0">
 <dt>per-session</dt><dd>{{scopeHelp "per-session"}}</dd>
 <dt>per-user</dt><dd>{{scopeHelp "per-user"}}</dd>
 <dt>shared</dt><dd>{{scopeHelp "shared"}}</dd>
@@ -26,26 +28,28 @@
 <dt>attested</dt><dd>{{environmentHelp "attested"}}</dd>
 <dt>opt-in</dt><dd>{{environmentHelp "opt-in"}}</dd>
 </dl>
+{{template "card-end"}}
 {{else}}
-<p class="empty">No servers are offered to you.</p>
+{{template "empty-state" (dict "Text" "No servers are offered to you.")}}
 {{end}}
-<h2>Running instances</h2>
+<h2 class="m-0 mb-2 text-base font-semibold">Running instances</h2>
 {{if .Data.Instances}}
-<div class="table-wrap"><table id="instances">
-<thead><tr><th>Server</th><th>Scope</th><th>Owner</th><th>Status</th><th>Reason</th><th>Ready since</th><th>Version</th><th></th></tr></thead>
-<tbody>
+{{template "table-start" (dict "ID" "instances" "Label" "Running instances" "Columns" (list "Server" "Scope" "Owner" "Status" "Reason" "Ready since" "Version" ""))}}
 {{range .Data.Instances}}<tr>
-<td>{{.Server}}</td><td>{{.Scope}}</td><td>{{if .Owner}}{{template "who" index $.Data.Owners .Owner}}{{else}}shared{{end}}</td><td><span class="badge {{badge .Status}}">{{.Status}}</span></td><td>{{.Reason}}</td>
-<td>{{with .ReadyAt}}{{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td>
-<td>{{if .Outdated}}<span class="badge badge-warn">outdated</span>{{else}}<span class="badge badge-ok">current</span>{{end}}</td>
-<td>{{if and .Outdated (eq .Status "ready")}}<form method="post" action="/ui/instances/{{.ID}}/restart">
+<td data-label="Server">{{.Server}}</td>
+<td data-label="Scope">{{.Scope}}</td>
+<td data-label="Owner">{{if .Owner}}{{template "who" index $.Data.Owners .Owner}}{{else}}shared{{end}}</td>
+<td data-label="Status">{{template "badge" .Status}}</td>
+<td data-label="Reason">{{.Reason}}</td>
+<td data-label="Ready since" class="whitespace-nowrap">{{with .ReadyAt}}{{template "reltime" (since .)}}{{end}}</td>
+<td data-label="Version">{{if .Outdated}}<span class="badge badge-warn">outdated</span>{{else}}<span class="badge badge-ok">current</span>{{end}}</td>
+{{template "row-actions-start"}}{{if and .Outdated (eq .Status "ready")}}<form method="post" action="/ui/instances/{{.ID}}/restart" class="m-0">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit">Restart</button>
-</form>{{end}}</td>
+<button type="submit" class="btn btn-small">Restart</button>
+</form>{{end}}{{template "row-actions-end"}}
 </tr>
-{{end}}</tbody>
-</table></div>
+{{end}}{{template "table-end"}}
 {{else}}
-<p class="empty">You have no running instances. New here? See <a href="/ui/setup">Quick setup</a>.</p>
+{{template "empty-state" (dict "Text" "You have no running instances. New here? See Quick setup." "ActionLabel" "Quick setup" "ActionHref" "/ui/setup")}}
 {{end}}
 {{end}}

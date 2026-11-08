@@ -26,8 +26,8 @@ func TestServersPageShowsScopeEnvironmentsAndKind(t *testing.T) {
 	assert.Contains(t, body, `<span class="badge badge-neutral" title="Everyone shares one instance.">shared</span>`)
 	assert.Contains(t, body, `<span class="badge badge-ok" title="Works from any signed-in machine.">any</span>`)
 	assert.Contains(t, body, `<span class="badge badge-warn" title="Needs an attested workspace.">attested</span>`)
-	assert.Contains(t, body, ">12</td>", "the tool count")
-	assert.NotContains(t, body, "<th>Instances</th>", "the instance count column is for admins")
+	assert.Contains(t, body, `data-label="Tools">12</td>`, "the tool count")
+	assert.NotContains(t, body, `<th scope="col">Instances</th>`, "the instance count column is for admins")
 }
 
 func TestServersPageShowsWorkspaceAvailability(t *testing.T) {
@@ -111,9 +111,9 @@ func TestServerDetail(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.StatusCode)
 
 		body := readBody(t, response)
-		assert.Contains(t, body, "Needs secret <code>mail-archiver-api-key</code>: not set")
-		assert.Contains(t, body, "Kind: remote")
-		assert.Contains(t, body, "<li>Access: Listed users and groups</li>")
+		assert.Contains(t, body, "Secret <code>mail-archiver-api-key</code></dt><dd class=\"m-0\">not set</dd>")
+		assert.Contains(t, body, "<dt class=\"text-muted\">Kind</dt><dd class=\"m-0\">remote</dd>")
+		assert.Contains(t, body, "<dt class=\"text-muted\">Access</dt><dd class=\"m-0\">Listed users and groups</dd>")
 	})
 
 	t.Run("a server the user can't see is not found", func(t *testing.T) {
