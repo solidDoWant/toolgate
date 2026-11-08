@@ -1,10 +1,37 @@
 # Changelog
 
-## Unreleased
+## 0.4.8
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release gives every page of the web UI the same new layout. It also fixes the sign-in with Authentik and stops duplicate tool list messages to Claude Code. There are no upgrade steps for admins.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.8`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.8`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Signing in
+
+- When a sign-in fails because the IdP did not ask for a fresh sign-in, or because the browser lost the sign-in cookie, the web UI now starts a new sign-in one time instead of showing an error page. A fresh sign-in now sends `max_age=60` instead of `max_age=0`, so Authentik asks the user to sign in again. You do not have to change a setting in Authentik. If the second sign-in also fails, the web UI shows a page that says what to do, with a "Sign in again" button. ([#579](https://github.com/solidDoWant/toolgate/pull/579))
 
 ### Web UI
 
-- When a sign-in fails because the IdP did not ask for a fresh sign-in, or because the browser lost the sign-in cookie, the web UI now starts a new sign-in one time instead of showing an error page. A fresh sign-in now sends `max_age=60` instead of `max_age=0`, so Authentik asks the user to sign in again. A failed sign-in now shows a web UI page with a "Sign in again" button.
+- Every page of the web UI now has the same layout. A side menu groups the pages under Use, Review and Admin, and shows the number of your pending approvals. On a phone, the menu opens from a "Menu" button. Each page starts with a header that says what the page is for. Tables show as cards on small screens. Times show as relative times, for example "5 minutes ago", with the exact UTC time on hover. A form to add an item opens in a dialog, and each form also has its own page, so the web UI works without JavaScript. Routes and form fields did not change. See `docs/admin/web-ui.md`. ([#581](https://github.com/solidDoWant/toolgate/pull/581), [#586](https://github.com/solidDoWant/toolgate/pull/586), [#580](https://github.com/solidDoWant/toolgate/pull/580), [#585](https://github.com/solidDoWant/toolgate/pull/585), [#582](https://github.com/solidDoWant/toolgate/pull/582), [#584](https://github.com/solidDoWant/toolgate/pull/584), [#583](https://github.com/solidDoWant/toolgate/pull/583), [#587](https://github.com/solidDoWant/toolgate/pull/587))
+- The Workspaces page shows one card for each workspace, with the servers that Claude can use there. To change them, click "Choose servers" and select the servers. If a change needs a fresh sign-in, toolgate keeps your change during the sign-in. After the sign-in, click "Confirm" to apply it. See `docs/user/README.md`. ([#584](https://github.com/solidDoWant/toolgate/pull/584))
+- The Audit page has a compact filter bar. Each filter that you applied shows as a chip that you can remove. Less common filters are in a "More filters" panel. The filters apply when you change them. ([#585](https://github.com/solidDoWant/toolgate/pull/585))
+- The Secrets page has a "Used by" column. It lists the servers whose templates use each secret. ([#580](https://github.com/solidDoWant/toolgate/pull/580))
+- On the Blocks page, you now set the duration of a block as a number and a unit: minutes, hours or days. ([#581](https://github.com/solidDoWant/toolgate/pull/581))
+- A short ID in a table now has a button that copies the full ID. ([#582](https://github.com/solidDoWant/toolgate/pull/582))
+
+### Fixes
+
+- When one change removes the tools of a server, for example a temporary block, the gateway now sends one `notifications/tools/list_changed` message to each session. Before, it sometimes sent two messages for one change. ([#589](https://github.com/solidDoWant/toolgate/pull/589))
+
+Internal work: the web UI stylesheet is now built with the Tailwind CSS standalone CLI, and CI renders screenshots of every web UI page on pull requests that change the web UI ([#581](https://github.com/solidDoWant/toolgate/pull/581)).
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.7
 
