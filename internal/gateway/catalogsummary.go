@@ -230,10 +230,9 @@ func (m *metaTools) metaDescriptions(ctx context.Context, identity auth.Identity
 }
 
 // setMetaDescriptions re-registers the two discovery meta tools when find
-// or list differ from their current descriptions. It reads nothing, so a
-// caller that applies the proxied tools right before it changes the whole
-// list within the SDK's list_changed debounce: one change, one
-// notification.
+// or list differ from their current descriptions. It reads nothing, so
+// called right after the proxied tools are applied, both changes fall
+// inside the go-sdk's list_changed debounce and send one notification.
 func (m *metaTools) setMetaDescriptions(target *sessionTools, find, list string) {
 	target.mu.Lock()
 	defer target.mu.Unlock()
@@ -251,13 +250,16 @@ func (m *metaTools) setMetaDescriptions(target *sessionTools, find, list string)
 // first change, so a sync that changes both the proxied tools and the
 // descriptions sends one list_changed, not one per part.
 func (m *metaTools) applySync(ctx context.Context, target *sessionTools, identity auth.Identity, wanted map[string]*mcp.Tool) error {
-	find, list, err := m.metaDescriptions(ctx, identity)
-	if err != nil {
+	find, list, readErr := m.metaDescriptions(ctx, identity)
+
+	// A failed summary read still applies the proxied tools: a policy
+	// change must reach the list even when the descriptions can't.
+	if err := target.apply(wanted); err != nil {
 		return err
 	}
 
-	if err := target.apply(wanted); err != nil {
-		return err
+	if readErr != nil {
+		return readErr
 	}
 
 	m.setMetaDescriptions(target, find, list)
