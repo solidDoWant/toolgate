@@ -124,6 +124,28 @@ type auditPage struct {
 	EventTypes []option
 	Outcomes   []option
 	Ranges     []option
+	// RangeValue is the preset the range control shows, "custom" for an
+	// explicit from and to.
+	RangeValue string
+	// TypeGroups is EventTypes by category, for the event type control.
+	TypeGroups []typeGroup
+	// Chips are the applied filters, each with the link that removes it.
+	Chips []filterChip
+	// ClearURL removes every chip and keeps the time range.
+	ClearURL string
+	// MoreCount is the number of applied filters inside "More filters".
+	MoreCount int
+}
+
+// typeGroup is the event types of one category.
+type typeGroup struct {
+	Label string
+	Types []option
+}
+
+// filterChip is one applied filter and the link that removes it.
+type filterChip struct {
+	Label, Value, RemoveURL string
 }
 
 // option is one entry of a picker.
@@ -171,7 +193,7 @@ var errAuditRange = errors.New("the time range must be positive and at most 31 d
 // auditRangePresets are the time presets of the audit page.
 var auditRangePresets = []option{
 	{Value: "1h", Label: "Last hour"}, {Value: "24h", Label: "Last 24 hours"},
-	{Value: "today", Label: "Today (UTC)"}, {Value: "7d", Label: "Last 7 days"}, {Value: "custom", Label: "Custom range"},
+	{Value: "today", Label: "Today (UTC)"}, {Value: "7d", Label: "Last 7 days"}, {Value: "custom", Label: "Custom…"},
 }
 
 var auditOutcomes = []option{
@@ -321,6 +343,36 @@ func (f auditFilter) with(name, value string) string {
 		values.Del(name)
 	} else {
 		values.Set(name, value)
+	}
+
+	return "/ui/audit?" + values.Encode()
+}
+
+// without is the list URL for the filter with one field cleared. For
+// "type" only the given event type is dropped.
+func (f auditFilter) without(name, value string) string {
+	if name != "type" {
+		return f.with(name, "")
+	}
+
+	values := f.values(false)
+	values.Del("type")
+
+	for _, eventType := range f.EventTypes {
+		if eventType != value {
+			values.Add("type", eventType)
+		}
+	}
+
+	return "/ui/audit?" + values.Encode()
+}
+
+// cleared is the list URL for the filter with every field but the time
+// range cleared.
+func (f auditFilter) cleared() string {
+	values := f.values(false)
+	for _, name := range []string{"type", "principal", "workspace", "session", "server", "tool", "outcome", "category"} {
+		values.Del(name)
 	}
 
 	return "/ui/audit?" + values.Encode()
@@ -509,6 +561,12 @@ func (u *UI) audit(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	// A request with no time parameter is the 24 hour preset, so the links
+	// of the page keep it instead of spelling out two times.
+	if filter.Range == "" && query.Get("range") == "" && query.Get("from") == "" && query.Get("to") == "" {
+		filter.Range = "24h"
+	}
+
 	params := filter.params()
 	params.PageSize = AuditPageSize + 1
 
@@ -588,12 +646,106 @@ func (u *UI) audit(writer http.ResponseWriter, request *http.Request) {
 		data.Outcomes = append(data.Outcomes, outcome)
 	}
 
+	data.RangeValue = filter.Range
+
+	if query.Get("range") == "custom" || query.Get("from") != "" || query.Get("to") != "" {
+		data.RangeValue = "custom"
+	} else if data.RangeValue == "" {
+		data.RangeValue = "24h"
+	}
+
 	for _, preset := range auditRangePresets {
-		preset.Selected = preset.Value == filter.Range || (filter.Range == "" && preset.Value == "custom")
+		preset.Selected = preset.Value == data.RangeValue
 		data.Ranges = append(data.Ranges, preset)
 	}
 
+	data.TypeGroups = typeGroups(data.EventTypes)
+	data.Chips, data.MoreCount = filterChips(filter, data)
+	data.ClearURL = filter.cleared()
+
 	u.render(writer, request, "audit", "Audit", data)
+}
+
+// typeGroups arranges the event type options by category, in the order of
+// auditCategories.
+func typeGroups(types []option) []typeGroup {
+	groups := make([]typeGroup, 0, len(auditCategories))
+
+	for _, category := range auditCategories {
+		group := typeGroup{Label: category.Label}
+
+		for _, entry := range types {
+			if slices.Contains(category.Types, entry.Value) {
+				group.Types = append(group.Types, entry)
+			}
+		}
+
+		groups = append(groups, group)
+	}
+
+	return groups
+}
+
+// selectedLabel is the label of the selected option, or the fallback when
+// the picker has none.
+func selectedLabel(options []option, fallback string) string {
+	for _, entry := range options {
+		if entry.Selected && entry.Value != "" && entry.Label != "" {
+			return entry.Label
+		}
+	}
+
+	return fallback
+}
+
+// filterChips lists the applied filters and counts those in "More
+// filters". The time range is not a chip: its control shows it. A
+// non-admin's own principal is not a chip, as they can't change it.
+func filterChips(filter auditFilter, data auditPage) ([]filterChip, int) {
+	var chips []filterChip
+
+	more := 0
+	add := func(label, value, name, raw string, inMore bool) {
+		chips = append(chips, filterChip{Label: label, Value: value, RemoveURL: filter.without(name, raw)})
+
+		if inMore {
+			more++
+		}
+	}
+
+	if filter.Outcome != "" {
+		add("Outcome", selectedLabel(data.Outcomes, filter.Outcome), "outcome", filter.Outcome, false)
+	}
+
+	for _, eventType := range filter.EventTypes {
+		add("Event type", auditTypeLabel(eventType), "type", eventType, false)
+	}
+
+	if filter.Category != "" {
+		add("Category", selectedLabel(data.Categories, filter.Category), "category", filter.Category, true)
+	}
+
+	if filter.Principal != "" && data.CanFilterPrincipal {
+		add("User", selectedLabel(data.Principals, filter.Principal), "principal", filter.Principal, true)
+	}
+
+	if filter.Workspace != "" {
+		add("Workspace", selectedLabel(data.Workspaces, filter.Workspace), "workspace", filter.Workspace, true)
+	}
+
+	if filter.Session != "" {
+		add("Session", principal.Short(filter.Session), "session", filter.Session, true)
+	}
+
+	if filter.Server != "" {
+		add("Server", filter.Server, "server", filter.Server, true)
+	}
+
+	if filter.Tool != "" {
+		add("Tool", filter.Tool, "tool", filter.Tool, true)
+	}
+
+	return chips, more
 }
 
 func optionValues(options []option) []string {

@@ -60,7 +60,7 @@ func (e *uiEnv) insertAudit(t *testing.T, row auditRow) string {
 	return fmt.Sprintf("%d-%d", row.at.UnixMicro(), id)
 }
 
-var toolCell = regexp.MustCompile(`<td>(?:<a [^>]*>)?([^<]*)(?:</a>)?</td><td><a href="/ui/audit/events/`)
+var toolCell = regexp.MustCompile(`<td data-label="Server / tool">(?:<a class="server"[^>]*>[^<]*</a>)?(?: / )?(?:<a class="tool"[^>]*>)?([^<]*)(?:</a>)?</td><td class="row-actions"[^>]*><div[^>]*><a href="/ui/audit/events/`)
 
 // toolsOn lists the tool column of the events a page shows, in order.
 func toolsOn(page string) []string {
@@ -244,7 +244,7 @@ func TestAuditPagesNeedASession(t *testing.T) {
 // toolsInBrowser lists the tool column of the events the browser shows.
 func toolsInBrowser(ctx context.Context) []string {
 	tools, err := chromedp.Run(ctx, chromedp.Evaluate[[]string](
-		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => row.cells[7].innerText)`))
+		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => { const link = row.cells[6].querySelector('a.tool'); return link ? link.innerText : ''; })`))
 	if err != nil {
 		return nil
 	}
@@ -277,10 +277,10 @@ func TestAuditFilters(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	submit := chromedp.CSS(`#filter button`)
+	form := chromedp.CSS(`#filter`)
 	// Chromium can report a network change while it starts; try again.
 	require.Eventually(t, func() bool {
-		return chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/audit"), chromedp.WaitVisible(submit)) == nil
+		return chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/audit"), chromedp.WaitVisible(form)) == nil
 	}, time.Minute, 200*time.Millisecond, "the audit page opens")
 
 	fields := []string{"principal", "workspace", "session", "server", "tool", "from", "to"}
@@ -315,7 +315,8 @@ func TestAuditFilters(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			require.NoError(t, chromedp.Do(ctx, chromedp.Click(submit)))
+			_, err := chromedp.Run(ctx, chromedp.Evaluate[any](`document.querySelector('#filter').requestSubmit()`))
+			require.NoError(t, err)
 
 			// The submitted form is the page the browser is on.
 			assert.Eventually(t, func() bool {
@@ -383,7 +384,7 @@ func TestAuditPageOutcomeAndCategoryFilters(t *testing.T) {
 	status, page := auditPageOf(t, admin, env.server.URL, url.Values{"category": {"calls"}})
 	require.Equal(t, http.StatusOK, status)
 	assert.Contains(t, page, "3 matching events")
-	assert.Contains(t, page, "Refused </a><code>s__refused-call</code>: blocked by rule *no-deletes*")
+	assert.Contains(t, page, "Refused </a><code>s__refused-call</code>: blocked by rule no-deletes")
 	assert.Contains(t, page, "badge-bad")
 
 	status, _ = auditPageOf(t, admin, env.server.URL, url.Values{"outcome": {"bogus"}})
@@ -460,8 +461,55 @@ func TestAuditPageFiltersByEventType(t *testing.T) {
 
 	status, page := auditPageOf(t, admin, env.server.URL, nil)
 	require.Equal(t, http.StatusOK, status)
-	assert.Contains(t, page, `<option value="tool.decision" title="tool.decision">Tool call decision</option>`)
+	assert.Contains(t, page, `<input type="checkbox" name="type" value="tool.decision"> Tool call decision`)
 
 	status, _ = auditPageOf(t, admin, env.server.URL, url.Values{"type": {"bogus.type"}})
 	assert.Equal(t, http.StatusBadRequest, status)
+}
+
+func TestAuditPageShowsRemovableFilterChips(t *testing.T) {
+	env := startUIEnv(t, "admins")
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	env.insertAudit(t, auditRow{at: now.Add(-1 * time.Hour), principal: "dave", server: "mail-archiver", tool: "a", eventType: "secret.set", details: `{}`})
+	env.insertAudit(t, auditRow{at: now.Add(-2 * time.Hour), principal: "dave", server: "wiki", tool: "b", eventType: "secret.set", details: `{}`})
+
+	admin := env.insertSession(t, "chip-admin", []string{"admins"})
+
+	status, page := auditPageOf(t, admin, env.server.URL, nil)
+	require.Equal(t, http.StatusOK, status)
+	assert.NotContains(t, page, "Clear all", "no filter, no chips")
+
+	query := url.Values{"server": {"mail-archiver"}, "type": {"secret.set"}}
+	status, page = auditPageOf(t, admin, env.server.URL, query)
+	require.Equal(t, http.StatusOK, status)
+
+	chips := regexp.MustCompile(`aria-label="Remove filter ([^"]*)"`).FindAllStringSubmatch(page, -1)
+	require.Len(t, chips, 2)
+	assert.Equal(t, "Event type: Secret set", chips[0][1])
+	assert.Equal(t, "Server: mail-archiver", chips[1][1])
+	assert.Contains(t, page, "Clear all")
+
+	// Following a chip's link drops that filter and keeps the other.
+	removeServer := regexp.MustCompile(`href="([^"]*)"[^>]*aria-label="Remove filter Server: mail-archiver"`).FindStringSubmatch(page)
+	require.NotNil(t, removeServer)
+
+	target, err := url.Parse(strings.ReplaceAll(removeServer[1], "&amp;", "&"))
+	require.NoError(t, err)
+	assert.False(t, target.Query().Has("server"))
+	assert.Equal(t, []string{"secret.set"}, target.Query()["type"])
+
+	status, page = auditPageOf(t, admin, env.server.URL, target.Query())
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, []string{"a", "b"}, toolsOn(page))
+
+	removeType := regexp.MustCompile(`href="([^"]*)"[^>]*aria-label="Remove filter Event type: Secret set"`).FindStringSubmatch(page)
+	require.NotNil(t, removeType)
+
+	target, err = url.Parse(strings.ReplaceAll(removeType[1], "&amp;", "&"))
+	require.NoError(t, err)
+	assert.False(t, target.Query().Has("type"))
+
+	// The time range control keeps showing the range after filters apply.
+	assert.Contains(t, page, `<option value="24h" selected>`)
 }
