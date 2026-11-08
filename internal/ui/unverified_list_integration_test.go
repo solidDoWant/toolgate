@@ -31,7 +31,7 @@ func TestUnverifiedAllowListPage(t *testing.T) {
 	defer cancel()
 
 	user := toolgatetest.OIDCUser{Subject: "ivan", Email: "ivan@example.com", EmailVerified: true, Groups: []string{"dev"}}
-	unverified := chromedp.CSS(`select[name="unverified"]`)
+	unverified := chromedp.CSS(`input[name="unverified"][value="list"]`)
 	checkbox := func(server string) chromedp.CSS {
 		return chromedp.CSS(`input[name="unverified_server"][value="` + server + `"]`)
 	}
@@ -47,12 +47,19 @@ func TestUnverifiedAllowListPage(t *testing.T) {
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+ui.WorkspacesPath)))
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.SignInToOIDC(user), chromedp.WaitVisible(save)))
 
-		for _, shown := range []string{"Only these servers", "any-server", "optin-server"} {
+		assert.True(t, pageShows(ctx, "Only these servers"))
+		assert.False(t, pageShows(ctx, "optin-server"), "the servers show only when \"Only these servers\" is picked")
+
+		require.NoError(t, chromedp.Do(ctx,
+			chromedp.Click(unverified),
+			chromedp.WaitVisible(checkbox("any-server")),
+		))
+
+		for _, shown := range []string{"any-server", "optin-server"} {
 			assert.True(t, pageShows(ctx, shown), "the page shows %q", shown)
 		}
 
 		require.NoError(t, chromedp.Do(ctx,
-			chromedp.SetValue(unverified, gateway.ScopeList),
 			chromedp.Click(checkbox("any-server")),
 			chromedp.Click(checkbox("optin-server")),
 			chromedp.Click(save),

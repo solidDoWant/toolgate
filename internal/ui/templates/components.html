@@ -46,14 +46,17 @@ item. */}}
 
 {{/* row-action-confirm: a quiet destructive action that asks before it
 posts. Label (the button), Action (the URL it posts to), Question (asked
-before), Confirm (the confirming button) and CSRFToken. It works without
+before), Confirm (the confirming button), CSRFToken and Fields (a dict of
+hidden form fields). With Neutral set the action isn't destructive: it
+shows as a quiet button with a primary confirming button. It works without
 JavaScript, as the question opens in a disclosure. */}}
 {{define "row-action-confirm"}}<details class="relative inline-block text-left">
-<summary class="btn btn-small btn-quiet-danger list-none">{{.Label}}</summary>
+<summary class="btn btn-small {{if .Neutral}}btn-quiet{{else}}btn-quiet-danger{{end}} list-none">{{.Label}}</summary>
 <form method="post" action="{{.Action}}" class="m-0 mt-1 w-64 rounded-md border border-border bg-surface p-3 text-left">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-<p class="m-0 mb-2 text-sm whitespace-normal">{{.Question}}</p>
-<button type="submit" class="btn btn-small border-danger bg-danger text-danger-text">{{.Confirm}}</button>
+{{range $name, $value := .Fields}}<input type="hidden" name="{{$name}}" value="{{$value}}">
+{{end}}<p class="m-0 mb-2 text-sm whitespace-normal">{{.Question}}</p>
+<button type="submit" class="btn btn-small {{if .Neutral}}btn-primary{{else}}border-danger bg-danger text-danger-text{{end}}">{{.Confirm}}</button>
 </form>
 </details>{{end}}
 
