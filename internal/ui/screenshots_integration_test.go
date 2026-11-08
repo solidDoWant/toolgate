@@ -61,6 +61,8 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 		('d1d2e3f4a5b60718293a4b5c6d7e8f91', 'dave', 'tools', 'any-server', 'deploy', 'laptop-7f3a', now() - interval '20 minutes', now() + interval '8 hours')`)
 	require.NoError(t, err)
 	env.insertSession(t, "dev-session", []string{"toolgate-admins", "dev"})
+	env.insertSession(t, "stale-session", []string{"toolgate-admins"})
+	env.ageSignIn(t, "stale-session", time.Hour)
 	env.insertSessionOf(t, "erin", "empty-session", []string{"dev"})
 
 	for index, event := range []struct{ tool, details string }{
@@ -143,6 +145,7 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "setup", path: "/ui/setup"},
 		{name: "approvals", path: "/ui/approvals"},
 		{name: "approval", path: "/ui/approvals/" + approvalID(1)},
+		{name: "approval-step-up", path: "/ui/approvals/" + approvalID(1), cookie: "stale-session"},
 		{name: "grants", path: "/ui/grants", cookie: "dev-session"},
 		{name: "grant-new", path: "/ui/grants/new", cookie: "dev-session"},
 		{name: "audit", path: "/ui/audit"},
@@ -191,6 +194,7 @@ func TestUIScreenshots(t *testing.T) {
 					Name: ui.SessionCookie, Value: cookie, URL: env.server.URL + "/", Path: "/", Secure: &secure, HTTPOnly: &secure,
 				})
 				require.NoError(t, err)
+
 				state := page.servers
 				if state == "" {
 					state = "seeded"

@@ -2,9 +2,9 @@
 {{define "content"}}
 <div id="approvals" hx-get="/ui/approvals" hx-trigger="every 5s" hx-select="#approvals" hx-swap="outerHTML">
 {{if .Data.Approvals}}
-{{template "table-start" (dict "ID" "pending-approvals" "Label" "Tool calls waiting for you" "Columns" (list "Server" "Tool" "Session" "Workspace" "Requested" "Expires" ""))}}
+{{template "table-start" (dict "ID" "pending-approvals" "Label" "Tool calls waiting for you" "Columns" (list "Server" "Tool" "Session" "Requested" "Expires" ""))}}
 {{range .Data.Approvals}}<tr id="approval-{{.ID}}">
-<td>{{.Server}}</td><td>{{.Tool}}</td><td data-label="Session">{{.Session}}</td><td data-label="Workspace">{{template "ws" (workspace .Workspace)}}</td>
+<td>{{.Server}}</td><td>{{.Tool}}</td><td data-label="Session"><a href="{{.SessionPage}}" title="{{.Session}}">{{.SessionLabel}}</a></td>
 <td data-label="Requested" class="whitespace-nowrap">{{template "reltime" (since .CreatedAt)}}</td><td data-label="Expires" class="whitespace-nowrap">{{template "reltime" (until .ExpiresAt)}}</td>
 {{template "row-actions-start"}}<a href="/ui/approvals/{{.ID}}" class="btn btn-small">Open</a>{{template "row-actions-end"}}
 </tr>

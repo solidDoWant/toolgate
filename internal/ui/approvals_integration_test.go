@@ -4,6 +4,7 @@ package ui_test
 
 import (
 	"context"
+	"html"
 	"net/http"
 	"net/url"
 	"strings"
@@ -143,8 +144,9 @@ func TestApprovalsList(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.StatusCode)
 
 	page := readBody(t, response)
-	assert.Contains(t, page, `<td>github</td><td>delete_repository</td><td data-label="Session">session-`+approvalID(0)+`</td><td data-label="Workspace"><span title="github.com/acme/repo">github.com/acme/repo</span></td>`,
-		"server, tool, session and workspace")
+	assert.Contains(t, page, `<td>github</td><td>delete_repository</td><td data-label="Session"><a href="/ui/sessions/`, "server, tool and a link to the session")
+	assert.Contains(t, page, `github.com/acme/repo</a>`, "the session is shown by its workspace")
+	assert.NotContains(t, page, ">session-"+approvalID(0)+"<", "the full session ID is not shown as text")
 	assert.Contains(t, page, ui.ApprovalPath(approvalID(0)))
 	assert.NotContains(t, page, approvalID(1), "an expired approval isn't listed")
 	assert.Contains(t, page, `hx-get="/ui/approvals" hx-trigger="every 5s"`, "htmx refreshes the list every 5 s")
@@ -183,7 +185,11 @@ func TestApproveNeedsAFreshStepUp(t *testing.T) {
 	env.ageSignIn(t, "stale-session", 5*time.Minute+time.Second)
 
 	page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
-	assert.Contains(t, page, "Sign in again to continue")
+	assert.Contains(t, page, `href="`+html.EscapeString(ui.StepUpURL(ui.ApprovalPath(id)))+`">Approve</a>`, "Approve goes through the step-up")
+	assert.Contains(t, page, "You'll be asked to sign in again.")
+	assert.NotContains(t, page, "Approving needs a fresh sign-in.")
+	assert.Contains(t, page, `<a href="/ui/approvals">All approvals</a>`)
+	assert.Contains(t, page, "Made by")
 	assert.NotContains(t, page, "/approve", "no approve form without a fresh sign-in")
 	assert.Contains(t, page, "/deny", "deny needs no step-up")
 

@@ -1,23 +1,26 @@
-{{define "heading"}}{{with .Data}}{{template "detail-header-start" (dict "Title" "Approval" "Summary" "A tool call waits for your decision.")}}
-{{if not .Message}}{{if .StepUpURL}}<a class="btn btn-primary" href="{{.StepUpURL}}">Sign in again to continue</a>
+{{define "heading"}}<p class="m-0 mb-2 text-sm"><a href="/ui/approvals">All approvals</a></p>
+{{with .Data}}{{template "detail-header-start" (dict "Title" "Approval" "Summary" "A tool call waits for your decision.")}}
+{{if not .Message}}{{if .StepUpURL}}<div class="flex flex-col items-start gap-1"><a class="btn btn-primary" href="{{.StepUpURL}}">Approve</a>
+<p class="m-0 text-xs text-muted">You'll be asked to sign in again.</p></div>
 {{else}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/approve" class="m-0">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <button type="submit" class="btn btn-primary">Approve</button>
 </form>
 {{end}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/deny" class="m-0">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" class="btn border-danger bg-danger text-danger-text">Deny</button>
+<button type="submit" class="btn border-danger bg-transparent text-danger hover:bg-bad">Deny</button>
 </form>
 {{end}}{{template "detail-header-end"}}{{end}}{{end}}
 {{define "content"}}
 {{with .Data}}
 {{if .Message}}<p class="flash status" role="status">{{.Message}}</p>
-{{else if .StepUpURL}}<p class="m-0 mb-4 text-sm text-muted">Approving needs a fresh sign-in.</p>
+
 {{end}}
 {{template "facts-start"}}
 {{template "fact-start" "Server"}}{{.Approval.Server}}{{template "fact-end"}}
 {{template "fact-start" "Tool"}}<span class="font-mono">{{.Approval.Tool}}</span>{{template "fact-end"}}
-{{template "fact-start" "Session"}}{{.Approval.Session}}{{template "fact-end"}}
+{{template "fact-start" "Made by"}}{{template "who" .Who}}{{template "fact-end"}}
+{{template "fact-start" "Session"}}<a href="{{.Approval.SessionPage}}">{{.Approval.SessionLabel}}</a> {{template "short-id" .Approval.Session}}{{template "fact-end"}}
 {{template "fact-start" "Workspace"}}{{template "ws" (workspace .Approval.Workspace)}}{{template "fact-end"}}
 {{template "fact-start" "Requested"}}{{template "reltime" (since .Approval.CreatedAt)}}{{template "fact-end"}}
 {{template "fact-start" "Expires"}}{{template "reltime" (until .Approval.ExpiresAt)}}{{template "fact-end"}}

@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
+	"github.com/solidDoWant/toolgate/internal/principal"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -62,24 +64,35 @@ func stepUpSignIn(request *http.Request) string {
 }
 
 type approvalRow struct {
-	ID        string
-	Server    string
-	Tool      string
-	Session   string
-	Workspace string
-	CreatedAt time.Time
-	ExpiresAt time.Time
+	ID     string
+	Server string
+	Tool   string
+	// Session is the client's session ID. SessionPage is the session's page
+	// and SessionLabel is what pages show for it: the client and the workspace.
+	Session      string
+	SessionPage  string
+	SessionLabel string
+	Workspace    string
+	CreatedAt    time.Time
+	ExpiresAt    time.Time
 }
 
-func newApprovalRow(approval db.Approval, session string) approvalRow {
+func newApprovalRow(approval db.Approval, session string, sessionPK int64, clientName, clientVersion string) approvalRow {
+	label := labelWorkspace(approval.Workspace).Label
+	if client := clientText(clientName, clientVersion); client != "" {
+		label = client + " in " + label
+	}
+
 	return approvalRow{
-		ID:        approval.ID,
-		Server:    approval.TemplateName,
-		Tool:      approval.Tool,
-		Session:   session,
-		Workspace: approval.Workspace,
-		CreatedAt: approval.CreatedAt.Time,
-		ExpiresAt: approval.ExpiresAt.Time,
+		ID:           approval.ID,
+		Server:       approval.TemplateName,
+		Tool:         approval.Tool,
+		Session:      session,
+		SessionPage:  "/ui/sessions/" + strconv.FormatInt(sessionPK, 10),
+		SessionLabel: label,
+		Workspace:    approval.Workspace,
+		CreatedAt:    approval.CreatedAt.Time,
+		ExpiresAt:    approval.ExpiresAt.Time,
 	}
 }
 
@@ -98,7 +111,7 @@ func (u *UI) approvalsList(writer http.ResponseWriter, request *http.Request) {
 
 	approvals := make([]approvalRow, 0, len(rows))
 	for _, row := range rows {
-		approvals = append(approvals, newApprovalRow(row.Approval, row.SessionID))
+		approvals = append(approvals, newApprovalRow(row.Approval, row.SessionID, row.SessionPk, row.ClientName, row.ClientVersion))
 	}
 
 	page := approvalsPage{Approvals: approvals}
@@ -122,6 +135,8 @@ type approvalPage struct {
 	Message string
 	// StepUpURL is set when approving needs a fresh sign-in first.
 	StepUpURL string
+	// Who is the user whose tool call needs the approval.
+	Who principal.Display
 	// PayloadsOff is the note shown in place of the arguments.
 	PayloadsOff string
 	// Arguments are the call's arguments from the approval.request payload.
@@ -177,9 +192,11 @@ func (u *UI) renderApproval(writer http.ResponseWriter, request *http.Request, s
 	session, _ := SessionFrom(request.Context())
 
 	data := approvalPage{
-		Approval: newApprovalRow(row.Approval, row.SessionID),
+		Approval: newApprovalRow(row.Approval, row.SessionID, row.SessionPk, row.ClientName, row.ClientVersion),
 		Message:  approvalStatusMessage(row),
 	}
+
+	data.Who = u.namesFor(request.Context(), session.Principal, row.Approval.Principal).show(row.Approval.Principal)
 
 	if data.Message == "" && StepUpNeeded(session) {
 		data.StepUpURL = StepUpURL(ApprovalPath(row.Approval.ID))

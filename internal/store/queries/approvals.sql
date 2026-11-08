@@ -95,8 +95,11 @@ WHERE id = @id AND principal = @principal AND session_pk = @session_pk
 
 -- name: ListPendingApprovalsOfPrincipal :many
 -- Lists a principal's pending approvals that haven't expired, newest
--- first, with their session's client session ID, for the Approvals page.
-SELECT sqlc.embed(approvals), s.session_id
+-- first, with their session's client session ID, row ID and client, for the
+-- Approvals page.
+SELECT sqlc.embed(approvals), s.session_id, s.id AS session_pk,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'name' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_name,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'version' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_version
 FROM approvals
 JOIN sessions s ON s.id = approvals.session_pk
 WHERE approvals.principal = @principal AND approvals.status = 'pending' AND approvals.expires_at > now()
@@ -107,7 +110,9 @@ LIMIT 100;
 -- Returns one approval only when it belongs to principal, with its
 -- session's client session ID. past_expiry is computed with PostgreSQL's
 -- clock.
-SELECT sqlc.embed(approvals), s.session_id,
+SELECT sqlc.embed(approvals), s.session_id, s.id AS session_pk,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'name' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_name,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'version' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_version,
        (approvals.expires_at <= now())::boolean AS past_expiry
 FROM approvals
 JOIN sessions s ON s.id = approvals.session_pk
