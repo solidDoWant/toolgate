@@ -1,4 +1,5 @@
-// Behaviour of the web UI's shared components: dialogs and token inputs.
+// Behaviour of the web UI's shared components: dialogs, token inputs and
+// filter bars.
 // Every page works without this file: a dialog's link goes to the form's
 // own page, and a token input is a textarea with one item per line.
 (function () {
@@ -145,6 +146,89 @@
     textarea.parentNode.insertBefore(box, textarea);
     sync();
   }
+
+  // Filter bars. A change submits the form, so filters apply as they are
+  // set. A control inside a popover waits until the popover closes, so
+  // several can be set at once. Without this script the Filter button
+  // submits the form.
+  var pending = new WeakSet();
+
+  document.addEventListener("change", function (event) {
+    var form = event.target.closest("form[data-autosubmit]");
+    if (!form || event.target.hasAttribute("data-no-submit")) {
+      return;
+    }
+    if (event.target.matches("[data-range]")) {
+      var custom = form.querySelector("[data-custom-range]");
+      if (custom) {
+        custom.hidden = event.target.value !== "custom";
+      }
+      if (event.target.value === "custom") {
+        return;
+      }
+    }
+    if (event.target.closest("details[data-popover]")) {
+      pending.add(form);
+      return;
+    }
+    form.requestSubmit();
+  });
+
+  document.addEventListener("toggle", function (event) {
+    var popover = event.target;
+    if (!popover.matches || !popover.matches("details[data-popover]")) {
+      return;
+    }
+    var form = popover.closest("form[data-autosubmit]");
+    if (popover.open) {
+      var search = popover.querySelector("[data-type-search]");
+      if (search) {
+        search.hidden = false;
+        search.focus();
+      }
+    } else if (form && pending.has(form)) {
+      pending.delete(form);
+      form.requestSubmit();
+    }
+  }, true);
+
+  // A popover closes on a click outside it and on Escape.
+  document.addEventListener("click", function (event) {
+    Array.prototype.forEach.call(document.querySelectorAll("details[data-popover][open]"), function (popover) {
+      if (!popover.contains(event.target)) {
+        popover.open = false;
+      }
+    });
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") {
+      Array.prototype.forEach.call(document.querySelectorAll("details[data-popover][open]"), function (popover) {
+        popover.open = false;
+      });
+    }
+  });
+
+  // The event type search hides the choices that don't match, and a
+  // category left with none.
+  document.addEventListener("input", function (event) {
+    if (!event.target.matches("[data-type-search]")) {
+      return;
+    }
+    var query = event.target.value.trim().toLowerCase();
+    var list = event.target.parentNode.querySelector("[data-type-list]");
+    Array.prototype.forEach.call(list.querySelectorAll("[data-type-group]"), function (group) {
+      var shown = 0;
+      Array.prototype.forEach.call(group.querySelectorAll("[data-type-item]"), function (item) {
+        var match = query === "" || item.textContent.toLowerCase().indexOf(query) >= 0 || item.title.toLowerCase().indexOf(query) >= 0;
+        item.hidden = !match;
+        if (match) {
+          shown++;
+        }
+      });
+      group.hidden = shown === 0;
+    });
+  });
 
   function start() {
     Array.prototype.forEach.call(document.querySelectorAll("textarea[data-token-input]"), tokenInput);

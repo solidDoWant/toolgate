@@ -44,6 +44,17 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 		env.insertCallEvent(t, event.eventType, "dave", "laptop-7f3a", "github", event.tool, `{}`, now.Add(-time.Duration(index+1)*7*time.Minute))
 	}
 
+	for index, event := range []struct{ eventType, tool, details string }{
+		{"tool.decision", "delete_repo", `{"decision":"refuse","rule":"no-deletes"}`},
+		{"tool.result", "search_issues", `{"outcome":"ok","duration_ms":420}`},
+		{"tool.decision", "create_pull_request", `{"decision":"allow"}`},
+	} {
+		env.insertAudit(t, auditRow{
+			at: now.Add(-time.Duration(index+1) * 5 * time.Minute), principal: "dave", workspace: "acme/web", session: "laptop-7f3a",
+			server: "github", tool: event.tool, eventType: event.eventType, details: event.details,
+		})
+	}
+
 	_, err := env.pool.Exec(t.Context(), `INSERT INTO temporary_blocks (id, match, reason, created_by, created_at, expires_at) VALUES
 		('3f9c2a7e1b5d48c0a6e2f17d9b04c8e1', '{"servers":["github"],"tools":["github__delete_repo"]}', 'Incident 42: repository deletions under review.', 'dave', now() - interval '20 minutes', now() + interval '3 hours'),
 		('8a1d4e6f2c3b47a9b5d0e8f1a2c3d4e5', '{"groups":["contractors"],"attestation":"user"}', 'Contractor access paused for the audit.', 'dave', now() - interval '2 hours', now() + interval '2 days')`)
@@ -91,6 +102,8 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "grants", path: "/ui/grants"},
 		{name: "grant-new", path: "/ui/grants/new"},
 		{name: "audit", path: "/ui/audit"},
+		{name: "audit-filters", path: "/ui/audit?outcome=refused&server=github&type=tool.decision"},
+		{name: "audit-more-filters", path: "/ui/audit?server=github", prepare: chromedp.Click(chromedp.CSS(`#more-filters summary`))},
 		{name: "blocks", path: "/ui/blocks"},
 		{name: "blocks-dialog", path: "/ui/blocks", prepare: chromedp.Click(chromedp.CSS(`main a[data-dialog="new-block"]`))},
 		{name: "block-new", path: "/ui/blocks/new"},
