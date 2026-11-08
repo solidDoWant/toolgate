@@ -102,7 +102,10 @@ func (f *fakeServers) Catalog(ctx context.Context, identity auth.Identity) ([]ga
 func (f *fakeServers) ServerDetail(_ context.Context, _ auth.Identity, name string) (gateway.ServerInfo, []gateway.ToolInfo, bool, error) {
 	switch name {
 	case "github", "any-server":
-		return gateway.ServerInfo{ServerEntry: gateway.ServerEntry{Name: name, Scope: "per-user", Status: "ready"}, Environments: "any", ToolCount: 2},
+		return gateway.ServerInfo{
+				ServerEntry: gateway.ServerEntry{Name: name, Scope: "per-user", Status: "ready"}, Environments: "any", ToolCount: 2,
+				UserPatterns: []string{"*@example.com"}, GroupPatterns: []string{"dev-*"},
+			},
 			[]gateway.ToolInfo{{Name: "create_issue", Description: "Create an issue."}, {Name: "delete_repo", Blocked: true}, {Name: "merge", ApprovalRequired: true}}, true, nil
 	case "mail":
 		return gateway.ServerInfo{

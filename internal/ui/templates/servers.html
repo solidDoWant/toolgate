@@ -6,36 +6,27 @@
 {{else}}{{template "table-start" (dict "ID" "catalog" "Label" "Server catalog" "Columns" (list "Server" "Scope" "Environments" "Status" "Tools"))}}
 {{end}}{{range .Data.Servers}}<tr>
 <td data-label="Server"><a href="/ui/servers/{{.Name}}" class="font-medium">{{.Name}}</a>{{with .Description}}<div class="text-muted">{{.}}</div>{{end}}</td>
-<td data-label="Scope"><span class="badge badge-neutral" title="{{scopeHelp .Scope}}">{{.Scope}}</span></td>
-<td data-label="Environments"><span class="badge {{environmentBadge .Environments}}" title="{{environmentHelp .Environments}}">{{.Environments}}</span></td>
+<td data-label="Scope"><span class="badge badge-neutral" title="{{scopeHelp .Scope}}">{{.Scope}}<span class="sr-only">: {{scopeHelp .Scope}}</span></span></td>
+<td data-label="Environments"><span class="badge {{environmentBadge .Environments}}" title="{{environmentHelp .Environments}}">{{.Environments}}<span class="sr-only">: {{environmentHelp .Environments}}</span></span></td>
 <td data-label="Status"><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .Reason}} {{.}}{{end}}</td>
 <td data-label="Tools">{{if ge .ToolCount 0}}{{.ToolCount}}{{else}}unknown{{end}}</td>
 {{if $.Data.Admin}}<td data-label="Instances">{{.Instances}}</td>{{end}}
 </tr>
 {{end}}{{template "table-end"}}
-{{template "card-start" (dict "Title" "What the words mean")}}
-<dl class="m-0 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm [&_dt]:font-medium [&_dd]:m-0">
-<dt>per-session</dt><dd>{{scopeHelp "per-session"}}</dd>
-<dt>per-user</dt><dd>{{scopeHelp "per-user"}}</dd>
-<dt>shared</dt><dd>{{scopeHelp "shared"}}</dd>
-<dt>any</dt><dd>{{environmentHelp "any"}}</dd>
-<dt>attested</dt><dd>{{environmentHelp "attested"}}</dd>
-<dt>opt-in</dt><dd>{{environmentHelp "opt-in"}}</dd>
-</dl>
-{{template "card-end"}}
+<p class="mb-6 text-sm"><a href="https://github.com/solidDoWant/toolgate/blob/master/docs/user/README.md#see-the-servers-in-the-web-ui">What do these mean?</a></p>
 {{else}}
 {{template "empty-state" (dict "Text" "No servers are offered to you.")}}
 {{end}}
 <h2 class="m-0 mb-2 text-base font-semibold">Running instances</h2>
 {{if .Data.Instances}}
-{{template "table-start" (dict "ID" "instances" "Label" "Running instances" "Columns" (list "Server" "Scope" "Owner" "Status" "Reason" "Ready since" "Version" ""))}}
+{{template "table-start" (dict "ID" "instances" "Label" "Running instances" "Columns" .Data.InstanceColumns)}}
 {{range .Data.Instances}}<tr>
 <td data-label="Server">{{.Server}}</td>
 <td data-label="Scope">{{.Scope}}</td>
 <td data-label="Owner">{{if .Owner}}{{template "who" index $.Data.Owners .Owner}}{{else}}shared{{end}}</td>
 <td data-label="Status">{{template "badge" .Status}}</td>
-<td data-label="Reason">{{.Reason}}</td>
-<td data-label="Ready since" class="whitespace-nowrap">{{with .ReadyAt}}{{template "reltime" (since .)}}{{end}}</td>
+{{if $.Data.HasReason}}<td data-label="Reason">{{with .Reason}}{{.}}{{else}}—{{end}}</td>{{end}}
+{{if $.Data.HasReadyAt}}<td data-label="Ready since" class="whitespace-nowrap">{{with .ReadyAt}}{{template "reltime" (since .)}}{{else}}—{{end}}</td>{{end}}
 <td data-label="Version">{{if .Outdated}}<span class="badge badge-warn">outdated</span>{{else}}<span class="badge badge-ok">current</span>{{end}}</td>
 {{template "row-actions-start"}}{{if and .Outdated (eq .Status "ready")}}<form method="post" action="/ui/instances/{{.ID}}/restart" class="m-0">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">

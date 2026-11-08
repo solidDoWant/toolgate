@@ -82,10 +82,10 @@ toolgate takes the names from the verified claims of the ID token when a user si
 
 `/ui/servers` is the first page after a sign-in. It starts with a header and then shows two tables:
 
-- The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason.
+- The catalog. These are the servers that `toolgate_list_servers` shows to the user from their own machine, with no workspace and no session. A blocked server shows the reason. The scope and environments labels explain themselves on hover.
 - The running instances of the user. An admin also sees the shared instances. Each instance shows its status, how long ago it became ready (hold the pointer over the time for the exact UTC time) and if it runs an old version of its template.
 
-An instance is outdated when it runs an old version of its template. A ready, outdated instance has a Restart button at the end of its row. The owner of the instance can use it. For a shared instance, only an admin can use it. The gateway then starts a new instance from the current version of the template and stops the old one. Sessions keep the server enabled. The tools of the server leave the tool list while the new instance starts, and come back when it is ready. The audit log gets an `instance.stop` event with the reason `restart` and the user who asked for it.
+An instance is outdated when it runs an old version of its template. The Reason and Ready since columns show only when an instance has a value for them. A ready, outdated instance has a Restart button at the end of its row. The owner of the instance can use it. For a shared instance, only an admin can use it. The gateway then starts a new instance from the current version of the template and stops the old one. Sessions keep the server enabled. The tools of the server leave the tool list while the new instance starts, and come back when it is ready. The audit log gets an `instance.stop` event with the reason `restart` and the user who asked for it.
 
 If the instance stopped or changed before the request arrived, the page tells the user and shows the current list. If the template was deleted, or the owner lost access, or the instance is idle with no session that uses it, the gateway stops the instance and does not start a new one.
 

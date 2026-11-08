@@ -22,11 +22,15 @@ func TestServersPageShowsScopeEnvironmentsAndKind(t *testing.T) {
 
 	body := readBody(t, response)
 
-	assert.Contains(t, body, `<span class="badge badge-neutral" title="All your sessions share one instance.">per-user</span>`)
-	assert.Contains(t, body, `<span class="badge badge-neutral" title="Everyone shares one instance.">shared</span>`)
-	assert.Contains(t, body, `<span class="badge badge-ok" title="Works from any signed-in machine.">any</span>`)
-	assert.Contains(t, body, `<span class="badge badge-warn" title="Needs an attested workspace.">attested</span>`)
+	assert.Contains(t, body, `<span class="badge badge-neutral" title="All your sessions share one instance.">per-user<span class="sr-only">: All your sessions share one instance.</span></span>`)
+	assert.Contains(t, body, `<span class="badge badge-neutral" title="Everyone shares one instance.">shared<span class="sr-only">: Everyone shares one instance.</span></span>`)
+	assert.Contains(t, body, `<span class="badge badge-ok" title="Works from any signed-in machine.">any<span class="sr-only">: Works from any signed-in machine.</span></span>`)
+	assert.Contains(t, body, `<span class="badge badge-warn" title="Needs an attested workspace.">attested<span class="sr-only">: Needs an attested workspace.</span></span>`)
 	assert.Contains(t, body, `data-label="Tools">12</td>`, "the tool count")
+	assert.NotContains(t, body, "What the words mean", "the glossary card is gone")
+	assert.Contains(t, body, "What do these mean?")
+	assert.NotContains(t, body, `<th scope="col">Reason</th>`, "no instance has a reason")
+	assert.NotContains(t, body, `<th scope="col">Ready since</th>`, "no instance has a ready time")
 	assert.NotContains(t, body, `<th scope="col">Instances</th>`, "the instance count column is for admins")
 }
 
@@ -39,8 +43,8 @@ func TestServersPageShowsWorkspaceAvailability(t *testing.T) {
 		{
 			name: "everything blocked by default",
 			contains: []string{
-				`Verified workspace without a list: <span class="badge badge-bad">blocked</span>`,
-				`Unverified session: <span class="badge badge-bad">blocked</span>`,
+				`Verified workspaces: <span class="badge badge-bad">blocked</span>`,
+				`Other machines: <span class="badge badge-bad">blocked</span>`,
 			},
 		},
 		{
@@ -49,8 +53,8 @@ func TestServersPageShowsWorkspaceAvailability(t *testing.T) {
 				{Action: gateway.WorkspaceDefaults, Verified: gateway.ScopeAll, Unverified: gateway.ScopeAll},
 			},
 			contains: []string{
-				`Verified workspace without a list: <span class="badge badge-ok">allowed</span>`,
-				`Unverified session: <span class="badge badge-ok">allowed</span>`,
+				`Verified workspaces: <span class="badge badge-ok">allowed</span>`,
+				`Other machines: <span class="badge badge-ok">allowed</span>`,
 			},
 		},
 		{
@@ -62,9 +66,9 @@ func TestServersPageShowsWorkspaceAvailability(t *testing.T) {
 				{Action: gateway.WorkspaceAllow, UnverifiedList: true, Servers: []string{"any-server"}},
 			},
 			contains: []string{
-				`Workspace <span title="coder/dave/mail">Coder workspace mail</span>: <span class="badge badge-ok">allowed</span>`,
-				`Workspace <span title="coder/dave/blog">Coder workspace blog</span>: <span class="badge badge-bad">blocked</span>`,
-				`Unverified session: <span class="badge badge-ok">allowed</span>`,
+				`<span title="coder/dave/mail">Coder workspace mail</span>: <span class="badge badge-ok">allowed</span>`,
+				`<span title="coder/dave/blog">Coder workspace blog</span>: <span class="badge badge-bad">blocked</span>`,
+				`Other machines: <span class="badge badge-ok">allowed</span>`,
 				`href="/ui/workspaces"`,
 			},
 		},
@@ -104,6 +108,8 @@ func TestServerDetail(t *testing.T) {
 		assert.Contains(t, body, `<span class="badge badge-bad">blocked</span>`)
 		assert.Contains(t, body, `<span class="badge badge-warn">needs approval</span>`)
 		assert.Contains(t, body, "toolgate workspace allow github")
+		assert.Contains(t, body, `<span class="chip"><span class="chip-label">group</span> <span class="font-mono">dev-*</span></span>`, "the access patterns show as chips")
+		assert.Contains(t, body, `<span class="chip"><span class="chip-label">users</span> <span class="font-mono">*@example.com</span></span>`)
 	})
 
 	t.Run("a remote server shows only whether its secret is set", func(t *testing.T) {
@@ -113,7 +119,7 @@ func TestServerDetail(t *testing.T) {
 		body := readBody(t, response)
 		assert.Contains(t, body, "Secret <code>mail-archiver-api-key</code></dt><dd class=\"m-0\">not set</dd>")
 		assert.Contains(t, body, "<dt class=\"text-muted\">Kind</dt><dd class=\"m-0\">remote</dd>")
-		assert.Contains(t, body, "<dt class=\"text-muted\">Access</dt><dd class=\"m-0\">Listed users and groups</dd>")
+		assert.Contains(t, body, "<dt class=\"text-muted\">Access</dt><dd class=\"m-0\"><span class=\"inline-flex flex-wrap gap-1\">Only the users and groups the admin named</span></dd>")
 	})
 
 	t.Run("a server the user can't see is not found", func(t *testing.T) {
