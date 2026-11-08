@@ -258,6 +258,8 @@ func TestSetupPageShowsTheGatewayURLAndLoadsCopyScriptFromTheGateway(t *testing.
 	assert.NotContains(t, body, "<script>")
 	assert.NotContains(t, body, "For admins")
 	assert.Contains(t, body, `<script src="/ui/static/ui.js" defer></script>`)
+	assert.Contains(t, body, `<h1 class="m-0 text-2xl font-semibold">Quick setup</h1>`)
+	assert.Equal(t, 5, strings.Count(body, "<section "), "one card for each section")
 	assert.Equal(t, 3, strings.Count(body, "<script"), "only htmx, the copy script and the components script, each with a src")
 }
 

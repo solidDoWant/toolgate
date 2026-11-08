@@ -1,48 +1,50 @@
+{{define "heading"}}{{template "page-header" (dict "Title" "Quick setup" "Summary" "These commands are filled in for this gateway. Click Copy next to a command, then paste it in a terminal.")}}{{end}}
 {{define "content"}}
 {{$url := .Data.GatewayURL}}{{$ver := .Data.Version}}
-<p>These commands are filled in for this gateway. Click Copy next to a command, then paste it in a terminal.</p>
 
-<h2>One command (Linux and macOS)</h2>
-<div class="cmd"><pre>curl -fsSL {{$url}}/install.sh | sh</pre><button type="button" class="copy">Copy</button></div>
+{{template "card-start" (dict "Title" "One command (Linux and macOS)")}}
+<div class="cmd"><pre>curl -fsSL {{$url}}/install.sh | sh</pre><button type="button" class="copy btn btn-small">Copy</button></div>
 <p>The script downloads toolgate {{$ver}}, checks its SHA-256 checksum, installs the Claude Code plugin when <code>claude</code> is present, and saves the gateway URL. You can read it first: <code>curl -fsSL {{$url}}/install.sh | less</code>. To see what it would do without changing anything, add <code>-s -- --dry-run</code> after <code>sh</code>.</p>
-
-<h2>Step by step</h2>
+{{template "card-end"}}
+{{template "card-start" (dict "Title" "Step by step")}}
 <p>Use these commands if you do not want to pipe a script to <code>sh</code>. Replace <code>linux-amd64</code> with <code>linux-arm64</code>, <code>darwin-amd64</code> or <code>darwin-arm64</code> to match your system.</p>
 <ol>
 <li>Download the command and the checksums:
 <div class="cmd"><pre>curl -fsSLO https://github.com/solidDoWant/toolgate/releases/download/{{$ver}}/toolgate-linux-amd64
-curl -fsSLO https://github.com/solidDoWant/toolgate/releases/download/{{$ver}}/checksums.txt</pre><button type="button" class="copy">Copy</button></div></li>
+curl -fsSLO https://github.com/solidDoWant/toolgate/releases/download/{{$ver}}/checksums.txt</pre><button type="button" class="copy btn btn-small">Copy</button></div></li>
 <li>Check the download. The output must say <code>OK</code>:
-<div class="cmd"><pre>grep ' toolgate-linux-amd64$' checksums.txt | sha256sum -c -</pre><button type="button" class="copy">Copy</button></div>
+<div class="cmd"><pre>grep ' toolgate-linux-amd64$' checksums.txt | sha256sum -c -</pre><button type="button" class="copy btn btn-small">Copy</button></div>
 On macOS, use <code>shasum -a 256 -c -</code>.</li>
 <li>Install it in a directory on your <code>PATH</code>:
-<div class="cmd"><pre>install -m 0755 toolgate-linux-amd64 ~/.local/bin/toolgate</pre><button type="button" class="copy">Copy</button></div></li>
+<div class="cmd"><pre>install -m 0755 toolgate-linux-amd64 ~/.local/bin/toolgate</pre><button type="button" class="copy btn btn-small">Copy</button></div></li>
 <li>Add the plugin marketplace and install the plugin:
 <div class="cmd"><pre>claude plugin marketplace add solidDoWant/toolgate
-claude plugin install toolgate@toolgate</pre><button type="button" class="copy">Copy</button></div></li>
+claude plugin install toolgate@toolgate</pre><button type="button" class="copy btn btn-small">Copy</button></div></li>
 <li>Set the gateway URL:
 <div class="cmd"><pre>echo '{"gateway_url":"{{$url}}"}' | claude plugin configure toolgate@toolgate --values-stdin
-toolgate configure --gateway {{$url}}</pre><button type="button" class="copy">Copy</button></div></li>
+toolgate configure --gateway {{$url}}</pre><button type="button" class="copy btn btn-small">Copy</button></div></li>
 <li>Sign in:
-<div class="cmd"><pre>toolgate login</pre><button type="button" class="copy">Copy</button></div></li>
+<div class="cmd"><pre>toolgate login</pre><button type="button" class="copy btn btn-small">Copy</button></div></li>
 </ol>
-
-<h2>Windows</h2>
+{{template "card-end"}}
+{{template "card-start" (dict "Title" "Windows")}}
 <p>In PowerShell, download the command and check it. Use <code>arm64</code> instead of <code>amd64</code> on an ARM PC. Then put the file in a directory on your <code>PATH</code>.</p>
 <div class="cmd"><pre>Invoke-WebRequest https://github.com/solidDoWant/toolgate/releases/download/{{$ver}}/toolgate-windows-amd64.exe -OutFile toolgate.exe
 Invoke-WebRequest https://github.com/solidDoWant/toolgate/releases/download/{{$ver}}/checksums.txt -OutFile checksums.txt
 (Get-FileHash toolgate.exe -Algorithm SHA256).Hash
-Select-String toolgate-windows-amd64.exe checksums.txt</pre><button type="button" class="copy">Copy</button></div>
+Select-String toolgate-windows-amd64.exe checksums.txt</pre><button type="button" class="copy btn btn-small">Copy</button></div>
 <p>The two hashes must match. Then run the plugin, gateway URL and sign-in commands from the step by step list.</p>
-
-<h2>Check that it works</h2>
-<div class="cmd"><pre>toolgate status</pre><button type="button" class="copy">Copy</button></div>
+{{template "card-end"}}
+{{template "card-start" (dict "Title" "Check that it works")}}
+<div class="cmd"><pre>toolgate status</pre><button type="button" class="copy btn btn-small">Copy</button></div>
 <p>Then start Claude Code and run <code>/mcp</code>. The list must show <code>toolgate</code> with its tools.</p>
-
-<h2>Workspace defaults</h2>
+{{template "card-end"}}
+{{template "card-start" (dict "Title" "Workspace defaults")}}
 <p>A new user sees no servers until they set the workspace defaults. Run this to allow the servers that your admin offers. The command prints a link; open it and approve the change:</p>
-<div class="cmd"><pre>toolgate workspace defaults --verified all</pre><button type="button" class="copy">Copy</button></div>
+<div class="cmd"><pre>toolgate workspace defaults --verified all</pre><button type="button" class="copy btn btn-small">Copy</button></div>
 
-{{if .Data.Admin}}<h2>For admins</h2>
+{{if .Data.Admin}}
+{{template "card-end"}}
+{{template "card-start" (dict "Title" "For admins")}}
 <p>To sign in automatically in Coder workspaces, read <a href="https://github.com/solidDoWant/toolgate/blob/master/docs/admin/coder.md">Coder workspaces</a>.</p>
-{{end}}{{end}}
+{{template "card-end"}}{{end}}{{end}}
