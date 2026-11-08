@@ -166,6 +166,14 @@
     }
   }
 
+  /* The servers of "Only these servers" show only while it is picked. */
+  .reveal-when-picked {
+    display: none;
+  }
+  form:has(input[name="unverified"][value="list"]:checked) .reveal-when-picked {
+    display: block;
+  }
+
   dialog.modal::backdrop {
     background: rgb(0 0 0 / 0.45);
   }

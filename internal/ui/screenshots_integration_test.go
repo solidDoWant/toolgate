@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/gateway"
 	toolgatetest "github.com/solidDoWant/toolgate/internal/testutil"
 )
 
@@ -51,6 +52,8 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 
 	env.insertListedSession(t, "dave", "laptop-7f3a", "", "attested", "claude-code", 2, -1, true)
 	env.insertListedSession(t, "dave", "ci-runner-12", "", "user", "claude-code", 45, 30, false)
+	require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(),
+		gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, Workspace: "coder/dave/mail", Servers: []string{"any-server", "optin-server"}}, gateway.ViaUI))
 	env.insertApproval(t, approvalID(1), "dave", time.Hour)
 	env.insertApproval(t, approvalID(2), "dave", time.Hour)
 

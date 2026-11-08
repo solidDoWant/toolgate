@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -20,10 +22,6 @@ import (
 
 // WorkspacesPath is the Workspaces page.
 const WorkspacesPath = "/ui/workspaces"
-
-// unverifiedDefaultNote is the defaults form's warning about sessions that
-// leave out the attestation.
-const unverifiedDefaultNote = "A workspace's list limits a process holding your token only while the default for unverified sessions is nothing."
 
 // WorkspaceSource reads and writes the user's workspace lists and defaults
 // and their change access requests. gateway.Workspaces implements it.
@@ -65,44 +63,102 @@ type WorkspaceSource interface {
 func (u *UI) registerWorkspaces() {
 	u.Handle("GET "+WorkspacesPath, User, http.HandlerFunc(u.workspacesPage))
 
-	for _, action := range []string{gateway.WorkspaceDefaults, gateway.WorkspaceAllow, gateway.WorkspaceDeny, gateway.WorkspaceClear} {
+	for _, action := range []string{gateway.WorkspaceDefaults, gateway.WorkspaceAllow, gateway.WorkspaceDeny, gateway.WorkspaceClear, workspaceServersAction} {
 		u.Handle("POST "+WorkspacesPath+"/"+action, User, u.workspaceChangeHandler(action))
 	}
 }
 
-// unverifiedChoice is one checkbox of the unverified allow list.
-type unverifiedChoice struct {
-	Server  string
-	Checked bool
+// workspaceServersAction is the form that sets a workspace's servers to the
+// checked ones. It is not an API action: it becomes allow and deny changes.
+const workspaceServersAction = "servers"
+
+// serverChoice is one checkbox of a server the user can use.
+type serverChoice struct {
+	Name        string
+	Description string
+	Checked     bool
 }
 
-// workspaceList is one list on the Workspaces page.
-type workspaceList struct {
-	Workspace string
+// workspaceCard is one workspace on the Workspaces page.
+type workspaceCard struct {
+	Workspace workspaceLabel
+	// HasList is true when the user chose servers for this workspace;
+	// otherwise the verified default applies.
+	HasList   bool
 	Servers   []string
 	UpdatedAt time.Time
+	Choices   []serverChoice
+}
+
+// pendingChange is a change the user chose before a step-up sign-in, kept
+// across it. Nothing is applied until the user confirms it.
+type pendingChange struct {
+	Action  string
+	Summary string
+	Fields  [][2]string
+	// SignIn is set while the sign-in is too old to confirm.
+	SignIn string
 }
 
 type workspacesPage struct {
-	VerifiedDefault   string
+	// VerifiedDefault is "all" or "none".
+	VerifiedDefault string
+	// UnverifiedDefault is "all", "list" or "none".
 	UnverifiedDefault string
-	// UnverifiedChoices are the checkboxes of "Only these servers": every
-	// server the user has access to, and every server on the list.
-	UnverifiedChoices []unverifiedChoice
-	Note              string
-	Lists             []workspaceList
-	// OpenWorkspaces are the verified workspaces of the user's open
-	// sessions that have no list yet.
-	OpenWorkspaces []string
-	// StepUpURL is set when a widening change needs a fresh sign-in first.
-	StepUpURL string
-	Error     string
+	// UnverifiedChoices are the checkboxes of "Only these servers".
+	UnverifiedChoices []serverChoice
+	Cards             []workspaceCard
+	Pending           *pendingChange
+	Error             string
 }
 
-// workspacesPage shows the user's defaults, lists and the verified
-// workspaces of their open sessions.
+// pendingFields are the form fields kept across a step-up sign-in.
+var pendingFields = []string{"workspace", "server", "verified", "unverified", "unverified_server"}
+
+// maxPendingQuery bounds the kept change so the sign-in's return address
+// stays within its limit.
+const maxPendingQuery = 1500
+
+// workspacesPage shows the user's workspaces and defaults.
 func (u *UI) workspacesPage(writer http.ResponseWriter, request *http.Request) {
 	u.renderWorkspaces(writer, request, http.StatusOK, request.URL.Query().Get("error"))
+}
+
+// serverDescriptions returns the catalog descriptions by server name.
+func (u *UI) serverDescriptions(ctx context.Context, session Session) map[string]string {
+	descriptions := map[string]string{}
+
+	if u.options.Servers == nil {
+		return descriptions
+	}
+
+	infos, err := u.options.Servers.Catalog(ctx, sessionIdentity(session))
+	if err != nil {
+		u.logger.WarnContext(ctx, "cannot read the catalog for the Workspaces page", "error", err)
+
+		return descriptions
+	}
+
+	for _, info := range infos {
+		descriptions[info.Name] = info.Description
+	}
+
+	return descriptions
+}
+
+// serverChoices returns a checkbox for every server in names and checked,
+// sorted by name.
+func serverChoices(names, checked []string, descriptions map[string]string) []serverChoice {
+	all := append(slices.Clone(names), checked...)
+	slices.Sort(all)
+
+	var choices []serverChoice
+
+	for _, name := range slices.Compact(all) {
+		choices = append(choices, serverChoice{Name: name, Description: descriptions[name], Checked: slices.Contains(checked, name)})
+	}
+
+	return choices
 }
 
 func (u *UI) renderWorkspaces(writer http.ResponseWriter, request *http.Request, status int, message string) {
@@ -128,36 +184,94 @@ func (u *UI) renderWorkspaces(writer http.ResponseWriter, request *http.Request,
 	data := workspacesPage{
 		VerifiedDefault:   scopes.VerifiedDefault,
 		UnverifiedDefault: scopes.UnverifiedDefault,
-		Note:              unverifiedDefaultNote,
 		Error:             message,
+		Pending:           u.pendingChangeOf(request, session),
 	}
 
-	choices := u.options.Workspaces.AccessibleServers(sessionIdentity(session))
-	choices = append(choices, scopes.UnverifiedServers...)
-	slices.Sort(choices)
-
-	for _, server := range slices.Compact(choices) {
-		data.UnverifiedChoices = append(data.UnverifiedChoices, unverifiedChoice{Server: server, Checked: slices.Contains(scopes.UnverifiedServers, server)})
-	}
+	accessible := u.options.Workspaces.AccessibleServers(sessionIdentity(session))
+	descriptions := u.serverDescriptions(ctx, session)
+	data.UnverifiedChoices = serverChoices(accessible, scopes.UnverifiedServers, descriptions)
 
 	listed := map[string]bool{}
 
 	for _, list := range scopes.Lists {
 		listed[list.Workspace] = true
-		data.Lists = append(data.Lists, workspaceList{Workspace: list.Workspace, Servers: list.Servers, UpdatedAt: list.UpdatedAt})
+		data.Cards = append(data.Cards, workspaceCard{
+			Workspace: labelWorkspace(list.Workspace), HasList: true, Servers: list.Servers, UpdatedAt: list.UpdatedAt,
+			Choices: serverChoices(accessible, list.Servers, descriptions),
+		})
 	}
 
 	for _, workspace := range open {
 		if !listed[workspace] {
-			data.OpenWorkspaces = append(data.OpenWorkspaces, workspace)
+			data.Cards = append(data.Cards, workspaceCard{Workspace: labelWorkspace(workspace), Choices: serverChoices(accessible, nil, descriptions)})
 		}
 	}
 
-	if StepUpNeeded(session) {
-		data.StepUpURL = StepUpURL(WorkspacesPath)
+	u.renderStatus(writer, request, status, "workspaces", "Workspaces", data)
+}
+
+// pendingChangeOf reads a change kept across a step-up from the page's
+// query. It reads nothing but the known fields of a known action.
+func (u *UI) pendingChangeOf(request *http.Request, session Session) *pendingChange {
+	query := request.URL.Query()
+
+	action := query.Get("pending")
+	if !slices.Contains([]string{gateway.WorkspaceDefaults, gateway.WorkspaceAllow, gateway.WorkspaceDeny, gateway.WorkspaceClear, workspaceServersAction}, action) {
+		return nil
 	}
 
-	u.renderStatus(writer, request, status, "workspaces", "Workspaces", data)
+	pending := &pendingChange{Action: action}
+
+	for _, field := range pendingFields {
+		for _, value := range query[field] {
+			pending.Fields = append(pending.Fields, [2]string{field, value})
+		}
+	}
+
+	workspace := labelWorkspace(query.Get("workspace")).Label
+	servers := strings.Join(query["server"], ", ")
+
+	switch action {
+	case workspaceServersAction, gateway.WorkspaceAllow:
+		if servers == "" {
+			servers = "none"
+		}
+
+		pending.Summary = "Servers for " + workspace + ": " + servers + "."
+	case gateway.WorkspaceDeny:
+		pending.Summary = "Stop using " + servers + " on " + workspace + "."
+	case gateway.WorkspaceClear:
+		pending.Summary = "Use the default on " + workspace + "."
+	default:
+		pending.Summary = "New choices for machines without their own choice."
+	}
+
+	if StepUpNeeded(session) {
+		pending.SignIn = StepUpURL(request.URL.RequestURI())
+	}
+
+	return pending
+}
+
+// pendingReturnTo is the page the step-up sign-in returns to: the
+// Workspaces page with the change the request asked for, so the user need
+// not choose it again.
+func pendingReturnTo(request *http.Request) string {
+	query := url.Values{"pending": {path.Base(request.URL.Path)}}
+
+	for _, field := range pendingFields {
+		for _, value := range request.PostForm[field] {
+			query.Add(field, value)
+		}
+	}
+
+	target := WorkspacesPath + "?" + query.Encode()
+	if len(target) > maxPendingQuery {
+		return WorkspacesPath
+	}
+
+	return target
 }
 
 // workspaceChangeHandler applies one form's change. With a sign-in at most
@@ -168,6 +282,12 @@ func (u *UI) workspaceChangeHandler(action string) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		session, _ := SessionFrom(request.Context())
 		ctx := request.Context()
+
+		if action == workspaceServersAction {
+			u.saveWorkspaceServers(writer, request)
+
+			return
+		}
 
 		change := gateway.WorkspaceChange{Action: action}
 
@@ -232,26 +352,7 @@ func (u *UI) saveUnverifiedDefaults(writer http.ResponseWriter, request *http.Re
 		return
 	}
 
-	checked := map[string]bool{}
-	for _, server := range request.PostForm["unverified_server"] {
-		checked[strings.TrimSpace(server)] = true
-	}
-
-	var removed, added []string
-
-	for _, server := range scopes.UnverifiedServers {
-		if !checked[server] {
-			removed = append(removed, server)
-		}
-	}
-
-	for server := range checked {
-		if server != "" && !slices.Contains(scopes.UnverifiedServers, server) {
-			added = append(added, server)
-		}
-	}
-
-	slices.Sort(added)
+	removed, added := diffServers(scopes.UnverifiedServers, request.PostForm["unverified_server"])
 
 	var changes []gateway.WorkspaceChange
 
@@ -268,6 +369,75 @@ func (u *UI) saveUnverifiedDefaults(writer http.ResponseWriter, request *http.Re
 	u.answerWorkspaceChange(writer, request, u.applyWorkspaceChanges(ctx, session, changes...))
 }
 
+// diffServers compares the current servers with the checked ones and
+// returns the servers to remove and to add, added sorted.
+func diffServers(current, posted []string) (removed, added []string) {
+	checked := map[string]bool{}
+	for _, server := range posted {
+		checked[strings.TrimSpace(server)] = true
+	}
+
+	for _, server := range current {
+		if !checked[server] {
+			removed = append(removed, server)
+		}
+	}
+
+	for server := range checked {
+		if server != "" && !slices.Contains(current, server) {
+			added = append(added, server)
+		}
+	}
+
+	slices.Sort(added)
+
+	return removed, added
+}
+
+// saveWorkspaceServers sets a workspace's servers to the checked ones. The
+// removals run first, so they apply even when the additions need a
+// step-up.
+func (u *UI) saveWorkspaceServers(writer http.ResponseWriter, request *http.Request) {
+	session, _ := SessionFrom(request.Context())
+	ctx := request.Context()
+
+	workspace := strings.TrimSpace(request.PostFormValue("workspace"))
+	if workspace == "" {
+		u.renderWorkspaces(writer, request, http.StatusBadRequest, "Name the workspace.")
+
+		return
+	}
+
+	scopes, err := u.options.Workspaces.Scopes(ctx, session.Principal)
+	if err != nil {
+		u.answerWorkspaceChange(writer, request, err)
+
+		return
+	}
+
+	var current []string
+
+	for _, list := range scopes.Lists {
+		if list.Workspace == workspace {
+			current = list.Servers
+		}
+	}
+
+	removed, added := diffServers(current, request.PostForm["server"])
+
+	var changes []gateway.WorkspaceChange
+
+	if len(removed) > 0 {
+		changes = append(changes, gateway.WorkspaceChange{Action: gateway.WorkspaceDeny, Workspace: workspace, Servers: removed})
+	}
+
+	if len(added) > 0 {
+		changes = append(changes, gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, Workspace: workspace, Servers: added})
+	}
+
+	u.answerWorkspaceChange(writer, request, u.applyWorkspaceChanges(ctx, session, changes...))
+}
+
 // answerWorkspaceChange answers a form of the Workspaces page after its
 // changes ran with err.
 func (u *UI) answerWorkspaceChange(writer http.ResponseWriter, request *http.Request, err error) {
@@ -276,7 +446,7 @@ func (u *UI) answerWorkspaceChange(writer http.ResponseWriter, request *http.Req
 	switch {
 	case errors.Is(err, gateway.ErrWorkspaceChangeWidens):
 		writer.Header().Set("Cache-Control", "no-store")
-		http.Redirect(writer, request, StepUpURL(WorkspacesPath), http.StatusSeeOther)
+		http.Redirect(writer, request, StepUpURL(pendingReturnTo(request)), http.StatusSeeOther)
 	case errors.As(err, &refusal):
 		u.renderWorkspaces(writer, request, refusal.Status, refusal.Message)
 	case err != nil:
