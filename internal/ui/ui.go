@@ -252,6 +252,7 @@ func New(options Options, registrar Registrar) *UI {
 
 	if options.Secrets != nil {
 		u.Handle("GET /ui/secrets", User, http.HandlerFunc(u.secretsPage))
+		u.Handle("GET /ui/secrets/new", User, http.HandlerFunc(u.newSecret))
 		u.handle("POST /ui/secrets", User, MaxSecretFormBytes, http.HandlerFunc(u.setSecret))
 		u.Handle("POST /ui/secrets/{name}/delete", User, http.HandlerFunc(u.deleteSecret))
 	}

@@ -114,12 +114,14 @@ func TestSecretsPageSetsListsAndDeletes(t *testing.T) {
 	assert.Equal(t, knownValue, env.secretValue(t, "dave", "api-key"))
 
 	page := readBody(t, get(t, browser, env.server.URL+"/ui/secrets"))
-	assert.Contains(t, page, "<td>api-key</td>")
+	assert.Contains(t, page, `class="font-mono">api-key</td>`)
 	assert.NotContains(t, page, knownValue)
 	assert.Contains(t, page, `enctype="multipart/form-data"`)
-	assert.Contains(t, page, `<textarea name="value"`)
+	assert.Contains(t, page, `name="value"`)
 	assert.Contains(t, page, `type="file"`)
 	assert.Contains(t, page, `action="/ui/secrets/api-key/delete"`)
+	assert.Contains(t, page, `Delete secret api-key? Servers that use it stop working until you set it again.`)
+	assert.Contains(t, page, `<a href="/ui/servers/github">github</a>`)
 	assert.Contains(t, page, token)
 
 	// Replace.
@@ -313,6 +315,7 @@ func TestSecretsInBrowser(t *testing.T) {
 	save := func(value string) {
 		require.NoError(t, chromedp.Do(ctx,
 			toolgatetest.Navigate(env.server.URL+"/ui/secrets"),
+			chromedp.Click(`main a[data-dialog="set-secret-dialog"]`),
 			chromedp.WaitVisible(`#set-secret button`),
 			chromedp.SetValue(`#set-secret input[name="name"]`, "browser-key"),
 			chromedp.SetValue(`#set-secret textarea[name="value"]`, value),
@@ -326,7 +329,7 @@ func TestSecretsInBrowser(t *testing.T) {
 	}
 
 	pageText := func() string {
-		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#set-secret button`)))
+		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`main a[data-dialog="set-secret-dialog"]`)))
 
 		text, err := chromedp.Run(ctx, chromedp.OuterHTML("html"))
 		require.NoError(t, err)
@@ -338,7 +341,7 @@ func TestSecretsInBrowser(t *testing.T) {
 	assert.Equal(t, first, env.secretValue(t, "dave", "browser-key"))
 	assert.NotContains(t, pageText(), first, "the page after saving doesn't hold the value")
 
-	require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#set-secret button`)))
+	require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`main a[data-dialog="set-secret-dialog"]`)))
 	assert.NotContains(t, pageText(), first)
 
 	save(second)
@@ -346,7 +349,35 @@ func TestSecretsInBrowser(t *testing.T) {
 	assert.NotContains(t, pageText(), second)
 	assert.Equal(t, 1, env.countRows(t, "user_secrets"))
 
-	require.NoError(t, chromedp.Do(ctx, chromedp.Click(`#secrets button`)))
+	require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#secrets summary`)))
+
+	// Opening the row action shows the question and deletes nothing.
+	require.NoError(t, chromedp.Do(ctx, chromedp.Click(`#secrets summary`), chromedp.WaitVisible(`#secrets form button`)))
+
+	question, err := chromedp.Run(ctx, chromedp.Text(`#secrets form p`))
+	require.NoError(t, err)
+	assert.Equal(t, "Delete secret browser-key? Servers that use it stop working until you set it again.", question)
+	assert.Equal(t, 1, env.countRows(t, "user_secrets"))
+
+	require.NoError(t, chromedp.Do(ctx, chromedp.Click(`#secrets form button`)))
 	require.Eventually(t, func() bool { return pageShows(ctx, "You have no secrets.") }, time.Minute, 100*time.Millisecond)
 	assert.Equal(t, 0, env.countRows(t, "user_secrets"))
+}
+
+// Without JavaScript the Set a secret link goes to a page with the form, and
+// only a signed-in user may open it.
+func TestSecretFormPageShowsTheFormAndRefusesAnonymousUsers(t *testing.T) {
+	env := startUIEnv(t, "")
+	browser := env.insertSession(t, "secret-form-session", nil)
+
+	page := readBody(t, get(t, browser, env.server.URL+"/ui/secrets"))
+	assert.Contains(t, page, `href="/ui/secrets/new"`)
+
+	response := get(t, browser, env.server.URL+"/ui/secrets/new")
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	assert.Contains(t, readBody(t, response), `action="/ui/secrets"`)
+
+	anonymous := get(t, env.browser(t), env.server.URL+"/ui/secrets/new")
+	assert.Equal(t, http.StatusSeeOther, anonymous.StatusCode)
+	assert.Equal(t, ui.LoginPath, location(t, anonymous).Path)
 }
