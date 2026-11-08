@@ -95,11 +95,109 @@ func TestWorkspacesPage(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.StatusCode)
 
 		page := readBody(t, response)
-		assert.Contains(t, page, "A workspace&#39;s list limits a process holding your token only while the default for unverified sessions is nothing.")
+		assert.Contains(t, page, "Choose which of your servers Claude Code can use on each machine.")
+		assert.Contains(t, page, "Machines without their own choice")
+		assert.Contains(t, page, "Other machines, such as your laptop")
 		assert.Contains(t, page, "coder/dave/blog")
-		assert.Contains(t, page, "Add a list")
+		assert.Contains(t, page, "No servers (default)")
+		assert.Contains(t, page, "Choose servers")
 		assert.NotContains(t, page, "claimed/elsewhere", "only verified workspaces are offered")
-		assert.Contains(t, page, "Sign in again to continue", "a sign-in of unknown age asks for a step-up")
+		assert.NotContains(t, page, "Sign in again", "the page asks for a sign-in only when a change needs one")
+
+		for _, word := range []string{"attested", "principal", "Clear the list", "Add a list", "Workspace lists"} {
+			assert.NotContains(t, page, word)
+		}
+	})
+
+	t.Run("a workspace with servers shows them as chips and offers the default", func(t *testing.T) {
+		browser := env.insertSession(t, "ws-card", []string{"dev"})
+		env.freshSignIn(t, "ws-card")
+
+		response := post(t, browser, env.server.URL+ui.WorkspacesPath+"/servers", url.Values{
+			ui.CSRFField: {csrfTokenOf("ws-card")}, "workspace": {"coder/dave/card"}, "server": {"optin-server", "any-server"},
+		})
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+		servers, exists := env.listOf(t, "dave", "coder/dave/card")
+		require.True(t, exists)
+		assert.Equal(t, []string{"any-server", "optin-server"}, servers)
+
+		page := readBody(t, get(t, browser, env.server.URL+ui.WorkspacesPath))
+		assert.Contains(t, page, "These servers:")
+		assert.Contains(t, page, `<span class="chip font-mono">optin-server</span>`)
+		assert.Contains(t, page, "Go back to the default for this workspace?")
+		assert.Contains(t, page, `value="optin-server" checked`)
+
+		// Unchecking one server removes just it.
+		response = post(t, browser, env.server.URL+ui.WorkspacesPath+"/servers", url.Values{
+			ui.CSRFField: {csrfTokenOf("ws-card")}, "workspace": {"coder/dave/card"}, "server": {"any-server"},
+		})
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+		servers, _ = env.listOf(t, "dave", "coder/dave/card")
+		assert.Equal(t, []string{"any-server"}, servers)
+
+		response = post(t, browser, env.server.URL+ui.WorkspacesPath+"/clear", url.Values{
+			ui.CSRFField: {csrfTokenOf("ws-card")}, "workspace": {"coder/dave/card"},
+		})
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+		_, exists = env.listOf(t, "dave", "coder/dave/card")
+		assert.False(t, exists)
+	})
+
+	t.Run("a save that needs a sign-in comes back as a change to confirm", func(t *testing.T) {
+		browser := env.insertSession(t, "ws-keep", []string{"dev"})
+		env.freshSignIn(t, "ws-keep")
+		env.ageSignIn(t, "ws-keep", ui.StepUpMaxAge+30*time.Second)
+
+		response := post(t, browser, env.server.URL+ui.WorkspacesPath+"/servers", url.Values{
+			ui.CSRFField: {csrfTokenOf("ws-keep")}, "workspace": {"coder/dave/keep"}, "server": {"optin-server"},
+		})
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+		stepUp := location(t, response)
+		assert.Equal(t, ui.LoginPath, stepUp.Path)
+
+		returnTo, err := url.Parse(stepUp.Query().Get("return_to"))
+		require.NoError(t, err)
+		assert.Equal(t, ui.WorkspacesPath, returnTo.Path)
+
+		_, exists := env.listOf(t, "dave", "coder/dave/keep")
+		assert.False(t, exists, "nothing changes before the user confirms")
+
+		env.freshSignIn(t, "ws-keep")
+
+		page := readBody(t, get(t, browser, env.server.URL+returnTo.RequestURI()))
+		assert.Contains(t, page, "Confirm")
+		assert.Contains(t, page, `action="/ui/workspaces/servers"`)
+		assert.Contains(t, page, `name="server" value="optin-server"`)
+
+		response = post(t, browser, env.server.URL+ui.WorkspacesPath+"/servers", url.Values{
+			ui.CSRFField: {csrfTokenOf("ws-keep")}, "workspace": {"coder/dave/keep"}, "server": {"optin-server"},
+		})
+		require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+		servers, _ := env.listOf(t, "dave", "coder/dave/keep")
+		assert.Equal(t, []string{"optin-server"}, servers)
+	})
+
+	t.Run("a kept change with a stale sign-in asks to sign in again", func(t *testing.T) {
+		browser := env.insertSession(t, "ws-keep-stale", []string{"dev"})
+		env.freshSignIn(t, "ws-keep-stale")
+		env.ageSignIn(t, "ws-keep-stale", ui.StepUpMaxAge+30*time.Second)
+
+		page := readBody(t, get(t, browser, env.server.URL+ui.WorkspacesPath+"?pending=servers&workspace=coder%2Fdave%2Fx&server=any-server"))
+		assert.Contains(t, page, "To make this change, sign in again.")
+		assert.NotContains(t, page, "Confirm")
+	})
+
+	t.Run("an unknown kept action shows nothing", func(t *testing.T) {
+		browser := env.insertSession(t, "ws-keep-bad", []string{"dev"})
+		env.freshSignIn(t, "ws-keep-bad")
+
+		page := readBody(t, get(t, browser, env.server.URL+ui.WorkspacesPath+"?pending=../../x&workspace=w"))
+		assert.NotContains(t, page, "Confirm")
 	})
 
 	t.Run("a widening POST without a fresh step-up is refused", func(t *testing.T) {
@@ -115,7 +213,7 @@ func TestWorkspacesPage(t *testing.T) {
 		stepUp := location(t, response)
 		assert.Equal(t, ui.LoginPath, stepUp.Path)
 		assert.Equal(t, "1", stepUp.Query().Get("step_up"))
-		assert.Equal(t, ui.WorkspacesPath, stepUp.Query().Get("return_to"))
+		assert.Contains(t, stepUp.Query().Get("return_to"), ui.WorkspacesPath+"?pending=allow")
 
 		_, exists := env.listOf(t, "dave", workspaceName)
 		assert.False(t, exists, "the stale widening POST changes nothing")

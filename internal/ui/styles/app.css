@@ -54,6 +54,9 @@
     @apply px-2 py-0.5 text-xs;
   }
   /* A quiet destructive action: text in the danger colour until hovered. */
+  .btn-quiet {
+    @apply border-transparent bg-transparent text-muted hover:border-muted hover:bg-neutral;
+  }
   .btn-quiet-danger {
     @apply border-transparent bg-transparent text-danger hover:border-danger hover:bg-bad;
   }
@@ -178,6 +181,14 @@
     dialog .dialog-footer {
       @apply -mx-5 -mb-4 px-5;
     }
+  }
+
+  /* The servers of "Only these servers" show only while it is picked. */
+  .reveal-when-picked {
+    display: none;
+  }
+  form:has(input[name="unverified"][value="list"]:checked) .reveal-when-picked {
+    display: block;
   }
 
   dialog.modal::backdrop {
