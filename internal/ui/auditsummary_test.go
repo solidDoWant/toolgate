@@ -161,3 +161,12 @@ func readFile(t *testing.T, path string) string {
 
 	return string(data)
 }
+
+func TestEveryKnownEventTypeHasAReadableSummary(t *testing.T) {
+	for _, eventType := range knownAuditTypes() {
+		summary := summarize(auditEvent{Type: eventType, Details: `{}`})
+		assert.NotEmpty(t, summary.Prefix, eventType)
+		assert.NotEqual(t, "Event "+eventType, summary.Text(), eventType)
+		assert.NotEqual(t, eventType, auditTypeLabel(eventType), "%s has no readable name", eventType)
+	}
+}

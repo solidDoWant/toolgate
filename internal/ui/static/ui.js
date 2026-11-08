@@ -231,6 +231,7 @@
   });
 
   function start() {
+    Array.prototype.forEach.call(document.querySelectorAll("form[data-autosubmit] [data-filter-submit]"), function (button) { button.hidden = true; });
     Array.prototype.forEach.call(document.querySelectorAll("textarea[data-token-input]"), tokenInput);
   }
 

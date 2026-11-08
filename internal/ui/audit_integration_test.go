@@ -277,10 +277,10 @@ func TestAuditFilters(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	submit := chromedp.CSS(`#filter button`)
+	form := chromedp.CSS(`#filter`)
 	// Chromium can report a network change while it starts; try again.
 	require.Eventually(t, func() bool {
-		return chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/audit"), chromedp.WaitVisible(submit)) == nil
+		return chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/audit"), chromedp.WaitVisible(form)) == nil
 	}, time.Minute, 200*time.Millisecond, "the audit page opens")
 
 	fields := []string{"principal", "workspace", "session", "server", "tool", "from", "to"}
@@ -315,7 +315,8 @@ func TestAuditFilters(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			require.NoError(t, chromedp.Do(ctx, chromedp.Click(submit)))
+			_, err := chromedp.Run(ctx, chromedp.Evaluate[any](`document.querySelector('#filter').requestSubmit()`))
+			require.NoError(t, err)
 
 			// The submitted form is the page the browser is on.
 			assert.Eventually(t, func() bool {
