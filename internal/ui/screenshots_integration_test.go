@@ -68,6 +68,8 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 	env.insertSession(t, "dev-session", []string{"toolgate-admins", "dev"})
 	env.insertSession(t, "stale-session", []string{"toolgate-admins"})
 	env.ageSignIn(t, "stale-session", time.Hour)
+	env.insertSession(t, "fresh-session", []string{"toolgate-admins"})
+	env.ageSignIn(t, "fresh-session", 0)
 	env.insertSessionOf(t, "erin", "empty-session", []string{"dev"})
 
 	for index, event := range []struct{ tool, details string }{
@@ -163,7 +165,7 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "secret-new", path: "/ui/secrets/new"},
 		{name: "setup", path: "/ui/setup"},
 		{name: "approvals", path: "/ui/approvals"},
-		{name: "approval", path: "/ui/approvals/" + approvalID(1)},
+		{name: "approval", path: "/ui/approvals/" + approvalID(1), cookie: "fresh-session"},
 		{name: "approval-step-up", path: "/ui/approvals/" + approvalID(1), cookie: "stale-session"},
 		{name: "grants", path: "/ui/grants", cookie: "dev-session"},
 		{name: "grant-new", path: "/ui/grants/new", cookie: "dev-session"},
