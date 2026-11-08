@@ -213,7 +213,7 @@ A name contains only letters, digits, `.`, `_` and `-`, and has 128 characters a
 
 To see your secrets, run `toolgate secret list`. It shows the name of each secret and when you set it. toolgate never shows a value after you set it.
 
-You can also manage your secrets in the web UI, on the Secrets page. Type a value or choose a file there.
+You can also manage your secrets in the web UI, on the Secrets page. Type a value or choose a file there. The page also shows which servers use each secret.
 
 To delete a secret, run `toolgate secret delete github-token`. A server that is already running keeps the value that it started with.
 

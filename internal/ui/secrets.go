@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
@@ -24,7 +25,63 @@ type SecretStore interface {
 const SecretsPath = "/ui/secrets"
 
 type secretsPage struct {
-	Secrets []secrets.Info
+	Secrets []secretRow
+}
+
+// secretRow is one row of the Secrets table.
+type secretRow struct {
+	Name    string
+	Created timeView
+	Updated timeView
+	// ShowCreated is false when the secret was never replaced, so Created
+	// would repeat Updated.
+	ShowCreated bool
+	// UsedBy names the catalog servers whose templates reference the secret.
+	UsedBy []string
+}
+
+// secretRows builds the table rows. usedBy maps a secret name to the servers
+// that use it.
+func secretRows(now time.Time, infos []secrets.Info, usedBy map[string][]string) []secretRow {
+	rows := make([]secretRow, 0, len(infos))
+
+	for _, info := range infos {
+		rows = append(rows, secretRow{
+			Name:        info.Name,
+			Created:     relativeTime(now, info.CreatedAt),
+			Updated:     relativeTime(now, info.UpdatedAt),
+			ShowCreated: !info.CreatedAt.Equal(info.UpdatedAt),
+			UsedBy:      usedBy[info.Name],
+		})
+	}
+
+	return rows
+}
+
+// secretUsers maps each secret name to the servers the user can see that
+// reference it. A catalog that can't be read leaves the column empty: the
+// page still works without it.
+func (u *UI) secretUsers(request *http.Request, session Session) map[string][]string {
+	if u.options.Servers == nil {
+		return nil
+	}
+
+	infos, err := u.options.Servers.Catalog(request.Context(), sessionIdentity(session))
+	if err != nil {
+		u.logger.WarnContext(request.Context(), "cannot read the catalog for the secrets page", "error", err)
+
+		return nil
+	}
+
+	usedBy := map[string][]string{}
+
+	for _, info := range infos {
+		for _, secret := range info.Secrets {
+			usedBy[secret.Name] = append(usedBy[secret.Name], info.Name)
+		}
+	}
+
+	return usedBy
 }
 
 // secretsPage lists the user's secret names and dates. It never reads a
@@ -40,7 +97,13 @@ func (u *UI) secretsPage(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
-	u.render(writer, request, "secrets", "Secrets", secretsPage{Secrets: infos})
+	u.render(writer, request, "secrets", "Secrets", secretsPage{Secrets: secretRows(time.Now(), infos, u.secretUsers(request, session))})
+}
+
+// newSecret is the "Set a secret" form on its own page, for a browser
+// without JavaScript, where the dialog can't open.
+func (u *UI) newSecret(writer http.ResponseWriter, request *http.Request) {
+	u.render(writer, request, "secret_new", "Set a secret", secretsPage{})
 }
 
 // setSecret stores the form's value as the user's secret and redirects to

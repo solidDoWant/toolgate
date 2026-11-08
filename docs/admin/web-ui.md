@@ -124,7 +124,7 @@ A user who asks for another user's session, or for a session that has ended, get
 
 ## The Secrets page
 
-`/ui/secrets` shows the signed-in user's secrets: each name with the dates it was created and last set. It needs the secrets keyset, like `/api/v1/secrets`, and is not offered without it: the page returns 404 and the navigation hides the Secrets link. It uses the same secret broker as the API, so the CLI and the page show the same secrets. It writes the same `secret.set` and `secret.delete` audit events, with attestation `user` and no workspace or session.
+`/ui/secrets` shows the signed-in user's secrets: each name, the servers in the catalog that use it (templates that reference `${secret:NAME}`), and when it was last set, as a relative time with the exact time on hover. The created time shows only when the secret was set again after it was created. Delete asks for confirmation in the browser first. The form is plain HTML, so it also works without JavaScript. It needs the secrets keyset, like `/api/v1/secrets`, and is not offered without it: the page returns 404 and the navigation hides the Secrets link. It uses the same secret broker as the API, so the CLI and the page show the same secrets. It writes the same `secret.set` and `secret.delete` audit events, with attestation `user` and no workspace or session.
 
 The form takes a value in a text box or from a file, not both. A value is 4 MiB at most. Text from the box has its CRLF line breaks changed to LF, so a PEM key matches one set with the CLI. A file's bytes are kept as they are. The form never shows a value, and each action answers with a redirect back to the page.
 

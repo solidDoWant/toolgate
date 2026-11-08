@@ -49,7 +49,6 @@ var pageTemplates = map[string]*template.Template{
 	"sessions":       parsePage("sessions"),
 	"session":        parsePage("session"),
 	"session_deny":   parsePage("session_deny"),
-	"secrets":        parsePage("secrets"),
 	"audit_event":    parsePage("audit_event"),
 	"grants":         parsePage("grants"),
 	"grant_new":      parsePage("grant_new"),
@@ -60,6 +59,8 @@ var pageTemplates = map[string]*template.Template{
 	"setup":          parsePage("setup"),
 	"signin_failed":  parsePage("signin_failed"),
 	"block_new":      parsePage("block_new", "block_form"),
+	"secrets":        parsePage("secrets", "secret_form"),
+	"secret_new":     parsePage("secret_new", "secret_form"),
 }
 
 // parsePage parses the layout, the shared components, one page's content
@@ -181,6 +182,8 @@ func navSection(name string) string {
 		return "grants"
 	case "block_new":
 		return "blocks"
+	case "secret_new":
+		return "secrets"
 	case "approval", "access_request":
 		return "approvals"
 	default:

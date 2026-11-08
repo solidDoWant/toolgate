@@ -24,6 +24,22 @@ import (
 // (`make ui-screenshots`). Without it the test skips.
 const screenshotsEnv = "TOOLGATE_UI_SCREENSHOTS"
 
+// seedScreenshotSecrets gives dave three secrets: one a server uses and one
+// that was replaced, so its Created time differs from its Updated time.
+func seedScreenshotSecrets(t *testing.T, env *uiEnv) {
+	t.Helper()
+
+	var err error
+
+	for _, secret := range []string{"api-key", "mail-archiver-token", "unused-token"} {
+		_, err = env.broker.Set(t.Context(), "dave", secret, []byte("not-shown"))
+		require.NoError(t, err)
+	}
+
+	_, err = env.pool.Exec(t.Context(), `UPDATE user_secrets SET created_at = now() - interval '9 days', updated_at = now() - interval '3 days' WHERE name = 'mail-archiver-token'`)
+	require.NoError(t, err)
+}
+
 // seedScreenshotData fills the gateway with a little of everything the
 // pages show, for dave, an admin.
 func seedScreenshotData(t *testing.T, env *uiEnv) {
@@ -48,6 +64,8 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 		('3f9c2a7e1b5d48c0a6e2f17d9b04c8e1', '{"servers":["github"],"tools":["github__delete_repo"]}', 'Incident 42: repository deletions under review.', 'dave', now() - interval '20 minutes', now() + interval '3 hours'),
 		('8a1d4e6f2c3b47a9b5d0e8f1a2c3d4e5', '{"groups":["contractors"],"attestation":"user"}', 'Contractor access paused for the audit.', 'dave', now() - interval '2 hours', now() + interval '2 days')`)
 	require.NoError(t, err)
+
+	seedScreenshotSecrets(t, env)
 
 	expires := metav1.NewTime(now.Add(30 * 24 * time.Hour))
 	env.rules.rules = []v1alpha1.ToolgateRule{
@@ -82,6 +100,8 @@ func TestUIScreenshots(t *testing.T) {
 		prepare chromedp.Action[chromedp.Void]
 		// servers is the state of the fake catalog: "seeded" unless set.
 		servers string
+		// before runs before the page loads, to change the seeded data.
+		before func()
 	}{
 		{name: "servers", path: "/ui/servers"},
 		{name: "servers-empty", path: "/ui/servers", servers: "empty"},
@@ -89,7 +109,14 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "server-no-tools", path: "/ui/servers/mail"},
 		{name: "sessions", path: "/ui/sessions"},
 		{name: "workspaces", path: "/ui/workspaces"},
-		{name: "secrets", path: "/ui/secrets"},
+		{name: "secrets", path: "/ui/secrets", before: func() { seedScreenshotSecrets(t, env) }},
+		{name: "secrets-delete-confirm", path: "/ui/secrets", prepare: chromedp.Click(chromedp.CSS(`#secrets tbody tr:first-child summary`))},
+		{name: "secrets-empty", path: "/ui/secrets", before: func() {
+			_, err := env.pool.Exec(t.Context(), `DELETE FROM user_secrets`)
+			require.NoError(t, err)
+		}},
+		{name: "secrets-dialog", path: "/ui/secrets", prepare: chromedp.Click(chromedp.CSS(`main a[data-dialog="set-secret-dialog"]`))},
+		{name: "secret-new", path: "/ui/secrets/new"},
 		{name: "setup", path: "/ui/setup"},
 		{name: "approvals", path: "/ui/approvals"},
 		{name: "approval", path: "/ui/approvals/" + approvalID(1)},
@@ -129,6 +156,9 @@ func TestUIScreenshots(t *testing.T) {
 				}
 
 				env.servers.setScreenshotState(state)
+				if page.before != nil {
+					page.before()
+				}
 
 				steps := []chromedp.Action[chromedp.Void]{toolgatetest.Navigate(env.server.URL + page.path), chromedp.WaitReady(chromedp.CSS("main"))}
 				if page.prepare != nil {
