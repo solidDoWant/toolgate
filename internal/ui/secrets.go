@@ -100,6 +100,12 @@ func (u *UI) secretsPage(writer http.ResponseWriter, request *http.Request) {
 	u.render(writer, request, "secrets", "Secrets", secretsPage{Secrets: secretRows(time.Now(), infos, u.secretUsers(request, session))})
 }
 
+// newSecret is the "Set a secret" form on its own page, for a browser
+// without JavaScript, where the dialog can't open.
+func (u *UI) newSecret(writer http.ResponseWriter, request *http.Request) {
+	u.render(writer, request, "secret_new", "Set a secret", secretsPage{})
+}
+
 // setSecret stores the form's value as the user's secret and redirects to
 // the page. A textarea value has CRLF converted to LF; a file's bytes are
 // kept exactly.

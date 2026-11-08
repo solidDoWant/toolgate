@@ -49,6 +49,14 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 		('8a1d4e6f2c3b47a9b5d0e8f1a2c3d4e5', '{"groups":["contractors"],"attestation":"user"}', 'Contractor access paused for the audit.', 'dave', now() - interval '2 hours', now() + interval '2 days')`)
 	require.NoError(t, err)
 
+	for _, secret := range []string{"api-key", "mail-archiver-token", "unused-token"} {
+		_, err = env.broker.Set(t.Context(), "dave", secret, []byte("not-shown"))
+		require.NoError(t, err)
+	}
+
+	_, err = env.pool.Exec(t.Context(), `UPDATE user_secrets SET created_at = now() - interval '9 days', updated_at = now() - interval '3 days' WHERE name = 'mail-archiver-token'`)
+	require.NoError(t, err)
+
 	expires := metav1.NewTime(now.Add(30 * 24 * time.Hour))
 	env.rules.rules = []v1alpha1.ToolgateRule{
 		{
@@ -85,6 +93,8 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "sessions", path: "/ui/sessions"},
 		{name: "workspaces", path: "/ui/workspaces"},
 		{name: "secrets", path: "/ui/secrets"},
+		{name: "secrets-dialog", path: "/ui/secrets", prepare: chromedp.Click(chromedp.CSS(`main a[data-dialog="set-secret-dialog"]`))},
+		{name: "secret-new", path: "/ui/secrets/new"},
 		{name: "setup", path: "/ui/setup"},
 		{name: "approvals", path: "/ui/approvals"},
 		{name: "approval", path: "/ui/approvals/" + approvalID(1)},
