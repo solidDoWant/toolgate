@@ -1,74 +1,64 @@
-{{define "content"}}
-{{with .Data}}
-<dl id="access-request">
-<dt>Request</dt><dd>{{.ID}}</dd>
-<dt>Kind</dt><dd>{{.Kind}}</dd>
-{{with .Server}}<dt>Server</dt><dd>{{.}}</dd>
-{{end}}{{with .Session}}<dt>Session</dt><dd>{{.}}</dd>
-{{end}}<dt>Workspace</dt><dd>{{template "ws" (workspace .Workspace)}}</dd>
-<dt>Requested</dt><dd>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
-<dt>Expires</dt><dd>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
-</dl>
-{{with .Change}}<h2>Change</h2>
-{{if .Defaults}}<div class="table-wrap"><table id="change">
-<thead><tr><th>Default</th><th>Before</th><th>After</th></tr></thead>
-<tbody>
-<tr><td>Sessions in a verified workspace without a list</td><td>{{.BeforeVerified}}</td><td>{{.AfterVerified}}</td></tr>
-<tr><td>Sessions without a verified workspace</td><td>{{.BeforeUnverified}}</td><td>{{.AfterUnverified}}</td></tr>
-</tbody>
-</table></div>
-{{else}}<p>Workspace {{template "ws" (workspace .Workspace)}}</p>
-<div class="table-wrap"><table id="change">
-<thead><tr><th>Before</th><th>After</th></tr></thead>
-<tbody><tr>
-<td id="change-before">{{template "list_state" .Before}}</td>
-<td id="change-after">{{template "list_state" .After}}</td>
-</tr></tbody>
-</table></div>
-{{end}}{{end}}
-{{with .Scope}}<h2>Change</h2>
-<dl id="scope-target">
-{{if .Unverified}}<dt>Target</dt><dd>your sessions without a verified workspace</dd>
-<dt>Default before</dt><dd>{{.Before.Default}}</dd>
-<dt>Default after</dt><dd>{{.After.Default}}</dd>
-{{else if .Session}}<dt>Target session</dt><dd>{{.Session}}</dd>
-<dt>In workspace</dt><dd>{{template "ws" (workspace .Workspace)}}</dd>
-{{else}}<dt>Target workspace</dt><dd>{{template "ws" (workspace .Workspace)}}</dd>
-{{end}}<dt>Asked by session</dt><dd>{{if .AskedBy}}{{.AskedBy}}{{else}}none (the CLI){{end}}</dd>
-</dl>
-<div class="table-wrap"><table id="change">
-<thead><tr><th>Before</th><th>After</th></tr></thead>
-<tbody><tr>
-<td id="change-before">{{template "scope_state" .Before}}</td>
-<td id="change-after">{{template "scope_state" .After}}</td>
-</tr></tbody>
-</table></div>
-{{end}}
-{{with .Error}}<p class="flash error">{{.}}</p>
-{{end}}{{if .Message}}<p class="flash status" role="status">{{.Message}}</p>
-{{else}}
-{{if or .Change .Scope}}{{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>
-<a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
-{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" class="primary">Approve</button>
-</form>
-{{end}}{{else if eq .Kind "server"}}{{if .StepUpURL}}<p>Allowing needs a fresh sign-in.</p>
-<a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
-{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve">
+{{define "heading"}}<p class="m-0 mb-2 text-sm"><a href="/ui/approvals">All approvals</a></p>
+{{with .Data}}{{template "detail-header-start" (dict "Title" "Access request" "Summary" "A request to change which servers a session or workspace may use.")}}
+{{if not .Message}}{{if .StepUpURL}}<div class="flex flex-col items-start gap-1 self-start"><a class="btn btn-primary" href="{{.StepUpURL}}">{{if eq .Kind "server"}}Allow for this session{{else}}Approve{{end}}</a>
+<p class="m-0 text-xs text-muted">You'll be asked to sign in again.</p></div>
+{{else if eq .Kind "server"}}<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0 self-start">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="scope" value="session">
-<button type="submit" id="allow-session" class="primary">Allow for this session</button>
+<button type="submit" id="allow-session" class="btn btn-primary">Allow for this session</button>
 </form>
-<form method="post" action="/ui/approvals/{{.ID}}/approve">
+<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0 self-start">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <input type="hidden" name="scope" value="workspace">
-<button type="submit" id="allow-workspace" class="secondary">Always allow in this workspace</button>
+<button type="submit" id="allow-workspace" class="btn">Always allow in this workspace</button>
 </form>
-{{end}}{{end}}<form method="post" action="/ui/approvals/{{.ID}}/deny">
+{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0 self-start">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" class="danger">Deny</button>
+<button type="submit" class="btn btn-primary">Approve</button>
 </form>
+{{end}}<form method="post" action="/ui/approvals/{{.ID}}/deny" class="m-0 self-start">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<button type="submit" class="btn border-danger bg-transparent text-danger hover:bg-bad">Deny</button>
+</form>
+{{end}}{{template "detail-header-end"}}{{end}}{{end}}
+{{define "content"}}
+{{with .Data}}
+{{with .Error}}<p class="flash error mb-4" role="alert">{{.}}</p>
+{{end}}{{if .Message}}<p class="flash status mb-4" role="status">{{.Message}}</p>
+{{end}}<dl id="access-request" class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">
+{{template "fact-start" "Request"}}{{template "short-id" .ID}}{{template "fact-end"}}
+{{template "fact-start" "Kind"}}{{.Kind}}{{template "fact-end"}}
+{{with .Server}}{{template "fact-start" "Server"}}{{.}}{{template "fact-end"}}
+{{end}}{{with .Session}}{{template "fact-start" "Session"}}{{if $.Data.SessionPage}}<a href="{{$.Data.SessionPage}}">{{$.Data.SessionLabel}}</a> {{end}}{{template "short-id" .}}{{template "fact-end"}}
+{{end}}{{template "fact-start" "Workspace"}}{{template "ws" (workspace .Workspace)}}{{template "fact-end"}}
+{{template "fact-start" "Requested"}}{{template "reltime" (since .CreatedAt)}}{{template "fact-end"}}
+{{template "fact-start" "Expires"}}{{template "reltime" (until .ExpiresAt)}}{{template "fact-end"}}
+</dl>
+{{with .Change}}<h2 class="m-0 mb-2 text-base font-semibold">Change</h2>
+{{if .Defaults}}{{template "table-start" (dict "ID" "change" "Label" "Change" "Columns" (list "Default" "Before" "After"))}}
+<tr><td data-label="Default">Sessions in a verified workspace without a list</td><td data-label="Before">{{.BeforeVerified}}</td><td data-label="After">{{.AfterVerified}}</td></tr>
+<tr><td data-label="Default">Sessions without a verified workspace</td><td data-label="Before">{{.BeforeUnverified}}</td><td data-label="After">{{.AfterUnverified}}</td></tr>
+{{template "table-end"}}
+{{else}}<p class="mb-2 text-sm">Workspace {{template "ws" (workspace .Workspace)}}</p>
+{{template "table-start" (dict "ID" "change" "Label" "Change" "Columns" (list "Before" "After"))}}
+<tr><td id="change-before" data-label="Before">{{template "list_state" .Before}}</td>
+<td id="change-after" data-label="After">{{template "list_state" .After}}</td></tr>
+{{template "table-end"}}
+{{end}}{{end}}
+{{with .Scope}}<h2 class="m-0 mb-2 text-base font-semibold">Change</h2>
+<dl id="scope-target" class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">
+{{if .Unverified}}{{template "fact-start" "Target"}}your sessions without a verified workspace{{template "fact-end"}}
+{{template "fact-start" "Default before"}}{{.Before.Default}}{{template "fact-end"}}
+{{template "fact-start" "Default after"}}{{.After.Default}}{{template "fact-end"}}
+{{else if .Session}}{{template "fact-start" "Target session"}}{{.Session}}{{template "fact-end"}}
+{{template "fact-start" "In workspace"}}{{template "ws" (workspace .Workspace)}}{{template "fact-end"}}
+{{else}}{{template "fact-start" "Target workspace"}}{{template "ws" (workspace .Workspace)}}{{template "fact-end"}}
+{{end}}{{template "fact-start" "Asked by session"}}{{if .AskedBy}}{{.AskedBy}}{{else}}none (the CLI){{end}}{{template "fact-end"}}
+</dl>
+{{template "table-start" (dict "ID" "change" "Label" "Change" "Columns" (list "Before" "After"))}}
+<tr><td id="change-before" data-label="Before">{{template "scope_state" .Before}}</td>
+<td id="change-after" data-label="After">{{template "scope_state" .After}}</td></tr>
+{{template "table-end"}}
 {{end}}
 {{end}}
 {{end}}

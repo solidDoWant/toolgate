@@ -140,6 +140,12 @@ func TestUIScreenshots(t *testing.T) {
 	openSession, emptySession := seedScreenshotData(t, env)
 	ctx := openBrowserAsAdminFor(t, env, 10*time.Minute)
 
+	eventKey := env.insertAudit(t, auditRow{
+		at: time.Now().Add(-2 * time.Minute), principal: "dave", workspace: "acme/web", session: "laptop-7f3a",
+		server: "github", tool: "delete_repo", eventType: "tool.decision", details: `{"decision":"refuse","rule":"no-deletes"}`,
+	})
+	requestID := env.insertServerRequest(t, "dave", openSession, "paperless")
+
 	pages := []struct {
 		name, path string
 		// prepare runs after the page loads, for example to open a dialog.
@@ -189,6 +195,9 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "approvals", path: "/ui/approvals"},
 		{name: "approval", path: "/ui/approvals/" + approvalID(1), cookie: "fresh-session"},
 		{name: "approval-step-up", path: "/ui/approvals/" + approvalID(1), cookie: "stale-session"},
+		{name: "access-request", path: "/ui/approvals/" + requestID, cookie: "fresh-session"},
+		{name: "access-request-step-up", path: "/ui/approvals/" + requestID, cookie: "stale-session"},
+		{name: "audit-event", path: "/ui/audit/events/" + eventKey},
 		{name: "grants", path: "/ui/grants", cookie: "dev-session"},
 		{name: "grant-new", path: "/ui/grants/new", cookie: "dev-session"},
 		{name: "audit", path: "/ui/audit"},

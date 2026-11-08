@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -487,8 +488,11 @@ type changePreview struct {
 type accessRequestPage struct {
 	ID, Kind, Workspace, Server string
 	// Session is the client session ID of a server request.
-	Session              string
-	CreatedAt, ExpiresAt time.Time
+	Session string
+	// SessionPage is the session's page and SessionLabel is what pages show
+	// for it; both are empty for a request without a session.
+	SessionPage, SessionLabel string
+	CreatedAt, ExpiresAt      time.Time
 	// Message is the request's status when it can't be decided any more.
 	Message string
 	// Error says why the last approval didn't apply.
@@ -565,6 +569,8 @@ func (u *UI) renderAccessRequest(writer http.ResponseWriter, request *http.Reque
 		}
 
 		data.Session = sessionRow.SessionID
+		data.SessionPage = "/ui/sessions/" + strconv.FormatInt(sessionRow.ID, 10)
+		data.SessionLabel = labelWorkspace(sessionRow.Workspace).Label
 	}
 
 	if accessRequest.Kind == "change" {

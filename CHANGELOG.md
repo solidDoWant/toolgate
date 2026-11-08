@@ -32,6 +32,8 @@ Internal work: the web UI stylesheet is now built with the Tailwind CSS standalo
 
 - Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
 - `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
+||||||| parent of 5478ee3 (refactor(ui): remove the old global form CSS and convert the last pages)
+- When a sign-in fails because the IdP did not ask for a fresh sign-in, or because the browser lost the sign-in cookie, the web UI now starts a new sign-in one time instead of showing an error page. A fresh sign-in now sends `max_age=60` instead of `max_age=0`, so Authentik asks the user to sign in again. A failed sign-in now shows a web UI page with a "Sign in again" button.
 
 ## 0.4.7
 
