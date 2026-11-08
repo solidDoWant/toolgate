@@ -307,11 +307,7 @@ func (m *metaTools) syncSession(ctx context.Context, session *mcp.ServerSession,
 		return byServer, nil
 	}
 
-	if err := offered.apply(tools); err != nil {
-		return nil, err
-	}
-
-	if err := m.syncMetaDescriptions(ctx, offered, current.identity); err != nil {
+	if err := m.applySync(ctx, offered, current.identity, tools); err != nil {
 		return nil, err
 	}
 

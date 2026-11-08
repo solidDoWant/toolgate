@@ -403,8 +403,15 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 
 	implementation := &mcp.Implementation{Name: "toolgate", Version: version.Get()}
 
+	// Every MCP session has its own server, and a sync re-registers the
+	// discovery meta tools when their descriptions change. Shared schemas
+	// keep that re-registration free of reflection, so the changes of one
+	// sync land inside the go-sdk's list_changed debounce and send one
+	// notification.
+	schemas := mcp.NewSchemaCache()
+
 	endpoint.newServer = func(stateless bool) *mcp.Server {
-		serverOptions := &mcp.ServerOptions{SetCacheable: privateToolLists}
+		serverOptions := &mcp.ServerOptions{SetCacheable: privateToolLists, SchemaCache: schemas}
 		if stateless {
 			serverOptions.SupportedProtocolVersions = []string{mcprequest.StatelessRevision}
 		}

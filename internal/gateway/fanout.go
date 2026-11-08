@@ -267,11 +267,7 @@ func (e *mcpEndpoint) resync(tools *metaTools, matches func(requestContext) bool
 
 		wanted, _, err := tools.proxiedTools(ctx, current)
 		if err == nil {
-			err = target.apply(wanted)
-		}
-
-		if err == nil {
-			err = tools.syncMetaDescriptions(ctx, target, current.identity)
+			err = tools.applySync(ctx, target, current.identity, wanted)
 		}
 
 		cancel()
