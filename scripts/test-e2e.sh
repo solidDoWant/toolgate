@@ -8,12 +8,18 @@
 # leaves out the acceptance tests, for a caller that runs them next with
 # scripts/acceptance.sh, so they do not run twice. GO_TEST_JSON=file also
 # writes the go test -json events there.
+#
+# A shard (about a third of the tests) gets a 20-minute go test timeout, so a
+# hung test fails with a goroutine dump well before CI's job limit; a full
+# run keeps 55 minutes.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 args=()
+go_timeout=55m
 if [[ -n "${E2E_SHARD:-}" || "${E2E_SKIP_ACCEPTANCE:-false}" == true ]]; then
 	spec="${E2E_SHARD:-1/1}"
+	[[ -z "${E2E_SHARD:-}" ]] || go_timeout=20m
 	select=(--shard "$spec")
 	if [[ "${E2E_SKIP_ACCEPTANCE:-false}" == true ]]; then
 		acceptance="$(./scripts/acceptance-scoreboard.py --go-run-pattern --sources .)"
@@ -29,4 +35,4 @@ if [[ -n "${E2E_SHARD:-}" || "${E2E_SKIP_ACCEPTANCE:-false}" == true ]]; then
 	args=(-run "$pattern")
 fi
 
-timeout 60m ./scripts/ci/go-test-json.sh -count=1 -tags e2e -timeout 55m "${args[@]}" ./...
+timeout 60m ./scripts/ci/go-test-json.sh -count=1 -tags e2e -timeout "$go_timeout" "${args[@]}" ./...

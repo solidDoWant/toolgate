@@ -124,10 +124,10 @@ func auditEventLinks(t *testing.T, browser context.Context, publicURL, server st
 
 	query := url.Values{"server": {server}}
 
-	_, err := chromedp.Run(browser, testutil.Navigate(publicURL+"/ui/audit?"+query.Encode()))
+	_, err := browserRun(browser, testutil.Navigate(publicURL+"/ui/audit?"+query.Encode()))
 	require.NoError(t, err)
 
-	rows, err := chromedp.Run(browser, chromedp.Evaluate[[]map[string]string](
+	rows, err := browserRun(browser, chromedp.Evaluate[[]map[string]string](
 		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => ({type: row.cells[2].querySelector('a').getAttribute('title'), href: row.querySelector('a[href^="/ui/audit/events/"]').getAttribute('href')}))`))
 	require.NoError(t, err)
 
@@ -226,10 +226,10 @@ func TestAuditPayloads(t *testing.T) {
 	view := func(t *testing.T, href string) string {
 		t.Helper()
 
-		_, err := chromedp.Run(browser, testutil.Navigate(publicURL+href))
+		_, err := browserRun(browser, testutil.Navigate(publicURL+href))
 		require.NoError(t, err)
 
-		text, err := chromedp.Run(browser, chromedp.Evaluate[string](`document.querySelector('main').innerText`))
+		text, err := browserRun(browser, chromedp.Evaluate[string](`document.querySelector('main').innerText`))
 		require.NoError(t, err)
 
 		return text

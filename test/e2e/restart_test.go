@@ -63,10 +63,10 @@ func signInToUI(t *testing.T, publicURL string, user testutil.OIDCUser) context.
 
 	browser := testutil.StartBrowser(t, chromedp.Flag("ignore-certificate-errors", true))
 
-	require.NoError(t, chromedp.Do(browser, testutil.Navigate(publicURL+ui.HomePath), testutil.SignInToOIDC(user)))
+	require.NoError(t, browserDo(browser, testutil.Navigate(publicURL+ui.HomePath), testutil.SignInToOIDC(user)))
 
 	require.Eventually(t, func() bool {
-		title, err := chromedp.Run(browser, chromedp.Title())
+		title, err := browserRun(browser, chromedp.Title())
 
 		return err == nil && title == "Servers · toolgate"
 	}, time.Minute, 200*time.Millisecond, "the browser is back on the Servers page, signed in")
@@ -110,11 +110,11 @@ func TestRestartFromTheUI(t *testing.T) {
 		restart := chromedp.CSS(`form[action="/ui/instances/` + oldID + `/restart"] button`)
 
 		require.Eventually(t, func() bool {
-			if err := chromedp.Do(browser, testutil.Navigate(publicURL+ui.HomePath)); err != nil {
+			if err := browserDo(browser, testutil.Navigate(publicURL+ui.HomePath)); err != nil {
 				return false
 			}
 
-			found, err := chromedp.Run(browser, chromedp.Evaluate[bool](
+			found, err := browserRun(browser, chromedp.Evaluate[bool](
 				`document.querySelector('form[action="/ui/instances/`+oldID+`/restart"] button') !== null`))
 
 			return err == nil && found
@@ -122,9 +122,9 @@ func TestRestartFromTheUI(t *testing.T) {
 
 		listChangedBefore := countEvents(session.recorded(), eventListChanged)
 
-		require.NoError(t, chromedp.Do(browser, chromedp.Click(restart)))
+		require.NoError(t, browserDo(browser, chromedp.Click(restart)))
 		require.Eventually(t, func() bool {
-			body, err := chromedp.Run(browser, testutil.BodyText())
+			body, err := browserRun(browser, testutil.BodyText())
 
 			return err == nil && strings.Contains(body, "The restart was requested.")
 		}, time.Minute, 200*time.Millisecond, "the browser shows the request was taken")
