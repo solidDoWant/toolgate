@@ -1,32 +1,34 @@
+{{define "heading"}}{{with .Data}}{{template "detail-header-start" (dict "Title" "Approval" "Summary" "A tool call waits for your decision.")}}
+{{if not .Message}}{{if .StepUpURL}}<a class="btn btn-primary" href="{{.StepUpURL}}">Sign in again to continue</a>
+{{else}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/approve" class="m-0">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<button type="submit" class="btn btn-primary">Approve</button>
+</form>
+{{end}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/deny" class="m-0">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<button type="submit" class="btn border-danger bg-danger text-danger-text">Deny</button>
+</form>
+{{end}}{{template "detail-header-end"}}{{end}}{{end}}
 {{define "content"}}
 {{with .Data}}
-<dl id="approval">
-<dt>Request</dt><dd>{{.Approval.ID}}</dd>
-<dt>Server</dt><dd>{{.Approval.Server}}</dd>
-<dt>Tool</dt><dd>{{.Approval.Tool}}</dd>
-<dt>Session</dt><dd>{{.Approval.Session}}</dd>
-<dt>Workspace</dt><dd>{{template "ws" (workspace .Approval.Workspace)}}</dd>
-<dt>Requested</dt><dd>{{.Approval.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
-<dt>Expires</dt><dd>{{.Approval.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</dd>
-</dl>
-{{with .PayloadsOff}}<p class="note">{{.}}</p>
-{{end}}{{with .ArgumentsNote}}<p class="note">{{.}}</p>
-{{end}}{{if .Arguments}}<h2>Arguments</h2>
-<pre id="arguments">{{.Arguments}}</pre>
-{{if .ArgumentsTruncated}}<p class="note">Only the first part of the arguments is shown.</p>
-{{end}}{{end}}
 {{if .Message}}<p class="flash status" role="status">{{.Message}}</p>
-{{else}}
-{{if .StepUpURL}}<p>Approving needs a fresh sign-in.</p>
-<a class="button" href="{{.StepUpURL}}">Sign in again to continue</a>
-{{else}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/approve">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" class="primary">Approve</button>
-</form>
-{{end}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/deny">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" class="danger">Deny</button>
-</form>
+{{else if .StepUpURL}}<p class="m-0 mb-4 text-sm text-muted">Approving needs a fresh sign-in.</p>
 {{end}}
+{{template "facts-start"}}
+{{template "fact-start" "Server"}}{{.Approval.Server}}{{template "fact-end"}}
+{{template "fact-start" "Tool"}}<span class="font-mono">{{.Approval.Tool}}</span>{{template "fact-end"}}
+{{template "fact-start" "Session"}}{{.Approval.Session}}{{template "fact-end"}}
+{{template "fact-start" "Workspace"}}{{template "ws" (workspace .Approval.Workspace)}}{{template "fact-end"}}
+{{template "fact-start" "Requested"}}{{template "reltime" (since .Approval.CreatedAt)}}{{template "fact-end"}}
+{{template "fact-start" "Expires"}}{{template "reltime" (until .Approval.ExpiresAt)}}{{template "fact-end"}}
+{{template "fact-start" "Request"}}{{template "short-id" .Approval.ID}}{{template "fact-end"}}
+{{template "facts-end"}}
+{{if or .PayloadsOff .ArgumentsNote .Arguments}}{{template "card-start" (dict "Title" "Arguments")}}
+{{with .PayloadsOff}}<p class="note m-0 text-sm text-muted">{{.}}</p>
+{{end}}{{with .ArgumentsNote}}<p class="note m-0 text-sm text-muted">{{.}}</p>
+{{end}}{{if .Arguments}}<pre id="arguments" class="m-0 overflow-x-auto text-xs">{{.Arguments}}</pre>
+{{if .ArgumentsTruncated}}<p class="note m-0 mt-2 text-sm text-muted">Only the first part of the arguments is shown.</p>
+{{end}}{{end}}
+{{template "card-end"}}{{end}}
 {{end}}
 {{end}}

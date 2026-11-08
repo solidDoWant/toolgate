@@ -1,22 +1,21 @@
+{{define "heading"}}{{if .Data.Form.Servers}}{{template "page-header" (dict "Title" "Grants" "Summary" "Grants let your sessions use servers that need your approval for a set time." "ActionLabel" "Add a grant" "ActionHref" "/ui/grants/new" "ActionDialog" "new-grant")}}{{else}}{{template "page-header" (dict "Title" "Grants" "Summary" "Grants let your sessions use servers that need your approval for a set time.")}}{{end}}{{end}}
 {{define "content"}}
-<p><a class="button primary" href="/ui/grants/new">New grant</a></p>
-{{if .Data}}
-<div class="table-wrap"><table id="grants">
-<thead><tr><th>Server</th><th>Tool</th><th>Session</th><th>Created</th><th>Expires</th><th>Status</th><th></th></tr></thead>
-<tbody>
-{{range .Data}}{{template "grant_row" .}}{{end}}</tbody>
-</table></div>
+{{if .Data.Rows}}
+{{template "table-start" (dict "ID" "grants" "Label" "Your grants" "Columns" (list "Server" "Tool" "Session" "Created" "Expires" "Status" ""))}}
+{{range .Data.Rows}}{{template "grant_row" .}}{{end}}{{template "table-end"}}
+{{else if .Data.Form.Servers}}
+{{template "empty-state" (dict "Text" "You have no grants." "ActionLabel" "Add a grant" "ActionHref" "/ui/grants/new" "ActionDialog" "new-grant")}}
 {{else}}
-<p class="empty">You have no grants.</p>
+{{template "empty-state" (dict "Text" "None of your servers needs a grant.")}}
 {{end}}
+{{if .Data.Form.Servers}}{{template "dialog-start" (dict "ID" "new-grant" "Title" "Add a grant")}}
+{{template "grant-form" .Data.Form}}
+{{template "dialog-end"}}{{end}}
 {{end}}
 {{define "grant_row"}}<tr id="grant-{{.ID}}">
-<td>{{.Server}}</td><td>{{if .Tool}}{{.Tool}}{{else}}whole server{{end}}</td><td>{{if .Session}}{{.Session}}{{else}}any session{{end}}</td>
-<td>{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td><td>{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}</td>
-<td class="status"><span class="badge {{badge .Status}}">{{.Status}}</span>{{with .RevokedAt}} {{.UTC.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td>
-<td>{{if .Live}}<form method="post" action="/ui/grants/{{.ID}}/revoke" hx-post="/ui/grants/{{.ID}}/revoke" hx-target="closest tr" hx-swap="outerHTML">
-<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-<button type="submit" class="danger">Revoke</button>
-</form>{{end}}</td>
+<td data-label="Server">{{.Server}}</td><td data-label="Tool">{{if .Tool}}{{.Tool}}{{else}}whole server{{end}}</td><td data-label="Session">{{if .Session}}{{.Session}}{{else}}any session{{end}}</td>
+<td data-label="Created" class="whitespace-nowrap">{{template "reltime" (since .CreatedAt)}}</td><td data-label="Expires" class="whitespace-nowrap">{{template "reltime" (until .ExpiresAt)}}</td>
+<td data-label="Status" class="status whitespace-nowrap">{{template "badge" .Status}}{{with .RevokedAt}} {{template "reltime" (since .)}}{{end}}</td>
+{{template "row-actions-start"}}{{if .Live}}{{template "row-action-confirm" (dict "Label" "Revoke" "Action" (printf "/ui/grants/%s/revoke" .ID) "Question" "Revoke this grant? Sessions lose the access at once." "Confirm" "Revoke" "CSRFToken" .CSRFToken "HX" true)}}{{end}}{{template "row-actions-end"}}
 </tr>
 {{end}}

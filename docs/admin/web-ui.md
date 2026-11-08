@@ -130,7 +130,9 @@ The form takes a value in a text box or from a file, not both. A value is 4 MiB 
 
 A grant lets a user use an `opt-in` server or tool from their own machine for a limited time. `/ui/grants` lists the live grants of the user and the grants that ended in the last 7 days. Each user sees only their own grants. A grant of another user gives 404, also to an admin.
 
-`/ui/grants/new` is the form that creates a grant. It needs a fresh sign-in (see "Fresh sign-in"). The gateway accepts a grant only when all of these conditions are true:
+The "Add a grant" button on `/ui/grants` opens the form that creates a grant in a dialog. Without JavaScript, the button goes to the form's own page, `/ui/grants/new`. Times in the table are relative, and the exact UTC time shows on hover.
+
+The form needs a fresh sign-in (see "Fresh sign-in"). The gateway accepts a grant only when all of these conditions are true:
 
 - The grant is for the user who creates it.
 - The user has access to the server in the catalog.
@@ -196,6 +198,6 @@ If the web UI is off, nobody can approve a call, so each call of such a tool fai
 
 Set `config.ui.approvalTimeout` to the time that a request waits for approval, from `1m` to `1h`. The default is `10m`. An approved request also stays usable for this time. The gateway marks a waiting request expired 1 minute after this time. A user can have at most 100 requests waiting.
 
-`/ui/approvals` lists the requests of the signed-in user that wait for approval, with the server, the tool, the session and the workspace. The list updates every 5 seconds. Each request has its own page, where the user approves or denies it. Approving needs a fresh sign-in. Denying does not, because it gives no access. Only the user who made the call can see or decide a request. Other users get 404, and admins also get 404. If a user opens an approval link without a UI session, the gateway sends the browser straight to a fresh sign-in.
+`/ui/approvals` lists the requests of the signed-in user that wait for approval, with the server, the tool, the session and the workspace. The list updates every 5 seconds. Access changes that wait for the user show in a second table. Each request has its own page, where the user approves or denies it. The page shows the key facts in a row at the top, with the Approve and Deny buttons in its header. Approving needs a fresh sign-in. Denying does not, because it gives no access. Only the user who made the call can see or decide a request. Other users get 404, and admins also get 404. If a user opens an approval link without a UI session, the gateway sends the browser straight to a fresh sign-in.
 
 If two people or two browser tabs decide the same request, the first decision wins. The other page then shows the real status, for example "This approval expired." Each decision writes an `approval.approve` or `approval.deny` event to the audit log. When audit payloads are on, the approval page shows the arguments of the call, taken from the payload of the `approval.request` event. When audit payloads are off, the approval page says "Arguments aren't shown because audit payloads are off."

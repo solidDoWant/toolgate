@@ -143,7 +143,7 @@ func TestApprovalsList(t *testing.T) {
 	require.Equal(t, http.StatusOK, response.StatusCode)
 
 	page := readBody(t, response)
-	assert.Contains(t, page, "<td>github</td><td>delete_repository</td><td>session-"+approvalID(0)+"</td><td><span title=\"github.com/acme/repo\">github.com/acme/repo</span></td>",
+	assert.Contains(t, page, `<td data-label="Server">github</td><td data-label="Tool">delete_repository</td><td data-label="Session">session-`+approvalID(0)+`</td><td data-label="Workspace"><span title="github.com/acme/repo">github.com/acme/repo</span></td>`,
 		"server, tool, session and workspace")
 	assert.Contains(t, page, ui.ApprovalPath(approvalID(0)))
 	assert.NotContains(t, page, approvalID(1), "an expired approval isn't listed")
@@ -354,4 +354,30 @@ func TestApprovalsListShowsAccessRequests(t *testing.T) {
 		assert.Contains(t, page, "recent-access-request-"+defaultsID)
 		assert.NotContains(t, page, `id="access-request-`+defaultsID)
 	})
+}
+
+func TestSidebarApprovalCountFollowsDecisions(t *testing.T) {
+	env := startUIEnv(t, "")
+	browser := env.insertSession(t, "badge-session", nil)
+	env.ageSignIn(t, "badge-session", 0)
+
+	token := url.Values{ui.CSRFField: {csrfTokenOf("badge-session")}}
+
+	env.insertApproval(t, approvalID(0), "dave", time.Minute)
+	env.insertApproval(t, approvalID(1), "dave", time.Minute)
+
+	page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalsPath))
+	assert.Contains(t, page, `title="2 waiting for you"`)
+
+	response := post(t, browser, env.server.URL+ui.ApprovalPath(approvalID(0))+"/deny", token)
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+	page = readBody(t, get(t, browser, env.server.URL+ui.ApprovalsPath))
+	assert.Contains(t, page, `title="1 waiting for you"`)
+
+	response = post(t, browser, env.server.URL+ui.ApprovalPath(approvalID(1))+"/approve", token)
+	require.Equal(t, http.StatusSeeOther, response.StatusCode)
+
+	page = readBody(t, get(t, browser, env.server.URL+ui.ApprovalsPath))
+	assert.NotContains(t, page, "waiting for you\"")
 }
