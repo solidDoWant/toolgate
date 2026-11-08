@@ -46,13 +46,14 @@ item. */}}
 
 {{/* row-action-confirm: a quiet destructive action that asks before it
 posts. Label (the button), Action (the URL it posts to), Question (asked
-before), Confirm (the confirming button), CSRFToken and Fields (a dict of
-hidden form fields). With Neutral set the action isn't destructive: it
-shows as a quiet button with a primary confirming button. It works without
+before), Confirm (the confirming button), CSRFToken, HX (true to post
+with htmx and swap the row) and Fields (a dict of hidden form fields). With
+Neutral set the action isn't destructive: it shows as a quiet button with a
+primary confirming button. It works without
 JavaScript, as the question opens in a disclosure. */}}
 {{define "row-action-confirm"}}<details class="relative inline-block text-left">
 <summary class="btn btn-small {{if .Neutral}}btn-quiet{{else}}btn-quiet-danger{{end}} list-none">{{.Label}}</summary>
-<form method="post" action="{{.Action}}" class="m-0 mt-1 w-64 rounded-md border border-border bg-surface p-3 text-left">
+<form method="post" action="{{.Action}}"{{if .HX}} hx-post="{{.Action}}" hx-target="closest tr" hx-swap="outerHTML"{{end}} class="m-0 mt-1 w-64 rounded-md border border-border bg-surface p-3 text-left">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 {{range $name, $value := .Fields}}<input type="hidden" name="{{$name}}" value="{{$value}}">
 {{end}}<p class="m-0 mb-2 text-sm whitespace-normal">{{.Question}}</p>
@@ -112,3 +113,23 @@ page-header takes it. */}}
 {{/* reltime: a time view (the since or until function): the relative text,
 with the exact UTC time on hover. */}}
 {{define "reltime"}}{{if .Text}}<time datetime="{{.ISO}}" title="{{.UTC}}">{{.Text}}</time>{{end}}{{end}}
+
+
+{{/* detail-header-start: a detail page's header: Title and Summary, with
+the page's actions on the right. Put the actions after it and close with
+detail-header-end. */}}
+{{define "detail-header-start"}}<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+<div class="min-w-0">
+<h1 class="m-0 text-2xl font-semibold">{{.Title}}</h1>
+{{with .Summary}}<p class="m-0 mt-1 text-sm text-muted">{{.}}</p>{{end}}
+</div>
+<div class="flex flex-wrap items-center gap-2">{{end}}
+{{define "detail-header-end"}}</div>
+</div>{{end}}
+
+{{/* facts-start, fact-start and fact-end, facts-end: the key facts of a
+detail page as a row of labelled values. fact-start takes the label. */}}
+{{define "facts-start"}}<dl class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">{{end}}
+{{define "fact-start"}}<div class="min-w-0"><dt class="text-xs font-semibold tracking-wider text-muted uppercase">{{.}}</dt><dd class="m-0 mt-0.5 text-sm">{{end}}
+{{define "fact-end"}}</dd></div>{{end}}
+{{define "facts-end"}}</dl>{{end}}

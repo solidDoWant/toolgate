@@ -155,7 +155,12 @@ func (u *UI) grants(writer http.ResponseWriter, request *http.Request) {
 		rows = append(rows, newGrantRow(grant, session.CSRFTokenValue(), now))
 	}
 
-	u.render(writer, request, "grants", "Grants", rows)
+	form, ok := u.fillGrantForm(writer, request, grantForm{Duration: defaultGrant})
+	if !ok {
+		return
+	}
+
+	u.render(writer, request, "grants", "Grants", grantsPage{Rows: rows, Form: form})
 }
 
 // grantForm is the grant form's data.
@@ -166,6 +171,13 @@ type grantForm struct {
 	// Server, Tool, Session and Duration are the values filled in.
 	Server, Tool, Session, Duration string
 	Error                           string
+	CSRFToken                       string
+}
+
+// grantsPage is the Grants page: the table and the form its dialog shows.
+type grantsPage struct {
+	Rows []grantRow
+	Form grantForm
 }
 
 // newGrant shows the grant form, filled from ?server=&tool=&session=, or
@@ -187,7 +199,10 @@ func (u *UI) newGrant(writer http.ResponseWriter, request *http.Request) {
 	})
 }
 
-func (u *UI) renderGrantForm(writer http.ResponseWriter, request *http.Request, status int, form grantForm) {
+// fillGrantForm adds what the form offers: the user's servers, open
+// sessions and the durations. It writes the error page and returns false
+// when the sessions can't be read.
+func (u *UI) fillGrantForm(writer http.ResponseWriter, request *http.Request, form grantForm) (grantForm, bool) {
 	session, _ := SessionFrom(request.Context())
 
 	sessions, err := u.options.Grants.OpenSessions(request.Context(), session.Principal)
@@ -195,12 +210,22 @@ func (u *UI) renderGrantForm(writer http.ResponseWriter, request *http.Request, 
 		u.logger.ErrorContext(request.Context(), "cannot list sessions for the grant form", "error", err)
 		http.Error(writer, "The gateway can't read your sessions. Try again later.", http.StatusInternalServerError)
 
-		return
+		return form, false
 	}
 
 	form.Servers = u.options.Grants.Servers(sessionIdentity(session))
 	form.Sessions = sessions
 	form.Durations = grantDurations
+	form.CSRFToken = session.CSRFTokenValue()
+
+	return form, true
+}
+
+func (u *UI) renderGrantForm(writer http.ResponseWriter, request *http.Request, status int, form grantForm) {
+	form, ok := u.fillGrantForm(writer, request, form)
+	if !ok {
+		return
+	}
 
 	if status != http.StatusOK {
 		writer.WriteHeader(status)

@@ -343,7 +343,9 @@ func (q *Queries) GetApprovalForWait(ctx context.Context, id string) (GetApprova
 }
 
 const getApprovalOfPrincipal = `-- name: GetApprovalOfPrincipal :one
-SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at, s.session_id,
+SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at, s.session_id, s.id AS session_pk,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'name' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_name,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'version' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_version,
        (approvals.expires_at <= now())::boolean AS past_expiry
 FROM approvals
 JOIN sessions s ON s.id = approvals.session_pk
@@ -356,9 +358,12 @@ type GetApprovalOfPrincipalParams struct {
 }
 
 type GetApprovalOfPrincipalRow struct {
-	Approval   Approval
-	SessionID  string
-	PastExpiry bool
+	Approval      Approval
+	SessionID     string
+	SessionPk     int64
+	ClientName    string
+	ClientVersion string
+	PastExpiry    bool
 }
 
 // Returns one approval only when it belongs to principal, with its
@@ -383,6 +388,9 @@ func (q *Queries) GetApprovalOfPrincipal(ctx context.Context, arg GetApprovalOfP
 		&i.Approval.DecidedBy,
 		&i.Approval.UsedAt,
 		&i.SessionID,
+		&i.SessionPk,
+		&i.ClientName,
+		&i.ClientVersion,
 		&i.PastExpiry,
 	)
 	return i, err
@@ -554,7 +562,9 @@ func (q *Queries) ListOverdueApprovals(ctx context.Context, grace pgtype.Interva
 }
 
 const listPendingApprovalsOfPrincipal = `-- name: ListPendingApprovalsOfPrincipal :many
-SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at, s.session_id
+SELECT approvals.id, approvals.principal, approvals.session_pk, approvals.workspace, approvals.template_ns, approvals.template_name, approvals.tool, approvals.arguments_sha256, approvals.status, approvals.created_at, approvals.expires_at, approvals.decided_at, approvals.decided_by, approvals.used_at, s.session_id, s.id AS session_pk,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'name' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_name,
+       COALESCE((SELECT m.initialize_params -> 'clientInfo' ->> 'version' FROM mcp_sessions m WHERE m.session_pk = s.id ORDER BY m.created_at DESC LIMIT 1), '')::text AS client_version
 FROM approvals
 JOIN sessions s ON s.id = approvals.session_pk
 WHERE approvals.principal = $1 AND approvals.status = 'pending' AND approvals.expires_at > now()
@@ -563,12 +573,16 @@ LIMIT 100
 `
 
 type ListPendingApprovalsOfPrincipalRow struct {
-	Approval  Approval
-	SessionID string
+	Approval      Approval
+	SessionID     string
+	SessionPk     int64
+	ClientName    string
+	ClientVersion string
 }
 
 // Lists a principal's pending approvals that haven't expired, newest
-// first, with their session's client session ID, for the Approvals page.
+// first, with their session's client session ID, row ID and client, for the
+// Approvals page.
 func (q *Queries) ListPendingApprovalsOfPrincipal(ctx context.Context, principal string) ([]ListPendingApprovalsOfPrincipalRow, error) {
 	rows, err := q.db.Query(ctx, listPendingApprovalsOfPrincipal, principal)
 	if err != nil {
@@ -594,6 +608,9 @@ func (q *Queries) ListPendingApprovalsOfPrincipal(ctx context.Context, principal
 			&i.Approval.DecidedBy,
 			&i.Approval.UsedAt,
 			&i.SessionID,
+			&i.SessionPk,
+			&i.ClientName,
+			&i.ClientVersion,
 		); err != nil {
 			return nil, err
 		}

@@ -70,7 +70,7 @@ If the `toolgate` server shows as failed in step 2, run `toolgate status` in a s
 
 Your admin can mark a server or a tool as `opt-in`. To use it from your own machine, you need a grant. A grant lasts from 1 minute to 7 days. When you need a grant, the refusal gives a link to the form in the web UI.
 
-1. Open the link. If you signed in more than 5 minutes ago, sign in again.
+1. Open the link. The Grants page opens with the form in a dialog, or the form alone without JavaScript. If you signed in more than 5 minutes ago, sign in again.
 2. Choose how long the grant lasts.
 3. If only one Claude Code session needs the grant, choose that session.
 4. Click "Create grant".
@@ -78,7 +78,7 @@ Your admin can mark a server or a tool as `opt-in`. To use it from your own mach
 
 The refusal that sends you here says that the server or tool "needs a grant on a signed-in user's machine", and gives the link to the form. A grant that you create for one session works only in that session. A grant without a session works in all your sessions. Creating a grant needs a fresh sign-in. Revoking one does not.
 
-The page `/ui/grants` lists your grants. To stop a grant early, click "Revoke". The tools of the server leave Claude's tool list a few seconds after a grant ends.
+The page `/ui/grants` lists your grants. To stop a grant early, click "Revoke" in the grant's row and confirm. The tools of the server leave Claude's tool list a few seconds after a grant ends.
 
 If the grant form says that you have no access, or the grant does not match you, your admin must check that the web UI and `toolgate login` give you the same subject (`sub`). See [The web UI](../admin/web-ui.md#make-the-oidc-client).
 

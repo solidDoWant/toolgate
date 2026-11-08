@@ -178,7 +178,7 @@ func TestGrantCreateListAndRevoke(t *testing.T) {
 
 	page := readBody(t, response)
 	assert.Contains(t, page, `<tr id="grant-`+serverGrant.ID+`">`)
-	assert.Contains(t, page, `<td>deploy</td>`)
+	assert.Contains(t, page, `<td data-label="Tool">deploy</td>`)
 	assert.Contains(t, page, `hx-post="/ui/grants/`+toolGrant.ID+`/revoke" hx-target="closest tr" hx-swap="outerHTML"`)
 
 	// htmx gets the revoked row to swap in.
@@ -344,4 +344,21 @@ func TestGrantNeedsAFreshSignIn(t *testing.T) {
 	assert.Eventually(t, func() bool { return len(env.grantsOf(t, user.Subject)) == 1 }, time.Minute, 100*time.Millisecond)
 	assert.Eventually(t, func() bool { return pageShows(ctx, "optin-server") && pageShows(ctx, "Revoke") },
 		time.Minute, 100*time.Millisecond, "the browser shows the grant")
+}
+
+// The Grants page offers the form in a dialog opened by the header's
+// action, and the form's own page works without JavaScript.
+func TestGrantsPageHasTheFormInADialog(t *testing.T) {
+	env := startUIEnv(t, "")
+	env.addGrantTemplates()
+	env.openSession(t, "dave", "laptop-1")
+
+	browser := env.insertSession(t, "grant-dialog", []string{"dev"})
+	env.freshSignIn(t, "grant-dialog")
+
+	page := readBody(t, get(t, browser, env.server.URL+ui.GrantsPath))
+	assert.Contains(t, page, `href="/ui/grants/new" class="btn btn-primary" data-dialog="new-grant"`)
+	assert.Contains(t, page, `<dialog id="new-grant"`)
+	assert.Contains(t, page, `<input type="hidden" name="csrf_token" value="`+csrfTokenOf("grant-dialog")+`">`)
+	assert.Contains(t, page, "You have no grants.")
 }
