@@ -156,6 +156,7 @@ func TestUIScreenshots(t *testing.T) {
 				}
 
 				env.servers.setScreenshotState(state)
+
 				if page.before != nil {
 					page.before()
 				}
