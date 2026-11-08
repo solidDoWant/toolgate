@@ -24,7 +24,7 @@ func TestSummarizeReadsEachEventType(t *testing.T) {
 			"Called `kubesearch__search_releases`: ok, 420 ms", "ok"},
 		{"call error", auditEvent{Type: "tool.result", Server: "a", Tool: "b", Details: `{"outcome":"error"}`}, "Called `a__b`: error", "error"},
 		{"refusal by rule", auditEvent{Type: "tool.decision", Server: "github", Tool: "delete_repository", Details: `{"decision":"refuse","rule":"no-deletes"}`},
-			"Refused `github__delete_repository`: blocked by rule *no-deletes*", "refused"},
+			"Refused `github__delete_repository`: blocked by rule no-deletes", "refused"},
 		{"approval requested", auditEvent{Type: "approval.request", Server: "mail-archiver", Tool: "get_email_raw"},
 			"Approval requested: `mail-archiver__get_email_raw`", "pending"},
 		{"enable", auditEvent{Type: "server.enable", Server: "kubesearch", Details: `{}`}, "Enabled server `kubesearch`", "ok"},

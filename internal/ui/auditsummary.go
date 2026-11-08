@@ -92,9 +92,9 @@ func detailString(details map[string]any, key string) string {
 func refusalWhy(details map[string]any) string {
 	switch {
 	case detailString(details, "rule") != "":
-		return "blocked by rule *" + detailString(details, "rule") + "*"
+		return "blocked by rule " + detailString(details, "rule")
 	case detailString(details, "block") != "":
-		return "blocked by block *" + detailString(details, "block") + "*"
+		return "blocked by block " + detailString(details, "block")
 	case detailString(details, "reason") != "":
 		return strings.ReplaceAll(detailString(details, "reason"), "_", " ")
 	default:
@@ -120,7 +120,7 @@ func summarize(event auditEvent) auditSummary {
 
 		suffix := ": allowed"
 		if grant := detailString(details, "grant"); grant != "" {
-			suffix += " by grant *" + grant + "*"
+			suffix += " by grant " + grant
 		}
 
 		return auditSummary{"Call of ", target, suffix, outcomeOK}

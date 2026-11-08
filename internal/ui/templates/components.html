@@ -86,7 +86,7 @@ textarea, which is what shows without JavaScript. */}}
 {{/* filter-bar-start: Action (the page it filters), Label and an optional ID. Close with
 filter-bar-end, after the controls. It submits with GET. */}}
 {{define "filter-bar-start"}}<form method="get" action="{{.Action}}"{{with .ID}} id="{{.}}"{{end}} role="search" aria-label="{{.Label}}" data-autosubmit class="mb-3 flex flex-wrap items-end gap-2">{{end}}
-{{define "filter-bar-end"}}<button type="submit" class="btn btn-small">Filter</button>
+{{define "filter-bar-end"}}<button type="submit" class="btn">Filter</button>
 </form>{{end}}
 
 {{/* card-start: Title and an optional Summary. Close with card-end. */}}

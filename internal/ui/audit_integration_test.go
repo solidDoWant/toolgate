@@ -60,7 +60,7 @@ func (e *uiEnv) insertAudit(t *testing.T, row auditRow) string {
 	return fmt.Sprintf("%d-%d", row.at.UnixMicro(), id)
 }
 
-var toolCell = regexp.MustCompile(`<td data-label="Tool">(?:<a [^>]*>)?([^<]*)(?:</a>)?</td><td class="row-actions"[^>]*><div[^>]*><a href="/ui/audit/events/`)
+var toolCell = regexp.MustCompile(`<td data-label="Server / tool">(?:<a class="server"[^>]*>[^<]*</a>)?(?: / )?(?:<a class="tool"[^>]*>)?([^<]*)(?:</a>)?</td><td class="row-actions"[^>]*><div[^>]*><a href="/ui/audit/events/`)
 
 // toolsOn lists the tool column of the events a page shows, in order.
 func toolsOn(page string) []string {
@@ -244,7 +244,7 @@ func TestAuditPagesNeedASession(t *testing.T) {
 // toolsInBrowser lists the tool column of the events the browser shows.
 func toolsInBrowser(ctx context.Context) []string {
 	tools, err := chromedp.Run(ctx, chromedp.Evaluate[[]string](
-		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => row.cells[7].innerText)`))
+		`Array.from(document.querySelectorAll('#events tbody tr')).map(row => { const link = row.cells[6].querySelector('a.tool'); return link ? link.innerText : ''; })`))
 	if err != nil {
 		return nil
 	}
@@ -383,7 +383,7 @@ func TestAuditPageOutcomeAndCategoryFilters(t *testing.T) {
 	status, page := auditPageOf(t, admin, env.server.URL, url.Values{"category": {"calls"}})
 	require.Equal(t, http.StatusOK, status)
 	assert.Contains(t, page, "3 matching events")
-	assert.Contains(t, page, "Refused </a><code>s__refused-call</code>: blocked by rule *no-deletes*")
+	assert.Contains(t, page, "Refused </a><code>s__refused-call</code>: blocked by rule no-deletes")
 	assert.Contains(t, page, "badge-bad")
 
 	status, _ = auditPageOf(t, admin, env.server.URL, url.Values{"outcome": {"bogus"}})

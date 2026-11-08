@@ -11,7 +11,7 @@
 <select id="f-outcome" name="outcome" class="control">{{range .Data.Outcomes}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
 <div><span class="field-label">Event type</span>
 <details class="popover relative" data-popover>
-<summary class="control cursor-pointer select-none">{{with .Data.Filter.EventTypes}}{{len .}} selected{{else}}Any type{{end}}</summary>
+<summary class="control cursor-pointer select-none list-none">{{with .Data.Filter.EventTypes}}{{len .}} selected{{else}}Any type{{end}}</summary>
 <div class="absolute left-0 z-20 mt-1 w-[min(22rem,calc(100vw-2rem))] rounded-md border border-border bg-surface p-3 shadow-lg">
 <input type="search" data-type-search hidden aria-label="Search event types" placeholder="Search event types" class="control mb-2 w-full" autocomplete="off">
 <div class="max-h-72 overflow-y-auto" data-type-list>
@@ -23,7 +23,7 @@
 </details></div>
 <div><span class="field-label" aria-hidden="true">&nbsp;</span>
 <details id="more-filters" class="popover relative" data-popover>
-<summary class="control cursor-pointer select-none">More filters{{if .Data.MoreCount}} ({{.Data.MoreCount}}){{end}}</summary>
+<summary class="control cursor-pointer select-none list-none">More filters{{if .Data.MoreCount}} ({{.Data.MoreCount}}){{end}}</summary>
 <div class="absolute left-0 z-20 mt-1 grid w-[min(34rem,calc(100vw-2rem))] gap-3 rounded-md border border-border bg-surface p-3 shadow-lg sm:grid-cols-2">
 <div><label for="f-category" class="field-label">Category</label><select id="f-category" name="category" class="control w-full">{{range .Data.Categories}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select></div>
 {{if .Data.CanFilterPrincipal}}<div><label for="f-principal" class="field-label">User</label><select id="f-principal" name="principal" class="control w-full">{{range .Data.Principals}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{if .Value}}{{.Label}}{{else}}Everyone{{end}}</option>{{end}}</select></div>
@@ -41,7 +41,7 @@
 <a id="export" href="{{.Data.ExportURL}}" class="ml-auto">Export as JSON Lines</a>
 </div>
 {{if .Data.Events}}
-{{template "table-start" (dict "ID" "events" "Label" "Audit events" "Columns" (list "When" "Outcome" "What" "Who" "Where" "Session" "Server" "Tool" ""))}}
+{{template "table-start" (dict "ID" "events" "Label" "Audit events" "Columns" (list "When" "Outcome" "What" "Who" "Where" "Session" "Server / tool" ""))}}
 {{range .Data.Events}}<tr>
 <td data-label="When" class="whitespace-nowrap">{{template "reltime" .Time}}</td>
 <td data-label="Outcome">{{if .Summary.Outcome}}{{template "outcome" (outcome .Summary.Outcome)}}{{end}}</td>
@@ -49,13 +49,12 @@
 <td data-label="Who">{{if .WhoURL}}<a href="{{.WhoURL}}">{{template "who" .Who}}</a>{{else}}{{template "who" .Who}}{{end}}</td>
 <td data-label="Where">{{if .Workspace}}<a href="{{.WhereURL}}">{{template "ws" .WorkspaceLabel}}</a>{{if .Verified}} <span class="badge badge-ok">verified</span>{{end}}{{end}}</td>
 <td data-label="Session" class="whitespace-nowrap">{{if .Session}}{{if .SessionPage}}<a href="{{.SessionPage}}" class="font-mono text-xs" title="{{.Session}}">{{.ShortSess}}</a>{{else}}{{template "short-id" .Session}}{{end}} <a href="{{.SessionURL}}" class="btn btn-small px-1 align-middle" title="Show events of this session" aria-label="Show events of this session"><svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M1.5 2h13l-5 6v5l-3 1.5V8z"/></svg></a>{{end}}</td>
-<td data-label="Server">{{if .Server}}<a href="{{.ServerURL}}">{{.Server}}</a>{{end}}</td>
-<td data-label="Tool">{{if .Tool}}<a href="{{.ToolURL}}">{{.Tool}}</a>{{end}}</td>
+<td data-label="Server / tool">{{if .Server}}<a class="server" href="{{.ServerURL}}">{{.Server}}</a>{{end}}{{if and .Server .Tool}} / {{end}}{{if .Tool}}<a class="tool" href="{{.ToolURL}}">{{.Tool}}</a>{{end}}</td>
 {{template "row-actions-start"}}<a href="/ui/audit/events/{{.Key}}" class="btn btn-small">Details</a>{{template "row-actions-end"}}
 </tr>
 {{end}}{{template "table-end"}}
 {{if .Data.NextURL}}<p><a id="next" href="{{.Data.NextURL}}">Older events</a></p>{{end}}
 {{else}}
-{{template "empty-state" (dict "Text" "No events match.")}}
+{{if .Data.Chips}}{{template "empty-state" (dict "Text" "No events match." "ActionLabel" "Clear all filters" "ActionHref" .Data.ClearURL)}}{{else}}{{template "empty-state" (dict "Text" "No events match.")}}{{end}}
 {{end}}
 {{end}}
