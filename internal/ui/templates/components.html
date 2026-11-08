@@ -50,7 +50,7 @@ with htmx and swap the row). It works without
 JavaScript, as the question opens in a disclosure. */}}
 {{define "row-action-confirm"}}<details class="relative inline-block text-left">
 <summary class="btn btn-small btn-quiet-danger list-none">{{.Label}}</summary>
-<form method="post" action="{{.Action}}"{{if .HX}} hx-post="{{.Action}}" hx-target="closest tr" hx-swap="outerHTML"{{end}} class="absolute right-0 z-10 m-0 mt-1 w-64 rounded-md border border-border bg-surface p-3 text-left shadow-lg">
+<form method="post" action="{{.Action}}"{{if .HX}} hx-post="{{.Action}}" hx-target="closest tr" hx-swap="outerHTML"{{end}} class="m-0 mt-1 w-64 rounded-md border border-border bg-surface p-3 text-left">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 <p class="m-0 mb-2 text-sm whitespace-normal">{{.Question}}</p>
 <button type="submit" class="btn btn-small border-danger bg-danger text-danger-text">{{.Confirm}}</button>

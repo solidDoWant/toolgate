@@ -64,6 +64,7 @@ func (f *fakeServers) Catalog(ctx context.Context, identity auth.Identity) ([]ga
 		switch entry.Name {
 		case "github":
 			info.Environments, info.ToolCount = "any", 12
+			info.Secrets = []gateway.SecretStatus{{Name: "api-key", Set: true}}
 			info.UserPatterns, info.GroupPatterns = []string{"*@example.com"}, []string{"dev-*"}
 		case "prod-db":
 			info.Environments, info.Everyone = "attested", true
