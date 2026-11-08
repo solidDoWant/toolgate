@@ -114,12 +114,14 @@ func TestSecretsPageSetsListsAndDeletes(t *testing.T) {
 	assert.Equal(t, knownValue, env.secretValue(t, "dave", "api-key"))
 
 	page := readBody(t, get(t, browser, env.server.URL+"/ui/secrets"))
-	assert.Contains(t, page, "<td>api-key</td>")
+	assert.Contains(t, page, `class="font-mono">api-key</td>`)
 	assert.NotContains(t, page, knownValue)
 	assert.Contains(t, page, `enctype="multipart/form-data"`)
-	assert.Contains(t, page, `<textarea name="value"`)
+	assert.Contains(t, page, `name="value"`)
 	assert.Contains(t, page, `type="file"`)
 	assert.Contains(t, page, `action="/ui/secrets/api-key/delete"`)
+	assert.Contains(t, page, `Delete secret api-key? Servers that use it stop working until you set it again.`)
+	assert.Contains(t, page, `<a href="/ui/servers/github">github</a>`)
 	assert.Contains(t, page, token)
 
 	// Replace.
@@ -346,7 +348,17 @@ func TestSecretsInBrowser(t *testing.T) {
 	assert.NotContains(t, pageText(), second)
 	assert.Equal(t, 1, env.countRows(t, "user_secrets"))
 
-	require.NoError(t, chromedp.Do(ctx, chromedp.Click(`#secrets button`)))
+	require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+"/ui/secrets"), chromedp.WaitVisible(`#secrets summary`)))
+
+	// Opening the row action shows the question and deletes nothing.
+	require.NoError(t, chromedp.Do(ctx, chromedp.Click(`#secrets summary`), chromedp.WaitVisible(`#secrets form button`)))
+
+	question, err := chromedp.Run(ctx, chromedp.Text(`#secrets form p`))
+	require.NoError(t, err)
+	assert.Equal(t, "Delete secret browser-key? Servers that use it stop working until you set it again.", question)
+	assert.Equal(t, 1, env.countRows(t, "user_secrets"))
+
+	require.NoError(t, chromedp.Do(ctx, chromedp.Click(`#secrets form button`)))
 	require.Eventually(t, func() bool { return pageShows(ctx, "You have no secrets.") }, time.Minute, 100*time.Millisecond)
 	assert.Equal(t, 0, env.countRows(t, "user_secrets"))
 }
