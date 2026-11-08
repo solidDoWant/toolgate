@@ -100,11 +100,19 @@ func TestShell(t *testing.T) {
 func openBrowserAsAdmin(t *testing.T, env *uiEnv) context.Context {
 	t.Helper()
 
+	return openBrowserAsAdminFor(t, env, 3*time.Minute)
+}
+
+// openBrowserAsAdminFor is openBrowserAsAdmin with a longer limit for a
+// test that visits many pages.
+func openBrowserAsAdminFor(t *testing.T, env *uiEnv, limit time.Duration) context.Context {
+	t.Helper()
+
 	env.adminBrowser(t)
 
 	browser := toolgatetest.StartBrowser(t, chromedp.Flag("ignore-certificate-errors", true))
 
-	ctx, cancel := context.WithTimeout(browser, 3*time.Minute)
+	ctx, cancel := context.WithTimeout(browser, limit)
 	t.Cleanup(cancel)
 
 	secure := true

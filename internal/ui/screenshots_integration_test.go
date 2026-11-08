@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"github.com/chromedp/cdproto/emulation"
+	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	toolgatetest "github.com/solidDoWant/toolgate/internal/testutil"
+	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
 // screenshotsEnv names the directory TestUIScreenshots writes its PNGs to
@@ -38,13 +40,20 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 	env.insertApproval(t, approvalID(1), "dave", time.Hour)
 	env.insertApproval(t, approvalID(2), "dave", time.Hour)
 
+	_, err := env.pool.Exec(t.Context(), `INSERT INTO grants (id, principal, template_ns, template_name, tool, session_id, created_at, expires_at) VALUES
+		('c1d2e3f4a5b60718293a4b5c6d7e8f90', 'dave', 'tools', 'optin-server', '', NULL, now() - interval '10 minutes', now() + interval '50 minutes'),
+		('d1d2e3f4a5b60718293a4b5c6d7e8f91', 'dave', 'tools', 'any-server', 'deploy', 'laptop-7f3a', now() - interval '20 minutes', now() + interval '8 hours')`)
+	require.NoError(t, err)
+	env.insertSession(t, "dev-session", []string{"toolgate-admins", "dev"})
+	env.insertSessionOf(t, "erin", "empty-session", []string{"dev"})
+
 	for index, event := range []struct{ eventType, tool string }{
 		{"tool.call", "search_issues"}, {"tool.call", "create_pull_request"}, {"tool.deny", "delete_repo"},
 	} {
 		env.insertCallEvent(t, event.eventType, "dave", "laptop-7f3a", "github", event.tool, `{}`, now.Add(-time.Duration(index+1)*7*time.Minute))
 	}
 
-	_, err := env.pool.Exec(t.Context(), `INSERT INTO temporary_blocks (id, match, reason, created_by, created_at, expires_at) VALUES
+	_, err = env.pool.Exec(t.Context(), `INSERT INTO temporary_blocks (id, match, reason, created_by, created_at, expires_at) VALUES
 		('3f9c2a7e1b5d48c0a6e2f17d9b04c8e1', '{"servers":["github"],"tools":["github__delete_repo"]}', 'Incident 42: repository deletions under review.', 'dave', now() - interval '20 minutes', now() + interval '3 hours'),
 		('8a1d4e6f2c3b47a9b5d0e8f1a2c3d4e5', '{"groups":["contractors"],"attestation":"user"}', 'Contractor access paused for the audit.', 'dave', now() - interval '2 hours', now() + interval '2 days')`)
 	require.NoError(t, err)
@@ -74,12 +83,15 @@ func TestUIScreenshots(t *testing.T) {
 
 	env := startUIEnv(t, "toolgate-admins")
 	seedScreenshotData(t, env)
-	ctx := openBrowserAsAdmin(t, env)
+	ctx := openBrowserAsAdminFor(t, env, 10*time.Minute)
 
 	pages := []struct {
 		name, path string
 		// prepare runs after the page loads, for example to open a dialog.
 		prepare chromedp.Action[chromedp.Void]
+		// cookie is the UI session the page opens with: the admin's by
+		// default, or one of a user who has nothing, for empty states.
+		cookie string
 	}{
 		{name: "servers", path: "/ui/servers"},
 		{name: "sessions", path: "/ui/sessions"},
@@ -88,11 +100,14 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "setup", path: "/ui/setup"},
 		{name: "approvals", path: "/ui/approvals"},
 		{name: "approval", path: "/ui/approvals/" + approvalID(1)},
-		{name: "grants", path: "/ui/grants"},
-		{name: "grant-new", path: "/ui/grants/new"},
+		{name: "grants", path: "/ui/grants", cookie: "dev-session"},
+		{name: "grant-new", path: "/ui/grants/new", cookie: "dev-session"},
 		{name: "audit", path: "/ui/audit"},
 		{name: "blocks", path: "/ui/blocks"},
 		{name: "blocks-dialog", path: "/ui/blocks", prepare: chromedp.Click(chromedp.CSS(`main a[data-dialog="new-block"]`))},
+		{name: "grants-dialog", path: "/ui/grants", cookie: "dev-session", prepare: chromedp.Click(chromedp.CSS(`main a[data-dialog="new-grant"]`))},
+		{name: "grants-empty", path: "/ui/grants", cookie: "empty-session"},
+		{name: "approvals-empty", path: "/ui/approvals", cookie: "empty-session"},
 		{name: "block-new", path: "/ui/blocks/new"},
 	}
 
@@ -118,6 +133,17 @@ func TestUIScreenshots(t *testing.T) {
 			))
 
 			for _, page := range pages {
+				cookie := page.cookie
+				if cookie == "" {
+					cookie = "admin-session"
+				}
+
+				secure := true
+				_, err := chromedp.Call(ctx, network.SetCookie, network.SetCookieParams{
+					Name: ui.SessionCookie, Value: cookie, URL: env.server.URL + "/", Path: "/", Secure: &secure, HTTPOnly: &secure,
+				})
+				require.NoError(t, err)
+
 				steps := []chromedp.Action[chromedp.Void]{toolgatetest.Navigate(env.server.URL + page.path), chromedp.WaitReady(chromedp.CSS("main"))}
 				if page.prepare != nil {
 					steps = append(steps, page.prepare)
