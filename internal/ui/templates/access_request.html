@@ -1,15 +1,38 @@
 {{define "heading"}}<p class="m-0 mb-2 text-sm"><a href="/ui/approvals">All approvals</a></p>
-{{template "page-header" (dict "Title" "Access request" "Summary" "A request to change which servers a session or workspace may use.")}}{{end}}
+{{with .Data}}{{template "detail-header-start" (dict "Title" "Access request" "Summary" "A request to change which servers a session or workspace may use.")}}
+{{if not .Message}}{{if .StepUpURL}}<div class="flex flex-col items-start gap-1 self-start"><a class="btn btn-primary" href="{{.StepUpURL}}">{{if eq .Kind "server"}}Allow for this session{{else}}Approve{{end}}</a>
+<p class="m-0 text-xs text-muted">You'll be asked to sign in again.</p></div>
+{{else if eq .Kind "server"}}<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0 self-start">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="scope" value="session">
+<button type="submit" id="allow-session" class="btn btn-primary">Allow for this session</button>
+</form>
+<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0 self-start">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<input type="hidden" name="scope" value="workspace">
+<button type="submit" id="allow-workspace" class="btn">Always allow in this workspace</button>
+</form>
+{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0 self-start">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<button type="submit" class="btn btn-primary">Approve</button>
+</form>
+{{end}}<form method="post" action="/ui/approvals/{{.ID}}/deny" class="m-0 self-start">
+<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+<button type="submit" class="btn border-danger bg-transparent text-danger hover:bg-bad">Deny</button>
+</form>
+{{end}}{{template "detail-header-end"}}{{end}}{{end}}
 {{define "content"}}
 {{with .Data}}
-<dl id="access-request" class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">
-{{template "fact-start" "Request"}}{{.ID}}{{template "fact-end"}}
+{{with .Error}}<p class="flash error mb-4" role="alert">{{.}}</p>
+{{end}}{{if .Message}}<p class="flash status mb-4" role="status">{{.Message}}</p>
+{{end}}<dl id="access-request" class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">
+{{template "fact-start" "Request"}}{{template "short-id" .ID}}{{template "fact-end"}}
 {{template "fact-start" "Kind"}}{{.Kind}}{{template "fact-end"}}
 {{with .Server}}{{template "fact-start" "Server"}}{{.}}{{template "fact-end"}}
-{{end}}{{with .Session}}{{template "fact-start" "Session"}}{{.}}{{template "fact-end"}}
+{{end}}{{with .Session}}{{template "fact-start" "Session"}}{{if $.Data.SessionPage}}<a href="{{$.Data.SessionPage}}">{{$.Data.SessionLabel}}</a> {{end}}{{template "short-id" .}}{{template "fact-end"}}
 {{end}}{{template "fact-start" "Workspace"}}{{template "ws" (workspace .Workspace)}}{{template "fact-end"}}
-{{template "fact-start" "Requested"}}{{.CreatedAt.UTC.Format "2006-01-02 15:04:05 UTC"}}{{template "fact-end"}}
-{{template "fact-start" "Expires"}}{{.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC"}}{{template "fact-end"}}
+{{template "fact-start" "Requested"}}{{template "reltime" (since .CreatedAt)}}{{template "fact-end"}}
+{{template "fact-start" "Expires"}}{{template "reltime" (until .ExpiresAt)}}{{template "fact-end"}}
 </dl>
 {{with .Change}}<h2 class="m-0 mb-2 text-base font-semibold">Change</h2>
 {{if .Defaults}}{{template "table-start" (dict "ID" "change" "Label" "Change" "Columns" (list "Default" "Before" "After"))}}
@@ -36,34 +59,6 @@
 <tr><td id="change-before" data-label="Before">{{template "scope_state" .Before}}</td>
 <td id="change-after" data-label="After">{{template "scope_state" .After}}</td></tr>
 {{template "table-end"}}
-{{end}}
-{{with .Error}}<p class="flash error mb-4" role="alert">{{.}}</p>
-{{end}}{{if .Message}}<p class="flash status mb-4" role="status">{{.Message}}</p>
-{{else}}
-<div class="flex flex-wrap items-start gap-2">
-{{if or .Change .Scope}}{{if .StepUpURL}}<div class="flex flex-col items-start gap-1"><a class="btn btn-primary" href="{{.StepUpURL}}">Sign in again to continue</a>
-<p class="m-0 text-xs text-muted">Approving needs a fresh sign-in.</p></div>
-{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" class="btn btn-primary">Approve</button>
-</form>
-{{end}}{{else if eq .Kind "server"}}{{if .StepUpURL}}<div class="flex flex-col items-start gap-1"><a class="btn btn-primary" href="{{.StepUpURL}}">Sign in again to continue</a>
-<p class="m-0 text-xs text-muted">Allowing needs a fresh sign-in.</p></div>
-{{else}}<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<input type="hidden" name="scope" value="session">
-<button type="submit" id="allow-session" class="btn btn-primary">Allow for this session</button>
-</form>
-<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<input type="hidden" name="scope" value="workspace">
-<button type="submit" id="allow-workspace" class="btn">Always allow in this workspace</button>
-</form>
-{{end}}{{end}}<form method="post" action="/ui/approvals/{{.ID}}/deny" class="m-0">
-<input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-<button type="submit" class="btn border-danger bg-transparent text-danger hover:bg-bad">Deny</button>
-</form>
-</div>
 {{end}}
 {{end}}
 {{end}}

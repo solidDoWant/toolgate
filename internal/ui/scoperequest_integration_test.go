@@ -62,7 +62,7 @@ func TestScopeRequestApprovalPage(t *testing.T) {
 		env.ageSignIn(t, "scope-stale", ui.StepUpMaxAge+30*time.Second)
 
 		page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
-		assert.Contains(t, page, "Sign in again to continue")
+		assert.Contains(t, page, "be asked to sign in again.")
 
 		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", url.Values{ui.CSRFField: {csrfTokenOf("scope-stale")}})
 		require.Equal(t, http.StatusSeeOther, response.StatusCode)

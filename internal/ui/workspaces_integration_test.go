@@ -365,7 +365,7 @@ func TestChangeApprovalPage(t *testing.T) {
 		env.ageSignIn(t, "change-stale", ui.StepUpMaxAge+30*time.Second)
 
 		page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
-		assert.Contains(t, page, "Sign in again to continue")
+		assert.Contains(t, page, "be asked to sign in again.")
 		assert.Contains(t, page, `<td data-label="Before">none</td><td data-label="After">all</td>`, "the defaults change shows before and after")
 
 		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", url.Values{ui.CSRFField: {csrfTokenOf("change-stale")}})
