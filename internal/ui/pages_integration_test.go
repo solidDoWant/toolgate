@@ -30,6 +30,17 @@ type fakeServers struct {
 	identities    []auth.Identity
 	includeShared []bool
 	restarts      []restartCall
+	// screenshotState replaces the default servers and instances: "" keeps
+	// them, "seeded" shows a catalog and instances that agree, "empty"
+	// shows neither.
+	screenshotState string
+}
+
+func (f *fakeServers) setScreenshotState(state string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.screenshotState = state
 }
 
 // restartCall is one RequestRestart the fake was asked for.
@@ -43,6 +54,17 @@ func (f *fakeServers) Servers(_ context.Context, identity auth.Identity) ([]gate
 	defer f.mu.Unlock()
 
 	f.identities = append(f.identities, identity)
+
+	switch f.screenshotState {
+	case "empty":
+		return nil, nil
+	case "seeded":
+		return []gateway.ServerEntry{
+			{Name: "github", Description: "The GitHub server.", Scope: "per-user", Status: "ready"},
+			{Name: "wiki", Description: "The team wiki.", Scope: "shared", Status: "ready"},
+			{Name: "prod-db", Scope: "shared", Status: "blocked", Reason: "Only from an attested environment."},
+		}, nil
+	}
 
 	return []gateway.ServerEntry{
 		{Name: "github", Description: "The GitHub server.", Scope: "per-user", Status: "ready"},
@@ -97,6 +119,19 @@ func (f *fakeServers) LiveInstances(_ context.Context, principal string, include
 	defer f.mu.Unlock()
 
 	f.includeShared = append(f.includeShared, includeShared)
+
+	switch f.screenshotState {
+	case "empty":
+		return nil, nil
+	case "seeded":
+		ready := time.Now().Add(-3 * time.Hour)
+
+		return []gateway.InstanceEntry{
+			{ID: "own", Server: "github", Scope: "per-user", Owner: principal, Status: "ready", ReadyAt: &ready, Outdated: true},
+			{ID: "shared", Server: "wiki", Scope: "shared", Status: "ready", ReadyAt: &ready},
+			{ID: "failed", Server: "github", Scope: "per-user", Owner: principal, Status: "failed", Reason: "The image could not be pulled."},
+		}, nil
+	}
 
 	instances := []gateway.InstanceEntry{{ID: "own", Server: "github", Scope: "per-user", Owner: principal, Status: "ready", Outdated: true}}
 	if includeShared {
