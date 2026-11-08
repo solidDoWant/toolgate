@@ -51,9 +51,17 @@ The tag starts the `release` workflow (`.github/workflows/release.yml`). The wor
 
 `scripts/release_test.sh` tests the script in a copy of the repository with a local remote and a stub for `gh`. `make test` runs it.
 
+## The web UI's styles and components
+
+The web UI uses Tailwind CSS v4. The dev shell has its standalone command-line tool, so the build does not need Node. You edit `internal/ui/styles/app.css`, `internal/ui/styles/legacy.css` and the templates. `make ui-css` writes `internal/ui/static/toolgate.css`, which is in the repository and is embedded in the binary. `make generate` runs `make ui-css`, so `make check-generate` fails when the committed stylesheet is stale. The stylesheet keeps the colour variables of the light and dark themes. Tailwind's colour names, such as `bg-surface` and `text-muted`, use these variables.
+
+Pages build their pieces only from the shared templates in `internal/ui/templates/components.html`: the page header, the table, the row actions, the dialog and its footer, the token input, the filter bar, the card, the empty state, the badge, the relative time, the short ID and the chip. Each table cell sets `data-label` to its column heading. Below 640 px wide, the `.data-table` styles in `internal/ui/styles/app.css` show each row as a card with these labels, so no table scrolls sideways. A comment above each template lists its fields. `internal/ui/static/ui.js` opens the dialogs and turns each token input into chips. Every form also works without JavaScript. A dialog's button is a link to the form's own page, and a token input is a text area with one item on each line.
+
+`make ui-screenshots` renders every page of the web UI with test data into PNG files in `bin/ui-screenshots`. It renders each page in the light and dark themes, at 1280×800 and at 390×844. It needs Docker for PostgreSQL and Chromium from the dev shell. On a pull request that changes `internal/ui/`, CI runs it and uploads the files as the `ui-screenshots` artifact. A person compares them with the design before the pull request merges.
+
 ## The vendored htmx
 
-The web UI uses htmx 2.0.7. The file `internal/ui/static/htmx-2.0.7.min.js` is in the repository and is embedded in the binary. There is no JavaScript build step.
+The web UI uses htmx 2.0.7. The file `internal/ui/static/htmx-2.0.7.min.js` is in the repository and is embedded in the binary. The web UI has no JavaScript build step.
 
 `make vendor-htmx` downloads the package from the npm registry. It compares the package with the registry's `integrity` value, writes the file, and writes its SHA-256 to `internal/ui/static/SHA256SUMS`. `make check-generate` fails when the file and `SHA256SUMS` do not match. The version is in the file name, so a browser never uses an old copy from its cache with new pages. To change the version, change it in `scripts/vendor-htmx.sh`, in the file name in the layout template and in the tests.
 

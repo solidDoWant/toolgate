@@ -60,6 +60,13 @@ test-guard: ## Fail if HEAD deletes, unlists or skips a test named on a `Tests:`
 test-integration: ## Run the integration-tagged tests (GO_TEST_JSON=file also writes the go test -json events there; PostgreSQL with TLS client certificates and S3 in Docker, a fake OIDC provider and an envtest API server in process; they skip cleanly without Docker or KUBEBUILDER_ASSETS).
 	timeout 30m ./scripts/ci/go-test-json.sh -race -count=1 -tags integration -timeout 25m ./...
 
+UI_SCREENSHOTS_DIR ?= $(BIN_DIR)/ui-screenshots
+
+.PHONY: ui-screenshots
+ui-screenshots: ## Render every web UI page with seeded data, in light and dark themes, at 1280x800 and 390x844, into PNGs in UI_SCREENSHOTS_DIR (default bin/ui-screenshots). Needs Docker for PostgreSQL and Chromium from the dev shell.
+	rm -rf "$(UI_SCREENSHOTS_DIR)"
+	TOOLGATE_UI_SCREENSHOTS="$(abspath $(UI_SCREENSHOTS_DIR))" timeout 15m go test -count=1 -tags integration -timeout 10m -run '^TestUIScreenshots$$' ./internal/ui/
+
 .PHONY: search-eval
 search-eval: ## Score the tool search fixture against any embeddings endpoint: make search-eval EMBED_URL=http://host EMBED_MODEL=name. Prints the words-only and hybrid scores and each miss. Needs Docker for PostgreSQL. Never gates CI.
 	@test -n "$(EMBED_URL)" && test -n "$(EMBED_MODEL)" || { echo "usage: make search-eval EMBED_URL=<url> EMBED_MODEL=<model>" >&2; exit 2; }
@@ -95,6 +102,10 @@ generate: ## Regenerate committed generated code (CRDs and deepcopy with control
 generate-docs: ## Regenerate the gateway configuration reference (docs/admin/configuration.md) from the doc comments in internal/config, and the chart values reference (docs/admin/chart-values.md) from values.yaml.
 	go run ./internal/config/docgen internal/config/config.go docs/admin/configuration.md
 	./scripts/chart-values-docs.sh
+
+.PHONY: ui-css
+ui-css: ## Build the web UI's stylesheet (internal/ui/static/toolgate.css) from internal/ui/styles with the Tailwind CSS standalone CLI. `make generate` runs it too.
+	./scripts/build-ui-css.sh
 
 .PHONY: vendor-htmx
 vendor-htmx: ## Download htmx 2.0.7 from the npm registry, check its integrity value, and write internal/ui/static/htmx-2.0.7.min.js and SHA256SUMS.

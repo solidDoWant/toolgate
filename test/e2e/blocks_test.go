@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/chromedp/chromedp/kb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,11 +33,11 @@ var (
 
 // pageText returns the visible text of the page at path.
 func pageText(browser context.Context, publicURL, path string) (string, error) {
-	if err := chromedp.Do(browser, testutil.Navigate(publicURL+path)); err != nil {
+	if err := browserDo(browser, testutil.Navigate(publicURL+path)); err != nil {
 		return "", err
 	}
 
-	return chromedp.Run(browser, testutil.BodyText())
+	return browserRun(browser, testutil.BodyText())
 }
 
 func TestNonAdminHasNoBlocksPage(t *testing.T) {
@@ -46,7 +47,7 @@ func TestNonAdminHasNoBlocksPage(t *testing.T) {
 	t.Run("a user signs in through the IdP, and without the admin group sees no Blocks link and gets 403 from /ui/blocks", func(t *testing.T) {
 		browser := signInToUI(t, publicURL, e2eUser)
 
-		hasLink, err := chromedp.Run(browser, chromedp.Evaluate[bool](`document.querySelector('a[href="/ui/blocks"]') !== null`))
+		hasLink, err := browserRun(browser, chromedp.Evaluate[bool](`document.querySelector('a[href="/ui/blocks"]') !== null`))
 		require.NoError(t, err)
 		assert.False(t, hasLink, "the navigation has no Blocks link")
 
@@ -58,7 +59,7 @@ func TestNonAdminHasNoBlocksPage(t *testing.T) {
 	t.Run("an admin sees the link and the page", func(t *testing.T) {
 		browser := signInToUI(t, publicURL, e2eAdmin)
 
-		hasLink, err := chromedp.Run(browser, chromedp.Evaluate[bool](`document.querySelector('a[href="/ui/blocks"]') !== null`))
+		hasLink, err := browserRun(browser, chromedp.Evaluate[bool](`document.querySelector('a[href="/ui/blocks"]') !== null`))
 		require.NoError(t, err)
 		assert.True(t, hasLink)
 
@@ -100,7 +101,7 @@ func TestStandingRulesShown(t *testing.T) {
 
 		assert.Contains(t, body, "Listed by the e2e test.")
 
-		forms, err := chromedp.Run(browser, chromedp.Evaluate[int](`document.querySelectorAll('form:not([action="/ui/blocks"]):not([action="/ui/logout"])').length`))
+		forms, err := browserRun(browser, chromedp.Evaluate[int](`document.querySelectorAll('form:not([action="/ui/blocks"]):not([action="/ui/logout"])').length`))
 		require.NoError(t, err)
 		assert.Zero(t, forms, "the only forms add a block and sign out")
 	})
@@ -131,17 +132,22 @@ func TestTemporaryBlock(t *testing.T) {
 		require.ElementsMatch(t, prefixedTools(name), enable(t, session, name))
 
 		browser := signInToUI(t, publicURL, e2eAdmin)
-		require.NoError(t, chromedp.Do(browser, testutil.Navigate(publicURL+blocksPath)))
+		// The form is in the page's "New block" dialog. The servers field
+		// is a token input: Enter adds the typed name as an item.
+		require.NoError(t, browserDo(browser,
+			testutil.Navigate(publicURL+blocksPath),
+			chromedp.Click(`main a[data-dialog="new-block"]`),
+			chromedp.WaitVisible(`#new-block #field-servers`),
+			chromedp.SendKeys(`#new-block #field-servers`, name+kb.Enter),
+			chromedp.SendKeys(`#new-block #field-reason`, "Incident from the e2e test."),
+			chromedp.SetValue(`#new-block #field-duration`, strconv.Itoa(e2eBlockMinutes)),
+			chromedp.SetValue(`#new-block #field-unit`, "minutes"),
+		))
 
 		listChangedBefore := countEvents(session.recorded(), eventListChanged)
 		submitted := time.Now()
 
-		require.NoError(t, chromedp.Do(browser,
-			chromedp.SendKeys(`textarea[name="servers"]`, name),
-			chromedp.SendKeys(`textarea[name="reason"]`, "Incident from the e2e test."),
-			chromedp.SetValue(`input[name="minutes"]`, strconv.Itoa(e2eBlockMinutes)),
-			chromedp.Click(`#block-form button[type="submit"]`),
-		))
+		require.NoError(t, browserDo(browser, chromedp.Click(`#new-block button[type="submit"]`)))
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Greater(collect, countEvents(session.recorded(), eventListChanged), listChangedBefore)
@@ -155,7 +161,7 @@ func TestTemporaryBlock(t *testing.T) {
 		body, err := pageText(browser, publicURL, blocksPath)
 		require.NoError(t, err)
 		assert.Contains(t, body, "Incident from the e2e test.")
-		assert.Contains(t, body, "servers: "+name)
+		assert.Contains(t, body, "server "+name)
 
 		// The block ends at its expiry: the tools come back with list_changed
 		// and the session needs no new enable.

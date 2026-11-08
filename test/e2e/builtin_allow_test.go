@@ -93,10 +93,10 @@ func approveScopeInBrowser(t *testing.T, publicURL, link string) {
 	browser := signInToUI(t, publicURL, testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true, Groups: []string{"eng"}})
 
 	approve := `form[action$="/approve"] button[type="submit"]`
-	require.NoError(t, chromedp.Do(browser, testutil.Navigate(link), chromedp.WaitVisible(approve), chromedp.Click(approve)))
+	require.NoError(t, browserDo(browser, testutil.Navigate(link), chromedp.WaitVisible(approve), chromedp.Click(approve)))
 
 	require.Eventually(t, func() bool {
-		body, err := chromedp.Run(browser, testutil.BodyText())
+		body, err := browserRun(browser, testutil.BodyText())
 
 		return err == nil && strings.Contains(body, "approved")
 	}, time.Minute, 200*time.Millisecond, "the page shows the request approved")

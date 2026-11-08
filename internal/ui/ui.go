@@ -246,6 +246,7 @@ func New(options Options, registrar Registrar) *UI {
 
 	if options.Pool != nil {
 		u.Handle("GET /ui/blocks", Admin, http.HandlerFunc(u.blocks))
+		u.Handle("GET /ui/blocks/new", Admin, http.HandlerFunc(u.newBlock))
 		u.Handle("POST /ui/blocks", Admin, http.HandlerFunc(u.createBlock))
 	}
 

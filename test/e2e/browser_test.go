@@ -57,9 +57,9 @@ func TestBrowserSignsInThroughGatewayIdP(t *testing.T) {
 	verifier := oauth2.GenerateVerifier()
 	user := testutil.OIDCUser{Subject: "browser-" + strings.ToLower(t.Name()), Email: "browser@example.com", EmailVerified: true, Groups: []string{"browser-testers", "developers"}}
 
-	require.NoError(t, chromedp.Do(browser, testutil.Navigate(config.AuthCodeURL("browser-state", oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("prompt", "login")))))
+	require.NoError(t, browserDo(browser, testutil.Navigate(config.AuthCodeURL("browser-state", oauth2.S256ChallengeOption(verifier), oauth2.SetAuthURLParam("prompt", "login")))))
 
-	title, err := chromedp.Run(browser, chromedp.Title())
+	title, err := browserRun(browser, chromedp.Title())
 	require.NoError(t, err)
 	assert.Equal(t, "Sign in to the fake identity provider", title, "the browser shows the IdP's sign-in page")
 
@@ -77,7 +77,7 @@ func TestBrowserSignsInThroughGatewayIdP(t *testing.T) {
 		}
 	}))
 
-	require.NoError(t, chromedp.Do(browser, testutil.SignInToOIDC(user)))
+	require.NoError(t, browserDo(browser, testutil.SignInToOIDC(user)))
 
 	var location string
 

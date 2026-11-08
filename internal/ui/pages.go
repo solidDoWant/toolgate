@@ -45,7 +45,7 @@ var pageTemplates = map[string]*template.Template{
 	"servers":        parsePage("servers"),
 	"server":         parsePage("server"),
 	"audit":          parsePage("audit"),
-	"blocks":         parsePage("blocks"),
+	"blocks":         parsePage("blocks", "block_form"),
 	"sessions":       parsePage("sessions"),
 	"session":        parsePage("session"),
 	"session_deny":   parsePage("session_deny"),
@@ -59,12 +59,59 @@ var pageTemplates = map[string]*template.Template{
 	"access_request": parsePage("access_request"),
 	"setup":          parsePage("setup"),
 	"signin_failed":  parsePage("signin_failed"),
+	"block_new":      parsePage("block_new", "block_form"),
 }
 
-// parsePage parses the layout and one page's content template.
-func parsePage(file string) *template.Template {
-	return template.Must(template.New(file).Funcs(template.FuncMap{"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp, "workspace": labelWorkspace, "since": timeSince, "outcome": outcomeBadge}).
-		ParseFS(templateFiles, "templates/layout.html", "templates/"+file+".html"))
+// parsePage parses the layout, the shared components, one page's content
+// template and the partials it shares with other pages.
+func parsePage(file string, partials ...string) *template.Template {
+	files := []string{"templates/layout.html", "templates/components.html", "templates/" + file + ".html"}
+	for _, partial := range partials {
+		files = append(files, "templates/"+partial+".html")
+	}
+
+	return template.Must(template.New(file).Funcs(template.FuncMap{
+		"badge": badgeClass, "environmentBadge": environmentBadge, "environmentHelp": environmentHelp, "scopeHelp": scopeHelp,
+		"workspace": labelWorkspace, "since": timeSince, "until": timeUntil, "outcome": outcomeBadge,
+		"dict": dict, "list": list, "navLink": newNavLink, "short": principal.Short,
+	}).ParseFS(templateFiles, files...))
+}
+
+// dict builds the argument of a shared component from key and value pairs.
+func dict(pairs ...any) (map[string]any, error) {
+	if len(pairs)%2 != 0 {
+		return nil, errors.New("dict needs key and value pairs")
+	}
+
+	values := make(map[string]any, len(pairs)/2)
+
+	for index := 0; index < len(pairs); index += 2 {
+		key, ok := pairs[index].(string)
+		if !ok {
+			return nil, errors.New("dict keys are strings")
+		}
+
+		values[key] = pairs[index+1]
+	}
+
+	return values, nil
+}
+
+// list builds a list argument, such as a table's column headings.
+func list(items ...any) []any {
+	return items
+}
+
+// navLink is one link of the shell's sidebar.
+type navLink struct {
+	Href, Label string
+	Current     bool
+	// Count is the number on the link's badge; 0 shows none.
+	Count int
+}
+
+func newNavLink(section, name, href, label string, count int) navLink {
+	return navLink{Href: href, Label: label, Current: section == name, Count: count}
 }
 
 // badgeClass maps a status word to the colour class of its badge. Words it
@@ -132,6 +179,8 @@ func navSection(name string) string {
 		return "audit"
 	case "grant_new":
 		return "grants"
+	case "block_new":
+		return "blocks"
 	case "approval", "access_request":
 		return "approvals"
 	default:
@@ -152,6 +201,9 @@ type page struct {
 	// SignedOut leaves out the user, the sign-out button and the nav, for a
 	// page shown to a browser without a session.
 	SignedOut bool
+	// Approvals is the number of the user's pending approvals, for the
+	// sidebar's badge.
+	Approvals int
 	Data      any
 }
 
@@ -180,6 +232,7 @@ func (u *UI) renderStatus(writer http.ResponseWriter, request *http.Request, sta
 		Admin:     session.Admin,
 		Secrets:   u.options.Secrets != nil,
 		CSRFToken: session.CSRFTokenValue(),
+		Approvals: u.pendingApprovals(request.Context(), session.Principal),
 		Data:      data,
 	})
 }
@@ -399,4 +452,21 @@ func (u *UI) restartInstance(writer http.ResponseWriter, request *http.Request) 
 	default:
 		http.Redirect(writer, request, HomePath+"?notice="+noticeRestartRequested, http.StatusSeeOther)
 	}
+}
+
+// pendingApprovals counts principal's pending approvals for the sidebar.
+// The badge is a hint, so a failed read shows no badge rather than no page.
+func (u *UI) pendingApprovals(ctx context.Context, principal string) int {
+	if u.options.Database == nil || principal == "" {
+		return 0
+	}
+
+	rows, err := u.queries.ListPendingApprovalsOfPrincipal(ctx, principal)
+	if err != nil {
+		u.logger.WarnContext(ctx, "cannot count the pending approvals for the web UI", "error", err)
+
+		return 0
+	}
+
+	return len(rows)
 }

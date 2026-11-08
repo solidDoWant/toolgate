@@ -257,7 +257,8 @@ func TestSetupPageShowsTheGatewayURLAndLoadsCopyScriptFromTheGateway(t *testing.
 	assert.Contains(t, body, `<script src="/ui/static/copy.js" defer></script>`)
 	assert.NotContains(t, body, "<script>")
 	assert.NotContains(t, body, "For admins")
-	assert.Equal(t, 2, strings.Count(body, "<script"), "only htmx and the copy script, both with a src")
+	assert.Contains(t, body, `<script src="/ui/static/ui.js" defer></script>`)
+	assert.Equal(t, 3, strings.Count(body, "<script"), "only htmx, the copy script and the components script, each with a src")
 }
 
 func newTestUI(t *testing.T) (*UI, nopRegistrar) {

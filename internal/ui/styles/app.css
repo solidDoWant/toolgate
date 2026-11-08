@@ -1,0 +1,172 @@
+/* Input of the web UI's stylesheet. `make ui-css` builds it with the
+   Tailwind CSS standalone CLI into static/toolgate.css, which the binary
+   embeds. Edit this file, legacy.css or the templates, never the output. */
+@layer theme, base, legacy, components, utilities;
+
+/* No preflight: the pages not yet on the shared components rely on the
+   browser's default margins and lists, as before. */
+@import "tailwindcss/theme.css" layer(theme) source(none);
+@import "./legacy.css" layer(legacy);
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../templates";
+@source "../static/ui.js";
+
+/* The colour tokens of legacy.css as Tailwind colours, so both themes
+   follow the same variables: bg-surface, text-muted, border-border... */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-text: var(--accent-text);
+  --color-danger: var(--danger);
+  --color-danger-text: var(--danger-text);
+  --color-focus: var(--focus);
+  --color-code: var(--code-bg);
+  --color-ok: var(--ok-bg);
+  --color-ok-text: var(--ok-text);
+  --color-warn: var(--warn-bg);
+  --color-warn-text: var(--warn-text);
+  --color-bad: var(--bad-bg);
+  --color-bad-text: var(--bad-text);
+  --color-neutral: var(--neutral-bg);
+  --color-neutral-text: var(--neutral-text);
+}
+
+@layer components {
+  /* Without preflight, a class that sets display would show a hidden
+     element, such as a token input's textarea. */
+  [hidden] {
+    display: none !important;
+  }
+
+  /* Buttons of the shared components. */
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border border-muted bg-surface px-3 py-1.5 text-sm font-semibold text-text no-underline hover:bg-neutral cursor-pointer;
+  }
+  .btn-primary {
+    @apply border-accent bg-accent text-accent-text hover:bg-accent hover:brightness-110;
+  }
+  .btn-small {
+    @apply px-2 py-0.5 text-xs;
+  }
+  /* A quiet destructive action: text in the danger colour until hovered. */
+  .btn-quiet-danger {
+    @apply border-transparent bg-transparent text-danger hover:border-danger hover:bg-bad;
+  }
+
+  /* Compact form controls inside the shared components. */
+  .field-label {
+    @apply mb-1 block text-sm font-medium;
+  }
+  .field-help {
+    @apply mt-1 text-xs text-muted;
+  }
+  .control {
+    @apply m-0 block rounded-md border border-muted bg-surface px-2.5 py-1.5 text-sm text-text;
+  }
+
+  /* The segmented control: radio buttons drawn as one row of buttons. */
+  .segmented {
+    @apply m-0 inline-flex overflow-hidden rounded-md border border-muted p-0;
+  }
+  .segmented label {
+    @apply m-0 cursor-pointer border-r border-muted px-3 py-1.5 text-sm font-normal last:border-r-0 has-checked:bg-accent has-checked:text-accent-text has-focus-visible:outline-3 has-focus-visible:outline-focus;
+  }
+  .segmented input {
+    @apply sr-only;
+  }
+
+  /* The token input: chips and a text box. Without JavaScript its textarea
+     shows instead, one item per line. */
+  .token-input {
+    @apply flex min-h-9 w-full flex-wrap items-center gap-1 rounded-md border border-muted bg-surface px-1.5 py-1 focus-within:outline-3 focus-within:outline-focus;
+  }
+  .token-input input {
+    @apply m-0 min-w-24 flex-1 border-0 bg-transparent p-0.5 text-sm text-text outline-none focus-visible:outline-none;
+  }
+  .token {
+    @apply inline-flex items-center gap-1 rounded-full bg-neutral px-2 py-0.5 font-mono text-xs text-neutral-text;
+  }
+  .token button {
+    @apply m-0 border-0 bg-transparent p-0 text-sm leading-none text-neutral-text hover:bg-transparent hover:text-danger;
+  }
+
+  /* The shared table. Below 640px each row is a card: the first cell is
+     its title, every other cell shows its column's heading (data-label)
+     above its value, and the row actions come last. */
+  .data-table th {
+    @apply border-b border-border bg-code px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-muted uppercase;
+  }
+  .data-table td {
+    @apply border-b border-border px-3 py-2 text-left align-top;
+  }
+  .data-table tbody tr {
+    @apply hover:bg-code;
+  }
+  .data-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+  .data-table td.row-actions {
+    @apply text-right whitespace-nowrap;
+  }
+  @media (width < 40rem) {
+    .data-table thead {
+      @apply sr-only;
+    }
+    .data-table tbody,
+    .data-table tr,
+    .data-table td {
+      display: block;
+    }
+    .data-table tbody tr {
+      @apply border-b border-border px-4 py-3 last:border-b-0;
+    }
+    .data-table td,
+    .data-table tbody tr:last-child td {
+      @apply border-0 px-0 py-1 whitespace-normal;
+    }
+    .data-table td:first-child {
+      @apply pt-0 text-base font-semibold;
+    }
+    .data-table td:not(:first-child)::before {
+      @apply mb-0.5 block text-xs font-semibold tracking-wide text-muted uppercase;
+      content: attr(data-label);
+    }
+    .data-table td.row-actions {
+      @apply pt-2 text-left;
+    }
+    .data-table td.row-actions::before {
+      content: none;
+    }
+  }
+
+  /* A small labelled value, such as one item of a rule's match. */
+  .chip {
+    @apply inline-block rounded-full bg-neutral px-2 py-0.5 text-xs whitespace-nowrap text-neutral-text;
+  }
+  .chip-label {
+    @apply font-semibold;
+  }
+
+  /* A dialog form's buttons; on a phone they stay at the bottom of the
+     screen while the form scrolls. */
+  .dialog-footer {
+    @apply mt-5 flex justify-end gap-2;
+  }
+  @media (width < 40rem) {
+    .dialog-footer {
+      @apply sticky bottom-0 border-t border-border bg-surface py-3;
+    }
+    dialog .dialog-footer {
+      @apply -mx-5 -mb-4 px-5;
+    }
+  }
+
+  dialog.modal::backdrop {
+    background: rgb(0 0 0 / 0.45);
+  }
+}
