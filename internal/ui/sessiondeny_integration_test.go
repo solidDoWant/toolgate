@@ -37,7 +37,7 @@ func TestSessionDenyFromSessionPage(t *testing.T) {
 
 	t.Run("the page has a plain form for each server and no end action", func(t *testing.T) {
 		page := readBody(t, get(t, owner, pageURL))
-		assert.Contains(t, page, `<form method="get" action="/ui/sessions/`+fmt.Sprint(id)+`/deny"><input type="hidden" name="server" value="github">`)
+		assert.Contains(t, page, `<form method="get" action="/ui/sessions/`+fmt.Sprint(id)+`/deny" class="m-0"><input type="hidden" name="server" value="github">`)
 		assert.Contains(t, page, `name="server" value="wiki"`)
 		assert.NotContains(t, page, "End session")
 	})

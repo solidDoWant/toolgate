@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -43,15 +44,29 @@ func seedScreenshotSecrets(t *testing.T, env *uiEnv) {
 
 // seedScreenshotData fills the gateway with a little of everything the
 // pages show, for dave, an admin.
-func seedScreenshotData(t *testing.T, env *uiEnv) {
+// It returns the IDs of two open sessions: one with servers and tool calls,
+// and one with neither.
+func seedScreenshotData(t *testing.T, env *uiEnv) (int64, int64) {
 	t.Helper()
 
 	env.addGrantTemplates()
 
 	now := time.Now()
 
-	env.insertListedSession(t, "dave", "laptop-7f3a", "", "attested", "claude-code", 2, -1, true)
-	env.insertListedSession(t, "dave", "ci-runner-12", "", "user", "claude-code", 45, 30, false)
+	openSession := env.insertListedSession(t, "dave", "laptop-7f3a", "coder/main/laptop", "attested", "claude-code", 2, -1, true)
+	env.insertListedSession(t, "dave", "ci-runner-12", "coder/main/ci", "user", "claude-code", 45, 30, false)
+	emptySession := env.insertListedSession(t, "dave", "scratch-0001", "coder/main/scratch", "user", "claude-code", 3, -1, false)
+
+	// The session page lists the calls made since the session started.
+	_, err := env.pool.Exec(t.Context(), `UPDATE sessions SET created_at = now() - interval '1 hour' WHERE id = $1`, openSession)
+	require.NoError(t, err)
+
+	for _, server := range []string{"github", "wiki"} {
+		_, err = env.pool.Exec(t.Context(),
+			`INSERT INTO session_servers (session_pk, template_ns, template_name) VALUES ($1, 'default', $2)`, openSession, server)
+		require.NoError(t, err)
+	}
+
 	require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(),
 		gateway.WorkspaceChange{Action: gateway.WorkspaceAllow, Workspace: "coder/dave/mail", Servers: []string{"any-server", "optin-server"}}, gateway.ViaUI))
 	require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(),
@@ -76,7 +91,7 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 		})
 	}
 
-	_, err := env.pool.Exec(t.Context(), `INSERT INTO temporary_blocks (id, match, reason, created_by, created_at, expires_at) VALUES
+	_, err = env.pool.Exec(t.Context(), `INSERT INTO temporary_blocks (id, match, reason, created_by, created_at, expires_at) VALUES
 		('3f9c2a7e1b5d48c0a6e2f17d9b04c8e1', '{"servers":["github"],"tools":["github__delete_repo"]}', 'Incident 42: repository deletions under review.', 'dave', now() - interval '20 minutes', now() + interval '3 hours'),
 		('8a1d4e6f2c3b47a9b5d0e8f1a2c3d4e5', '{"groups":["contractors"],"attestation":"user"}', 'Contractor access paused for the audit.', 'dave', now() - interval '2 hours', now() + interval '2 days')`)
 	require.NoError(t, err)
@@ -93,6 +108,8 @@ func seedScreenshotData(t *testing.T, env *uiEnv) {
 			}},
 		},
 	}
+
+	return openSession, emptySession
 }
 
 // TestUIScreenshots renders every web UI page with seeded data, in the
@@ -107,7 +124,7 @@ func TestUIScreenshots(t *testing.T) {
 	require.NoError(t, os.MkdirAll(directory, 0o755))
 
 	env := startUIEnv(t, "toolgate-admins")
-	seedScreenshotData(t, env)
+	openSession, emptySession := seedScreenshotData(t, env)
 	ctx := openBrowserAsAdmin(t, env)
 
 	pages := []struct {
@@ -127,6 +144,11 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "server", path: "/ui/servers/github"},
 		{name: "server-no-tools", path: "/ui/servers/mail"},
 		{name: "sessions", path: "/ui/sessions"},
+		{name: "sessions-all-users", path: "/ui/sessions?state=all&user=all"},
+		{name: "sessions-empty", path: "/ui/sessions?workspace=none"},
+		{name: "session", path: "/ui/sessions/" + strconv.FormatInt(openSession, 10)},
+		{name: "session-empty", path: "/ui/sessions/" + strconv.FormatInt(emptySession, 10)},
+		{name: "session-deny", path: "/ui/sessions/" + strconv.FormatInt(openSession, 10) + "/deny?server=github"},
 		{name: "workspaces", path: "/ui/workspaces"},
 		{name: "workspaces-choose", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`main label.btn-small[for="choose-0"]`))},
 		{name: "workspaces-only-these", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`main input[name="unverified"][value="list"]`))},

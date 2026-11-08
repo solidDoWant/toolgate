@@ -95,25 +95,26 @@ The sidebar shows the Blocks link only to admins.
 
 ## The Sessions pages
 
-`/ui/sessions` lists sessions, newest activity first. Each row shows:
+`/ui/sessions` opens with a header and a one-sentence summary, then the filters and the table of sessions, newest activity first. On a narrow screen each row shows as a card. Each row shows:
 
 - **Who:** the user's name or email, or "you". An admin sees other users by name.
 - **Where:** the workspace, with a "verified" or "unverified" badge. The raw workspace ID shows on hover.
-- **Client:** the client name and version that the client sent in `initialize`, for example "Claude Code 2.1.319", and the kind: a helper session, or a connector session (the session ID starts with `mcp.`).
-- **State:** `active` when the session is open and made a request in the last 5 minutes. `idle` when it is open and made none for 5 minutes or more. The gateway ends an idle session after `sessionIdleTimeout`. `resumable until` a time when the session ended and can still be resumed (`sessionResumeWindow` after it ended). Connector sessions are never resumed. Any other ended session shows `ended`.
+- **Client:** the client name and version that the client sent in `initialize`, for example "Claude Code 2.1.319", and the kind: a helper session, or a connector session (the session ID starts with `mcp.`). The full session ID shows on hover. The session page shows the short ID with a small copy button.
+- **State:** `active` when the session is open and made a request in the last 5 minutes. `idle` when it is open and made none for 5 minutes or more. The gateway ends an idle session after `sessionIdleTimeout`. `resumable until` a time when the session ended and can still be resumed (`sessionResumeWindow` after it ended). Connector sessions are never resumed. Any other ended session shows `ended`. Under the state, the time of the last activity as a relative time such as "2 min ago". The exact UTC time shows on hover. For a resumable session, the time it can be resumed until shows on hover.
 - **Servers:** the servers that the session has enabled, as small badges, and how many instances are running for it. The count includes ready shared instances, the user's ready per-user instances and the session's own ready per-session instances of those servers.
-- **Activity (last hour):** the tool decisions in the last hour, how many of them were refusals (`deny` or `refuse`), and the approvals that still wait for a decision. The first two numbers link to the audit page, filtered to this session. The third links to the approvals page. A session with no activity shows zeros.
-- **Tool search:** on or off.
-- **Last activity:** a relative time such as "2 min ago". The exact UTC time shows on hover.
-- **Session:** the first characters of the session ID. The full ID shows on hover. The small copy button next to it copies the full ID.
+- **Last hour:** three small badges on one line: the tool decisions in the last hour, how many of them were refusals (`deny` or `refuse`), and the approvals that still wait for a decision. The first two badges link to the audit page, filtered to this session. The third links to the approvals page. A session with no activity shows zeros.
 
-The filters are links and menus. They are in the URL, so you can bookmark a view: `state` is `active` (the default), `recent` (last request in the last 24 hours) or `all` (all sessions inside the resume window); `workspace` is a workspace ID. The default view shows your own active sessions. An admin can also pick one user, or everyone, with `user` (a subject, or `all`). A user who is not an admin always sees only their own sessions.
+Tool search (on or off) shows on the session page.
 
-If there are no sessions, the page says that sessions appear when Claude Code connects through the toolgate plugin, and links to Quick setup.
+Every row of an open session has an "Open" button.
 
-"Open" on the row of an open session shows `/ui/sessions/` followed by the session's number. The page has four parts:
+The state filter is a segmented control. The workspace and user filters are menus in the same row. With JavaScript, a change applies at once. Without it, use the Filter button. The filters are in the URL, so you can bookmark a view: `state` is `active` (the default), `recent` (last request in the last 24 hours) or `all` (all sessions inside the resume window); `workspace` is a workspace ID. The default view shows your own active sessions. An admin can also pick one user, or everyone, with `user` (a subject, or `all`). A user who is not an admin always sees only their own sessions.
 
-- **Header:** the same facts as the list row: who, where (with the verified or unverified badge), the client and its kind, the state, tool search, and the short session ID with a copy button.
+If there are no sessions, the page says that sessions appear when Claude Code connects through the toolgate plugin, and has a Quick setup button.
+
+"Open" on the row of an open session shows `/ui/sessions/` followed by the session's number. The page has an "All sessions" link above the title, and four parts:
+
+- **Summary row:** the same facts as the list row, as labelled values: who, where (with the verified or unverified badge), the client and its kind, the state, tool search, the short session ID with a small copy button, and when the session started and was last active.
 - **Servers:** each server that is enabled in the session, with its status (`ready`, `starting`, `failed`, `blocked`, `stopped`) and the reason, if any. The Instance column says `remote` for a remote server, or the namespace of its template. If the gateway can't show a status to the viewer, for example an admin who views a session of a user whose groups it doesn't know, the status is `unknown`.
 - **Effective scope:** what the session may use. It shows the list that applies (the list of the workspace or the matching default), the allow and deny entries of the workspace, and the servers, allow entries and deny entries that are for this session only. It links to the Workspaces and Servers pages, where you change them.
 - **Recent tool calls:** the newest 50 events of the session's calls, with time, server, tool, outcome, latency, and the reason for a refusal. Approval requests and approved calls show too. Each row links to its audit event. A link below the table opens the audit log filtered to the session.
