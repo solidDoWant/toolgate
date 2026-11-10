@@ -736,25 +736,22 @@ func TestSessionRecordsToolSearchMode(t *testing.T) {
 }
 
 // searchModeToolNames are the tools of a search-mode session that has
-// enabled nothing: the enable and disable tools are not listed.
-var searchModeToolNames = []string{gateway.ToolFindTools, gateway.ToolListServers, gateway.ToolServerStatus}
+// enabled nothing.
+var searchModeToolNames = append([]string{gateway.ToolFindTools}, metaToolNames...)
 
 func TestEnableDisableToolList(t *testing.T) {
 	tests := []struct {
-		name    string
-		setting string
-		search  string
-		want    []string
+		name   string
+		search string
+		want   []string
 	}{
-		{"auto lists them outside search mode", "", "off", metaToolNames},
-		{"auto hides them in search mode", "auto", "on", searchModeToolNames},
-		{"always lists them in search mode", "always", "on", append([]string{gateway.ToolFindTools}, metaToolNames...)},
-		{"never hides them outside search mode", "never", "off", []string{gateway.ToolListServers, gateway.ToolServerStatus}},
+		{"outside search mode", "off", metaToolNames},
+		{"in search mode", "on", searchModeToolNames},
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.MetaToolsEnableDisable = test.setting })
+		t.Run("a session lists the enable and disable tools "+test.name, func(t *testing.T) {
+			fixture := newMCPFixture(t)
 
 			client := alice()
 			client.search = test.search
@@ -763,20 +760,15 @@ func TestEnableDisableToolList(t *testing.T) {
 		})
 	}
 
-	t.Run("a call to a hidden tool is refused with a message and enables nothing", func(t *testing.T) {
+	t.Run("a call to the enable tool in search mode enables the server", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
 		session := fixture.connect(t, searching(alice()))
-
-		for _, tool := range []string{gateway.ToolEnableServer, gateway.ToolDisableServer} {
-			result := callTool(t, session, tool, map[string]any{"name": "github"})
-			require.True(t, result.IsError, tool)
-			assert.Contains(t, resultText(result), "isn't available in this session")
-			assert.Contains(t, resultText(result), gateway.ToolFindTools)
-		}
-
-		assert.Empty(t, fixture.instancesOf(t, template))
+		results := startEnable(t, session, "github")
+		instance := fixture.awaitInstance(t, template, "user:alice")
+		fixture.markReady(t, instance.ID)
+		require.Empty(t, awaitEnable(t, results).err)
 	})
 
 	t.Run("a request that changes the mode of a session sends list_changed", func(t *testing.T) {

@@ -70,7 +70,6 @@ logLevel: debug
 		SessionIdleTimeout:          config.Duration(2 * time.Hour),
 		SessionResumeWindow:         config.Duration(24 * time.Hour),
 		ApprovalTimeout:             config.Duration(10 * time.Minute),
-		MetaToolsEnableDisable:      "auto",
 		PublicURL:                   "https://toolgate.example",
 		OIDCUIClientID:              "toolgate-ui",
 		OIDCUIScopes:                []string{"openid", "email", "profile"},
@@ -615,24 +614,39 @@ func TestMCPResourceURL(t *testing.T) {
 	}
 }
 
-func TestLoadMetaToolsEnableDisable(t *testing.T) {
-	assert.Equal(t, "auto", config.Default().MetaToolsEnableDisable)
-
-	load := func(value string) (config.Config, error) {
-		return config.Load("", envFrom(map[string]string{
-			"TOOLGATE_DATABASE_URL":              validDatabaseURL,
-			"TOOLGATE_OIDC_ISSUER_URL":           "https://idp.example",
-			"TOOLGATE_OIDC_AUDIENCE":             "toolgate",
-			"TOOLGATE_META_TOOLS_ENABLE_DISABLE": value,
-		}))
+func TestLoadIgnoresTheRemovedEnableDisableSetting(t *testing.T) {
+	env := map[string]string{
+		"TOOLGATE_DATABASE_URL":    validDatabaseURL,
+		"TOOLGATE_OIDC_ISSUER_URL": "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":   "toolgate",
 	}
 
-	for _, value := range []string{"auto", "always", "never"} {
-		cfg, err := load(value)
-		require.NoError(t, err, value)
-		assert.Equal(t, value, cfg.MetaToolsEnableDisable)
-	}
+	t.Run("without the setting there is nothing to warn about", func(t *testing.T) {
+		cfg, err := config.Load("", envFrom(env))
+		require.NoError(t, err)
+		assert.Empty(t, cfg.IgnoredSettings)
+	})
 
-	_, err := load("sometimes")
-	require.ErrorContains(t, err, "metaToolsEnableDisable: must be auto, always or never")
+	t.Run("the environment variable is ignored and reported", func(t *testing.T) {
+		env["TOOLGATE_META_TOOLS_ENABLE_DISABLE"] = "never"
+		defer delete(env, "TOOLGATE_META_TOOLS_ENABLE_DISABLE")
+
+		cfg, err := config.Load("", envFrom(env))
+		require.NoError(t, err)
+		assert.Equal(t, []string{"TOOLGATE_META_TOOLS_ENABLE_DISABLE"}, cfg.IgnoredSettings)
+	})
+
+	t.Run("the file key is ignored and reported, and other unknown keys still fail", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, os.WriteFile(path, []byte("metaToolsEnableDisable: never\n"), 0o600))
+
+		cfg, err := config.Load(path, envFrom(env))
+		require.NoError(t, err)
+		assert.Equal(t, []string{"metaToolsEnableDisable"}, cfg.IgnoredSettings)
+
+		require.NoError(t, os.WriteFile(path, []byte("metaToolsEnableDisable: never\nnoSuchSetting: 1\n"), 0o600))
+
+		_, err = config.Load(path, envFrom(env))
+		require.ErrorContains(t, err, "noSuchSetting")
+	})
 }

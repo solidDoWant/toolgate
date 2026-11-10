@@ -109,10 +109,6 @@ type MCPOptions struct {
 	// ToolSearch is the gateway's default for tool search mode, used by a
 	// request that sends no X-Toolgate-Tool-Search header.
 	ToolSearch bool
-	// MetaToolsEnableDisable says when sessions list the enable and disable
-	// tools: "auto" (the default) lists them outside tool search mode,
-	// "always" in every mode, "never" in none.
-	MetaToolsEnableDisable string
 	// Embedder embeds search queries for tool search; nil means words only.
 	Embedder *embeddings.Client
 	// ToolSearchSessionStarted is called after a request starts or resumes
@@ -342,7 +338,6 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
 		embedder:             options.Embedder,
-		enableDisable:        options.MetaToolsEnableDisable,
 	}
 
 	if tools.workspaces == nil {

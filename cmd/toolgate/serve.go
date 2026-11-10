@@ -71,6 +71,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	logger := newLogger(stdout, cfg.LogLevel)
 
+	for _, name := range cfg.IgnoredSettings {
+		logger.Warn("ignoring a setting that was removed: sessions always list toolgate_enable_server and toolgate_disable_server", "setting", name)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
 	defer stop()
 
@@ -234,17 +238,16 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 		SubscribeReplies: listener.SubscribeReplies,
 
-		InstanceLimitPerUser:   cfg.InstanceLimitPerUser,
-		InstanceLimit:          cfg.InstanceLimit,
-		SharedNamespace:        cfg.SharedNamespace,
-		ApprovalURL:            approvalURL,
-		ApprovalTimeout:        time.Duration(cfg.ApprovalTimeout),
-		WorkspaceScoping:       cfg.UIEnabled(),
-		Workspaces:             workspaces,
-		SessionIdleTimeout:     testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
-		ToolSearch:             cfg.ToolSearch,
-		MetaToolsEnableDisable: cfg.MetaToolsEnableDisable,
-		Embedder:               searchEmbedder,
+		InstanceLimitPerUser: cfg.InstanceLimitPerUser,
+		InstanceLimit:        cfg.InstanceLimit,
+		SharedNamespace:      cfg.SharedNamespace,
+		ApprovalURL:          approvalURL,
+		ApprovalTimeout:      time.Duration(cfg.ApprovalTimeout),
+		WorkspaceScoping:     cfg.UIEnabled(),
+		Workspaces:           workspaces,
+		SessionIdleTimeout:   testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
+		ToolSearch:           cfg.ToolSearch,
+		Embedder:             searchEmbedder,
 
 		ToolSearchSessionStarted: embeddingsDemand,
 		Secrets:                  runtime.BrokerSecrets(userSecrets(broker)),

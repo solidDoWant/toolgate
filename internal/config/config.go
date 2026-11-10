@@ -39,6 +39,10 @@ const maxFileSize = 1 << 20
 // in its `json` tag, then overridden by the environment variable in its `env`
 // tag when that variable is set and not empty.
 type Config struct {
+	// IgnoredSettings names removed settings that the file or environment
+	// still set. Load ignores them; `toolgate serve` logs a warning.
+	IgnoredSettings []string `json:"-"`
+
 	// The address where the gateway listens for MCP and API requests and for
 	// the `/healthz` and `/readyz` probes.
 	ListenAddress string `json:"listenAddress" env:"TOOLGATE_LISTEN_ADDRESS"`
@@ -302,15 +306,6 @@ type Config struct {
 	// the tools it found by search. The header only changes what is listed,
 	// never what is allowed. The chart sets it from `config.toolSearch`.
 	ToolSearch bool `json:"toolSearch" env:"TOOLGATE_TOOL_SEARCH"`
-
-	// Whether a session lists `toolgate_enable_server` and
-	// `toolgate_disable_server`. `auto` lists them when tool search mode is
-	// off and hides them when it is on: in search mode a call to a tool of an
-	// allowed server turns the server on, so the model needs no enable. `always`
-	// lists them in every mode. `never` lists them in none. A call to a hidden
-	// tool is refused with a message. The chart sets it from
-	// `config.metaTools.enableDisable`.
-	MetaToolsEnableDisable string `json:"metaToolsEnableDisable" env:"TOOLGATE_META_TOOLS_ENABLE_DISABLE"`
 
 	// The base URL of an endpoint that speaks the OpenAI embeddings API
 	// (`POST <url>/v1/embeddings`), such as Hugging Face text-embeddings-
@@ -649,7 +644,6 @@ func Default() Config {
 		SessionIdleTimeout:     Duration(2 * time.Hour),
 		SessionResumeWindow:    Duration(24 * time.Hour),
 		ApprovalTimeout:        Duration(10 * time.Minute),
-		MetaToolsEnableDisable: "auto",
 
 		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
 
@@ -819,6 +813,10 @@ func Load(path string, getenv func(string) string) (Config, error) {
 
 	var problems []error
 
+	if getenv(removedMetaToolsEnv) != "" {
+		cfg.IgnoredSettings = append(cfg.IgnoredSettings, removedMetaToolsEnv)
+	}
+
 	problems = append(problems, applyEnv(&cfg, getenv)...)
 	problems = append(problems, cfg.Validate()...)
 
@@ -892,11 +890,55 @@ func loadFile(path string, cfg *Config) error {
 		return err
 	}
 
+	data, ignored, err := dropRemovedSettings(data)
+	if err != nil {
+		return fmt.Errorf("configuration file %s: %w", path, err)
+	}
+
 	if err := yaml.UnmarshalStrict(data, cfg); err != nil {
 		return fmt.Errorf("configuration file %s: %w", path, err)
 	}
 
+	cfg.IgnoredSettings = append(cfg.IgnoredSettings, ignored...)
+
 	return nil
+}
+
+// removedMetaToolsEnv and removedMetaToolsKey name a setting that no longer
+// exists. Old deployments may still set it, so the gateway ignores it and
+// warns instead of refusing to start.
+const (
+	removedMetaToolsEnv = "TOOLGATE_META_TOOLS_ENABLE_DISABLE"
+	removedMetaToolsKey = "metaToolsEnableDisable"
+)
+
+// dropRemovedSettings removes the removed settings from the YAML document, so
+// the strict decode doesn't reject them, and returns the names it removed.
+func dropRemovedSettings(data []byte) ([]byte, []string, error) {
+	var document map[string]json.RawMessage
+
+	asJSON, err := yaml.YAMLToJSON(data)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if err := json.Unmarshal(asJSON, &document); err != nil || document == nil {
+		// Not a mapping: let the strict decode report it.
+		return data, nil, nil
+	}
+
+	if _, found := document[removedMetaToolsKey]; !found {
+		return data, nil, nil
+	}
+
+	delete(document, removedMetaToolsKey)
+
+	stripped, err := json.Marshal(document)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return stripped, []string{removedMetaToolsKey}, nil
 }
 
 // applyEnv overrides fields from the environment variables named in their
@@ -1093,12 +1135,6 @@ func (c Config) Validate() []error {
 
 	if c.ApprovalTimeout < Duration(time.Minute) || c.ApprovalTimeout > Duration(time.Hour) {
 		problems = append(problems, errors.New("approvalTimeout: must be from 1m to 1h"))
-	}
-
-	switch c.MetaToolsEnableDisable {
-	case "auto", "always", "never":
-	default:
-		problems = append(problems, errors.New("metaToolsEnableDisable: must be auto, always or never"))
 	}
 
 	problems = append(problems, c.validateToolSearchEmbeddings()...)

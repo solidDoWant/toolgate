@@ -81,14 +81,12 @@ type metaTools struct {
 	// metrics counts calls and starts. Nil means none.
 	metrics *runtime.Metrics
 	// embedder embeds search queries; nil means words only.
-	embedder *embeddings.Client
-	// enableDisable is the metaToolsEnableDisable setting.
-	enableDisable string
-	database      *pgxpool.Pool
-	catalog       *catalog.Catalog
-	policy        *policy.Engine
-	blocks        blockCache
-	auditOutput   io.Writer
+	embedder    *embeddings.Client
+	database    *pgxpool.Pool
+	catalog     *catalog.Catalog
+	policy      *policy.Engine
+	blocks      blockCache
+	auditOutput io.Writer
 	// payloads stores call arguments and results; nil means off.
 	payloads  *audit.Payloads
 	subscribe func() (<-chan store.Event, func())
@@ -271,7 +269,7 @@ func (m *metaTools) entry(ctx context.Context, current requestContext, template 
 			switch {
 			case current.identity.Attestation != auth.AttestationAttested:
 				entry.Reason = notInUnverifiedReason
-			case enableDisableHidden(current.searchMode, m.enableDisable):
+			case current.searchMode:
 				entry.Reason = notInWorkspaceSearchReason
 			}
 		}

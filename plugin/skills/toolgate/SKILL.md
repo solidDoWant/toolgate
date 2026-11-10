@@ -13,8 +13,12 @@ is on: follow "Tool search mode". Otherwise follow "Enable mode".
 1. **Find.** Call `toolgate_find_tools` with a short description of the task.
    It returns tools you can call now.
 2. **Call.** Call the tool you need. Its server starts on the first call; wait
-   for the call to return. There is no enable or disable step.
-3. **Blocked servers.** If a server shows `blocked` in `toolgate_list_servers`
+   for the call to return.
+3. **Stopped servers.** If a server is `stopped` in `toolgate_list_servers`, or
+   search finds none of its tools yet, call `toolgate_enable_server` with its
+   name, wait for it to return, then search again. Call
+   `toolgate_disable_server` when you no longer need a server.
+4. **Blocked servers.** If a server shows `blocked` in `toolgate_list_servers`
    or `toolgate_server_status`, or a search result has access `ask`, call one
    of its tools to ask the user for access, or use `toolgate_allow`. Do not
    ask in a loop.
