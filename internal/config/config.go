@@ -92,7 +92,9 @@ type Config struct {
 	// The OTLP/HTTP base URL that receives logs, such as
 	// `http://victoria-logs:9428/insert/opentelemetry`. The gateway sends logs
 	// to `/v1/logs` under this URL. If it and `otlpEndpoint` are empty, the
-	// gateway accepts logs from clients and discards them.
+	// gateway accepts logs from clients and discards them. The value `stdout`
+	// writes each received log record to the gateway's standard output as one
+	// JSON line instead, for the cluster's log pipeline to collect.
 	OTLPLogsEndpoint string `json:"otlp.logsEndpoint" env:"TOOLGATE_OTLP_LOGS_ENDPOINT"`
 
 	// The OTLP/HTTP base URL that receives traces, including the gateway's
@@ -1079,6 +1081,10 @@ func (c Config) Validate() []error {
 		"otlp.logsEndpoint":    c.OTLPLogsEndpoint,
 		"otlp.tracesEndpoint":  c.OTLPTracesEndpoint,
 	} {
+		if name == "otlp.logsEndpoint" && value == "stdout" {
+			continue
+		}
+
 		if value != "" && !isHTTPURL(value) {
 			problems = append(problems, fmt.Errorf("%s: %q is not an http or https URL", name, value))
 		}

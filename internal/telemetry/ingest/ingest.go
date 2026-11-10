@@ -18,6 +18,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -125,6 +126,9 @@ type Options struct {
 	// Client overrides the forwarding client. Nil uses one with a 10 s
 	// timeout that follows no redirects.
 	Client *http.Client
+	// Stdout receives the log lines when the logs endpoint is `stdout`. Nil
+	// uses os.Stdout.
+	Stdout io.Writer
 	// BodyTimeout overrides BodyTimeout. Zero uses the default.
 	BodyTimeout time.Duration
 }
@@ -142,6 +146,9 @@ type Ingest struct {
 	discarded    *prometheus.CounterVec
 	forwardErrs  *prometheus.CounterVec
 	forwardTime  *prometheus.HistogramVec
+	logRecords   *prometheus.CounterVec
+	output       io.Writer
+	outputMutex  sync.Mutex
 }
 
 // New builds the ingest.
@@ -180,7 +187,13 @@ func New(options Options) *Ingest {
 		}
 	}
 
+	output := options.Stdout
+	if output == nil {
+		output = os.Stdout
+	}
+
 	return &Ingest{
+		output:       output,
 		endpoints:    endpoints,
 		dropSession:  options.DropSessionIDFromMetrics,
 		allowContent: options.AllowContent,
@@ -205,13 +218,17 @@ func New(options Options) *Ingest {
 			Help:    "Time to forward one OTLP request to its backend, by signal.",
 			Buckets: prometheus.DefBuckets,
 		}, []string{"signal"}),
+		logRecords: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_otlp_ingest_log_records_total",
+			Help: "OTLP log records written to stdout, by result (written or failed).",
+		}, []string{"result"}),
 	}
 }
 
 // Collectors returns the ingest's metrics. Register them with the gateway's
 // metrics registry.
 func (i *Ingest) Collectors() []prometheus.Collector {
-	return []prometheus.Collector{i.requests, i.discarded, i.forwardErrs, i.forwardTime}
+	return []prometheus.Collector{i.requests, i.discarded, i.forwardErrs, i.forwardTime, i.logRecords}
 }
 
 // Register serves `POST /v1/<signal>` for every signal through handle, each
@@ -325,6 +342,12 @@ func (i *Ingest) serve(writer http.ResponseWriter, request *http.Request, signal
 	}
 
 	stamp(stamper{identity: identity, allowContent: i.allowContent, dropSessionID: i.dropSession})
+
+	if signal.name == SignalLogs && endpoint == StdoutOutput {
+		i.writeLogs(writer, signal, export.(plogotlp.ExportRequest), json)
+
+		return
+	}
 
 	encoded, err := export.MarshalProto()
 	if err != nil {
