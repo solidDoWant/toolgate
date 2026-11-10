@@ -46,10 +46,11 @@ claude plugin install toolgate@toolgate
 
 After the install from a shell, set the gateway URL with `/plugin configure toolgate@toolgate` in Claude Code. To change the URL later, use the same command.
 
-The plugin adds three things to Claude Code:
+The plugin adds these things to Claude Code:
 
 - An MCP server with the name `toolgate`, at the gateway URL followed by `/mcp`. Claude Code runs `toolgate headers` to get the headers for each connection.
 - A hook that runs `toolgate hook session-start` when a session starts.
+- Two hooks that run `toolgate hook stop` after each response and `toolgate hook session-end` when a session ends. They send the title of the session to the gateway, but only when your admin turned on usage telemetry for you. See [Session titles](#session-titles).
 - A skill that tells Claude how to use the gateway: list the servers first, turn on only the servers that the task needs, and turn them off when the task is done.
 
 ## Make sure that the plugin works
@@ -340,6 +341,12 @@ The workspace name is the value of the `TOOLGATE_WORKSPACE` environment variable
 ### Headers for telemetry
 
 If your admin sends Claude Code telemetry to the gateway, Claude Code runs `toolgate otel-headers`. This command prints two request headers as JSON: `Authorization` and `X-Toolgate-Workspace`. They are the same as in `toolgate headers`: a new access token, and the workspace name. It does not print a session ID and it does not wait for one. If you are not signed in, it shows "not signed in", prints no headers and exits with a non-zero code. Your access token must be valid for at least 5 minutes, because Claude Code runs the command only every 4 minutes.
+
+### Session titles
+
+When telemetry is on, the plugin also sends the title of each session to the gateway. Claude Code makes the title from your prompts and keeps it in the transcript of the session. The plugin reads it from there after each response and when the session ends. To change the title, run `/rename` in Claude Code. The new title is sent after your next response, or when you end the session.
+
+The gateway keeps titles only if your admin allows prompt content in the telemetry. Otherwise it throws them away. These hooks never print anything and never stop Claude Code. If the gateway cannot be reached, the plugin tries again after the next response.
 
 ### Sign in with a workload identity (SPIFFE)
 

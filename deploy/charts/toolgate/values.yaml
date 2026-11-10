@@ -154,6 +154,11 @@ config:
   # too high when sessions run at the same time with the same user, workspace
   # and model (see the telemetry guide).
   dropSessionIdFromMetrics: false
+  # -- Keep prompt and tool content, and session titles, in the OpenTelemetry
+  # data that clients send. Off: the gateway removes them. Turn it on only
+  # when the telemetry backend may hold user content (see the telemetry
+  # guide).
+  allowContent: false
 
   # -- How long a session can go without requests before the gateway ends it
   # and stops its per-session MCP servers, as a Go duration such as `2h`.

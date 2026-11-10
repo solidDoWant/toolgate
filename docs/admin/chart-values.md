@@ -8,6 +8,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| config.allowContent | bool | `false` | Keep prompt and tool content, and session titles, in the OpenTelemetry data that clients send. Off: the gateway removes them. Turn it on only when the telemetry backend may hold user content (see the telemetry guide). |
 | config.audit.payloads | bool | `false` | Store audit payloads: the arguments of each tool call and approval request, and each tool result. Payloads under 64 KiB go in PostgreSQL, larger ones in the S3 bucket. If true, `config.audit.s3.bucket` is required. |
 | config.audit.s3.accessKeyIDKey | string | `"accessKeyID"` | Key in `config.audit.s3.existingSecret` that holds the access key ID. |
 | config.audit.s3.bucket | string | `""` | S3 bucket for large audit payloads. Required when `config.audit.payloads` is true. |

@@ -135,3 +135,17 @@ The chart can install the dashboard "toolgate / Claude Code usage". Set `dashboa
 Claude Code can add prompts, tool inputs and tool results to its data. Users turn this on with `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` and `OTEL_LOG_TOOL_CONTENT`. By default the gateway removes that content before it forwards the data: the `tool.output` span events, the `claude_code.system_prompt` log records, and the attributes `prompt`, `prompt_text`, `response`, `tool_parameters`, `tool_input`, `full_command`, `bash_command`, `output`, `file_path`, `diff` and a few more. It also removes `error` from tool results, tool spans and MCP connection events, because it can quote tool content.
 
 Set `telemetry.allowContent` to `true` only when your backend may hold user prompts and tool content. The gateway then passes the content through. It still removes `user_prompt` and `user_system_prompt`, because their names start with `user_`.
+
+## Session titles
+
+Claude Code names each session only with a UUID. It also gives each session a title, for example "Fix the login redirect", and it keeps the title in the transcript of the session on the user's computer. A user can change the title with `/rename`.
+
+The toolgate plugin reads that title after each response and when a session ends. If the title changed, or if it was last sent more than 1 hour ago, the plugin sends it to the gateway as the gauge `toolgate.session.title`, with the labels `session.id` and `session.title`. The plugin sends titles only in sessions where the `telemetry` profile above turned on telemetry.
+
+Claude Code writes the title from the user's prompts, so the gateway treats it as content:
+
+- When `telemetry.allowContent` is `false` (the default), the gateway removes the title metric. Nothing reaches your backend.
+- When `telemetry.allowContent` is `true`, the gateway sets the verified `user.id`, `user.email` and `workspace.id` on the title metric and forwards it like the other metrics.
+- When `telemetry.dropSessionIdFromMetrics` is `true`, the gateway always removes the title metric, because a title without `session.id` cannot be matched to a session.
+
+The sessions tables of the usage dashboard show the title and the user next to each session. The dashboard matches a title to a session by `session.id` and `user.id` together. So a user can only set titles for their own sessions. A session with no title still shows, with an empty title.

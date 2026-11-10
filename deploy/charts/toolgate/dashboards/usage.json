@@ -655,7 +655,7 @@
       "id": 12,
       "type": "table",
       "title": "Sessions by tokens",
-      "description": "Tokens per session over the time range. Empty when the metrics keep no session.id (telemetry.dropSessionIdFromMetrics): then use the logs.",
+      "description": "Tokens per session over the time range, with the session's title and user. Titles need the gateway setting telemetry.allowContent. Empty when the metrics keep no session.id (telemetry.dropSessionIdFromMetrics): then use the logs.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -669,7 +669,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(50, sum by (\"session.id\") (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(50, (sum by (\"session.id\", \"user.id\", \"user.email\") (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])) * on (\"session.id\", \"user.id\") group_left (\"session.title\") (max by (\"session.id\", \"user.id\", \"session.title\") (topk by (\"session.id\", \"user.id\") (1, tlast_over_time({__name__=\"toolgate.session.title\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\"}[$__range]))) * 0 + 1)) or on (\"session.id\", \"user.id\") sum by (\"session.id\", \"user.id\", \"user.email\") (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -684,11 +684,20 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "user.id": true
             },
             "renameByName": {
+              "session.title": "Title",
               "session.id": "Session",
+              "user.email": "User",
               "Value": "Total"
+            },
+            "indexByName": {
+              "session.title": 0,
+              "user.email": 1,
+              "session.id": 2,
+              "Value": 3
             }
           }
         },
@@ -719,7 +728,7 @@
       "id": 13,
       "type": "table",
       "title": "Sessions by estimated cost",
-      "description": "Cost per session over the time range. Empty when the metrics keep no session.id (telemetry.dropSessionIdFromMetrics): then use the logs.",
+      "description": "Cost per session over the time range, with the session's title and user. Titles need the gateway setting telemetry.allowContent. Empty when the metrics keep no session.id (telemetry.dropSessionIdFromMetrics): then use the logs.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -733,7 +742,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(50, sum by (\"session.id\") (increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(50, (sum by (\"session.id\", \"user.id\", \"user.email\") (increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])) * on (\"session.id\", \"user.id\") group_left (\"session.title\") (max by (\"session.id\", \"user.id\", \"session.title\") (topk by (\"session.id\", \"user.id\") (1, tlast_over_time({__name__=\"toolgate.session.title\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\"}[$__range]))) * 0 + 1)) or on (\"session.id\", \"user.id\") sum by (\"session.id\", \"user.id\", \"user.email\") (increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -748,11 +757,20 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true
+              "Time": true,
+              "user.id": true
             },
             "renameByName": {
+              "session.title": "Title",
               "session.id": "Session",
+              "user.email": "User",
               "Value": "Total"
+            },
+            "indexByName": {
+              "session.title": 0,
+              "user.email": 1,
+              "session.id": 2,
+              "Value": 3
             }
           }
         },

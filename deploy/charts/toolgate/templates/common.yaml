@@ -118,6 +118,9 @@ settings from `config`.
 {{- if $config.dropSessionIdFromMetrics }}
 {{- $env = append $env (dict "name" "TOOLGATE_TELEMETRY_DROP_SESSION_ID_FROM_METRICS" "value" "true") }}
 {{- end }}
+{{- if $config.allowContent }}
+{{- $env = append $env (dict "name" "TOOLGATE_TELEMETRY_ALLOW_CONTENT" "value" "true") }}
+{{- end }}
 {{- with $config.mcpPublicURL }}
 {{- $env = append $env (dict "name" "TOOLGATE_MCP_PUBLIC_URL" "value" .) }}
 {{- end }}
