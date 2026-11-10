@@ -73,13 +73,13 @@ VictoriaMetrics stores OTLP metrics with their dotted names. The metrics are `cl
 
 Tokens in the last day, by type:
 
-```promql
+```metricsql
 sum by (type) (increase({__name__="claude_code.token.usage"}[1d]))
 ```
 
 Estimated cost in US dollars in the last day, by user:
 
-```promql
+```metricsql
 sum by ("user.email") (increase({__name__="claude_code.cost.usage"}[1d]))
 ```
 
@@ -87,7 +87,19 @@ Claude Code computes the cost at API list prices. It is an estimate and not a bi
 
 `increase` estimates the growth of a counter between its first and last sample in the window, and may add up to half a sample interval at each end. So it is exact only to within that estimate.
 
-A Prometheus backend that uses the default OTLP translation stores other names: `claude_code_token_usage_tokens_total` and `claude_code_cost_usage_USD_total`, with the labels `user_email`, `workspace_id`, `model`, `type` and `session_id`. Use `sum by (user_email) (increase(claude_code_cost_usage_USD_total[1d]))`, for example.
+A Prometheus backend that uses the default OTLP translation of Prometheus stores other names: `claude_code_token_usage_tokens_total` and `claude_code_cost_usage_USD_total`, with the labels `user_id`, `user_email`, `workspace_id` and `session_id` (and `model` and `type`). Use these queries there.
+
+Tokens in the last day, by type (`input`, `output`, `cacheRead`, `cacheCreation`):
+
+```promql
+sum by (user_id, user_email, workspace_id, session_id, type) (increase(claude_code_token_usage_tokens_total[1d]))
+```
+
+Cost in US dollars in the last day:
+
+```promql
+sum by (user_id, user_email, workspace_id, session_id) (increase(claude_code_cost_usage_USD_total[1d]))
+```
 
 ### Dashboard
 
