@@ -369,6 +369,97 @@ func TestUsageDashboardCountsNewSeriesFromZero(t *testing.T) {
 	}
 }
 
+type usagePanel struct {
+	Type        string `json:"type"`
+	Title       string `json:"title"`
+	FieldConfig struct {
+		Defaults struct {
+			Unit string `json:"unit"`
+		} `json:"defaults"`
+	} `json:"fieldConfig"`
+	Options struct {
+		Legend struct {
+			Calcs []string `json:"calcs"`
+		} `json:"legend"`
+	} `json:"options"`
+	Targets []struct {
+		Expr     string `json:"expr"`
+		Interval string `json:"interval"`
+	} `json:"targets"`
+}
+
+func loadUsagePanels(t *testing.T) []usagePanel {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join(chartDir, "dashboards", usageDashboard))
+	require.NoError(t, err)
+
+	var board struct {
+		Panels []usagePanel `json:"panels"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &board))
+
+	return board.Panels
+}
+
+// Claude Code exports metrics every minute. A coarser query interval puts
+// the newest point up to one interval in the past, so fresh usage is missing
+// from the time series for minutes, and short ranges show no point at all.
+func TestUsageDashboardTimeSeriesShowUsageWithinAMinute(t *testing.T) {
+	for _, panel := range loadUsagePanels(t) {
+		for _, target := range panel.Targets {
+			if !strings.Contains(target.Expr, "$__interval") {
+				continue
+			}
+
+			assert.Equal(t, "1m", target.Interval, panel.Title)
+		}
+	}
+}
+
+// Adding up a ratio's points gives a meaningless number (a cache read share
+// of 253%). Ratios are worked out once over the whole time range instead.
+func TestUsageDashboardNeverSumsRatios(t *testing.T) {
+	ratios := 0
+
+	for _, panel := range loadUsagePanels(t) {
+		if panel.FieldConfig.Defaults.Unit != "percentunit" {
+			continue
+		}
+
+		ratios++
+
+		assert.NotContains(t, panel.Options.Legend.Calcs, "sum", panel.Title)
+
+		for _, target := range panel.Targets {
+			assert.NotContains(t, target.Expr, "$__interval", panel.Title)
+			assert.Contains(t, target.Expr, "[$__range]", panel.Title)
+		}
+	}
+
+	assert.NotZero(t, ratios, "the usage dashboard shows the cache read share")
+}
+
+// Daily cost bars show nothing on a range shorter than a day, so the cost
+// over the selected range is shown too.
+func TestUsageDashboardShowsCostOverTheRange(t *testing.T) {
+	found := false
+
+	for _, panel := range loadUsagePanels(t) {
+		if panel.Type != "stat" || panel.FieldConfig.Defaults.Unit != "currencyUSD" {
+			continue
+		}
+
+		for _, target := range panel.Targets {
+			if strings.Contains(target.Expr, "claude_code.cost.usage") && strings.Contains(target.Expr, "[$__range]") {
+				found = true
+			}
+		}
+	}
+
+	assert.True(t, found)
+}
+
 func TestOverviewLinksToUsageDashboard(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(chartDir, "dashboards", "overview.json"))
 	require.NoError(t, err)
