@@ -396,3 +396,24 @@ func TestRemoteServers(t *testing.T) {
 		}
 	})
 }
+
+func TestSearchModeEnablesAStoppedRemoteServer(t *testing.T) {
+	fixture := newRemoteFixture(t, "alice-key")
+	fixture.setSecret(t, "alice", "alice-key")
+
+	client := fixture.connectObserved(t, searching(alice()))
+	assert.Contains(t, toolNames(t, client.session), gateway.ToolEnableServer)
+	assert.Contains(t, toolNames(t, client.session), gateway.ToolDisableServer)
+
+	found, _ := findTools(t, client.session, "echo text", 0)
+	assert.NotContains(t, foundNames(found), "mail-archiver__echo", "a server with no instance has no searchable tools")
+
+	fixture.enableWithTools(t, client, remoteServer, "user:alice", "echo")
+
+	found, _ = findTools(t, client.session, "echo text", 0)
+	assert.Contains(t, foundNames(found), "mail-archiver__echo")
+
+	result := callTool(t, client.session, "mail-archiver__echo", map[string]any{"text": "hello"})
+	require.False(t, result.IsError, resultText(result))
+	assert.Equal(t, "hello", resultText(result))
+}

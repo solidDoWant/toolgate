@@ -10,7 +10,7 @@ The header only changes which tools Claude lists. It never changes what you are 
 
 ## What Claude sees
 
-In search mode, the tool list holds the toolgate tools, `toolgate_find_tools`, the tools of the servers you enabled, and the tools Claude found. In search mode, `toolgate_enable_server` and `toolgate_disable_server` are not listed, because a call to a tool turns the server on. If the rules block a server in your workspace, Claude calls one of its tools to ask you for access, or uses `toolgate_allow`. Outside search mode, `toolgate_find_tools` is not listed. A call of it fails with "Tool search is off for this session."
+In search mode, the tool list holds the toolgate tools, `toolgate_find_tools`, the tools of the servers you enabled, and the tools Claude found. A call to a tool of an allowed server turns the server on. If a server is stopped, or search finds none of its tools yet, Claude calls `toolgate_enable_server` and searches again. If the rules block a server in your workspace, Claude calls one of its tools to ask you for access, or uses `toolgate_allow`. Outside search mode, `toolgate_find_tools` is not listed. A call of it fails with "Tool search is off for this session."
 
 ## How a search works
 

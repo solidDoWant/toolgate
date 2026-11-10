@@ -158,11 +158,11 @@ func (s catalogSummary) findToolsDescription() string {
 		base = "Search the tools of: " + names + ". Search by what you want to do. The tools it returns are added to your tool list."
 	}
 
-	return base
+	return base + " If a server is stopped, or search finds none of its tools yet, call toolgate_enable_server for it, then search again."
 }
 
 func (s catalogSummary) listServersDescription() string {
-	base := "List the MCP servers you can enable, with their scope, status and whether they are enabled in this session."
+	base := "List the MCP servers you can enable, with their scope, status and whether they are enabled in this session. For a server that is stopped, call toolgate_enable_server."
 	if names := s.serverNames(); names != "" {
 		base += " Servers you can use now: " + names + "."
 	}

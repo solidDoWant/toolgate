@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Removed
+
+- The chart value `config.metaTools.enableDisable` and the gateway setting `metaToolsEnableDisable` (`TOOLGATE_META_TOOLS_ENABLE_DISABLE`). Sessions now always list `toolgate_enable_server` and `toolgate_disable_server`. The gateway and the chart ignore the old setting, and the gateway logs one warning at startup if it is set.
+
 ## 0.4.8
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release gives every page of the web UI the same new layout. It also fixes the sign-in with Authentik and stops duplicate tool list messages to Claude Code. There are no upgrade steps for admins.

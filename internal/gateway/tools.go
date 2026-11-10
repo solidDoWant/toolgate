@@ -334,7 +334,7 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 		if method == "tools/list" && err == nil {
 			if extra := request.GetExtra(); extra != nil && extra.TokenInfo != nil {
 				if current, ok := extra.TokenInfo.Extra[requestContextKey].(requestContext); ok {
-					hideMetaTools(result, hiddenMetaTools(current.searchMode, m.enableDisable))
+					hideMetaTools(result, hiddenMetaTools(current.searchMode))
 				}
 			}
 		}
@@ -344,34 +344,15 @@ func (m *metaTools) syncOnList(next mcp.MethodHandler) mcp.MethodHandler {
 }
 
 // hiddenMetaTools returns the meta tools a session in the given mode doesn't
-// list: toolgate_find_tools outside search mode, and the enable and disable
-// tools as the setting says.
-func hiddenMetaTools(searchMode bool, enableDisable string) map[string]bool {
+// list: toolgate_find_tools outside search mode.
+func hiddenMetaTools(searchMode bool) map[string]bool {
 	hidden := map[string]bool{}
 
 	if !searchMode {
 		hidden[ToolFindTools] = true
 	}
 
-	if enableDisableHidden(searchMode, enableDisable) {
-		hidden[ToolEnableServer] = true
-		hidden[ToolDisableServer] = true
-	}
-
 	return hidden
-}
-
-// enableDisableHidden reports whether the enable and disable tools are
-// hidden in the mode under the setting.
-func enableDisableHidden(searchMode bool, setting string) bool {
-	switch setting {
-	case "always":
-		return false
-	case "never":
-		return true
-	default:
-		return searchMode
-	}
 }
 
 // hideMetaTools removes the hidden tools from a tools/list result.

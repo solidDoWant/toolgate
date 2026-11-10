@@ -4,15 +4,11 @@ Tool search lets a session find tools by describing a task, instead of listing e
 
 ## Enable and disable tools
 
-In search mode, a call to a tool of an allowed server turns the server on. The tools `toolgate_enable_server` and `toolgate_disable_server` add little there, so the gateway does not list them. The setting `config.metaTools.enableDisable` decides this:
+Every session lists `toolgate_enable_server` and `toolgate_disable_server`, with tool search on or off. In search mode, a call to a tool of an allowed server turns the server on. But a server whose tools search cannot find yet is a dead end without an enable tool. This happens with a remote server that declares no tools (`declaredTools`) when the user's instance is stopped, for example after `idleStop`. The model then calls `toolgate_enable_server` to start the server, and searches again.
 
-| Value | Meaning |
-|---|---|
-| `auto` | The default. The tools are listed when tool search is off, and hidden when it is on. |
-| `always` | The tools are listed in every mode. Use this to get the old behavior back. |
-| `never` | The tools are listed in no mode. |
+If a server is not allowed in the workspace, a call to one of its tools asks the user for access. Search results never ask by themselves.
 
-The mode is set for each session, so a session that changes mode gets a new tool list. A call to a hidden tool fails with a message that tells the model to call the tool it needs. If a server is not allowed in the workspace, a call to one of its tools asks the user for access. Search results never ask by themselves.
+The old setting `config.metaTools.enableDisable` is gone. The chart ignores it. If the gateway still gets `metaToolsEnableDisable` or `TOOLGATE_META_TOOLS_ENABLE_DISABLE`, it ignores the value and logs one warning at startup.
 
 By default, search matches words. It stems the words of the task, adds a short list of general synonyms (for example "folder" and "directory"), and ranks tools in PostgreSQL. You do not need to set up anything for this.
 
