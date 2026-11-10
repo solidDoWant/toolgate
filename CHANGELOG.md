@@ -1,17 +1,41 @@
 # Changelog
 
-## Unreleased
+## 0.4.9
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release lets the gateway send Claude Code telemetry to your backends without an OpenTelemetry collector. It also removes one chart value, so read the upgrade notes before you upgrade.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.9`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.9`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+- Breaking change: remove the chart value `config.metaTools.enableDisable` from your values, and the gateway setting `metaToolsEnableDisable` (`TOOLGATE_META_TOOLS_ENABLE_DISABLE`) if you set it yourself. Sessions now always list `toolgate_enable_server` and `toolgate_disable_server`, also in tool search mode, so the setting has no use. If you set it to hide the two tools, they now show. The chart ignores the old value. The gateway ignores the old setting and logs one warning at startup if it is set. See `docs/admin/tool-search.md`. ([#593](https://github.com/solidDoWant/toolgate/pull/593))
 
 ### Removed
 
-- The chart value `config.metaTools.enableDisable` and the gateway setting `metaToolsEnableDisable` (`TOOLGATE_META_TOOLS_ENABLE_DISABLE`). Sessions now always list `toolgate_enable_server` and `toolgate_disable_server`. The gateway and the chart ignore the old setting, and the gateway logs one warning at startup if it is set.
+- The chart value `config.metaTools.enableDisable` and the gateway setting `metaToolsEnableDisable` (`TOOLGATE_META_TOOLS_ENABLE_DISABLE`). Sessions now always list `toolgate_enable_server` and `toolgate_disable_server`. The gateway and the chart ignore the old setting, and the gateway logs one warning at startup if it is set. ([#593](https://github.com/solidDoWant/toolgate/pull/593))
 
-## 0.4.9
+### Servers and sessions
+
+- When a server is stopped, or tool search cannot find its tools yet, the descriptions of `toolgate_list_servers` and `toolgate_find_tools` now tell the model to call `toolgate_enable_server`. ([#593](https://github.com/solidDoWant/toolgate/pull/593))
 
 ### Telemetry
 
-- The gateway now sends metrics, logs and traces to separate backends (`otlp.metricsEndpoint`, `otlp.logsEndpoint`, `otlp.tracesEndpoint`), so you need no OpenTelemetry collector. It can also remove `session.id` from metrics, and the chart has a new Claude Code usage dashboard. See `docs/admin/telemetry.md`.
-- Set `otlp.logsEndpoint` to `stdout` to write the log records of Claude Code to the gateway's standard output as JSON lines, for your cluster's log pipeline to collect.
+- The gateway now sends metrics, logs and traces to separate backends (`otlp.metricsEndpoint`, `otlp.logsEndpoint`, `otlp.tracesEndpoint`), so you need no OpenTelemetry collector. It can also remove `session.id` from metrics, and the chart has a new Claude Code usage dashboard. See `docs/admin/telemetry.md`. ([#595](https://github.com/solidDoWant/toolgate/pull/595))
+- Set `otlp.logsEndpoint` to `stdout` to write the log records of Claude Code to the gateway's standard output as JSON lines, for your cluster's log pipeline to collect. ([#597](https://github.com/solidDoWant/toolgate/pull/597))
+
+### Web UI
+
+- The access request page, the audit event page and the "sign-in failed" page now use the same layout as the other pages. Forms are a little more compact. ([#591](https://github.com/solidDoWant/toolgate/pull/591))
+
+Internal work: the web UI no longer loads the old global form stylesheet ([#591](https://github.com/solidDoWant/toolgate/pull/591)).
+
+### Known issues
+
+- Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
+- `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
 
 ## 0.4.8
 
@@ -45,8 +69,6 @@ Internal work: the web UI stylesheet is now built with the Tailwind CSS standalo
 
 - Sessions that enabled a template named `toolgate` before the upgrade to 0.4 cannot call the built-in tools until the session restarts.
 - `govulncheck ./...` reports [GO-2026-6865](https://pkg.go.dev/vuln/GO-2026-6865) in `github.com/klauspost/compress` v1.20.1 and [GO-2026-6253](https://pkg.go.dev/vuln/GO-2026-6253) in `github.com/moby/go-archive` v0.2.0. Only the test helpers in `internal/testutil` use these modules, through testcontainers and envtest. The `toolgate` command and the gateway image do not contain them, and `govulncheck ./cmd/...` finds no vulnerabilities.
-||||||| parent of 5478ee3 (refactor(ui): remove the old global form CSS and convert the last pages)
-- When a sign-in fails because the IdP did not ask for a fresh sign-in, or because the browser lost the sign-in cookie, the web UI now starts a new sign-in one time instead of showing an error page. A fresh sign-in now sends `max_age=60` instead of `max_age=0`, so Authentik asks the user to sign in again. A failed sign-in now shows a web UI page with a "Sign in again" button.
 
 ## 0.4.7
 
