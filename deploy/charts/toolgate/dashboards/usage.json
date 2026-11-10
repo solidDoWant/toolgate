@@ -131,7 +131,7 @@
         "x": 0,
         "y": 1,
         "w": 12,
-        "h": 8
+        "h": 12
       },
       "targets": [
         {
@@ -142,7 +142,7 @@
             "uid": "${datasource}"
           },
           "legendFormat": "{{type}}",
-          "interval": "5m"
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -185,7 +185,7 @@
         "x": 12,
         "y": 1,
         "w": 12,
-        "h": 8
+        "h": 12
       },
       "targets": [
         {
@@ -196,7 +196,7 @@
             "uid": "${datasource}"
           },
           "legendFormat": "{{model}}",
-          "interval": "5m"
+          "interval": "1m"
         }
       ],
       "fieldConfig": {
@@ -228,66 +228,112 @@
     },
     {
       "id": 4,
-      "type": "timeseries",
+      "type": "stat",
       "title": "Cache read share",
-      "description": "cacheRead \u00f7 (input + cacheRead + cacheCreation). A high share means the prompt cache saves input tokens.",
+      "description": "cacheRead \u00f7 (input + cacheRead + cacheCreation) over the time range of the dashboard. A high share means the prompt cache saves input tokens.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
         "x": 0,
-        "y": 9,
-        "w": 12,
+        "y": 13,
+        "w": 6,
         "h": 8
       },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=\"cacheRead\"}[$__interval])) / sum(increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[$__interval]))",
+          "expr": "sum(increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=\"cacheRead\"}[$__range])) / sum(increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[$__range]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "legendFormat": "cache read share",
-          "interval": "1h"
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
-          "custom": {
-            "fillOpacity": 10,
-            "lineWidth": 1
-          }
+          "decimals": 1,
+          "min": 0,
+          "max": 1
         },
         "overrides": []
       },
       "options": {
-        "legend": {
-          "displayMode": "table",
-          "placement": "bottom",
+        "reduceOptions": {
           "calcs": [
-            "sum"
-          ]
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi"
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
+      }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Estimated cost",
+      "description": "Over the time range of the dashboard. Claude Code's own estimate at API list prices, in US dollars. It is not a bill.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 13,
+        "w": 6,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range]))",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "instant": true,
+          "range": false
         }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value"
       }
     },
     {
       "id": 5,
       "type": "timeseries",
       "title": "Estimated cost per day",
-      "description": "Claude Code's own estimate at API list prices, in US dollars. It is not a bill.",
+      "description": "One bar per day. Claude Code's own estimate at API list prices, in US dollars. It is not a bill. On ranges shorter than a day, read the Estimated cost panel instead.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
         "x": 12,
-        "y": 9,
+        "y": 13,
         "w": 12,
         "h": 8
       },
@@ -334,7 +380,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 17,
+        "y": 21,
         "w": 24,
         "h": 1
       },
@@ -351,7 +397,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 18,
+        "y": 22,
         "w": 12,
         "h": 8
       },
@@ -414,7 +460,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 18,
+        "y": 22,
         "w": 12,
         "h": 8
       },
@@ -477,7 +523,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 26,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -540,7 +586,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 26,
+        "y": 30,
         "w": 12,
         "h": 8
       },
@@ -599,7 +645,7 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 34,
+        "y": 38,
         "w": 24,
         "h": 1
       },
@@ -616,7 +662,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 35,
+        "y": 39,
         "w": 12,
         "h": 8
       },
@@ -680,7 +726,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 35,
+        "y": 39,
         "w": 12,
         "h": 8
       },
