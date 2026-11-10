@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.11
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release shows the title of each Claude Code session on the usage dashboard, and fixes several panels of that dashboard. No upgrade steps are needed. Users get the new hooks when they update the plugin.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.11`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.11`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Telemetry
+
+- The sessions tables of the usage dashboard now show the title and the user of each session, next to its ID. The plugin reads the title that Claude Code gives each session (or the name you set with `/rename`) and sends it to the gateway after each response and when the session ends. It sends titles only when telemetry is on. A title is made from your prompts, so the gateway keeps it only when `telemetry.allowContent` is `true` (new chart value: `config.allowContent`). See "Session titles" in `docs/admin/telemetry.md`. ([#604](https://github.com/solidDoWant/toolgate/pull/604))
+
+### Fixes
+
+- The token charts of the usage dashboard now show new usage within about a minute. Before, they could lag by up to 5 minutes. ([#602](https://github.com/solidDoWant/toolgate/pull/602))
+- "Cache read share" on the usage dashboard is now one value for the selected time range. Before, its legend added up the hourly values and could show more than 100%. ([#602](https://github.com/solidDoWant/toolgate/pull/602))
+- The usage dashboard has a new "Estimated cost" panel for the selected time range, so short ranges show a cost too. The token charts are taller, so their legends show every token type. ([#602](https://github.com/solidDoWant/toolgate/pull/602))
+
+Internal: chart tests check the dashboard's query intervals, ratios, cost panel and title join.
+
 ## 0.4.10
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes the Claude Code usage dashboard, which showed far too few tokens. No upgrade steps are needed.
