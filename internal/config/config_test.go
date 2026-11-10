@@ -388,9 +388,15 @@ instanceLimit: -1
 			wantProblems: []string{`TOOLGATE_AUDIT_PAYLOADS: "maybe" is not true or false`},
 		},
 		{
-			name:         "OTLP ingest without an endpoint",
+			name:         "OTLP ingest without an endpoint discards the data",
 			file:         "otlpIngest: true\n",
-			wantProblems: []string{"otlpEndpoint: required when otlpIngest is true"},
+			wantAbsent:   []string{"otlpEndpoint"},
+			wantProblems: []string{"databaseURL: required"},
+		},
+		{
+			name:         "invalid per-signal endpoint",
+			file:         "otlp.logsEndpoint: victoria-logs:9428\n",
+			wantProblems: []string{`otlp.logsEndpoint: "victoria-logs:9428" is not an http or https URL`},
 		},
 		{
 			name:         "OTLP ingest with an endpoint",
@@ -649,4 +655,24 @@ func TestLoadIgnoresTheRemovedEnableDisableSetting(t *testing.T) {
 		_, err = config.Load(path, envFrom(env))
 		require.ErrorContains(t, err, "noSuchSetting")
 	})
+}
+
+func TestOTLPEndpointForFallsBackToOTLPEndpoint(t *testing.T) {
+	path := writeFile(t, `otlpEndpoint: http://collector:4318
+otlp.metricsEndpoint: http://vm:8428/opentelemetry
+telemetry.dropSessionIdFromMetrics: true
+`)
+	cfg, err := config.Load(path, envFrom(map[string]string{
+		"TOOLGATE_DATABASE_URL":       validDatabaseURL,
+		"TOOLGATE_OIDC_ISSUER_URL":    "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":      "toolgate",
+		"TOOLGATE_OTLP_LOGS_ENDPOINT": "http://vl:9428/insert/opentelemetry",
+	}))
+	require.NoError(t, err)
+
+	assert.Equal(t, "http://vm:8428/opentelemetry", cfg.OTLPEndpointFor("metrics"))
+	assert.Equal(t, "http://vl:9428/insert/opentelemetry", cfg.OTLPEndpointFor("logs"))
+	assert.Equal(t, "http://collector:4318", cfg.OTLPEndpointFor("traces"), "an unset signal uses otlpEndpoint")
+	assert.True(t, cfg.TelemetryDropSessionIDFromMetrics)
+	assert.False(t, config.Default().TelemetryDropSessionIDFromMetrics)
 }

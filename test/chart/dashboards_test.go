@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -19,6 +20,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 	"github.com/solidDoWant/toolgate/internal/runtime"
+	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
 )
 
 var dashboardUIDs = map[string]string{
@@ -27,6 +29,10 @@ var dashboardUIDs = map[string]string{
 	"tool-search.json": "toolgate-tool-search",
 	"platform.json":    "toolgate-platform",
 }
+
+// usageDashboard reads the OTLP metrics that clients send, not the gateway's
+// own metrics, so it has its own variables and its own metric names.
+const usageDashboard = "usage.json"
 
 type dashboard struct {
 	UID        string   `json:"uid"`
@@ -116,6 +122,10 @@ func registeredMetricNames(t *testing.T) map[string]bool {
 		add(collector)
 	}
 
+	for _, collector := range ingest.New(ingest.Options{}).Collectors() {
+		add(collector)
+	}
+
 	add(opsmetrics.BuildInfo())
 	add(opsmetrics.PoolCollector(fakePool{}))
 	add(collectors.NewGoCollector())
@@ -135,7 +145,7 @@ func metricNames(expression string) []string {
 
 func TestDashboardsAreValidAndComplete(t *testing.T) {
 	loaded := loadDashboards(t)
-	require.Len(t, loaded, len(dashboardUIDs))
+	require.Len(t, loaded, len(dashboardUIDs)+1)
 
 	for file, uid := range dashboardUIDs {
 		board, ok := loaded[file]
@@ -172,6 +182,10 @@ func TestDashboardQueriesUseRegisteredMetrics(t *testing.T) {
 	used := map[string]bool{}
 
 	for file, board := range loadDashboards(t) {
+		if file == usageDashboard {
+			continue
+		}
+
 		for _, panel := range board.Panels {
 			for _, target := range panel.Targets {
 				for _, name := range metricNames(target.Expr) {
@@ -191,6 +205,9 @@ func TestDashboardQueriesUseRegisteredMetrics(t *testing.T) {
 	sort.Strings(sorted)
 	assert.Contains(t, sorted, "toolgate_tool_search_total")
 	assert.Contains(t, sorted, "toolgate_leader")
+	assert.Contains(t, sorted, "toolgate_otlp_ingest_requests_total")
+	assert.Contains(t, sorted, "toolgate_otlp_ingest_discarded_total")
+	assert.Contains(t, sorted, "toolgate_otlp_ingest_forward_duration_seconds_bucket")
 }
 
 // Metrics have no label for a user, session, workspace or tool, and the
@@ -201,6 +218,10 @@ func TestDashboardQueriesKeepSeriesCardinalityBounded(t *testing.T) {
 	serverGrouping := regexp.MustCompile(`by \([^)]*\bserver\b`)
 
 	for file, board := range loadDashboards(t) {
+		if file == usageDashboard {
+			continue
+		}
+
 		for _, panel := range board.Panels {
 			for _, target := range panel.Targets {
 				assert.False(t, missingLabel.MatchString(target.Expr), "%s: %s", file, target.Expr)
@@ -244,7 +265,19 @@ func TestDashboardsRenderAsConfigMaps(t *testing.T) {
 		}
 	}
 
-	assert.ElementsMatch(t, []string{"overview.json", "servers.json", "tool-search.json", "platform.json"}, found)
+	assert.ElementsMatch(t, []string{"overview.json", "servers.json", "tool-search.json", "platform.json"}, found,
+		"the usage dashboard is off by default")
+
+	withUsage := renderQuickStart(t, "--set", "dashboards.enabled=true", "--set", "dashboards.usage.enabled=true")
+	usage := 0
+
+	for _, config := range ofKind(withUsage, "ConfigMap") {
+		if _, ok := config.Metadata.Labels["grafana_dashboard"]; ok && strings.HasSuffix(config.Metadata.Name, "-usage") {
+			usage++
+		}
+	}
+
+	assert.Equal(t, 1, usage)
 
 	custom := renderQuickStart(t, "--set", "dashboards.enabled=true", "--set", "dashboards.labelKey=grafana", "--set", "dashboards.labelValue=yes")
 	labelled := 0
@@ -294,4 +327,47 @@ func TestDashboardsRenderAsGrafanaOperatorResources(t *testing.T) {
 	for _, candidate := range manifests {
 		assert.False(t, candidate.Kind == "ConfigMap" && candidate.Metadata.Labels["grafana_dashboard"] != "", "operator mode makes no sidecar ConfigMaps")
 	}
+}
+
+func TestUsageDashboardHasItsVariablesAndNoGatewayMetrics(t *testing.T) {
+	board, ok := loadDashboards(t)[usageDashboard]
+	require.True(t, ok)
+	assert.Equal(t, "toolgate-usage", board.UID)
+
+	variables := map[string]string{}
+	for _, variable := range board.Templating.List {
+		variables[variable.Name] = variable.Type
+	}
+
+	assert.Equal(t, map[string]string{"datasource": "datasource", "user": "query", "workspace": "query", "model": "query"}, variables)
+
+	for _, panel := range board.Panels {
+		if panel.Type == "row" {
+			continue
+		}
+
+		for _, target := range panel.Targets {
+			assert.Contains(t, target.Expr, "claude_code.", panel.Title)
+		}
+	}
+}
+
+func TestOverviewLinksToUsageDashboard(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join(chartDir, "dashboards", "overview.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), "/d/toolgate-usage")
+}
+
+func TestChartPassesPerSignalOTLPSettings(t *testing.T) {
+	env := gatewayEnv(t, renderQuickStart(t,
+		"--set", "config.otlpIngest=true",
+		"--set", "config.otlpMetricsEndpoint=http://vm:8428/opentelemetry",
+		"--set", "config.otlpLogsEndpoint=http://vl:9428/insert/opentelemetry",
+		"--set", "config.dropSessionIdFromMetrics=true"))
+
+	assert.Equal(t, "http://vm:8428/opentelemetry", env["TOOLGATE_OTLP_METRICS_ENDPOINT"])
+	assert.Equal(t, "http://vl:9428/insert/opentelemetry", env["TOOLGATE_OTLP_LOGS_ENDPOINT"])
+	assert.Equal(t, "true", env["TOOLGATE_OTLP_INGEST"])
+	assert.Equal(t, "true", env["TOOLGATE_TELEMETRY_DROP_SESSION_ID_FROM_METRICS"])
+	assert.NotContains(t, env, "TOOLGATE_OTLP_TRACES_ENDPOINT")
 }

@@ -480,9 +480,14 @@ func registerOTLPIngest(server *gateway.Server, cfg config.Config, authenticator
 	}
 
 	otlp := ingest.New(ingest.Options{
-		Endpoint:     cfg.OTLPEndpoint,
-		AllowContent: cfg.TelemetryAllowContent,
-		Logger:       logger,
+		Endpoints: map[string]string{
+			ingest.SignalMetrics: cfg.OTLPEndpointFor("metrics"),
+			ingest.SignalLogs:    cfg.OTLPEndpointFor("logs"),
+			ingest.SignalTraces:  cfg.OTLPEndpointFor("traces"),
+		},
+		DropSessionIDFromMetrics: cfg.TelemetryDropSessionIDFromMetrics,
+		AllowContent:             cfg.TelemetryAllowContent,
+		Logger:                   logger,
 	})
 	otlp.Register(server.Handle, func(next http.Handler) http.Handler {
 		return authenticator.Middleware(next, false)

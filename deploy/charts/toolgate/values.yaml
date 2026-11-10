@@ -126,9 +126,31 @@ config:
     # `error`.
     level: info
 
-  # -- OTLP/HTTP endpoint for the gateway's traces, such as
-  # `http://otel-collector:4318`. Empty turns trace export off.
+  # -- OTLP/HTTP base URL for all three kinds of OpenTelemetry data, such as
+  # `http://otel-collector:4318`. It fills in any of `otlpMetricsEndpoint`,
+  # `otlpLogsEndpoint` and `otlpTracesEndpoint` that is empty.
   otlpEndpoint: ""
+  # -- OTLP/HTTP base URL for metrics, such as
+  # `http://victoria-metrics:8428/opentelemetry`. The gateway adds
+  # `/v1/metrics`. Empty and no `otlpEndpoint`: the gateway discards metrics
+  # that clients send.
+  otlpMetricsEndpoint: ""
+  # -- OTLP/HTTP base URL for logs, such as
+  # `http://victoria-logs:9428/insert/opentelemetry`. The gateway adds
+  # `/v1/logs`. Empty and no `otlpEndpoint`: the gateway discards logs that
+  # clients send.
+  otlpLogsEndpoint: ""
+  # -- OTLP/HTTP base URL for traces, including the gateway's own. The
+  # gateway adds `/v1/traces`. Empty and no `otlpEndpoint`: the gateway
+  # exports no traces and discards traces that clients send.
+  otlpTracesEndpoint: ""
+  # -- Accept OpenTelemetry data from signed-in Claude Code clients at
+  # `/v1/traces`, `/v1/metrics` and `/v1/logs`, and send it to the endpoints
+  # above. See `docs/admin/telemetry.md`.
+  otlpIngest: false
+  # -- Remove `session.id` from metric data points, so the metrics backend
+  # stores a bounded set of series. Logs and traces keep it.
+  dropSessionIdFromMetrics: false
 
   # -- How long a session can go without requests before the gateway ends it
   # and stops its per-session MCP servers, as a Go duration such as `2h`.
@@ -563,3 +585,9 @@ dashboards:
     # -- Namespaces whose Grafana instances may load the dashboards:
     # `allowCrossNamespaceImport`.
     allowCrossNamespaceImport: false
+  usage:
+    # -- Also create the "toolgate / Claude Code usage" dashboard. It needs
+    # `config.otlpIngest` and a metrics backend, such as VictoriaMetrics, that
+    # the Grafana data source reads. Needs `dashboards.enabled` or
+    # `dashboards.grafanaOperator.enabled`.
+    enabled: false

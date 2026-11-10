@@ -79,7 +79,16 @@
   "annotations": {
     "list": []
   },
-  "links": [],
+  "links": [
+    {
+      "title": "Claude Code usage",
+      "type": "link",
+      "url": "/d/toolgate-usage",
+      "icon": "dashboard",
+      "targetBlank": false,
+      "tooltip": "Tokens and estimated cost. Needs dashboards.usage.enabled."
+    }
+  ],
   "panels": [
     {
       "id": 1,

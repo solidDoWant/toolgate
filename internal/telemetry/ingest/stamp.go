@@ -74,6 +74,8 @@ const attributeError = "error"
 type stamper struct {
 	identity     auth.Identity
 	allowContent bool
+	// dropSessionID removes `session.id` from metric data points.
+	dropSessionID bool
 }
 
 // normalizeKey replaces every character outside [A-Za-z0-9] with `_` and
@@ -205,33 +207,51 @@ func (s stamper) metric(metric pmetric.Metric) {
 	case pmetric.MetricTypeGauge:
 		points := metric.Gauge().DataPoints()
 		for index := range points.Len() {
-			s.record(points.At(index).Attributes())
+			s.metricPoint(points.At(index).Attributes())
 			exemplars(points.At(index).Exemplars())
 		}
 	case pmetric.MetricTypeSum:
 		points := metric.Sum().DataPoints()
 		for index := range points.Len() {
-			s.record(points.At(index).Attributes())
+			s.metricPoint(points.At(index).Attributes())
 			exemplars(points.At(index).Exemplars())
 		}
 	case pmetric.MetricTypeHistogram:
 		points := metric.Histogram().DataPoints()
 		for index := range points.Len() {
-			s.record(points.At(index).Attributes())
+			s.metricPoint(points.At(index).Attributes())
 			exemplars(points.At(index).Exemplars())
 		}
 	case pmetric.MetricTypeExponentialHistogram:
 		points := metric.ExponentialHistogram().DataPoints()
 		for index := range points.Len() {
-			s.record(points.At(index).Attributes())
+			s.metricPoint(points.At(index).Attributes())
 			exemplars(points.At(index).Exemplars())
 		}
 	case pmetric.MetricTypeSummary:
 		points := metric.Summary().DataPoints()
 		for index := range points.Len() {
-			s.record(points.At(index).Attributes())
+			s.metricPoint(points.At(index).Attributes())
 		}
 	case pmetric.MetricTypeEmpty:
+	}
+
+	if s.dropSessionID {
+		mergeDuplicatePoints(metric)
+	}
+}
+
+// attributeSessionID is the client's session label, which the gateway can
+// remove from metric data points.
+const attributeSessionID = "session.id"
+
+// metricPoint stamps a metric data point's attributes, and removes the
+// session label when configured.
+func (s stamper) metricPoint(attributes pcommon.Map) {
+	s.record(attributes)
+
+	if s.dropSessionID {
+		attributes.Remove(attributeSessionID)
 	}
 }
 

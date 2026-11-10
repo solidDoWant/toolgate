@@ -107,6 +107,17 @@ settings from `config`.
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}
 {{- end }}
+{{- range $setting, $name := dict "otlpMetricsEndpoint" "TOOLGATE_OTLP_METRICS_ENDPOINT" "otlpLogsEndpoint" "TOOLGATE_OTLP_LOGS_ENDPOINT" "otlpTracesEndpoint" "TOOLGATE_OTLP_TRACES_ENDPOINT" }}
+{{- with index $config $setting }}
+{{- $env = append $env (dict "name" $name "value" .) }}
+{{- end }}
+{{- end }}
+{{- if $config.otlpIngest }}
+{{- $env = append $env (dict "name" "TOOLGATE_OTLP_INGEST" "value" "true") }}
+{{- end }}
+{{- if $config.dropSessionIdFromMetrics }}
+{{- $env = append $env (dict "name" "TOOLGATE_TELEMETRY_DROP_SESSION_ID_FROM_METRICS" "value" "true") }}
+{{- end }}
 {{- with $config.mcpPublicURL }}
 {{- $env = append $env (dict "name" "TOOLGATE_MCP_PUBLIC_URL" "value" .) }}
 {{- end }}
