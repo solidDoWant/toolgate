@@ -27,7 +27,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.database.migrationUrl | string | `""` | The connection string of the database role that owns the tables, inline. Use it only for a string with no password. The value ends up in the Job spec and in the Helm release. Set at most one of this and `config.database.migrationSecret`; the Job renders as for the Secret. |
 | config.database.secretKey | string | `"url"` | Key in `config.database.existingSecret` that holds the connection string. |
 | config.database.url | string | `""` | The PostgreSQL connection string, inline. Use it only for a string with no password, such as client-certificate or token authentication. The value ends up in the Deployment spec and in the Helm release, where anyone who can read them sees it. Set exactly one of this and `config.database.existingSecret`. |
-| config.dropSessionIdFromMetrics | bool | `false` | Remove `session.id` from metric data points, so the metrics backend stores a bounded set of series. Logs and traces keep it. |
+| config.dropSessionIdFromMetrics | bool | `false` | Remove `session.id` from metric data points, so the metrics backend stores a bounded set of series. Logs and traces keep it. Totals come out too high when sessions run at the same time with the same user, workspace and model (see the telemetry guide). |
 | config.extraEnv | list | `[]` | More environment variables for the gateway container, as a list of Kubernetes `EnvVar` objects. |
 | config.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | config.image.repository | string | `"ghcr.io/soliddowant/toolgate"` | Gateway image repository. |

@@ -56,6 +56,8 @@ The field names depend on your node agent. Adjust the prefix to match.
 
 Every session adds a new `session.id` value, so a metrics backend stores a new series for each session. Set `telemetry.dropSessionIdFromMetrics` to `true` (chart: `config.dropSessionIdFromMetrics`) to remove `session.id` from metric data points. Logs and traces keep it. If two data points in one request become identical, the gateway combines them into one. Sums and histogram counts add up, and a gauge keeps its last value. Then the backend gets no double counts and no rejected data.
 
+Use it only when one user runs one session at a time in each workspace. Claude Code sends cumulative counters, and each session counts from zero. Without `session.id`, two sessions that run at the same time with the same user, workspace and model write to the same series. The values then jump between the two counters, the backend reads each drop as a counter reset, and token and cost totals come out too high. Agents that start many `claude -p` processes in one workspace hit this. With `session.id`, each session adds about 20 to 40 short-lived series.
+
 ### Alternative: a collector
 
 If you already run a collector, set only `otlpEndpoint` to its OTLP/HTTP address, such as `http://otel-collector:4318`. The collector then routes the data.
@@ -126,7 +128,7 @@ sum by (user_id, user_email, workspace_id, session_id) (increase(claude_code_cos
 
 ### Dashboard
 
-The chart can install the dashboard "toolgate / Claude Code usage". Set `dashboards.usage.enabled` to `true` together with `dashboards.enabled` or `dashboards.grafanaOperator.enabled`. It has variables for user, workspace and model, token and cost charts, top users and workspaces, and a sessions table. Its queries use the VictoriaMetrics names. With `dropSessionIdFromMetrics`, the sessions table is empty. Read sessions from the logs then. The platform dashboard has an "OTLP ingest" row for the gateway's own ingest metrics.
+The chart can install the dashboard "toolgate / Claude Code usage". Set `dashboards.usage.enabled` to `true` together with `dashboards.enabled` or `dashboards.grafanaOperator.enabled`. It has variables for user, workspace and model, token and cost charts, top users and workspaces, and a sessions table. Its queries use the VictoriaMetrics names and MetricsQL's `increase_pure`, which counts a new series from zero. Plain `increase` doesn't count the first value of a new series, and a short session often sends all its usage in its first export. With `dropSessionIdFromMetrics`, the sessions table is empty. Read sessions from the logs then. The platform dashboard has an "OTLP ingest" row for the gateway's own ingest metrics.
 
 ## Prompts and tool content
 

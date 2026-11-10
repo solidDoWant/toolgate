@@ -107,7 +107,9 @@ type Config struct {
 	// metric data points that clients send, so the metrics backend stores a
 	// bounded set of series. Logs and traces keep `session.id`. Data points
 	// that become identical are combined into one. When it is `false`, metrics
-	// keep `session.id`.
+	// keep `session.id`. Don't use it when sessions run at the same time with
+	// the same user, workspace and model: their counters share a series and
+	// the totals come out too high.
 	TelemetryDropSessionIDFromMetrics bool `json:"telemetry.dropSessionIdFromMetrics" env:"TOOLGATE_TELEMETRY_DROP_SESSION_ID_FROM_METRICS"`
 
 	// When it is `true`, the gateway accepts OpenTelemetry data from signed-in

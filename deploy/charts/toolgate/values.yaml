@@ -150,7 +150,9 @@ config:
   # above. See `docs/admin/telemetry.md`.
   otlpIngest: false
   # -- Remove `session.id` from metric data points, so the metrics backend
-  # stores a bounded set of series. Logs and traces keep it.
+  # stores a bounded set of series. Logs and traces keep it. Totals come out
+  # too high when sessions run at the same time with the same user, workspace
+  # and model (see the telemetry guide).
   dropSessionIdFromMetrics: false
 
   # -- How long a session can go without requests before the gateway ends it
