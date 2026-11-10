@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.10
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes the Claude Code usage dashboard, which showed far too few tokens. No upgrade steps are needed.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.10`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.10`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Fixes
+
+- The Claude Code usage dashboard now counts all the tokens and cost of a session. Each session starts new counters, and a short session often sends all its usage at once. The dashboard ignored that first value, so a session of about 378,000 tokens showed as 14. "Cache read share" now shows, and "Estimated cost per day" now has a bar for today. ([#600](https://github.com/solidDoWant/toolgate/pull/600))
+- The docs now warn that `telemetry.dropSessionIdFromMetrics` makes token and cost totals too high when sessions with the same user, workspace and model run at the same time. See `docs/admin/telemetry.md`. ([#600](https://github.com/solidDoWant/toolgate/pull/600))
+
+Internal: a chart test checks that the usage dashboard counts new series from zero.
+
 ## 0.4.9
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release lets the gateway send Claude Code telemetry to your backends without an OpenTelemetry collector. It also removes one chart value, so read the upgrade notes before you upgrade.
