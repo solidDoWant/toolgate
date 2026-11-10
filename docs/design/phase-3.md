@@ -118,6 +118,69 @@ spec:
 
 **`toolgate otel-headers`** prints `{"Authorization": "Bearer …", "X-Toolgate-Workspace": "…"}`, with the token from the same credential source as `toolgate headers` (§4, "Client side") and the workspace from phase 1's rules. It doesn't wait for a session file, because ingest doesn't use the session header. It exits non-zero without printing headers when it has no credential.
 
+### Session titles
+
+Claude Code's telemetry names a session only by its `session.id`, a UUID. A UUID ties usage back to one session but says nothing about what the session was for. Claude Code does keep a title for each session in its transcript, so the plugin reads it there and sends it to the ingest as one more metric. The usage dashboard then shows the title next to the session.
+
+**A title is content.** Claude Code writes it from the user's prompts, so it is removed at the ingest unless `telemetry.allowContent` is `true`, like the other content in "Identity stamping". The client sends titles whenever telemetry is on, and the gateway decides, because a client's own settings can't decide what reaches the backend.
+
+**Where the title comes from.** The transcript is the JSON Lines file at the hook input's `transcript_path`. Two record types hold a title:
+- `{"type":"custom-title","customTitle":"…","sessionId":"…"}`, written by `/rename`;
+- `{"type":"ai-title","aiTitle":"…","sessionId":"…"}`, written by Claude Code, which can rewrite it as the session goes on.
+
+The title is the newest `custom-title` if there is one, and otherwise the newest `ai-title`. Only records whose `sessionId` equals the hook input's `session_id` count. Claude Code writes these records again and again through a session: in transcripts from Claude Code 2.1.322 the newest one was always within the last 25 lines, even in a 99 MB transcript. So the hook reads only the end of the file:
+- It reads the last 1 MiB and skips the first, partial, line.
+- When that finds no title, and the hook has never sent one for this session (see "Sent titles" below), it reads the whole file once, up to 128 MiB. That covers a resumed session whose title is older than the last 1 MiB.
+- The transcript format isn't documented by Claude Code. A missing or unreadable file, a line that isn't JSON, or a record without the expected field all mean "no title". None of them is an error.
+
+**Cleaning.** Control characters and runs of white space become one space, and the ends are trimmed. A title longer than 120 characters is cut to 119 and ends with `…`. A title that is empty after cleaning counts as no title.
+
+**Hooks.** The plugin's `hooks.json` gains two hooks, each with `"timeout": 10`:
+- `Stop` runs `toolgate hook stop`. Claude Code runs it each time it finishes a response, so a live session gets its title, and any change to it, within one turn.
+- `SessionEnd` runs `toolgate hook session-end`. It sends the last title when the session ends with exit or `/clear`. Without it, a `/rename` followed by no more turns would never be sent, because `/rename` runs no model turn and so no `Stop` follows it.
+
+Both hooks do the same thing: read the input (`session_id`, `transcript_path`), find the title, and send it if it is due. They always exit 0 and print nothing. A `Stop` hook that prints a block decision would stop Claude Code from finishing its turn, and a failed title must never change the session.
+
+**When the hooks send nothing.** They stop before reading the transcript when telemetry is off for the session: when `CLAUDE_CODE_ENABLE_TELEMETRY` isn't `1`, or when `OTEL_METRICS_EXPORTER` doesn't list `otlp`. Claude Code passes the `env` of its settings to hooks, so the telemetry `SettingsProfile` turns titles on with the rest of the telemetry. The hooks also send nothing when there is no credential.
+
+**Sent titles.** The hooks keep the last title they sent for each session in `headers.RuntimeDir()/titles/<session_id>`: the title and the time it was sent. A title is due when it differs from that file, or when it was last sent more than 1 hour ago. The hourly resend keeps the title inside the dashboard's range for a session that runs for days. The file is written only after a 2xx answer, by writing a temporary file and renaming it. So a failed send is tried again at the next `Stop`. A `session_id` that isn't a UUID is ignored, so it can't name a path. Files older than 7 days are removed when a hook writes one.
+
+**What is sent.** One OTLP/HTTP protobuf metrics request, built with `pmetric` and encoded with `pmetricotlp`'s `MarshalProto`:
+- resource attribute `service.name` = `toolgate-plugin`;
+- one gauge `toolgate.session.title`, unit `1`, with one data point of value 1 at the current time, and the attributes `session.id` (the hook input's `session_id`) and `session.title` (the cleaned title).
+
+It goes by `POST` to the gateway's `/v1/metrics`, with the same headers and the same credential source as `toolgate otel-headers`, and a 3 s timeout. The gateway URL comes from the client's own configuration, not from `OTEL_EXPORTER_OTLP_ENDPOINT`, because only the gateway's ingest stamps and filters it. A 401 makes one token refresh and one retry, like the SessionStart hook's settings fetch. Any other failure is dropped until the next `Stop`.
+
+**At the ingest:**
+- When `telemetry.allowContent` is `false`, the whole `toolgate.session.title` metric is removed from the request. The rest of the request is forwarded as usual.
+- When `telemetry.dropSessionIdFromMetrics` is `true`, it is removed too: without `session.id` the dashboard can't join it to a session.
+- `session.title` joins the content attributes, so it is removed from every span, span event and log record unless `telemetry.allowContent` is `true`.
+- Otherwise the metric gets the same identity stamping as Claude Code's metrics. So each title carries the verified `user.id`, `user.email` and `workspace.id` of whoever sent it.
+
+**Dashboard.** The usage dashboard's two Sessions tables gain a Title column and a User column. Tokens and cost stay as they are. The title is joined on `session.id` and `user.id`, never `session.id` alone: `session.id` is claimed, so a user could send a title for someone else's session, and the user match means it can only name their own. The newest title in the range wins. When a session has no title in the range, it still shows, with an empty Title. For tokens:
+
+```promql
+topk(50,
+  (
+    sum by ("session.id", "user.id", "user.email") (increase_pure({__name__="claude_code.token.usage", …}[$__range]))
+    * on ("session.id", "user.id") group_left ("session.title")
+    (max by ("session.id", "user.id", "session.title") (topk by ("session.id", "user.id") (1, tlast_over_time({__name__="toolgate.session.title", …}[$__range]))) * 0 + 1)
+  )
+  or on ("session.id", "user.id")
+  sum by ("session.id", "user.id", "user.email") (increase_pure({__name__="claude_code.token.usage", …}[$__range]))
+)
+```
+
+`…` stands for the dashboard's usual `user.email`, `workspace.id` and `model` filters; the title metric takes the `user.email` and `workspace.id` filters only, because it has no `model`. The cost table is the same with `claude_code.cost.usage`. `tlast_over_time` is MetricsQL, like the dashboard's `increase_pure`. The query was checked against VictoriaMetrics with a stand-in title series: the titled session got its `session.title` label, and the other sessions stayed, without one. The panel descriptions say that titles need `telemetry.allowContent`.
+
+**Docs.** `docs/admin/telemetry.md` says what a title is, that it is sent only when telemetry is on and kept only when `telemetry.allowContent` is `true`, and that it never reaches the backend when `telemetry.dropSessionIdFromMetrics` is `true`. `docs/user/` says that the plugin reads the title from the transcript, and that `/rename` changes it.
+
+**Tests.**
+- Unit tests of the title reader: `custom-title` wins over a newer `ai-title`; the newest of each wins; records of another `sessionId` are skipped; the 1 MiB tail and the one-time full read; a partial first line, lines that aren't JSON and a missing file; cleaning and the 120-character cut.
+- Unit tests of the hooks, with a fake gateway: no request when telemetry is off, or when the title didn't change and was sent less than 1 hour ago; a request after a change, and after an hour; the encoded request holds exactly the gauge and attributes above; nothing is printed and the exit code is 0 when the gateway fails, times out or answers 401 twice; the sent-titles file is written only after a 2xx.
+- Ingest unit tests: the gauge is removed when `telemetry.allowContent` is `false` and when `telemetry.dropSessionIdFromMetrics` is `true`, and passes with stamping otherwise; `session.title` on a span or log record is removed unless content is allowed.
+- Dashboard JSON tests: the Sessions tables join on both `session.id` and `user.id`, and keep sessions without a title (`or on`).
+
 ### Test backend and the usage query
 
 The e2e cluster runs `mirror.gcr.io/grafana/otel-lgtm` (Google's Docker Hub mirror, so CI isn't subject to Docker Hub's pull limits), pinned by digest like the other e2e images: one pod with an OpenTelemetry Collector, Prometheus (OTLP receiver on), Tempo and Loki. The gateway's `otlpEndpoint` points at its collector. Tests read the backends through their own query APIs: PromQL, Tempo's trace API and LogQL. One image gives all three signals real query languages, and the documented query runs on real Prometheus.
@@ -485,6 +548,19 @@ Phase 1's rows (phase 1 §4) and phase 2's rows (phase 2 §10) still hold. Rows 
 | 171 | Call to a restored or replaced server | instance `pending` or `starting` | The call waits, with progress, up to `startTimeout`, then is decided and forwarded. A failure or timeout fails the call with the reason. | AC-3-22 |
 | 172 | Session disabled or ended | call waiting for a start | The wait ends with "`<server>` was disabled while starting" (phase 1 row 3), and nothing is forwarded. | integration |
 | 173 | Session ends | enable or call waiting for a start | Phase 1 row 25 changes: the `session_servers` row now stays (§11), so every waiter also re-reads the session's `ended_at` on each wake. When it's set, the wait ends with "This session ended while waiting for `<server>`.", as in row 157, and nothing is forwarded. The server stays in the remembered set, so a resume within `sessionResumeWindow` restores it. | integration |
+
+Rows 279 to 286 were added after phase 4, for session titles (§3, "Session titles"). They continue phase 4's numbering.
+
+| # | Event | In flight | Rule | Test |
+|---|---|---|---|---|
+| 279 | Title changes (Claude Code rewrites its `ai-title`, or the user runs `/rename`) | a session's turns | The next `Stop` sends the new title. The dashboard shows the newest title in the range. | unit |
+| 280 | `/rename`, then the session ends with no more turns | — | `SessionEnd` sends it. If the process is killed instead, the old title stays. | unit |
+| 281 | Gateway down, slow, or answering an error | `Stop` hook | At most 3 s per try and one retry after a 401. Nothing is printed, the exit code is 0, and the sent-titles file isn't written, so the next `Stop` tries again. | unit |
+| 282 | `telemetry.allowContent` is `false`, or `telemetry.dropSessionIdFromMetrics` is `true` | ingest of `toolgate.session.title` | The whole metric is removed; the rest of the request is forwarded. | unit |
+| 283 | A client sends a title for another user's `session.id` | ingest, dashboard | The title is stamped with the sender's identity. The dashboard joins on `session.id` and `user.id`, so it can't name another user's session. | unit |
+| 284 | Transcript missing, unreadable, or in a format the reader doesn't know | `Stop` or `SessionEnd` hook | No title, nothing sent, exit code 0. | unit |
+| 285 | `Stop` and `SessionEnd` of one session run at the same time | sent-titles file | Both may send. A duplicate data point is harmless, and the rename keeps the file whole. | unit |
+| 286 | Telemetry settings arrive in `settings.json` while Claude Code runs | hooks of that process | Claude Code's exporters start only with the next process (§3, "Claude Code settings"). Whether the hooks already see the new `env` doesn't matter: a title for a session with no usage joins to no row, so the dashboard doesn't show it. | unit |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
