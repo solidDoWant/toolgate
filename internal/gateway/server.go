@@ -66,7 +66,7 @@ func New(ctx context.Context, cfg config.Config, logger *slog.Logger) (*Server, 
 		return nil, errors.New("database: cannot create the PostgreSQL connection pool")
 	}
 
-	tracerProvider, err := telemetry.NewTracerProvider(ctx, cfg.OTLPEndpoint)
+	tracerProvider, err := telemetry.NewTracerProvider(ctx, cfg.OTLPEndpointFor("traces"))
 	if err != nil {
 		database.Close()
 

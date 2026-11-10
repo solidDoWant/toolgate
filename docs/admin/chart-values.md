@@ -27,6 +27,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.database.migrationUrl | string | `""` | The connection string of the database role that owns the tables, inline. Use it only for a string with no password. The value ends up in the Job spec and in the Helm release. Set at most one of this and `config.database.migrationSecret`; the Job renders as for the Secret. |
 | config.database.secretKey | string | `"url"` | Key in `config.database.existingSecret` that holds the connection string. |
 | config.database.url | string | `""` | The PostgreSQL connection string, inline. Use it only for a string with no password, such as client-certificate or token authentication. The value ends up in the Deployment spec and in the Helm release, where anyone who can read them sees it. Set exactly one of this and `config.database.existingSecret`. |
+| config.dropSessionIdFromMetrics | bool | `false` | Remove `session.id` from metric data points, so the metrics backend stores a bounded set of series. Logs and traces keep it. |
 | config.extraEnv | list | `[]` | More environment variables for the gateway container, as a list of Kubernetes `EnvVar` objects. |
 | config.image.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
 | config.image.repository | string | `"ghcr.io/soliddowant/toolgate"` | Gateway image repository. |
@@ -45,7 +46,11 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | config.oidc.emailVerifiedClaim | string | `""` | Access token claim that tells whether the identity provider verified the email address. Empty means the gateway's default, `email_verified`. |
 | config.oidc.groupsClaim | string | `""` | Access token claim that holds the user's groups. Empty means the gateway's default, `groups`. |
 | config.oidc.issuerURL | string | `""` | Issuer URL of the OIDC identity provider that users sign in with, such as `https://idp.example.com/realms/main`. Required. |
-| config.otlpEndpoint | string | `""` | OTLP/HTTP endpoint for the gateway's traces, such as `http://otel-collector:4318`. Empty turns trace export off. |
+| config.otlpEndpoint | string | `""` | OTLP/HTTP base URL for all three kinds of OpenTelemetry data, such as `http://otel-collector:4318`. It fills in any of `otlpMetricsEndpoint`, `otlpLogsEndpoint` and `otlpTracesEndpoint` that is empty. |
+| config.otlpIngest | bool | `false` | Accept OpenTelemetry data from signed-in Claude Code clients at `/v1/traces`, `/v1/metrics` and `/v1/logs`, and send it to the endpoints above. See `docs/admin/telemetry.md`. |
+| config.otlpLogsEndpoint | string | `""` | OTLP/HTTP base URL for logs, such as `http://victoria-logs:9428/insert/opentelemetry`. The gateway adds `/v1/logs`. Empty and no `otlpEndpoint`: the gateway discards logs that clients send. |
+| config.otlpMetricsEndpoint | string | `""` | OTLP/HTTP base URL for metrics, such as `http://victoria-metrics:8428/opentelemetry`. The gateway adds `/v1/metrics`. Empty and no `otlpEndpoint`: the gateway discards metrics that clients send. |
+| config.otlpTracesEndpoint | string | `""` | OTLP/HTTP base URL for traces, including the gateway's own. The gateway adds `/v1/traces`. Empty and no `otlpEndpoint`: the gateway exports no traces and discards traces that clients send. |
 | config.replicas | int | `2` | Number of gateway pods. Every replica serves requests; one at a time holds the leader Lease and runs the runtime reconciler. |
 | config.resolvers | list | `[]` | Resolvers: HTTP services a template's `${resolver:<name>}` gets a value from. Each item has a `name`, an `https://` `url`, an `audience`, an optional `timeout` (default `10s`, at most `60s`) and an optional `caFile`. The chart writes them to the gateway's configuration file and mounts a service-account token with each resolver's audience at `/var/run/secrets/toolgate/resolvers/<name>/token`. Mount a `caFile` with `resources.persistence`. |
 | config.service.sessionAffinity | string | `"None"` | Session affinity of the gateway's Service: `None` or `ClientIP`. toolgate does not need affinity to be correct. `ClientIP` makes replica switches rare. |
@@ -76,6 +81,7 @@ This page is generated from `deploy/charts/toolgate/values.yaml` by `make genera
 | dashboards.grafanaOperator.instanceSelector | object | `{"matchLabels":{}}` | Which Grafana instances load the dashboards: the `matchLabels` of the `GrafanaDashboard` `instanceSelector`. Required with `dashboards.grafanaOperator.enabled`. |
 | dashboards.labelKey | string | `"grafana_dashboard"` | Key of the label the sidecar selects ConfigMaps by. |
 | dashboards.labelValue | string | `"1"` | Value of that label. |
+| dashboards.usage.enabled | bool | `false` | Also create the "toolgate / Claude Code usage" dashboard. It needs `config.otlpIngest` and a metrics backend, such as VictoriaMetrics, that the Grafana data source reads. Needs `dashboards.enabled` or `dashboards.grafanaOperator.enabled`. |
 | embeddings.downloader.hubVersion | string | `"1.0.0"` | Version of huggingface_hub that `uvx` installs. |
 | embeddings.downloader.image.digest | string | `"sha256:531f855bda2c73cd6ef67d56b733b357cea384185b3022bd09f05e002cd144ca"` |  |
 | embeddings.downloader.image.repository | string | `"ghcr.io/astral-sh/uv"` | Image that runs the model download Job: a pinned `uv`, which runs the `hf` command of huggingface_hub. |

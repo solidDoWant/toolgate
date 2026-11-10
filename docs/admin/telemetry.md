@@ -4,12 +4,38 @@ For: admins who want the usage data of Claude Code in their own telemetry backen
 
 Claude Code can send OpenTelemetry data (OTLP): metrics for tokens and cost, log events, and traces. toolgate can receive this data, stamp each record with the user that signed in, and pass it on to your backend. Then you can see tokens and cost for each user, workspace and session.
 
-## Turn on the ingest
+## Send the data straight to your backends
 
-Set these gateway settings (see the [configuration reference](configuration.md)):
+toolgate sends each kind of data to its own backend. You do not need an OpenTelemetry collector. Set these gateway settings (see the [configuration reference](configuration.md)):
 
-- `otlpEndpoint`: the OTLP/HTTP address of your backend, such as `http://otel-collector:4318`. The gateway also sends its own traces there.
 - `otlpIngest`: `true`. The gateway then accepts `POST /v1/traces`, `/v1/metrics` and `/v1/logs` from signed-in clients.
+- `otlp.metricsEndpoint`: the base URL of the metrics backend. The gateway sends metrics to `<url>/v1/metrics`.
+- `otlp.logsEndpoint`: the base URL of the logs backend. The gateway sends logs to `<url>/v1/logs`.
+- `otlp.tracesEndpoint`: the base URL of the traces backend. The gateway sends traces to `<url>/v1/traces`. The gateway's own traces go there too.
+
+If a kind of data has no endpoint, the gateway accepts it and discards it. It answers success, so clients do not log export errors. The counter `toolgate_otlp_ingest_discarded_total{signal}` counts the discarded requests.
+
+The older setting `otlpEndpoint` still works. It fills in each of the three endpoints that you leave empty. So a deployment that sets only `otlpEndpoint` sends everything to one place, as before.
+
+### Example: VictoriaMetrics and VictoriaLogs
+
+VictoriaMetrics takes OTLP metrics at `/opentelemetry/v1/metrics` (cluster: `/insert/0/opentelemetry/v1/metrics`). VictoriaLogs takes OTLP logs at `/insert/opentelemetry/v1/logs`. This chart configuration sends metrics and logs there and drops traces:
+
+```yaml
+config:
+  otlpIngest: true
+  otlpMetricsEndpoint: http://victoria-metrics:8428/opentelemetry
+  otlpLogsEndpoint: http://victoria-logs:9428/insert/opentelemetry
+  # No traces backend: the gateway discards traces.
+```
+
+### Remove the session label from metrics
+
+Every session adds a new `session.id` value, so a metrics backend stores a new series for each session. Set `telemetry.dropSessionIdFromMetrics` to `true` (chart: `config.dropSessionIdFromMetrics`) to remove `session.id` from metric data points. Logs and traces keep it. If two data points in one request become identical, the gateway combines them into one. Sums and histogram counts add up, and a gauge keeps its last value. Then the backend gets no double counts and no rejected data.
+
+### Alternative: a collector
+
+If you already run a collector, set only `otlpEndpoint` to its OTLP/HTTP address, such as `http://otel-collector:4318`. The collector then routes the data.
 
 The gateway removes every attribute the client sent whose name starts with `user_`, `enduser_` or `workspace_` (after it changes each character outside `A-Z`, `a-z` and `0-9` to `_`). Then it sets `user.id`, `enduser.id`, `user.email` and `workspace.id` from the verified identity on every span, metric data point and log record. A user cannot send data for someone else. The `session.id` attribute stays as Claude Code sent it, because the session ID is a claim and not a verified fact.
 
@@ -39,11 +65,29 @@ spec:
 
 - Claude Code reads `env` when it starts. A change to the profile takes effect in the next session.
 - `toolgate otel-headers` prints the `Authorization` and `X-Toolgate-Workspace` headers. Claude Code runs it again every 4 minutes (`240000` ms; the default is 29 minutes). Each run prints a new token. So your identity provider must issue access tokens that live at least 5 minutes. A shorter token can expire between two runs.
-- Use `cumulative` temporality. The OTLP receiver of Prometheus needs it.
+- Use `cumulative` temporality. The OTLP receiver of Prometheus and VictoriaMetrics needs it.
 
 ## Read usage
 
-With the default OTLP translation of Prometheus, the metrics are `claude_code_token_usage_tokens_total` and `claude_code_cost_usage_USD_total`. The labels are `user_id`, `user_email`, `workspace_id` and `session_id`. The gateway puts these on the data points, so the queries need no join.
+VictoriaMetrics stores OTLP metrics with their dotted names. The metrics are `claude_code.token.usage` and `claude_code.cost.usage`. The labels are `user.email`, `workspace.id`, `model` and `type` (`input`, `output`, `cacheRead` or `cacheCreation`). Without `dropSessionIdFromMetrics`, the label `session.id` is also there. The gateway puts these on the data points, so the queries need no join.
+
+Tokens in the last day, by type:
+
+```metricsql
+sum by (type) (increase({__name__="claude_code.token.usage"}[1d]))
+```
+
+Estimated cost in US dollars in the last day, by user:
+
+```metricsql
+sum by ("user.email") (increase({__name__="claude_code.cost.usage"}[1d]))
+```
+
+Claude Code computes the cost at API list prices. It is an estimate and not a bill.
+
+`increase` estimates the growth of a counter between its first and last sample in the window, and may add up to half a sample interval at each end. So it is exact only to within that estimate.
+
+A Prometheus backend that uses the default OTLP translation of Prometheus stores other names: `claude_code_token_usage_tokens_total` and `claude_code_cost_usage_USD_total`, with the labels `user_id`, `user_email`, `workspace_id` and `session_id` (and `model` and `type`). Use these queries there.
 
 Tokens in the last day, by type (`input`, `output`, `cacheRead`, `cacheCreation`):
 
@@ -57,7 +101,9 @@ Cost in US dollars in the last day:
 sum by (user_id, user_email, workspace_id, session_id) (increase(claude_code_cost_usage_USD_total[1d]))
 ```
 
-`increase` estimates the growth of a counter between its first and last sample in the window, and may add up to half a sample interval at each end. So it is exact only to within that estimate.
+### Dashboard
+
+The chart can install the dashboard "toolgate / Claude Code usage". Set `dashboards.usage.enabled` to `true` together with `dashboards.enabled` or `dashboards.grafanaOperator.enabled`. It has variables for user, workspace and model, token and cost charts, top users and workspaces, and a sessions table. Its queries use the VictoriaMetrics names. With `dropSessionIdFromMetrics`, the sessions table is empty. Read sessions from the logs then. The platform dashboard has an "OTLP ingest" row for the gateway's own ingest metrics.
 
 ## Prompts and tool content
 

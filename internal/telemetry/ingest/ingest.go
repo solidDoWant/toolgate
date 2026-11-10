@@ -108,9 +108,15 @@ var signals = []signal{
 
 // Options configures the ingest.
 type Options struct {
-	// Endpoint is the OTLP/HTTP base URL the data is forwarded to; the
-	// signal's `/v1/<signal>` path is added to it.
+	// Endpoint is the base URL for every signal that Endpoints doesn't name.
 	Endpoint string
+	// Endpoints maps a signal name (SignalTraces, SignalMetrics, SignalLogs)
+	// to the OTLP/HTTP base URL its data is forwarded to; the signal's
+	// `/v1/<signal>` path is added to it. A signal with no endpoint is
+	// accepted and discarded.
+	Endpoints map[string]string
+	// DropSessionIDFromMetrics removes `session.id` from metric data points.
+	DropSessionIDFromMetrics bool
 	// AllowContent passes prompt and tool content through.
 	AllowContent bool
 	// Logger receives forwarding failures. It never receives telemetry
@@ -125,13 +131,17 @@ type Options struct {
 
 // Ingest serves the OTLP routes. Create it with New.
 type Ingest struct {
-	endpoint     string
+	endpoints    map[string]string
+	dropSession  bool
 	allowContent bool
 	logger       *slog.Logger
 	client       *http.Client
 	slots        chan struct{}
 	bodyTimeout  time.Duration
 	requests     *prometheus.CounterVec
+	discarded    *prometheus.CounterVec
+	forwardErrs  *prometheus.CounterVec
+	forwardTime  *prometheus.HistogramVec
 }
 
 // New builds the ingest.
@@ -157,8 +167,22 @@ func New(options Options) *Ingest {
 		bodyTimeout = BodyTimeout
 	}
 
+	endpoints := make(map[string]string, len(signals))
+
+	for _, signal := range signals {
+		endpoint, named := options.Endpoints[signal.name]
+		if !named {
+			endpoint = options.Endpoint
+		}
+
+		if endpoint != "" {
+			endpoints[signal.name] = strings.TrimSuffix(endpoint, "/")
+		}
+	}
+
 	return &Ingest{
-		endpoint:     strings.TrimSuffix(options.Endpoint, "/"),
+		endpoints:    endpoints,
+		dropSession:  options.DropSessionIDFromMetrics,
 		allowContent: options.AllowContent,
 		logger:       logger,
 		client:       client,
@@ -168,13 +192,26 @@ func New(options Options) *Ingest {
 			Name: "toolgate_otlp_ingest_requests_total",
 			Help: "OTLP ingest requests, by signal and the HTTP status code the gateway answered.",
 		}, []string{"signal", "code"}),
+		discarded: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_otlp_ingest_discarded_total",
+			Help: "OTLP ingest requests accepted and discarded because the signal has no endpoint, by signal.",
+		}, []string{"signal"}),
+		forwardErrs: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_otlp_ingest_forward_errors_total",
+			Help: "OTLP forwards that failed or that the backend refused, by signal.",
+		}, []string{"signal"}),
+		forwardTime: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "toolgate_otlp_ingest_forward_duration_seconds",
+			Help:    "Time to forward one OTLP request to its backend, by signal.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{"signal"}),
 	}
 }
 
 // Collectors returns the ingest's metrics. Register them with the gateway's
 // metrics registry.
 func (i *Ingest) Collectors() []prometheus.Collector {
-	return []prometheus.Collector{i.requests}
+	return []prometheus.Collector{i.requests, i.discarded, i.forwardErrs, i.forwardTime}
 }
 
 // Register serves `POST /v1/<signal>` for every signal through handle, each
@@ -261,6 +298,14 @@ func (i *Ingest) serve(writer http.ResponseWriter, request *http.Request, signal
 		return
 	}
 
+	endpoint := i.endpoints[signal.name]
+	if endpoint == "" {
+		i.discarded.WithLabelValues(signal.name).Inc()
+		i.answer(writer, nil, signal, nil, json)
+
+		return
+	}
+
 	select {
 	case i.slots <- struct{}{}:
 		defer func() { <-i.slots }()
@@ -279,7 +324,7 @@ func (i *Ingest) serve(writer http.ResponseWriter, request *http.Request, signal
 		return
 	}
 
-	stamp(stamper{identity: identity, allowContent: i.allowContent})
+	stamp(stamper{identity: identity, allowContent: i.allowContent, dropSessionID: i.dropSession})
 
 	encoded, err := export.MarshalProto()
 	if err != nil {
@@ -288,12 +333,18 @@ func (i *Ingest) serve(writer http.ResponseWriter, request *http.Request, signal
 		return
 	}
 
-	i.forward(writer, request.Context(), signal, encoded, json)
+	i.forward(writer, request.Context(), signal, endpoint, encoded, json)
 }
 
 // forward sends the stamped request to the backend and maps its answer.
-func (i *Ingest) forward(writer http.ResponseWriter, ctx context.Context, signal signal, body []byte, json bool) {
-	forwardRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, i.endpoint+"/v1/"+signal.name,
+func (i *Ingest) forward(writer http.ResponseWriter, ctx context.Context, signal signal, endpoint string,
+	body []byte, json bool,
+) {
+	started := time.Now()
+
+	defer func() { i.forwardTime.WithLabelValues(signal.name).Observe(time.Since(started).Seconds()) }()
+
+	forwardRequest, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/v1/"+signal.name,
 		bytes.NewReader(body))
 	if err != nil {
 		http.Error(writer, "The OTLP backend can't be reached.", http.StatusBadGateway)
@@ -305,6 +356,7 @@ func (i *Ingest) forward(writer http.ResponseWriter, ctx context.Context, signal
 
 	response, err := i.client.Do(forwardRequest)
 	if err != nil {
+		i.forwardErrs.WithLabelValues(signal.name).Inc()
 		i.logger.WarnContext(ctx, "forwarding OTLP data failed", "signal", signal.name, "error", err)
 		unavailable(writer, "")
 
@@ -314,6 +366,10 @@ func (i *Ingest) forward(writer http.ResponseWriter, ctx context.Context, signal
 	defer func() { _ = response.Body.Close() }()
 
 	answer, readErr := io.ReadAll(io.LimitReader(response.Body, maxBackendAnswerBytes))
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		i.forwardErrs.WithLabelValues(signal.name).Inc()
+	}
 
 	switch {
 	case response.StatusCode >= 200 && response.StatusCode < 300:
@@ -336,10 +392,14 @@ func (i *Ingest) forward(writer http.ResponseWriter, ctx context.Context, signal
 }
 
 // answer re-encodes the backend's ExportResponse in the client's encoding.
+// A nil response answers with an empty ExportResponse.
 func (i *Ingest) answer(writer http.ResponseWriter, response *http.Response, signal signal, answer []byte, json bool) {
 	backendJSON := false
-	if mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type")); err == nil {
-		backendJSON = mediaType == contentTypeJSON
+
+	if response != nil {
+		if mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type")); err == nil {
+			backendJSON = mediaType == contentTypeJSON
+		}
 	}
 
 	decoded := signal.newResponse()

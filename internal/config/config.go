@@ -76,14 +76,41 @@ type Config struct {
 	// stdout: `debug`, `info`, `warn` or `error`.
 	LogLevel string `json:"logLevel" env:"TOOLGATE_LOG_LEVEL"`
 
-	// The OTLP/HTTP endpoint that receives the traces of the gateway, such as
-	// `http://otel-collector:4318`. The gateway sends traces to `/v1/traces`
-	// under this URL. If it is empty, the gateway does not export traces.
+	// The OTLP/HTTP base URL that receives OpenTelemetry data, such as
+	// `http://otel-collector:4318`. It sets any of `otlp.metricsEndpoint`,
+	// `otlp.logsEndpoint` and `otlp.tracesEndpoint` that you leave empty, so
+	// all three kinds of data go to one place. The gateway adds `/v1/metrics`,
+	// `/v1/logs` or `/v1/traces` to the URL.
 	OTLPEndpoint string `json:"otlpEndpoint" env:"TOOLGATE_OTLP_ENDPOINT"`
+
+	// The OTLP/HTTP base URL that receives metrics, such as
+	// `http://victoria-metrics:8428/opentelemetry`. The gateway sends metrics
+	// to `/v1/metrics` under this URL. If it and `otlpEndpoint` are empty,
+	// the gateway accepts metrics from clients and discards them.
+	OTLPMetricsEndpoint string `json:"otlp.metricsEndpoint" env:"TOOLGATE_OTLP_METRICS_ENDPOINT"`
+
+	// The OTLP/HTTP base URL that receives logs, such as
+	// `http://victoria-logs:9428/insert/opentelemetry`. The gateway sends logs
+	// to `/v1/logs` under this URL. If it and `otlpEndpoint` are empty, the
+	// gateway accepts logs from clients and discards them.
+	OTLPLogsEndpoint string `json:"otlp.logsEndpoint" env:"TOOLGATE_OTLP_LOGS_ENDPOINT"`
+
+	// The OTLP/HTTP base URL that receives traces, including the gateway's
+	// own traces. The gateway sends traces to `/v1/traces` under this URL. If
+	// it and `otlpEndpoint` are empty, the gateway does not export its own
+	// traces, and it accepts traces from clients and discards them.
+	OTLPTracesEndpoint string `json:"otlp.tracesEndpoint" env:"TOOLGATE_OTLP_TRACES_ENDPOINT"`
+
+	// When it is `true`, the gateway removes the `session.id` attribute from
+	// metric data points that clients send, so the metrics backend stores a
+	// bounded set of series. Logs and traces keep `session.id`. Data points
+	// that become identical are combined into one. When it is `false`, metrics
+	// keep `session.id`.
+	TelemetryDropSessionIDFromMetrics bool `json:"telemetry.dropSessionIdFromMetrics" env:"TOOLGATE_TELEMETRY_DROP_SESSION_ID_FROM_METRICS"`
 
 	// When it is `true`, the gateway accepts OpenTelemetry data from signed-in
 	// clients at `POST /v1/traces`, `/v1/metrics` and `/v1/logs`. It forwards
-	// the data to `otlpEndpoint`, so `otlpEndpoint` is required. The gateway
+	// each kind of data to its own endpoint (`otlp.metricsEndpoint`, `otlp.logsEndpoint`, `otlp.tracesEndpoint`, each defaulting to `otlpEndpoint`). Data of a kind with no endpoint is accepted and discarded. The gateway
 	// removes the identity attributes that the client sent. These are the
 	// attributes whose name starts with `user_`, `enduser_` or `workspace_`
 	// after each character outside `[A-Za-z0-9]` changes to `_` and the name
@@ -1046,15 +1073,15 @@ func (c Config) Validate() []error {
 		problems = append(problems, fmt.Errorf("logLevel: %q is not one of debug, info, warn, error", c.LogLevel))
 	}
 
-	if c.OTLPEndpoint != "" {
-		endpoint, err := url.Parse(c.OTLPEndpoint)
-		if err != nil || (endpoint.Scheme != "http" && endpoint.Scheme != "https") || endpoint.Host == "" {
-			problems = append(problems, fmt.Errorf("otlpEndpoint: %q is not an http or https URL", c.OTLPEndpoint))
+	for name, value := range map[string]string{
+		"otlpEndpoint":         c.OTLPEndpoint,
+		"otlp.metricsEndpoint": c.OTLPMetricsEndpoint,
+		"otlp.logsEndpoint":    c.OTLPLogsEndpoint,
+		"otlp.tracesEndpoint":  c.OTLPTracesEndpoint,
+	} {
+		if value != "" && !isHTTPURL(value) {
+			problems = append(problems, fmt.Errorf("%s: %q is not an http or https URL", name, value))
 		}
-	}
-
-	if c.OTLPIngest && c.OTLPEndpoint == "" {
-		problems = append(problems, errors.New("otlpEndpoint: required when otlpIngest is true"))
 	}
 
 	if c.OIDCIssuerURL == "" {
@@ -1299,4 +1326,26 @@ func (c Config) validateToolSearchEmbeddings() []error {
 	}
 
 	return problems
+}
+
+// OTLPEndpointFor returns the OTLP base URL for a signal (`metrics`, `logs` or
+// `traces`): the signal's own endpoint, else otlpEndpoint. It is empty when
+// the signal has none.
+func (c Config) OTLPEndpointFor(signal string) string {
+	var endpoint string
+
+	switch signal {
+	case "metrics":
+		endpoint = c.OTLPMetricsEndpoint
+	case "logs":
+		endpoint = c.OTLPLogsEndpoint
+	case "traces":
+		endpoint = c.OTLPTracesEndpoint
+	}
+
+	if endpoint == "" {
+		return c.OTLPEndpoint
+	}
+
+	return endpoint
 }
