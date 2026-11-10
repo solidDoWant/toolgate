@@ -20,7 +20,7 @@ Commands:
   configure Save client settings in config.json (configure [--gateway URL] [--token-command CMD] [--attestation-token-file PATH] [--attestation-token-request DIR])
   headers   Print the request headers for Claude Code's headersHelper
   otel-headers  Print the request headers for Claude Code's otelHeadersHelper
-  hook      Run a Claude Code hook (hook session-start)
+  hook      Run a Claude Code hook (hook session-start, stop or session-end)
   logout    Remove the stored sign-in token
   secret    Manage your secrets (secret set NAME | list | delete NAME)
   sessions  List your open sessions and their enabled servers

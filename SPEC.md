@@ -301,6 +301,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 | `toolgate logout`, `toolgate status` | |
 | `toolgate headers` | `headersHelper` output: `Authorization`, `X-Toolgate-Session` (from the file the SessionStart hook writes), `X-Toolgate-Workspace` |
 | `toolgate hook session-start` | SessionStart hook: check sign-in, fetch the settings profile, merge it, print context |
+| `toolgate hook stop`, `toolgate hook session-end` | Stop and SessionEnd hooks: when telemetry is on, send the session's title to the OTLP ingest (see "OTLP ingest"). They print nothing and always exit 0 |
 | `toolgate secret set/list/delete` | See "Secrets" |
 | `toolgate servers` | List the catalog as the CLI user sees it |
 | `TOOLGATE_TOKEN_COMMAND` (variable) | Every command that needs a user token runs it instead of reading the stored sign-in (see "Identity and attestation") |
@@ -320,6 +321,7 @@ Every event carries principal, workspace, session, attestation, server, tool, tr
 **The plugin** (directory `plugin/`, installed from this repo as a Claude Code plugin marketplace) contains:
 - `.mcp.json`, with one HTTP server named `toolgate` at `${user_config.gateway_url}/mcp` and `headersHelper: toolgate headers`;
 - a SessionStart hook running `toolgate hook session-start`;
+- Stop and SessionEnd hooks running `toolgate hook stop` and `toolgate hook session-end`;
 - `userConfig` for `gateway_url`;
 - a short skill telling the model how to use the meta tools: list first, enable what the task needs, disable when done.
 

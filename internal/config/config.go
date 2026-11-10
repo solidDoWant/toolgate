@@ -129,8 +129,9 @@ type Config struct {
 	// OpenTelemetry data that clients send to it. Prompts, tool inputs and
 	// tool output are examples of this content. Clients add it when users set
 	// `OTEL_LOG_USER_PROMPTS`, `OTEL_LOG_TOOL_DETAILS` or
-	// `OTEL_LOG_TOOL_CONTENT`. When it is `false`, the gateway removes it.
-	// Set it to `true` only when the telemetry backend is allowed to hold user
+	// `OTEL_LOG_TOOL_CONTENT`. Session titles, which the plugin sends, are
+	// content too. When it is `false`, the gateway removes it. Set it to
+	// `true` only when the telemetry backend is allowed to hold user
 	// content. The gateway then sends that content to the backend.
 	TelemetryAllowContent bool `json:"telemetry.allowContent" env:"TOOLGATE_TELEMETRY_ALLOW_CONTENT"`
 

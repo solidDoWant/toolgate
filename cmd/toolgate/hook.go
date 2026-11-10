@@ -52,8 +52,20 @@ type hookOutput struct {
 
 // hook runs `toolgate hook <event>`.
 func hook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if len(args) == 1 && (args[0] == "stop" || args[0] == "session-end") {
+		// These hooks print nothing and always exit 0: a Stop hook's output
+		// could stop Claude Code from finishing its turn, and a title must
+		// never change the session.
+		ctx, cancel := context.WithTimeout(context.Background(), titleHookTimeout)
+		defer cancel()
+
+		sendSessionTitle(ctx, stdin, time.Now())
+
+		return 0
+	}
+
 	if len(args) != 1 || args[0] != "session-start" {
-		_, _ = fmt.Fprintln(stderr, "Usage: toolgate hook session-start")
+		_, _ = fmt.Fprintln(stderr, "Usage: toolgate hook session-start|stop|session-end")
 
 		return 2
 	}

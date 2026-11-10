@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/telemetry/titlemetric"
 )
 
 // The attributes set from the verified identity on every span, metric data
@@ -52,6 +53,8 @@ var (
 		"output":                true,
 		"hook_definitions":      true,
 		"hook_matcher":          true,
+		// The plugin's session title, written from the user's prompts.
+		titlemetric.AttributeTitle: true,
 	}
 
 	// errorContentSpans and errorContentEvents name the spans and log
@@ -195,6 +198,13 @@ func (s stamper) metrics(metrics pmetric.Metrics) {
 			removeIdentity(scope.Scope().Attributes())
 
 			list := scope.Metrics()
+
+			// A session title is content, and without session.id it
+			// can't be matched to a session.
+			if !s.allowContent || s.dropSessionID {
+				list.RemoveIf(func(metric pmetric.Metric) bool { return metric.Name() == titlemetric.Name })
+			}
+
 			for metricIndex := range list.Len() {
 				s.metric(list.At(metricIndex))
 			}

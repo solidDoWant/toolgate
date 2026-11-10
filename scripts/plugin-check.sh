@@ -3,7 +3,8 @@
 # `claude plugin validate --strict` on both manifests, then an install from
 # this repository's marketplace into a throwaway Claude Code config directory,
 # and checks that the installed plugin asks for the gateway URL and configures
-# the toolgate MCP server, the SessionStart hook and the skill.
+# the toolgate MCP server, the SessionStart, Stop and SessionEnd hooks, and
+# the skill.
 # Needs the `claude` CLI on PATH (CI installs a pinned version).
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -57,14 +58,18 @@ mcp_get="$(timeout 60 claude mcp get plugin:toolgate:toolgate 2>&1 || true)"
 grep -qF "URL: $gateway/mcp" <<<"$mcp_get" ||
 	fail "Claude Code does not resolve the MCP server URL to $gateway/mcp: $mcp_get"
 
-# The SessionStart hook.
-hook_commands="$(jq -r '[.hooks.SessionStart[].hooks[] | select(.type == "command") | .command] | join(",")' "$install_path/hooks/hooks.json")"
-[[ "$hook_commands" == "toolgate hook session-start" ]] ||
-	fail "SessionStart hook commands are '$hook_commands', want 'toolgate hook session-start'"
+# The hooks: each event runs its one toolgate command.
+for pair in "SessionStart:toolgate hook session-start" "Stop:toolgate hook stop" "SessionEnd:toolgate hook session-end"; do
+	event="${pair%%:*}"
+	want="${pair#*:}"
+	hook_commands="$(jq -r --arg event "$event" '[.hooks[$event][]?.hooks[] | select(.type == "command") | .command] | join(",")' "$install_path/hooks/hooks.json")"
+	[[ "$hook_commands" == "$want" ]] ||
+		fail "$event hook commands are '$hook_commands', want '$want'"
+done
 
 # Claude Code loads the skill, the hook and the MCP server.
 details="$(claude plugin details "$plugin")"
-for component in "Skills (1)" "Hooks (1)  SessionStart" "MCP servers (1)  toolgate"; do
+for component in "Skills (1)" "Hooks (3)  SessionStart, Stop, SessionEnd" "MCP servers (1)  toolgate"; do
 	grep -qF "$component" <<<"$details" || fail "plugin details do not list '$component'"
 done
 

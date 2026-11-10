@@ -460,6 +460,31 @@ func TestUsageDashboardShowsCostOverTheRange(t *testing.T) {
 	assert.True(t, found)
 }
 
+// session.id is claimed, so a client could send a title for another user's
+// session. Joining on the verified user.id as well means a title can only
+// name the sender's own sessions, and sessions without a title still show.
+func TestUsageDashboardJoinsTitlesOnSessionAndUser(t *testing.T) {
+	sessionTables := 0
+
+	for _, panel := range loadUsagePanels(t) {
+		if !strings.HasPrefix(panel.Title, "Sessions by") {
+			continue
+		}
+
+		sessionTables++
+
+		require.Len(t, panel.Targets, 1, panel.Title)
+		expr := panel.Targets[0].Expr
+
+		assert.Contains(t, expr, `{__name__="toolgate.session.title"`, panel.Title)
+		assert.Contains(t, expr, `on ("session.id", "user.id") group_left ("session.title")`, panel.Title)
+		assert.Contains(t, expr, `or on ("session.id", "user.id")`, panel.Title, "sessions without a title still show")
+		assert.Contains(t, expr, `topk by ("session.id", "user.id") (1, tlast_over_time(`, panel.Title, "the newest title wins")
+	}
+
+	assert.Equal(t, 2, sessionTables)
+}
+
 func TestOverviewLinksToUsageDashboard(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(chartDir, "dashboards", "overview.json"))
 	require.NoError(t, err)
@@ -478,4 +503,11 @@ func TestChartPassesPerSignalOTLPSettings(t *testing.T) {
 	assert.Equal(t, "true", env["TOOLGATE_OTLP_INGEST"])
 	assert.Equal(t, "true", env["TOOLGATE_TELEMETRY_DROP_SESSION_ID_FROM_METRICS"])
 	assert.NotContains(t, env, "TOOLGATE_OTLP_TRACES_ENDPOINT")
+	assert.NotContains(t, env, "TOOLGATE_TELEMETRY_ALLOW_CONTENT", "content stays off unless set")
+}
+
+func TestChartPassesAllowContent(t *testing.T) {
+	env := gatewayEnv(t, renderQuickStart(t, "--set", "config.allowContent=true"))
+
+	assert.Equal(t, "true", env["TOOLGATE_TELEMETRY_ALLOW_CONTENT"])
 }
