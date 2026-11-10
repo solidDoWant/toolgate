@@ -1,7 +1,7 @@
 {
   "uid": "toolgate-usage",
   "title": "toolgate / Claude Code usage",
-  "description": "Tokens and estimated cost of Claude Code, from the OpenTelemetry metrics that clients send through the gateway. Needs otlpIngest and a metrics backend. Queries use the dotted names that VictoriaMetrics stores for OTLP.",
+  "description": "Tokens and estimated cost of Claude Code, from the OpenTelemetry metrics that clients send through the gateway. Needs otlpIngest and a metrics backend. Queries use the dotted names that VictoriaMetrics stores for OTLP. They use increase_pure, because each Claude Code session starts new counter series, and increase doesn't count the first value of a new series.",
   "tags": [
     "toolgate"
   ],
@@ -136,7 +136,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (type) (increase({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__interval]))",
+          "expr": "sum by (type) (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -190,7 +190,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (model) (increase({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__interval]))",
+          "expr": "sum by (model) (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -244,7 +244,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=\"cacheRead\"}[$__interval])) / sum(increase({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[$__interval]))",
+          "expr": "sum(increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=\"cacheRead\"}[$__interval])) / sum(increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\",type=~\"input|cacheRead|cacheCreation\"}[$__interval]))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -294,7 +294,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[1d]))",
+          "expr": "sum(increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[1d] offset -1d))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -358,7 +358,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by (\"user.email\") (increase({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(20, sum by (\"user.email\") (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -421,7 +421,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by (\"user.email\") (increase({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(20, sum by (\"user.email\") (increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -484,7 +484,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by (\"workspace.id\") (increase({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(20, sum by (\"workspace.id\") (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -547,7 +547,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(20, sum by (\"workspace.id\") (increase({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(20, sum by (\"workspace.id\") (increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -623,7 +623,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(50, sum by (\"session.id\") (increase({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(50, sum by (\"session.id\") (increase_pure({__name__=\"claude_code.token.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -687,7 +687,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(50, sum by (\"session.id\") (increase({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
+          "expr": "topk(50, sum by (\"session.id\") (increase_pure({__name__=\"claude_code.cost.usage\",\"user.email\"=~\"$user\",\"workspace.id\"=~\"$workspace\",model=~\"$model\"}[$__range])))",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"

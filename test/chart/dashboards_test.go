@@ -352,6 +352,23 @@ func TestUsageDashboardHasItsVariablesAndNoGatewayMetrics(t *testing.T) {
 	}
 }
 
+// Claude Code starts new counter series for every session, often with all
+// of a short session's usage in the first export. increase() doesn't count a
+// new series' first value, so the usage dashboard must count from zero.
+func TestUsageDashboardCountsNewSeriesFromZero(t *testing.T) {
+	board, ok := loadDashboards(t)[usageDashboard]
+	require.True(t, ok)
+
+	increase := regexp.MustCompile(`\bincrease\(`)
+
+	for _, panel := range board.Panels {
+		for _, target := range panel.Targets {
+			assert.NotRegexp(t, increase, target.Expr, panel.Title)
+			assert.Contains(t, target.Expr, "increase_pure(", panel.Title)
+		}
+	}
+}
+
 func TestOverviewLinksToUsageDashboard(t *testing.T) {
 	raw, err := os.ReadFile(filepath.Join(chartDir, "dashboards", "overview.json"))
 	require.NoError(t, err)
