@@ -29,6 +29,29 @@ config:
   # No traces backend: the gateway discards traces.
 ```
 
+### Write logs to stdout
+
+Set `otlp.logsEndpoint` to `stdout` (chart: `config.otlpLogsEndpoint: stdout`) to send no logs to a backend. The gateway then writes each log record it receives to its own standard output. It writes one JSON line for each record, after it sets the identity and removes the content. Your normal cluster log pipeline (node agent, log aggregator, log store) then collects the lines with the other logs of the pod.
+
+Each line has these fields:
+
+- `source`: always `claude-code`. Use it to tell these lines from the gateway's own logs.
+- `event`: the event name, such as `api_request`, `tool_decision`, `tool_result`, `user_prompt` or `api_error`.
+- `time_unix_nano` and, when set, `observed_time_unix_nano`: the times as strings, in nanoseconds since 1970.
+- `severity` and `body`, when the record has them (`body` only when it is text).
+- `attributes`: the attributes of the record, with the OTLP names (`user.email`, `model`, `input_tokens`). Numbers stay numbers.
+- `resource`: only `service.name`, `service.version`, `os.type` and `host.arch`.
+
+The gateway writes each line in one piece. A line can be longer than 16 KiB. The container runtime then splits it, and the node agent joins it again. The counter `toolgate_otlp_ingest_log_records_total{result}` counts the records that the gateway wrote (`written`) or could not write (`failed`).
+
+Example query for VictoriaLogs, when the node agent puts the JSON fields in `log_fields`:
+
+```
+log_fields.source:"claude-code" log_fields.event:"api_request" | stats by (log_fields.attributes.user.email) sum(log_fields.attributes.input_tokens)
+```
+
+The field names depend on your node agent. Adjust the prefix to match.
+
 ### Remove the session label from metrics
 
 Every session adds a new `session.id` value, so a metrics backend stores a new series for each session. Set `telemetry.dropSessionIdFromMetrics` to `true` (chart: `config.dropSessionIdFromMetrics`) to remove `session.id` from metric data points. Logs and traces keep it. If two data points in one request become identical, the gateway combines them into one. Sums and histogram counts add up, and a gauge keeps its last value. Then the backend gets no double counts and no rejected data.

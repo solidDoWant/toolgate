@@ -137,8 +137,9 @@ config:
   otlpMetricsEndpoint: ""
   # -- OTLP/HTTP base URL for logs, such as
   # `http://victoria-logs:9428/insert/opentelemetry`. The gateway adds
-  # `/v1/logs`. Empty and no `otlpEndpoint`: the gateway discards logs that
-  # clients send.
+  # `/v1/logs`. `stdout` writes each log record to the gateway's standard
+  # output as one JSON line instead. Empty and no `otlpEndpoint`: the gateway
+  # discards logs that clients send.
   otlpLogsEndpoint: ""
   # -- OTLP/HTTP base URL for traces, including the gateway's own. The
   # gateway adds `/v1/traces`. Empty and no `otlpEndpoint`: the gateway

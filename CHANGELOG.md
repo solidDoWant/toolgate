@@ -11,6 +11,7 @@
 ### Telemetry
 
 - The gateway now sends metrics, logs and traces to separate backends (`otlp.metricsEndpoint`, `otlp.logsEndpoint`, `otlp.tracesEndpoint`), so you need no OpenTelemetry collector. It can also remove `session.id` from metrics, and the chart has a new Claude Code usage dashboard. See `docs/admin/telemetry.md`.
+- Set `otlp.logsEndpoint` to `stdout` to write the log records of Claude Code to the gateway's standard output as JSON lines, for your cluster's log pipeline to collect.
 
 ## 0.4.8
 

@@ -399,6 +399,17 @@ instanceLimit: -1
 			wantProblems: []string{`otlp.logsEndpoint: "victoria-logs:9428" is not an http or https URL`},
 		},
 		{
+			name:         "stdout as the logs endpoint",
+			file:         "otlp.logsEndpoint: stdout\n",
+			wantAbsent:   []string{"otlp.logsEndpoint"},
+			wantProblems: []string{"databaseURL: required"},
+		},
+		{
+			name:         "stdout as the metrics endpoint",
+			file:         "otlp.metricsEndpoint: stdout\n",
+			wantProblems: []string{`otlp.metricsEndpoint: "stdout" is not an http or https URL`},
+		},
+		{
 			name:         "OTLP ingest with an endpoint",
 			file:         "otlpIngest: true\notlpEndpoint: http://collector:4318\n",
 			wantAbsent:   []string{"otlpEndpoint"},
