@@ -45,7 +45,7 @@ func TestToolSearch(t *testing.T) {
 		}
 
 		assert.ElementsMatch(t, []string{
-			gateway.ToolListServers, gateway.ToolServerStatus, gateway.ToolFindTools,
+			gateway.ToolListServers, gateway.ToolServerStatus, gateway.ToolFindTools, gateway.ToolEnableServer, gateway.ToolDisableServer,
 		}, names)
 
 		var found gateway.FindToolsResult
