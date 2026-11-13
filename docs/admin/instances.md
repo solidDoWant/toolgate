@@ -21,6 +21,29 @@ A request for an ended session within that time resumes it. If the request has t
 
 An invalid template does not stop its instances. They continue on the last valid generation.
 
+## Updating outdated instances
+
+An instance that started from an older version of its template is outdated. By default, an outdated instance keeps running. It is replaced only when a user or admin restarts it in the web UI, or when it stops. The template field `updatePolicy` changes this:
+
+```yaml
+spec:
+  updatePolicy:
+    mode: whenIdle   # manual (default), immediate or whenIdle
+    idleFor: 5m      # only with whenIdle, at least 1m
+```
+
+- `manual`: toolgate does not replace outdated instances.
+- `immediate`: when the template changes, toolgate replaces every ready outdated instance. Use it for servers that lose nothing when they restart. If the new template is bad, every new instance fails its readiness check. Fix the template to recover.
+- `whenIdle`: toolgate replaces a ready outdated instance when it had no calls for `idleFor` and no call is running. Use it for servers that keep state, such as a browser. Set `idleFor` shorter than `idleStop` to update between tasks. An instance in steady use is not replaced until it goes quiet.
+
+A replacement works like a restart from the web UI. The sessions keep the server enabled, and the new tools arrive with `list_changed`. The stop conditions above are checked first, and the audit event `instance.stop` has the reason `template-update`.
+
+`updatePolicy` covers template changes only. It does not react to a changed secret. For a template that mounts a secret that changes, use a Deployment in `resources`. A tool such as Reloader or a Kyverno policy can then restart the Deployment when the secret changes.
+
+## A deleted instance object
+
+If an instance fails its health checks three times in a row and one of its objects is missing from the cluster, for example a Pod that someone deleted, toolgate applies the instance's objects again instead of marking the instance failed. It records the `instance.reapply` audit event. This counts as a repair, so the same limit applies: at most three repairs in 30 minutes. After that, the instance fails.
+
 ## How toolgate removes an instance
 
 toolgate deletes the namespace `tg-<instance id>` of the instance. Kubernetes then deletes all the objects in it. toolgate deletes only a namespace that has the label `toolgate.soliddowant.dev/instance` with the ID of the instance.

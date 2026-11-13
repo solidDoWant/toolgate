@@ -82,7 +82,13 @@ type Monitor struct {
 	// RemoteAuth fills a remote instance's headers for its owner
 	// (Starter.RemoteAuth). Nil fails remote instances.
 	RemoteAuth func(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*RemoteAuth, error)
-	Logger     *slog.Logger
+	// Reapply applies an instance's objects again when one is missing, and
+	// reports whether it did. It runs once the checks have failed
+	// HealthFailureThreshold times in a row, and the instance is given
+	// another round of checks instead of being marked failed. Nil means a
+	// failing instance is marked failed.
+	Reapply func(ctx context.Context, instance db.Instance) (bool, error)
+	Logger  *slog.Logger
 
 	mu       sync.Mutex
 	base     context.Context
@@ -293,6 +299,20 @@ func (w *watcher) check(ctx context.Context) bool {
 
 	if w.failures < HealthFailureThreshold {
 		return true
+	}
+
+	if w.monitor.Reapply != nil {
+		reapplied, reapplyErr := w.monitor.Reapply(ctx, current)
+		if reapplyErr != nil {
+			w.monitor.logger().WarnContext(ctx, "reapplying missing instance objects", slog.String("instance", w.instance.ID),
+				slog.String("error", reapplyErr.Error()))
+		}
+
+		if reapplied {
+			w.failures = 0
+
+			return true
+		}
 	}
 
 	w.monitor.fail(ctx, w.instance, "The server didn't answer "+strconv.Itoa(HealthFailureThreshold)+
