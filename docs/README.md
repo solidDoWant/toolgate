@@ -77,6 +77,7 @@ docs/design/
   phase-2.md               The design for phase 2: who does what, state, and the interaction table.
   phase-3.md               The design for phase 3: who does what, state, and the interaction table.
   phase-4.md               The design for phase 4: lazy start, tool search, curation, delegated access, MCP revisions and connectors.
+  instance-upstream-sessions.md  One upstream MCP session for each instance and toolgate session, the same on every replica.
 
 docs/agents/               Instructions for the agents (not for people).
   planner.md               The planner's playbook.
