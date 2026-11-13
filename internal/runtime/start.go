@@ -563,7 +563,7 @@ func (s *Starter) applyAll(ctx context.Context, instance db.Instance, template *
 		owner = anchor
 	}
 
-	for _, object := range result.Objects {
+	for _, object := range orderForApply(result.Objects) {
 		if owner != nil {
 			object.SetOwnerReferences(append(object.GetOwnerReferences(), *owner))
 		}
