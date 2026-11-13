@@ -390,6 +390,22 @@ If toolgate cannot get the token, the command shows the reason, never the token,
 
 If you set more than one of the variables, every command exits with `Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET and TOOLGATE_ATTESTATION_TOKEN_REQUEST.` You cannot combine them with `TOOLGATE_SPIFFE_SOCKET`.
 
+### Prove where your session runs with a workspace key
+
+Use this on a machine that your admin does not attest, for example a laptop, when your admin has turned on workspace keys. You register a key pair for the machine. The private key stays on the machine. The gateway keeps only the public key. Then the machine can prove where your sessions run, and they get a verified workspace such as `registered/alice/dev`.
+
+1. Run `toolgate workspace register NAME`, for example `toolgate workspace register dev`. A name has 1 to 63 letters, digits, `.`, `_` or `-`. The command makes a key and saves it in `workspace-keys/NAME.pem` in the toolgate configuration directory, with mode 0600. Use `--key-file PATH` to choose another file. If the file exists, the command uses its key.
+2. The command prints the fingerprint of the key (`SHA256:` and 43 characters) and a link. Open the link in your browser and sign in again. Compare the fingerprint on the page with the fingerprint in the terminal. Approve only if you ran the command yourself and the two are the same. The command waits for your decision. Ctrl-C stops the wait, but the request stays open until it expires. If you register the same name with a new key, the new key replaces the old key after you approve it.
+3. When the request is approved, run `toolgate configure --attestation-key-file PATH` with the path that the command printed. toolgate checks the file and saves its absolute path, and prints the fingerprint. An empty value removes the setting. You can use only one of `--attestation-token-file`, `--attestation-token-request` and `--attestation-key-file`. To change the source, give an empty value for the other one in the same command.
+
+The key file must be a PKCS#8 PEM file with an Ed25519 key, at most 16 KiB. On Linux and macOS it must not be readable by other users. If it is, toolgate says "The key file PATH can be read by other users. Run chmod 600 PATH." and does not use it. As with the other sources, if toolgate cannot read the key, the command shows the reason and sends no request.
+
+To see your keys, run `toolgate workspace keys list`. It prints the columns `NAME`, `WORKSPACE`, `FINGERPRINT`, `STATUS` (`active` or `pending`), `REGISTERED` and `LAST USED`. To remove a key, run `toolgate workspace keys revoke NAME`. The sessions that use it lose their verified workspace on their next request. Revoking also denies the pending requests for that name. You can also do both on the Workspaces page. You can have 20 active keys.
+
+If registration prints a warning that your access tokens live longer than 5 minutes, ask your admin to make them 5 minutes or shorter. Otherwise your sessions lose their verified workspace after 5 minutes.
+
+**What the key does.** The key protects against a stolen user token, not against code running in the workspace. Someone who steals your token cannot make a verified session with it: a key that they register does nothing until you approve it in the browser. Someone who steals only the key file gets nothing, because the key works only with your token. But any program that runs on the machine as you can read the key file and your sign-in, and it gets your verified sessions. Approve a key only when you registered it yourself.
+
 ## Settings from your admin
 
 Your admin can give you Claude Code settings, for example permissions or environment variables. When a Claude Code session starts, the plugin runs `toolgate hook session-start`. This command gets the settings for you from the gateway and writes them into `~/.claude/settings.json`.
