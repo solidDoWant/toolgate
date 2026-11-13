@@ -145,6 +145,8 @@ spec:
   scope: per-session            # optional: per-session | per-user | shared
   namespace: per-instance       # per-instance | shared
   idleStop: 30m
+  updatePolicy:                 # optional: when outdated instances are replaced
+    mode: manual                # manual (default) | immediate | whenIdle (needs idleFor, at least 1m)
   startTimeout: 5m
   access:
     users: []                   # globs on OIDC subjects or verified emails; "*" = every user

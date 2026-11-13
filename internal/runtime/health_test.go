@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -217,6 +218,16 @@ func reformatted(t *testing.T, document []byte) []byte {
 func newMonitorFixture(t *testing.T, pingResult func(int) error) *monitorFixture {
 	t.Helper()
 
+	return newMonitorFixtureWithReapply(t, pingResult, nil)
+}
+
+// newMonitorFixtureWithReapply is newMonitorFixture with the monitor's
+// Reapply hook set.
+func newMonitorFixtureWithReapply(t *testing.T, pingResult func(int) error,
+	reapply func(ctx context.Context, instance db.Instance) (bool, error),
+) *monitorFixture {
+	t.Helper()
+
 	template := testTemplate()
 	fixture := &monitorFixture{
 		upstream: &upstream{pingResult: pingResult, tools: []*mcp.Tool{searchTool}},
@@ -237,6 +248,7 @@ func newMonitorFixture(t *testing.T, pingResult func(int) error) *monitorFixture
 			return template.DeepCopy(), true
 		},
 		Connect:  fixture.upstream.connect,
+		Reapply:  reapply,
 		Interval: time.Millisecond,
 	}
 
@@ -291,6 +303,26 @@ func TestMonitorFailsAfterThreeFailedHealthChecksInARow(t *testing.T) {
 
 	pings, _, _ := fixture.upstream.state()
 	assert.Equal(t, 3, pings, "the third failure in a row marks it failed")
+}
+
+func TestMonitorReappliesMissingObjectsBeforeFailingTheInstance(t *testing.T) {
+	var reapplies atomic.Int32
+
+	// The first round of failed checks finds a missing object and reapplies
+	// it; the second finds nothing to reapply, so the instance fails.
+	fixture := newMonitorFixtureWithReapply(t, func(int) error { return errors.New("connection refused") },
+		func(context.Context, db.Instance) (bool, error) { return reapplies.Add(1) == 1, nil })
+
+	require.Eventually(t, func() bool {
+		row, _ := fixture.store.snapshot()
+
+		return row.Status == "failed"
+	}, 10*time.Second, time.Millisecond)
+
+	assert.EqualValues(t, 2, reapplies.Load())
+
+	pings, _, _ := fixture.upstream.state()
+	assert.Equal(t, 6, pings, "a reapply gives the instance another round of three checks")
 }
 
 func TestMonitorFailuresMustBeInARow(t *testing.T) {

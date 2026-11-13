@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"k8s.io/apimachinery/pkg/types"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
+
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -27,6 +29,7 @@ const (
 	ReplaceReasonRestart        = "restart"
 	ReplaceReasonResolverExpiry = "resolver-expiry"
 	ReplaceReasonHealthCheck    = "health-check"
+	ReplaceReasonTemplateUpdate = "template-update"
 )
 
 // Replacer replaces live instances with new pending rows at the template's
@@ -73,6 +76,50 @@ func (r *Replacer) ExpiryStep(ctx context.Context, instance db.Instance) error {
 	}
 
 	_, err := r.Replace(ctx, instance, ReplaceReasonResolverExpiry, "")
+
+	return err
+}
+
+// UpdateStep replaces, with reason template-update, a ready instance that
+// was started from an older generation of its template when the template's
+// update policy says so: at once with immediate, or with whenIdle once the
+// instance has had no calls for idleFor. With manual, the default, it does
+// nothing. The stop conditions still win, as in every replacement.
+func (r *Replacer) UpdateStep(ctx context.Context, instance db.Instance) error {
+	if !isLive(instance) || instance.Status != statusReady || !r.Stops.Templates.IsLoaded() {
+		return nil
+	}
+
+	template, found := r.Stops.Templates.Running(types.NamespacedName{Namespace: instance.TemplateNs, Name: instance.TemplateName})
+	if !found || string(template.UID) != instance.TemplateUid || template.Generation == instance.Generation {
+		return nil
+	}
+
+	policy := template.Spec.UpdatePolicy
+	if policy == nil {
+		return nil
+	}
+
+	switch policy.Mode {
+	case v1alpha1.UpdateModeImmediate:
+	case v1alpha1.UpdateModeWhenIdle:
+		if policy.IdleFor == nil {
+			return nil
+		}
+
+		lastUsed := instance.LastUsedAt
+		if !lastUsed.Valid {
+			lastUsed = instance.ReadyAt
+		}
+
+		if !lastUsed.Valid || r.now().Sub(lastUsed.Time) < policy.IdleFor.Duration {
+			return nil
+		}
+	default:
+		return nil
+	}
+
+	_, err := r.Replace(ctx, instance, ReplaceReasonTemplateUpdate, "")
 
 	return err
 }
