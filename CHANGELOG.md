@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Internal
+
+- The gateway can encrypt an exchanged token and send it to the leader on the `toolgate_credentials` channel, and the leader keeps it in memory for at most 2 minutes. Nothing uses this yet.
+
 ## 0.4.11
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release shows the title of each Claude Code session on the usage dashboard, and fixes several panels of that dashboard. No upgrade steps are needed. Users get the new hooks when they update the plugin.
