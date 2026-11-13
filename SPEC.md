@@ -197,7 +197,7 @@ A template's scope must be at least as narrow as the variables it uses in `resou
 | The template uses | Broadest scope allowed |
 |---|---|
 | nothing per-identity (only `${instance.*}`, `${template.name}`, or no variables) | `shared` |
-| `${principal.*}`, `${secret:…}` or `${resolver:…}` | `per-user` |
+| `${principal.*}`, `${secret:…}`, `${resolver:…}` or `${exchange:…}` | `per-user` |
 | `${session.id}` or `${workspace.id}` | `per-session` |
 
 `scope` is optional. Without it, the effective scope is the broadest one the table allows. An admin may set a narrower scope, for example `per-user` for per-user state on disk. A broader one makes the template invalid, with a reason that names the field and the variable but never a header value. The `Valid` condition of a valid template gives the effective scope and why, and every part of the gateway (the catalog, the renderer, instances, the server list and the web UI) uses the effective scope. One function decides it, so they can't disagree.
@@ -214,9 +214,9 @@ With `shared`, all instances go in one configured namespace and are told apart b
 
 **Rendering rules:**
 1. Parse the YAML first. Substitute variables only inside string scalars of the parsed tree. A value never adds keys or changes structure.
-2. Variables: `${principal.id}`, `${principal.email}`, `${principal.name}`, `${workspace.id}`, `${session.id}`, `${instance.id}`, `${instance.namespace}`, `${template.name}`, `${secret:<name>}`, `${resolver:<name>}`. `$${` escapes a literal `${`. An unknown variable, or a variable that doesn't exist for this scope, fails the render.
+2. Variables: `${principal.id}`, `${principal.email}`, `${principal.name}`, `${workspace.id}`, `${session.id}`, `${instance.id}`, `${instance.namespace}`, `${template.name}`, `${secret:<name>}`, `${resolver:<name>}`, `${exchange:<name>}`, `${templateSecret:<name>/<key>}`. `$${` escapes a literal `${`. An unknown variable, or a variable that doesn't exist for this scope, fails the render.
 3. Claimed values (`workspace.id` on `user` attestation, `session.id`) are already pattern-checked (see "Protocols"). When rendered into an object name or label, they are hashed to fit Kubernetes length rules.
-4. `${secret:…}` and `${resolver:…}` are allowed only in `stringData` or `data` of a `Secret`. The one other place for `${secret:…}` is a value of a remote template's `remote.headers`, where only `${secret:…}` and `${principal.*}` are allowed. Anywhere else, the template fails validation.
+4. `${secret:…}` and `${resolver:…}` are allowed only in `stringData` or `data` of a `Secret`. The one other place for `${secret:…}` is a value of a remote template's `remote.headers`, where only `${secret:…}` and `${principal.*}` are allowed. Anywhere else, the template fails validation. `${exchange:…}` (a token exchanged from the user's own token at the IdP, refreshed while the user is active) and `${templateSecret:…}` (a value from a Secret in the admin's template secrets namespace, which never narrows the scope and is kept current) follow the same rule, must be the whole value, and are decided in `docs/design/instance-credentials.md`.
 5. Every rendered object gets the labels `toolgate.soliddowant.dev/instance`, `toolgate.soliddowant.dev/template` and `app.kubernetes.io/managed-by: toolgate`. Its namespace is forced to the instance namespace.
 6. Objects are applied with server-side apply, field manager `toolgate`.
 
