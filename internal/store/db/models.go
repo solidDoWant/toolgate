@@ -109,6 +109,7 @@ type Instance struct {
 	UnhealthyReason    string
 	Repairs            []pgtype.Timestamptz
 	McpRevision        string
+	StoppingAt         pgtype.Timestamptz
 }
 
 type McpSession struct {
@@ -124,6 +125,26 @@ type McpSession struct {
 	CreatedAt         pgtype.Timestamptz
 	LastSeenAt        pgtype.Timestamptz
 	EndedAt           pgtype.Timestamptz
+}
+
+type PersistentVolume struct {
+	ID                string
+	TemplateNs        string
+	TemplateName      string
+	TemplateUid       string
+	VolumeName        string
+	Scope             string
+	ScopeID           string
+	StorageClass      string
+	SizeBytes         int64
+	PvName            pgtype.Text
+	InstanceID        pgtype.Text
+	CreatedAt         pgtype.Timestamptz
+	LastUsedAt        pgtype.Timestamptz
+	DeleteReason      string
+	DeleteRequestedAt pgtype.Timestamptz
+	ReclaimPatchedAt  pgtype.Timestamptz
+	Problem           string
 }
 
 type PrincipalProfile struct {
