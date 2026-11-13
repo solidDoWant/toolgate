@@ -17,7 +17,7 @@ import (
 
 // S3Image is the S3-compatible server the integration tests run: the Versity
 // S3 Gateway with its POSIX backend, pinned by digest.
-const S3Image = "ghcr.io/versity/versitygw:v1.10.0@sha256:89cad13cc981986ee284cbafea4613f9533ce6fd5f37a2c96c4c4fb8adb3a316"
+const S3Image = "ghcr.io/versity/versitygw:v1.11.0@sha256:8319a530d08d537426e2f855bae5280709795dc73a3f0c347973ef915d6343c5"
 
 const (
 	s3Region = "us-east-1"
