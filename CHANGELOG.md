@@ -6,6 +6,15 @@
 
 - A user can register a key pair for a machine outside the cluster, such as a laptop. Sessions from that machine then get a verified workspace, such as `registered/alice/dev`. Users run `toolgate workspace register NAME`, approve the key in the browser, and run `toolgate configure --attestation-key-file PATH`. They manage keys with `toolgate workspace keys list` and `toolgate workspace keys revoke`. See "Registered workspace keys" in `docs/admin/workspace-attestation.md`.
 - The feature is off by default. Turn it on with `config.workspaceKeys.enabled` only after every replica runs the new version. An old replica cannot approve a key request, and it sends a key assertion to TokenReview, where the attestation fails. The feature also needs the web UI, and user access tokens that live at most 5 minutes.
+### Fixes
+
+
+- `toolgate secret set --help` and `toolgate secret delete --help` (also `-h` and `help`) now print the usage. Before, they stored or deleted a secret named `--help`.
+- `toolgate secret set` now refuses an empty value read from standard input that is not a terminal.
+
+### Breaking changes
+
+- A secret name can no longer start with `-`. The name pattern is now `^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$`. The CLI, the API and the web UI all refuse such names. A secret that already has a name with a leading `-` can no longer be read, replaced or deleted, so rename it before you update.
 
 ## 0.4.11
 

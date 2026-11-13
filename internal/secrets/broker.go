@@ -21,12 +21,12 @@ const rewrapBatchSize = 100
 
 // namePattern is the form of a secret name. It is the form of the
 // `X-Toolgate-*` header values, so a name is safe in paths and messages.
-var namePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
+var namePattern = regexp.MustCompile(`^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$`)
 
 // Errors returned by the Broker.
 var (
 	ErrNotFound     = errors.New("secret not found")
-	ErrInvalidName  = errors.New("a secret name must match ^[A-Za-z0-9._-]{1,128}$")
+	ErrInvalidName  = errors.New("a secret name must match ^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$")
 	ErrValueTooLong = fmt.Errorf("a secret value can be at most %d bytes", MaxValueBytes)
 )
 
