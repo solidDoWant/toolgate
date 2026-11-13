@@ -176,7 +176,15 @@ func TestTouchWorkspaceKeyWritesAtMostOncePerMinute(t *testing.T) {
 	require.NoError(t, keys.TouchWorkspaceKey(t.Context(), id))
 	assert.Equal(t, first, lastUsed(id), "a second touch inside a minute writes nothing")
 
-	_, err := pool.Exec(t.Context(), `UPDATE workspace_keys SET last_used_at = now() - interval '61 seconds' WHERE id = $1`, id)
+	_, err := pool.Exec(t.Context(), `UPDATE workspace_keys SET last_used_at = now() - interval '59 seconds' WHERE id = $1`, id)
+	require.NoError(t, err)
+
+	before := lastUsed(id)
+
+	require.NoError(t, keys.TouchWorkspaceKey(t.Context(), id))
+	assert.Equal(t, before, lastUsed(id), "a touch 59 seconds after the last one writes nothing")
+
+	_, err = pool.Exec(t.Context(), `UPDATE workspace_keys SET last_used_at = now() - interval '61 seconds' WHERE id = $1`, id)
 	require.NoError(t, err)
 	require.NoError(t, keys.TouchWorkspaceKey(t.Context(), id))
 
