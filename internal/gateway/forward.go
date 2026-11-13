@@ -25,6 +25,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
 	"github.com/solidDoWant/toolgate/internal/version"
@@ -511,7 +512,10 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 			return nil, err
 		}
 	} else {
+		stopBeat := m.keepInstanceBusy(ctx, instance)
 		result, outcome = m.forward(ctx, current, instance, template, tool, arguments)
+
+		stopBeat()
 		observationOf(ctx).forwarded(outcome)
 	}
 
@@ -538,6 +542,42 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 	}
 
 	return result, nil
+}
+
+// keepInstanceBusy moves the instance's last_used_at to now and then every
+// lastUsedInterval until the returned function is called, so the update
+// policy never sees an instance with a call in flight as idle. A failed
+// write is not fatal: the call's end writes it again.
+func (m *metaTools) keepInstanceBusy(ctx context.Context, instance db.Instance) func() {
+	if instance.ID == "" {
+		return func() {}
+	}
+
+	queries := db.New(m.database)
+	beatCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(testtime.Scale(lastUsedInterval))
+		defer ticker.Stop()
+
+		for {
+			_ = queries.TouchInstance(beatCtx, instance.ID)
+
+			select {
+			case <-beatCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 // decide asks the policy engine for a decision inside a toolgate.policy

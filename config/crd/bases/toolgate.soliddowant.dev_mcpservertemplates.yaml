@@ -416,6 +416,35 @@ spec:
                   name.
                 maxProperties: 256
                 type: object
+              updatePolicy:
+                description: |-
+                  UpdatePolicy says when toolgate replaces running instances that were
+                  started from an older version of the template. The default, manual,
+                  replaces them only when a user or admin restarts them, or when they
+                  stop.
+                properties:
+                  idleFor:
+                    description: |-
+                      IdleFor is how long an instance must have had no calls before
+                      whenIdle replaces it. At least one minute.
+                    type: string
+                  mode:
+                    description: |-
+                      Mode is manual (the default), immediate or whenIdle. With immediate,
+                      toolgate replaces every outdated instance as soon as the template
+                      changes. With whenIdle, it replaces an outdated instance once it has
+                      had no calls for idleFor and no call is running.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: mode must be one of manual, immediate, whenIdle
+                      rule: self in ['manual', 'immediate', 'whenIdle']
+                required:
+                - mode
+                type: object
+                x-kubernetes-validations:
+                - message: idleFor is required with mode whenIdle and not allowed
+                    otherwise
+                  rule: 'self.mode == ''whenIdle'' ? has(self.idleFor) : !has(self.idleFor)'
             type: object
             x-kubernetes-validations:
             - message: 'namespace: shared is allowed only with scope: shared'

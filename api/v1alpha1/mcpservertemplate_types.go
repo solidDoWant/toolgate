@@ -55,6 +55,13 @@ type MCPServerTemplateSpec struct {
 	// +optional
 	IdleStop *metav1.Duration `json:"idleStop,omitempty"`
 
+	// UpdatePolicy says when toolgate replaces running instances that were
+	// started from an older version of the template. The default, manual,
+	// replaces them only when a user or admin restarts them, or when they
+	// stop.
+	// +optional
+	UpdatePolicy *UpdatePolicy `json:"updatePolicy,omitempty"`
+
 	// StartTimeout is how long an instance may take to become ready.
 	// +optional
 	StartTimeout *metav1.Duration `json:"startTimeout,omitempty"`
@@ -371,3 +378,26 @@ type MCPServerTemplateList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []MCPServerTemplate `json:"items"`
 }
+
+// UpdatePolicy says when outdated instances are replaced.
+// +kubebuilder:validation:XValidation:rule="self.mode == 'whenIdle' ? has(self.idleFor) : !has(self.idleFor)",message="idleFor is required with mode whenIdle and not allowed otherwise"
+type UpdatePolicy struct {
+	// Mode is manual (the default), immediate or whenIdle. With immediate,
+	// toolgate replaces every outdated instance as soon as the template
+	// changes. With whenIdle, it replaces an outdated instance once it has
+	// had no calls for idleFor and no call is running.
+	// +kubebuilder:validation:XValidation:rule="self in ['manual', 'immediate', 'whenIdle']",message="mode must be one of manual, immediate, whenIdle"
+	Mode string `json:"mode"`
+
+	// IdleFor is how long an instance must have had no calls before
+	// whenIdle replaces it. At least one minute.
+	// +optional
+	IdleFor *metav1.Duration `json:"idleFor,omitempty"`
+}
+
+// Values of UpdatePolicy.Mode.
+const (
+	UpdateModeManual    = "manual"
+	UpdateModeImmediate = "immediate"
+	UpdateModeWhenIdle  = "whenIdle"
+)

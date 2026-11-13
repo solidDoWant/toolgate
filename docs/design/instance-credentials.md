@@ -44,7 +44,7 @@ Rows still say what is wanted and when. A request claims an exchange with a row 
 
 **Updates.** toolgate updates a key with a JSON merge patch of the Secret, `{"data": {"<key>": "<base64 of value>"}}`, with field manager `toolgate`. The gateway already has `patch` on Secrets, and the admission policy already confines it to toolgate's namespaces. The gateway never reads a Secret in an instance namespace. It does not need to, because each update writes the full value of one key.
 
-**Apply order.** The render applies every `Secret` object of the render before any other object. The Secrets keep their template order among themselves, and so do the other objects. So no pod of the instance starts before its Secrets exist with their values. This applies to every template, not only to those that use the new variables (§8, choice 5).
+**Apply order.** The render applies every `Secret` object of the render before any other object. The Secrets keep their template order among themselves, and so do the other objects. One type is the exception: a Secret of type `kubernetes.io/service-account-token` keeps its template position among the other objects. It names a ServiceAccount, which must exist before Kubernetes fills the Secret. So no pod of the instance starts before its Secrets exist with their values. This applies to every template, not only to those that use the new variables (§8, choice 5).
 
 ## 3. Token exchange
 
@@ -112,6 +112,18 @@ Only identities of kind `user` (`auth.KindUser`) have a token to exchange. Servi
 
 Attested user sessions, connectors and `TOOLGATE_TOKEN_COMMAND` tokens are user identities. Their bearer token is the subject token. The IdP decides whether it accepts that token for exchange (§7, the Authentik setup).
 
+### Where the user's token comes from
+
+`auth.Identity` holds no token, and it must never get one, because the `sessions` row stores a JSON snapshot of it. The raw bearer token travels like this:
+
+- `auth.Middleware` puts the token that it verified in the request's context with `auth.WithSubjectToken(ctx, token)`, only for an identity of kind `user`. `auth.SubjectToken(ctx)` reads it.
+- The value has a new type, `auth.SubjectToken`, a string type. Its `String`, `GoString` and `LogValue` methods return `[redacted]`, and its `MarshalJSON` returns an error. So a format verb, a `slog` attribute or a JSON encoding never prints it. Only `internal/credentials` calls its `Reveal()` method, to build the exchange request.
+- Tool handlers don't read the request's context. Per-request data reaches them in `requestContext`, which travels in the go-sdk's `TokenInfo.Extra` (`internal/gateway/mcp.go`). So `mcpEndpoint.ServeHTTP` copies the value into a new field, `requestContext.subjectToken`. Code that has the HTTP request itself, such as resume, reads `auth.SubjectToken(request.Context())`.
+- An exchange uses only the token of the request that it serves. `sessionTools.setCurrent` and `acquireStateless` keep a `requestContext` after its request ends, so they store it with `subjectToken` cleared.
+- The background refresh (§3, "Refresh") copies only the `auth.SubjectToken` value into its goroutine. The goroutine ends after the exchange's `timeout`.
+
+The token is never a field of `Identity`, never a `slog` attribute, and never in a row, an audit event, a span or a notification.
+
 ### The exchange request
 
 A new package, `internal/credentials`, makes the request with `golang.org/x/oauth2/clientcredentials`, which is already in `go.mod`. No other code builds an OAuth request.
@@ -165,7 +177,7 @@ Any role that can connect to the database can `LISTEN` on the channel. So the to
 
 ### State
 
-One additive migration.
+One additive migration, `00017_instance_credentials.sql`, holds the tables of §3 and §4. The five 0.4.12 designs take fixed numbers, in the recommended build order: `00015_upstream_sessions`, `00016_workspace_keys`, `00017_instance_credentials`, `00018_tool_result_cache` and `00019_persistent_volumes`. If master already has this number when the PR rebases, take the next free number and say so in the PR.
 
 `instance_exchanges`, one row for each exchange that an instance uses:
 
@@ -191,13 +203,15 @@ The token itself is never in PostgreSQL, a log, an audit event, a span, a metric
 A claim makes sure that one exchange runs at a time for each (instance, exchange). A request claims with one statement:
 
 ```sql
-UPDATE instance_exchanges SET claimed_at = now()
-WHERE instance_id = $1 AND refresh_after <= now()
-  AND (claimed_at IS NULL OR claimed_at < now() - $2)
-RETURNING exchange
+UPDATE instance_exchanges AS e SET claimed_at = now()
+FROM unnest(@exchanges::text[], @claim_timeouts::interval[]) AS t (exchange, claim_timeout)
+WHERE e.instance_id = @instance_id AND e.exchange = t.exchange
+  AND e.refresh_after <= now()
+  AND (e.claimed_at IS NULL OR e.claimed_at < now() - t.claim_timeout)
+RETURNING e.exchange
 ```
 
-`$2` is the exchange's `timeout` plus 30 seconds. A claim of a replica that died, or whose delivery was lost, expires after this time. The request runs one exchange for each row returned.
+The two arrays list each configured exchange and its own claim timeout: the exchange's `timeout` plus 30 seconds. So each row expires after the timeout of its own exchange. A claim of a replica that died, or whose delivery was lost, expires after this time. A row of an exchange that is no longer configured is never claimed (X16). The request runs one exchange for each row returned.
 
 A request claims only when all of these hold:
 - the instance is live and `uses_exchange` is true;
@@ -206,22 +220,40 @@ A request claims only when all of these hold:
 
 ### Start
 
-1. The request that inserts a `pending` row (enable, a call that enables or starts, resume) does so in its existing transaction. If the current generation uses `${exchange:…}`, the transaction also inserts one `instance_exchanges` row for each exchange, with `refresh_after = now()`, `wanted_since = now()` and `claimed_at = now()`. So the inserting request holds the claim.
-2. After the commit, that request runs the exchanges and delivers the tokens. It does this before it waits. A resume, which doesn't wait, also does this.
-3. The leader's `startPending` for a row with exchanges:
-   - It makes the rows match the generation it renders. It inserts a row with `refresh_after = now()` and `wanted_since = now()` for each exchange the generation uses and that has no row. It deletes the rows of exchanges it doesn't use. It sets `wanted_since = now()` on each row that has no token in memory and no `wanted_since`.
+1. The request that inserts a `pending` row (enable, a call that enables or starts, resume) does so in its existing transaction. If the current generation uses `${exchange:…}`, the transaction also inserts one `instance_exchanges` row for each exchange, with `refresh_after = now()`, `wanted_since = now()` and `claimed_at = now()`. So the inserting request holds the claim. If the generation also has `persistentVolumes`, the rows are inserted as "Start order with both features" says instead, and the request holds no claim.
+2. After the commit, that request runs the exchanges and delivers the tokens, if it holds the claim. It does this before it waits. A resume, which doesn't wait, also does this.
+3. The leader's `startPending` for a row with exchanges, at the place that "Start order with both features" gives it:
+   - It makes the rows match the generation it renders. It inserts a row with `refresh_after = now()` and `wanted_since = now()` for each exchange the generation uses and that has no row. It deletes the rows of exchanges it doesn't use. It sets `wanted_since = now()` and `refresh_after = now()` on each row that has no token in memory and no `wanted_since`. If this changed a row, it notifies `instance:<id>` in the same transaction.
    - If a row has `last_error_at` at or after its `wanted_since`, it fails the instance (`pending` to `failed`) with that row's `last_error`.
    - If the leader holds a token in memory for every row, it renders with them, applies (Secrets first, §2), and in the `pending` to `starting` write sets each row's `targets`, `issued_at`, `expires_at`, `refresh_after` (the half-life, below), `wanted_since = null` and `claimed_at = null`. Then it forgets the tokens.
-   - Otherwise the row stays `pending`. If `startTimeout` has passed since the earliest `wanted_since`, it fails with "No exchanged token for `temporal` arrived within 5m0s. Enable `<server>` again to retry."
-4. Each request that waits on the instance (an enable, a call waiting for a `pending` or `starting` instance) runs the claim at each wake, including the 10 s tick. So a lost delivery is retried after the claim expires, while someone waits.
+   - Otherwise the row stays `pending`. If `startTimeout` has passed since `attempt_started_at`, it fails with "No exchanged token for `temporal` arrived within 5m0s. Enable `<server>` again to retry."
+4. Each request that waits on the instance (an enable, a call waiting for a `pending` or `starting` instance) runs the claim at each wake, including the 10 s tick and each `instance:<id>` notification. So a lost delivery is retried after the claim expires, while someone waits.
 
 The exchange happens at most once for each claim. A failure writes `last_error` and `last_error_at`, sets `claimed_at = null`, writes `credential.exchange` (failure) and notifies `instance:<id>`, all in one transaction. The leader then fails the row (step 3). The waiting enable returns the reason, as for any failed start.
+
+### Start order with both features
+
+This section is the same in `instance-credentials.md` and `persistent-volumes.md`. A change to one copy must change the other.
+
+`Starter.startPending` runs these steps in this order for an in-cluster `pending` row. A template that uses only one of the two features skips the steps of the other. A step that waits leaves the row `pending` and returns, and the next pass starts again at step 1. Each step is safe to repeat.
+
+1. **Volumes.** `persistent-volumes.md` §4, steps 1 to 3: claim the volumes, check the StorageClasses of new volumes, and check the recorded PVs. These steps read only PostgreSQL and the API server, and they render nothing.
+2. **Exchanges.** `instance-credentials.md` §3, "Start", step 3. It runs only after step 1 claimed every volume and found no wait.
+3. **Render.** `Render`, with the delivered tokens.
+4. **Volumes.** `persistent-volumes.md` §4, steps 4 to 6: the namespace, the pre-bind and the PVCs.
+5. **Apply.** `applyAll`, Secrets first, then the `pending` to `starting` write (`MarkStarting`), which also writes the exchange rows.
+
+**Exchange rows of a template with volumes.** If the generation has both `${exchange:…}` and `persistentVolumes`, the request that inserts the `pending` row inserts its exchange rows with `refresh_after = 'infinity'`, and with `wanted_since` and `claimed_at` null. It runs no exchange after the commit. So no request exchanges while the row waits for a volume, and no delivered token waits in the leader's memory for a volume. At step 2, the leader sets `wanted_since = now()` and `refresh_after = now()` on each row that has no `wanted_since`, and notifies `instance:<id>` in the same transaction. Each waiting request wakes on that notification, claims and exchanges (`instance-credentials.md` §3, "Start", step 4).
+
+**One timeout.** A row that waits at step 1 or step 2 fails when `startTimeout` has passed since `attempt_started_at`. The insert sets `attempt_started_at`, and `SetInstancePending` resets it, so a row that the sweep sends back to `pending` gets a full `startTimeout` again. The reason names the wait that the row is in when the time passes:
+- at step 1: "Timed out waiting for volume `<name>`: `<wait reason>`";
+- at step 2: "No exchanged token for `<exchange>` arrived within `<startTimeout>`. Enable `<server>` again to retry."
 
 ### Refresh
 
 **Half-life.** After each apply, `refresh_after = issued_at + (expires_at − issued_at) / 2`.
 
-**Trigger.** A call forwarded to a `ready` instance with `uses_exchange` runs the claim after its `tool.decision` commits. If the claim returns rows, the replica runs those exchanges in the background, with a copy of this request's token and a context that keeps no cancellation from the request and ends after the `timeout`. The call is forwarded at once with the token already in the Secret, so a refresh never delays a call. Waits run the claim too (§3, "Start", step 4). No other request refreshes: a request must reach the instance.
+**Trigger.** A call forwarded to a `ready` instance with `uses_exchange` runs the claim after its `tool.decision` commits. A call that the tool-result cache serves runs the claim too, after its `tool.decision` commits (`tool-result-cache.md` §5, step 3). A cache hit is a call by an active user, so it keeps the token fresh. If the claim returns rows, the replica runs those exchanges in the background, with a copy of this request's token and a context that keeps no cancellation from the request and ends after the `timeout`. The call is forwarded at once with the token already in the Secret, so a refresh never delays a call. Waits run the claim too (§3, "Start", step 4). No other request refreshes: a request must reach the instance.
 
 **Apply.** When the leader receives a token for a `starting` or `ready` instance, on its next pass it:
 1. drops the token if its `issuedAt` isn't later than the row's `issued_at`, which drops an old or repeated delivery;
@@ -244,7 +276,7 @@ So an instance whose token nobody refreshed stops within one 30 s pass of the ex
 
 A restart from the web UI, a resolver-expiry replacement, a `replace` repair, and the sweep that sends an instance with missing objects back to `pending` all render again. Each needs a fresh token, and the leader holds none, because it can't read the Secret and keeps no token.
 
-- A new or re-pending row waits for a token, as in §3, "Start", step 3. The sweep's write sets `wanted_since = now()`, `refresh_after = now()` and `claimed_at = null` on the instance's rows.
+- A new or re-pending row waits for a token, as in §3, "Start", step 3. The sweep's write sets `wanted_since = now()`, `refresh_after = now()` and `claimed_at = null` on the instance's rows. For a template with `persistentVolumes`, it sets `wanted_since` and `claimed_at` to null and `refresh_after = 'infinity'` instead, and the leader opens the rows after the volume steps, as "Start order with both features" says.
 - A `reapply` repair of an instance with `uses_exchange` replaces the instance instead, with reason `health-check`, as `reapply` does today for an outdated instance.
 - The owner's next request delivers the token. If none arrives within `startTimeout`, the row fails with the reason in step 3.
 
@@ -296,6 +328,8 @@ Rules, checked by the chart and again by the gateway at start:
 - It doesn't start with `tg-`.
 - It isn't the gateway's own namespace (`leaseNamespace`), which holds the gateway's keyset, database credentials and client secrets.
 - It isn't `config.sharedNamespace.name`, where instances run.
+- It isn't `kube-system`.
+- It isn't one of `catalogNamespaces`. Template authors write there, and the Secrets there are not meant for every template.
 
 The admin creates the namespace and its Secrets, for example with Flux and SOPS. The chart doesn't create it. The namespace must not have the label `toolgate.soliddowant.dev/writable`, so the admission policy refuses every gateway write in it. The admin docs say so.
 
@@ -355,6 +389,7 @@ The same additive migration adds `instance_template_secrets`, one row for each r
 |---|---|
 | `instance_id` | References `instances.id`, `ON DELETE CASCADE`. Primary key with `target_secret` and `target_key`. |
 | `target_secret`, `target_key`, `target_field` | The rendered Secret name, its key, and `data` or `stringData`. |
+| `source_namespace` | The template secrets namespace that the render read the value from. |
 | `source_name`, `source_key` | The Secret and key in the template secrets namespace. Indexed on `source_name`. |
 | `source_version` | The `resourceVersion` of the source Secret that was last written into the target. |
 | `last_error` | Why the latest update failed, or null. Names only, never a value. |
@@ -365,12 +400,13 @@ The leader writes the rows in the `pending` to `starting` write, and again after
 
 **The watch.** The leader runs one controller-runtime cache for `Secret` objects in the template secrets namespace only. It is added to the manager as a runnable that needs leader election, so other replicas never hold these values. Its transform removes `managedFields`. Each event on a Secret enqueues a pass of the runtime reconciler.
 
-**The update step.** A new step of the full pass runs for each live instance in `starting` or `ready` that has rows, after the cache has synced:
-1. For each row, read the source from the cache.
-2. If the Secret or the key is missing, keep the target as it is. Set `last_error` (for example "Secret `keys` was deleted"), log a warning when `last_error` changes, and count `missing`.
-3. If `resourceVersion` equals `source_version`, do nothing.
-4. Otherwise, check UTF-8 for a `stringData` target, as at render. Patch the target key (§2, "Updates"), one patch for each target Secret with all its changed keys. Then set `source_version` to the new version and `last_error` to null, with a compare-and-set on the old `source_version`.
-5. If the patch fails, keep the row, log the instance and the target, and count `error`. The next pass tries again.
+**The update step.** A new step of the full pass runs for each live instance in `starting` or `ready` that has rows. When a namespace is configured, it runs after the cache has synced. When none is configured, it runs with no cache, and only step 1 applies:
+1. If no namespace is configured, or `source_namespace` isn't the configured namespace, keep the target as it is. Set `last_error` to "the template secrets namespace changed", log a warning when `last_error` changes, count `missing`, and go to the next row. A Secret of the same name in another namespace is never copied into an instance that was rendered from the old one.
+2. For each other row, read the source from the cache.
+3. If the Secret or the key is missing, keep the target as it is. Set `last_error` (for example "Secret `keys` was deleted"), log a warning when `last_error` changes, and count `missing`.
+4. If `resourceVersion` equals `source_version`, do nothing.
+5. Otherwise, check UTF-8 for a `stringData` target, as at render. Patch the target key (§2, "Updates"), one patch for each target Secret with all its changed keys. Then set `source_version` to the new version and `last_error` to null, with a compare-and-set on the old `source_version`.
+6. If the patch fails, keep the row, log the instance and the target, and count `error`. The next pass tries again.
 
 The step is level-based. It compares versions on every pass, so a missed event, a leader change, or a change during a render is caught by the next pass. The full pass runs the steps of one instance one after another, so an update never runs at the same time as that instance's render, reapply or teardown.
 
@@ -418,6 +454,9 @@ Phase 1 to phase 4 rows still hold. Each row is one event combined with one oper
 | X28 | Secret patch fails at refresh | — | The row keeps its times and the claim expires. A later call exchanges again. | `internal/runtime: TestRefreshPatchFailureKeepsRow` |
 | X29 | Client secret rotated | exchanges | The file is read for each exchange, so the next exchange uses the new secret. | `internal/credentials: TestClientSecretReadForEachExchange` |
 | X30 | Database role other than the gateway `LISTEN`s | deliveries | It gets only ciphertext. | `internal/credentials: TestDeliveryPayloadHoldsNoToken` |
+| X31 | Token passes half-life | a call that the tool-result cache serves | The hit runs the claim after its `tool.decision` commits, as a forwarded call does. The replica refreshes in the background, and the MCP session survives. | `internal/gateway: TestCacheHitRefreshesExchangedToken` |
+| X32 | Template has `${exchange:…}` and `persistentVolumes` | restart while the old instance drains its volume | The new row's exchange rows stay closed (`refresh_after = 'infinity'`), so nobody exchanges during the volume wait. When the volume is free, the leader opens them and notifies. A waiting request exchanges, and the leader renders within the token's 2 minutes in memory. With no waiting request, the row fails after `startTimeout` from `attempt_started_at`, with the reason of the wait it is in. | `internal/runtime: TestStartOrderWithVolumesAndExchanges` (`-count=50`) |
+| X33 | Two exchanges with different `timeout` values | a dead claim on each | Each row's claim expires after its own exchange's `timeout` plus 30 s. | `internal/credentials: TestClaimUsesEachExchangesTimeout` |
 
 ### Template secrets
 
@@ -441,17 +480,20 @@ Phase 1 to phase 4 rows still hold. Each row is one event combined with one oper
 | T16 | Two instances use one source | change | Each instance gets its own patch. | `internal/runtime: TestTemplateSecretChangeUpdatesRunningInstances` |
 | T17 | Instance in the shared namespace | change | The patch goes to its Secret in the shared namespace. | `test/e2e: TestTemplateSecretSharedInstance` |
 | T18 | Value isn't UTF-8 | update of a `stringData` target | The target is kept and `last_error` says why, as at render. | `internal/runtime: TestTemplateSecretUpdateChecksUTF8` |
+| T19 | `templateSecretsNamespace` changed (restart) | instances rendered from the old namespace | Their targets are kept. `last_error` is "the template secrets namespace changed", and `missing` is counted. A Secret of the same name in the new namespace is never copied into them. New starts render from the new namespace. | `internal/runtime: TestTemplateSecretNamespaceChangeKeepsCopies` |
+| T20 | `templateSecretsNamespace` removed (restart) | instances with rows | The update step runs with no cache. Targets are kept, and each row gets the same `last_error`. Templates that use the variable become invalid, and running instances keep their generation. | `internal/runtime: TestTemplateSecretNamespaceChangeKeepsCopies` (subtest: namespace removed) |
 
 ## 6. Tests
 
 Unit and integration tests use a fake token endpoint: an `httptest.Server` in tests, and a small binary in `test/tokenexchange/` for e2e, like `test/resolver/`. It answers per subject with a token that holds the subject's `sub` and a counter, with a lifetime and error codes that the test sets. No test needs a live Authentik. The test MCP server reads a file from its Secret volume on each call, so a test can see the value it gets.
 
-- `internal/config`: `TestTokenExchangesConfig` (each field rule, at most 8, `secretsKeysetFile` needed), `TestTemplateSecretsNamespaceConfig` (DNS label, `tg-`, the gateway's own and the shared namespace refused).
+- `internal/config`: `TestTokenExchangesConfig` (each field rule, at most 8, `secretsKeysetFile` needed), `TestTemplateSecretsNamespaceConfig` (DNS label, `tg-`, the gateway's own, the shared, `kube-system` and each catalog namespace refused).
+- `internal/auth`: `TestSubjectTokenIsNeverPrinted`: `fmt` with `%v`, `%+v` and `%#v`, a `slog` attribute and `json.Marshal`, of the value alone and of a struct that holds it, never contain the token.
 - `internal/catalog`: `TestValidateExchangeVariable` and `TestValidateTemplateSecretVariable`, tables over every reason in §3 and §4. `internal/templatescope`: `TestExchangeNarrowsAndTemplateSecretDoesNot`.
 - `internal/credentials`: `TestExchangeSendsTokenExchangeGrant` (form fields, Basic auth, no `resource`, no redirect followed), `TestExchangeExpiryFromExpiresInOrJWT`, `TestExchangeRefusesBadAnswers` (no token, no expiry, under 2 minutes, over 4 KiB, wrong `issued_token_type`), `TestExchangeErrorsNameCodeOnly` (no body, description or token in any error), `TestClientSecretReadForEachExchange`, `TestClaimSkipsExpiredSubjectToken`, `TestExpiredClaimCanBeTakenAgain`, `TestDeliveryPayloadHoldsNoToken`, `TestDeliveryRejectsChangedPayload` (each bound field changed).
-- `internal/runtime`: the runtime rows of §5, plus `TestRenderAppliesSecretsFirst` and `TestRenderTemplateSecretEncoding` (`data` base64, `stringData` text).
-- `internal/gateway` (integration): the gateway rows of §5, plus `TestNoTokenInDatabaseLogsOrConditions`. It runs a start, refreshes and failures, then searches every table, the captured log and audit lines, and the template's conditions for the subject token, the exchanged tokens and the client secret.
-- `test/chart`: `TestChartTokenExchangesConfigFile` (written to the file, chart failures) and `TestChartTemplateSecretsRole` (a Role and RoleBinding in that namespace only, no Secret read in the ClusterRole, the namespace rules).
+- `internal/runtime`: the runtime rows of §5, plus `TestRenderAppliesSecretsFirst` (with a `kubernetes.io/service-account-token` Secret that keeps its position) and `TestRenderTemplateSecretEncoding` (`data` base64, `stringData` text).
+- `internal/gateway` (integration): the gateway rows of §5, plus `TestNoTokenInDatabaseLogsOrConditions`. It runs a start, refreshes and failures, then searches every table (the identity snapshot of the `sessions` row included), the captured log and audit lines, and the template's conditions for the subject token, the exchanged tokens and the client secret. It also checks that the `requestContext` that `setCurrent` stores holds no subject token.
+- `test/chart`: `TestChartTokenExchangesConfigFile` (written to the file, chart failures) and `TestChartTemplateSecretsRole` (a Role and RoleBinding in that namespace only, no Secret read in the ClusterRole, the namespace rules, `kube-system` and the catalog namespaces included).
 - `test/e2e`: `TestTokenExchangeEndToEnd` (two users, refresh with the session kept, idle stop and start again, a refused user) and `TestTemplateSecretSharedInstance` (the value at first start, an update with no restart). `TestTemplateSecretsRBACConfinedToNamespace` runs a `SubjectAccessReview` for the gateway's service account: `get secrets` is allowed in the template secrets namespace and refused in the gateway's namespace, the catalog namespace and an instance namespace.
 
 Tests named with `-count=50` in §5 are timing-sensitive and pass with `-count=50 -race`. They wait on conditions with deadlines, never fixed sleeps. Time-based rules (half-life, claim expiry, stop at expiry, the 60 s retry) take their clock from a `Now` field, as resolvers do.
@@ -482,23 +524,25 @@ Tests named with `-count=50` in §5 are timing-sensitive and pass with `-count=5
 2. **The exchange runs on the request's replica,** not the leader. So the user's token never leaves that replica, and only the exchanged token, which is meant for the instance, travels.
 3. **Whole-value rule** for both variables (§2). It makes updates in place possible without the old template generation. It is stricter than the issues ask: a value like `Bearer ${exchange:x}` is not allowed.
 4. **`data` holds the base64 of the value** for both new variables (§2), unlike `${secret:…}`. A template secret can be binary, and copying bytes is the clear meaning.
-5. **Secrets are applied first in every render** (§2), not only for the new variables. It is harmless for other templates, and it closes the same gap for `${secret:…}`.
+5. **Secrets are applied first in every render** (§2), not only for the new variables. It is harmless for other templates, and it closes the same gap for `${secret:…}`. A `kubernetes.io/service-account-token` Secret keeps its position, because its ServiceAccount must exist first.
 6. **`reapply` replaces an instance with an exchange.** The leader can't read the Secret back and keeps no token.
-7. **A start waits for a token up to `startTimeout`** from `wanted_since`, then fails. Replacements and the sweep wait the same way, because only a request can bring a token.
+7. **A start waits for a token up to `startTimeout`** from `attempt_started_at`, then fails. Replacements and the sweep wait the same way, because only a request can bring a token. The volume wait of `persistent-volumes.md` counts toward the same timeout ("Start order with both features").
 8. **After an expiry stop, the next call starts a new instance** even for `start: onEnable` servers (§3, "Expiry"). Without it, a user of such a server must enable it again.
-9. **Refresh only on forwarded calls and waits,** in the background. Policy-refused calls, `tools/list` and other routes don't refresh. A failed refresh is retried after 60 seconds.
+9. **Refresh only on forwarded calls, cache hits and waits,** in the background. Policy-refused calls, `tools/list` and other routes don't refresh. A failed refresh is retried after 60 seconds.
 10. **The expiry stop applies while sessions have the server enabled.** The issue asks for a stop when nobody refreshes, and an enabled set doesn't mean a user is present.
 11. **Expiry is the earlier of `expires_in` and the JWT's unverified `exp`,** at least 2 minutes away, like resolvers.
 12. **Reasons give only the OAuth error code.** `error_description` comes from the IdP with no bound on its content, so it goes only to the log, cut short.
 13. **`client_secret_basic` only.** Authentik supports it. A configurable style can come later.
 14. **`tokenExchanges` needs `secretsKeysetFile`,** for the delivery encryption.
 15. **The Role has `list` as well as `get` and `watch`.** The issue says `get`/`watch`. A controller-runtime watch lists first. `list` in the same namespace doesn't widen what the gateway can read.
-16. **Namespace rules.** The template secrets namespace can't be the gateway's own namespace or the shared namespace, and can't start with `tg-`. The gateway's own namespace holds the keyset and its database credentials.
+16. **Namespace rules.** The template secrets namespace can't be the gateway's own namespace, the shared namespace, `kube-system` or a catalog namespace, and can't start with `tg-`. The gateway's own namespace holds the keyset and its database credentials.
 17. **Only the leader watches template secrets.** Other replicas never hold their values.
 18. **A deleted source keeps the copies** in running instances. Deleting values from running servers is a surprise, and new starts already fail.
-19. **`SPEC.md` text this design contradicts,** left for the owner because this change only adds the variable lines. §9 says the gateway "never reads Secrets". It now reads them in the template secrets namespace. §6 says toolgate "passes none [no tokens] to upstream servers". It now passes exchanged tokens.
+19. **`SPEC.md` already matches this design.** §9, "Resources", says that the gateway reads Secrets only in the template secrets namespace. The connector paragraph of §6 says that the only user credential an upstream server can get is one exchanged for it with `${exchange:…}`. No `SPEC.md` change is left for the worker.
 20. **At most 8 exchanges,** to bound the metric series and the configuration.
 21. **A restart from the web UI waits for the owner's next MCP request** to get a token. The web UI's token is for another client, which the exchange provider does not have to accept.
+22. **One claim statement with a timeout for each exchange.** The arrays hold the configured values, so a changed `timeout` applies after the gateway restarts, with no column to update.
+23. **Changing the template secrets namespace never moves values between namespaces.** A row records where its value came from. Copying a Secret of the same name from the new namespace would put a value into an instance that its template never chose.
 
 ## 9. Not in scope
 
