@@ -6,10 +6,12 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/templatescope"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 )
 
@@ -130,9 +132,97 @@ func validateOverrides(template *v1alpha1.MCPServerTemplate) []string {
 				break
 			}
 		}
+
+		if override.Cache != nil {
+			problems = append(problems, validateCache(upstream, *override.Cache, templatescope.Effective(template.Spec))...)
+		}
 	}
 
 	slices.Sort(problems)
+
+	return problems
+}
+
+// Cache setting bounds. The CRD's schema and CEL rules check the same ones.
+const (
+	minCacheTTL         = time.Second
+	maxCacheTTL         = 24 * time.Hour
+	maxCacheArguments   = 64
+	maxCacheArgumentLen = 128
+	maxNormalizeOps     = 3
+)
+
+// normalizeOperations are the operations a normalize entry can list.
+var normalizeOperations = []string{"trim", "lowercase", "collapseSpace"}
+
+// validateCache checks the cache settings of the tool upstream. The template's
+// effective scope bounds the cache scope, because a cache scope broader than
+// the template's would share results between identities whose instances are
+// kept apart.
+func validateCache(upstream string, cache v1alpha1.ToolCache, effectiveScope string) []string {
+	var problems []string
+
+	field := "`tools." + upstream + ".cache"
+
+	if cache.TTL != nil && (cache.TTL.Duration < minCacheTTL || cache.TTL.Duration > maxCacheTTL) {
+		problems = append(problems, fmt.Sprintf("%s.ttl` is %s, outside 1s to 24h.", field, cache.TTL.Duration))
+	}
+
+	if cache.Scope != "" {
+		switch {
+		case !templatescope.Valid(cache.Scope):
+			problems = append(problems, fmt.Sprintf("%s.scope` is `%s`, which is not one of per-session, per-user, shared.", field, cache.Scope))
+		case templatescope.Valid(effectiveScope) && !templatescope.Allows(cache.Scope, effectiveScope):
+			problems = append(problems, fmt.Sprintf("%s.scope` is `%s`, which is broader than the template's scope `%s`. A cache scope can only narrow the template's scope.",
+				field, cache.Scope, effectiveScope))
+		}
+	}
+
+	if len(cache.IgnoreArgs) > maxCacheArguments {
+		problems = append(problems, fmt.Sprintf("%s.ignoreArgs` has %d names, more than the limit of %d.", field, len(cache.IgnoreArgs), maxCacheArguments))
+	}
+
+	ignored := map[string]bool{}
+
+	for _, name := range cache.IgnoreArgs {
+		if len(name) < 1 || len(name) > maxCacheArgumentLen {
+			problems = append(problems, fmt.Sprintf("%s.ignoreArgs` has a name that is not 1 to %d characters long.", field, maxCacheArgumentLen))
+		}
+
+		if ignored[name] {
+			problems = append(problems, fmt.Sprintf("%s.ignoreArgs` names `%s` more than once.", field, name))
+		}
+
+		ignored[name] = true
+	}
+
+	if len(cache.Normalize) > maxCacheArguments {
+		problems = append(problems, fmt.Sprintf("%s.normalize` has %d entries, more than the limit of %d.", field, len(cache.Normalize), maxCacheArguments))
+	}
+
+	for _, name := range slices.Sorted(maps.Keys(cache.Normalize)) {
+		operations := cache.Normalize[name]
+
+		if len(name) < 1 || len(name) > maxCacheArgumentLen {
+			problems = append(problems, fmt.Sprintf("%s.normalize` has a name that is not 1 to %d characters long.", field, maxCacheArgumentLen))
+
+			continue
+		}
+
+		if len(operations) < 1 || len(operations) > maxNormalizeOps {
+			problems = append(problems, fmt.Sprintf("%s.normalize.%s` must list 1 to %d operations.", field, name, maxNormalizeOps))
+		}
+
+		for _, operation := range operations {
+			if !slices.Contains(normalizeOperations, operation) {
+				problems = append(problems, fmt.Sprintf("%s.normalize.%s` has the operation `%s`, which is not one of trim, lowercase, collapseSpace.", field, name, operation))
+			}
+		}
+
+		if ignored[name] {
+			problems = append(problems, fmt.Sprintf("%s.normalize.%s` names an argument that `ignoreArgs` leaves out.", field, name))
+		}
+	}
 
 	return problems
 }

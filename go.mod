@@ -12,6 +12,7 @@ require (
 	github.com/chromedp/chromedp v0.23.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-jose/go-jose/v4 v4.1.9
+	github.com/go-json-experiment/json v0.0.0-20260213210345-44df1a37e875
 	github.com/go-logr/logr v1.4.4
 	github.com/gobwas/glob v0.2.3
 	github.com/gofrs/flock v0.13.2
@@ -94,7 +95,6 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
 	github.com/go-chi/chi/v5 v5.5.0 // indirect
-	github.com/go-json-experiment/json v0.0.0-20260213210345-44df1a37e875 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v1.0.1 // indirect

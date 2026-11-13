@@ -303,7 +303,50 @@ type ToolOverride struct {
 	// +kubebuilder:validation:MaxProperties=64
 	// +kubebuilder:validation:XValidation:rule="self.all(key, size(self[key]) <= 4096)",message="each input description must be at most 4096 characters"
 	InputDescriptions map[string]string `json:"inputDescriptions,omitempty"`
+
+	// Cache turns on caching of the tool's results. The tool must also be
+	// marked readOnlyHint by its server.
+	// +optional
+	Cache *ToolCache `json:"cache,omitempty"`
 }
+
+// ToolCache says how the results of one tool are cached.
+type ToolCache struct {
+	// TTL is how long a result is served from the cache, 1s to 24h.
+	// Without it, the server's suggestion is used, else 5m.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('1s') && duration(self) <= duration('24h')",message="ttl must be between 1s and 24h"
+	TTL *metav1.Duration `json:"ttl,omitempty"`
+
+	// Scope says who shares cached results: per-session, per-user or
+	// shared. It must be the template's effective scope or narrower.
+	// Without it, the template's effective scope is used.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self in ['per-session', 'per-user', 'shared']",message="scope must be one of per-session, per-user, shared"
+	Scope string `json:"scope,omitempty"`
+
+	// IgnoreArgs are top-level argument names left out of the cache key.
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=128
+	// +listType=set
+	IgnoreArgs []string `json:"ignoreArgs,omitempty"`
+
+	// Normalize maps a top-level argument name to the operations applied
+	// to its string value before it goes in the cache key: trim,
+	// lowercase and collapseSpace.
+	// +optional
+	// +kubebuilder:validation:MaxProperties=64
+	// +kubebuilder:validation:XValidation:rule="self.all(name, size(name) >= 1 && size(name) <= 128)",message="each normalize entry names an argument of 1 to 128 characters"
+	Normalize map[string]NormalizeOperations `json:"normalize,omitempty"`
+}
+
+// NormalizeOperations are the operations for one argument.
+// +kubebuilder:validation:MinItems=1
+// +kubebuilder:validation:MaxItems=3
+// +kubebuilder:validation:items:Enum=trim;lowercase;collapseSpace
+type NormalizeOperations []string
 
 // DeclaredTool is one tool of the server, as the admin states it.
 type DeclaredTool struct {
