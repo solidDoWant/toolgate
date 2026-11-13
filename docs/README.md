@@ -78,6 +78,7 @@ docs/design/
   phase-3.md               The design for phase 3: who does what, state, and the interaction table.
   phase-4.md               The design for phase 4: lazy start, tool search, curation, delegated access, MCP revisions and connectors.
   persistent-volumes.md    The design for template volumes that outlive an instance: state, binding, clean-up, permissions.
+  instance-upstream-sessions.md  One upstream MCP session for each instance and toolgate session, the same on every replica.
   tool-result-cache.md     The design for opt-in caching of tool results.
 
 docs/agents/               Instructions for the agents (not for people).
