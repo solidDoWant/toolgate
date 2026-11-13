@@ -230,3 +230,35 @@ func variables(text string) []string {
 
 	return names
 }
+
+// Volume scopes of a template's persistentVolumes.
+const (
+	VolumePerTemplate = "per-template"
+	VolumePerUser     = "per-user"
+)
+
+// VolumeScope returns the scope a persistent volume of a template with
+// effective scope templateScope may have: per-template for a shared template,
+// per-user for a per-user one, and "" for a per-session one, which can have
+// none.
+func VolumeScope(templateScope string) string {
+	switch templateScope {
+	case Shared:
+		return VolumePerTemplate
+	case PerUser:
+		return VolumePerUser
+	default:
+		return ""
+	}
+}
+
+// EffectiveVolumeScope returns the scope of volume in a template of spec: the
+// volume's own scope when it sets one, otherwise the one the template's
+// effective scope allows.
+func EffectiveVolumeScope(spec v1alpha1.MCPServerTemplateSpec, volume v1alpha1.PersistentVolume) string {
+	if volume.Scope != "" {
+		return volume.Scope
+	}
+
+	return VolumeScope(Effective(spec))
+}

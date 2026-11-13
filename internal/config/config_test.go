@@ -76,6 +76,9 @@ logLevel: debug
 		AdminGroup:                  "toolgate-admins",
 		ToolSearchEmbeddingsTimeout: config.Duration(2 * time.Second),
 
+		PersistentVolumesUnusedRetention: config.Duration(720 * time.Hour),
+		PersistentVolumesLimitPerUser:    "10Gi",
+
 		ToolSearchEmbeddingsScaleToZeroIdleTimeout: config.Duration(15 * time.Minute),
 	}, cfg)
 }
@@ -686,4 +689,56 @@ telemetry.dropSessionIdFromMetrics: true
 	assert.Equal(t, "http://collector:4318", cfg.OTLPEndpointFor("traces"), "an unset signal uses otlpEndpoint")
 	assert.True(t, cfg.TelemetryDropSessionIDFromMetrics)
 	assert.False(t, config.Default().TelemetryDropSessionIDFromMetrics)
+}
+
+func TestPersistentVolumesSettings(t *testing.T) {
+	base := map[string]string{
+		"TOOLGATE_DATABASE_URL":    validDatabaseURL,
+		"TOOLGATE_OIDC_ISSUER_URL": "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":   "toolgate",
+	}
+	with := func(extra map[string]string) func(string) string {
+		values := map[string]string{}
+		for key, value := range base {
+			values[key] = value
+		}
+
+		for key, value := range extra {
+			values[key] = value
+		}
+
+		return envFrom(values)
+	}
+
+	cfg, err := config.Load("", with(nil))
+	require.NoError(t, err)
+	assert.False(t, cfg.PersistentVolumesEnabled)
+	assert.Equal(t, config.Duration(720*time.Hour), cfg.PersistentVolumesUnusedRetention)
+	assert.Equal(t, "10Gi", cfg.PersistentVolumesLimitPerUser)
+
+	cfg, err = config.Load("", with(map[string]string{
+		"TOOLGATE_PERSISTENT_VOLUMES_ENABLED":          "true",
+		"TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION": "1h",
+		"TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER":   "0",
+	}))
+	require.NoError(t, err)
+	assert.True(t, cfg.PersistentVolumesEnabled)
+	assert.Equal(t, config.Duration(time.Hour), cfg.PersistentVolumesUnusedRetention)
+	assert.Equal(t, "0", cfg.PersistentVolumesLimitPerUser)
+
+	cfg, err = config.Load("", with(map[string]string{"TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION": "0"}))
+	require.NoError(t, err)
+	assert.Zero(t, cfg.PersistentVolumesUnusedRetention)
+
+	for _, test := range []struct{ name, variable, value, want string }{
+		{"limit not a quantity", "TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER", "abc", "persistentVolumes.limitPerUser: must be a Kubernetes quantity, such as 10Gi, or 0"},
+		{"limit negative", "TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER", "-1Gi", "persistentVolumes.limitPerUser: must be a Kubernetes quantity, such as 10Gi, or 0"},
+		{"retention under one hour", "TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION", "59m", "persistentVolumes.unusedRetention"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := config.Load("", with(map[string]string{test.variable: test.value}))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.want)
+		})
+	}
 }

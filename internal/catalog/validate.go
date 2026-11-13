@@ -64,6 +64,9 @@ type Validator struct {
 	// Resolvers are the names of the configured resolvers. A template that
 	// names any other resolver is invalid.
 	Resolvers []string
+	// PersistentVolumes is the gateway setting persistentVolumes.enabled.
+	// When it is false, a template with persistentVolumes is invalid.
+	PersistentVolumes bool
 }
 
 // Validate returns every problem found in template, or nil when it is valid.
@@ -129,6 +132,7 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 	problems = append(problems, validateHealthCheck(spec)...)
 	problems = append(problems, validateUpdatePolicy(spec)...)
 	problems = append(problems, remoteProblems...)
+	problems = append(problems, v.validatePersistentVolumes(spec)...)
 
 	return problems
 }
