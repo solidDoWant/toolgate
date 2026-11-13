@@ -83,9 +83,15 @@
         # KUBEBUILDER_ASSETS here, so tests never download binaries.
         # Kubernetes matches the k8s.io/client-go minor version in go.mod;
         # etcd 3.6 is the series the Kubernetes release is tested with.
+        # Only the etcd server is needed, built without its own test suite:
+        # some of etcd's tests fail in the Nix build sandbox, and then
+        # nixpkgs' binary cache has no build to download.
+        etcdServer = pkgs.etcd_3_6.passthru.deps.etcdserver.overrideAttrs (_: {
+          doCheck = false;
+        });
         envtestAssets = pkgs.linkFarm "toolgate-envtest-assets" [
           { name = "kube-apiserver"; path = "${pkgs.kubernetes}/bin/kube-apiserver"; }
-          { name = "etcd"; path = "${pkgs.etcd_3_6}/bin/etcd"; }
+          { name = "etcd"; path = "${etcdServer}/bin/etcd"; }
           { name = "kubectl"; path = "${pkgs.kubectl}/bin/kubectl"; }
         ];
       in
