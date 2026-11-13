@@ -162,7 +162,7 @@ In tool search mode (phase 4) the gateway still lists the enable and disable too
 2. Find the live instance for (template, the scope key of the template's current scope). If it isn't `ready`, refuse with reason `not-ready` and its status and reason.
 3. Decide policy. Calls are never decided from data older than the replica's informer cache and the last notification it processed.
 4. Write the `tool.decision` row and commit it before forwarding. If the write fails, refuse the call and forward nothing.
-5. Forward on this replica's upstream session for the instance. A replica keeps one upstream MCP client session per instance for forwarding, created on first use.
+5. Forward on the upstream session of this instance and toolgate session, the same one on every replica. `docs/design/instance-upstream-sessions.md` replaces the earlier rule of one upstream session per instance on each replica.
 6. Write `tool.result`, and update `last_used_at` (at most once a minute).
 
 Every refusal, including `not-enabled` and `not-ready`, writes `tool.decision` with its reason.
