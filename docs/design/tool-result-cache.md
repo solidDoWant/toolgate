@@ -75,10 +75,18 @@ type ToolCache struct {
 	// lowercase and collapseSpace.
 	// +optional
 	// +kubebuilder:validation:MaxProperties=64
-	// +kubebuilder:validation:XValidation:rule="self.all(name, size(name) >= 1 && size(name) <= 128 && size(self[name]) >= 1 && size(self[name]) <= 3 && self[name].all(op, op in ['trim', 'lowercase', 'collapseSpace']))",message="each normalize entry names an argument of 1 to 128 characters and lists 1 to 3 of trim, lowercase, collapseSpace"
-	Normalize map[string][]string `json:"normalize,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self.all(name, size(name) >= 1 && size(name) <= 128)",message="each normalize entry names an argument of 1 to 128 characters"
+	Normalize map[string]NormalizeOperations `json:"normalize,omitempty"`
 }
+
+// NormalizeOperations are the operations for one argument.
+// +kubebuilder:validation:MinItems=1
+// +kubebuilder:validation:MaxItems=3
+// +kubebuilder:validation:items:Enum=trim;lowercase;collapseSpace
+type NormalizeOperations []string
 ```
+
+The schema bounds each list with `maxItems` and `enum`, not with CEL. So the one CEL rule on `normalize` costs at most 64 calls of `size`, which keeps it far under the CRD cost budget. The worker makes sure that the CRD installs in envtest (`TestCRDValidatesCacheSettings`) before writing the rest. If the API server still refuses the rule for its cost, the worker moves the key-length check to the catalog only and says so in the PR.
 
 `cache: {}` is valid. It turns caching on with every default.
 
@@ -98,7 +106,7 @@ The catalog does not compare argument names with the tool's input schema. The sc
 A call uses the cache only when all of these are true:
 1. The server is not the built-in `toolgate` server. Its tools change scope state, and it has no template in git.
 2. The template's tool has `cache` set, in the generation of §2.
-3. The live instance runs that generation: `instance.Generation` equals the template's `Generation`. An outdated instance runs the old server configuration, so its results must not go under the new generation's key.
+3. The live instance runs that generation: `instance.Generation` equals the `Generation` of the template from §2 (`Catalog.Running` or `Catalog.Offered`). While the template is invalid, that is its last valid generation, not the invalid `metadata.generation`. An outdated instance runs the old server configuration, so its results must not go under the new generation's key.
 4. The live instance's tool list marks the tool read-only (see below).
 5. The arguments give a key (§4).
 
@@ -159,7 +167,7 @@ The call path in `internal/gateway/forward.go` keeps its order. The cache adds t
 1. Identity, the tool name, curation, an implicit enable, the ready instance, health and `instanceOffers`: unchanged (`proxyCall`).
 2. Policy, approval, and the committed `tool.decision` allow: unchanged (`decideAndRun`, `callWithApproval`).
 3. **Lookup.** If §3 allows caching, build the key and call `Store.Get`, with a 2 s timeout.
-   - On a hit, go to step 6. Nothing is forwarded, and no upstream connection is made.
+   - On a hit, go to step 6. Nothing is forwarded, and no upstream connection is made. If the instance has `uses_exchange`, the hit runs the exchange claim after its `tool.decision` commits, as a forwarded call does (`instance-credentials.md` §3, "Refresh"). So a user who gets only hits keeps the exchanged token fresh, and the instance doesn't stop at the token's expiry.
    - On a miss, go on.
    - An error or a timeout counts as a miss, with a warning log that names the server and the tool and never the arguments.
 4. **Forward**: unchanged (`forward`).
@@ -215,7 +223,7 @@ The one implementation is `resultcache.Postgres`, built on `sqlc` queries. It ge
 
 ### Table and migration
 
-One additive migration, `00015_tool_result_cache.sql` (phase 1 §7, "Database migrations"):
+One additive migration, `00018_tool_result_cache.sql` (phase 1 §7, "Database migrations"). The five 0.4.12 designs take fixed numbers, in the recommended build order: `00015_upstream_sessions`, `00016_workspace_keys`, `00017_instance_credentials`, `00018_tool_result_cache` and `00019_persistent_volumes`. If master already has this number when the PR rebases, take the next free number and say so in the PR.
 
 ```sql
 CREATE TABLE tool_result_cache (
@@ -255,7 +263,7 @@ The extra column checks cost nothing, and they make a wrong hit impossible even 
 ### Put
 
 First, a result larger than `toolResultCacheMaxEntryBytes` is not stored (`PutEntryTooLarge`). This check takes no lock. Then one transaction:
-1. For a `per-session` entry: `SELECT 1 FROM sessions WHERE id = @session_pk AND ended_at IS NULL FOR SHARE`. With no row, nothing is stored (`PutSessionEnded`). The share lock waits for an end transaction that holds the row (`LockSession` takes `FOR UPDATE`). So an entry is either stored before the end transaction deletes the session's entries, or not stored at all (row 9 of §12).
+1. For a `per-session` entry: `SELECT 1 FROM sessions WHERE id = @session_pk AND ended_at IS NULL FOR KEY SHARE`. With no row, nothing is stored (`PutSessionEnded`). The key-share lock waits for an end transaction that holds the row (`LockSession` takes `FOR UPDATE`). So an entry is either stored before the end transaction deletes the session's entries, or not stored at all (row RC9). `FOR KEY SHARE` doesn't conflict with the `FOR NO KEY UPDATE` lock of `TouchSession`, so a store and the `last_seen_at` update of the same session never wait on each other. The upstream-sessions claim uses the same mode.
 2. `SELECT pg_advisory_xact_lock(hashtextextended('toolresultcache/' || @template_uid, 0))`. It serializes the stores of one template, so the size check in step 3 is exact.
 3. `SELECT coalesce(sum(size_bytes), 0) FROM tool_result_cache WHERE template_uid = @template_uid AND expires_at > now() AND key <> @key`. If that sum plus the new size is larger than `toolResultCacheMaxTemplateBytes`, nothing is stored (`PutTemplateFull`).
 4. `INSERT … ON CONFLICT (key) DO UPDATE SET result, size_bytes, stored_at = now(), expires_at = now() + @ttl`. The last store wins.
@@ -292,7 +300,7 @@ There is no protection against a stampede (many calls for one key while it is mi
 - A double call needs the same key on two replicas within one upstream call time, a few seconds at most. Models repeat calls across turns, one after the other. Parallel calls with the same arguments are rare.
 - One saved call needs a lock held across a network call: a PostgreSQL connection or an advisory lock per in-flight key, held for up to the upstream timeout. That costs more than a rare extra call of a 1000-a-day quota.
 
-**Store and session end.** The share lock of Put step 1 orders them (§7).
+**Store and session end.** The key-share lock of Put step 1 orders them (§7).
 
 **Store and template change.** A call that started before the change stores under the old generation. No call of the new generation reads it, and the next pass deletes it.
 
@@ -316,7 +324,9 @@ A hit's `tool.result` has `outcome: ok`, the instance ID and the time the lookup
 ## 11. Docs
 
 - A new admin page, `docs/admin/tool-result-cache.md`, listed in `docs/README.md` and linked from `docs/admin/templates-and-rules.md`. It explains:
-  - when caching is safe: the tool reads and never changes anything, and its result depends only on its arguments and on the identity that the cache scope separates;
+  - when caching is safe: the tool reads and never changes anything, and its result depends only on its arguments and on the identity that the cache scope separates. If a tool's result depends on the server's state for the session, such as a browser page, use `scope: per-session`;
+  - that the gateway stores each cached result in plain text in PostgreSQL, in `tool_result_cache`, until it expires, whatever `audit.payloads` says. A database reader can read it. A read-only tool can still return secrets, such as a user's mail, so turn caching on only for tools whose results are allowed to sit in the database;
+  - that a hit never reaches the server, so it skips the server's own checks. A user whom the IdP refuses for a `${exchange:…}` template keeps getting hits until the next token refresh fails and the token expires (row RC36). A user whom toolgate's policy refuses gets no hits at all;
   - why the scope can only narrow, and why a server whose results are the same for everyone belongs in a `shared` template;
   - an example: a parts search tool of a distributor API with a daily quota, with `ttl`, `ignoreArgs` and `normalize`;
   - that the server must mark the tool `readOnlyHint`, and that the template cannot;
@@ -324,46 +334,51 @@ A hit's `tool.result` has `outcome: ok`, the instance ID and the time the lookup
   - the two size limits, and that a template change, a session end and the lifetime end entries.
 - `docs/admin/metrics.md`: the two new metrics and the `cached` outcome.
 - `docs/admin/configuration.md`: regenerated with `make generate-docs`.
-- `SPEC.md` §9, "Tools and curation": one sentence that names `tools.<name>.cache` and links this design.
+- `SPEC.md` §9, "Tools and curation": one sentence that names `tools.<name>.cache` and links this design. It is already on master.
+- `SPEC.md` §12, "Audit and telemetry": after the sentence "They are stored only when `audit.payloads` is on.", one sentence says "Results are also stored in the tool-result cache, for tools whose template turns it on, until the entry expires." The PR of this design review made that change. The admin page says the same.
 
 ## 12. Interaction table
 
+Row IDs have the prefix `RC`, so they are unique across `docs/design`.
+
 | # | Event | In flight | Rule | Test |
 |---|---|---|---|---|
-| 1 | Template changes to a new valid generation | entries of the old generation | The key holds the generation, so no call reads the old entries. The leader deletes them on its next pass. | integration |
-| 2 | Template changes | a call that looked up and is forwarding on the old generation | The store goes under the old generation. Nobody reads it, and the next pass deletes it. | integration |
-| 3 | Template becomes invalid | entries of the last valid generation | Calls keep using the last valid generation (phase 4 §6), so its entries keep serving. Nothing is deleted. | unit |
-| 4 | Template deleted, or deleted and created again | entries of its UID | The UID is not in `current`, so the next pass deletes them. A new template has a new UID. | integration |
-| 5 | Instance outdated (runs an older generation than the template) | call | Forwarded, nothing looked up or stored, `cache: skipped`, `cache_skip: outdated-instance`. | integration |
-| 6 | Instance replaced or repaired at the same generation | entries | Entries stay and serve. The key has no instance. | integration |
-| 7 | The tool loses `readOnlyHint` in a tool list change | entries, and a call forwarding | The next call is not looked up or stored (`not-read-only`). The in-flight call can still store. Its entry is not read while the hint is missing. | integration |
-| 8 | The tool gets `readOnlyHint` back | unexpired entries | They serve again until they expire. | unit |
-| 9 | Session ends | a per-session store | The share lock orders them. Either the store commits first and the end transaction deletes the entry, or the store sees the ended session and stores nothing (`session_ended`). | integration, `-count=50 -race` |
-| 10 | Session restarts in another workspace or attestation | per-session entries | The end transaction deleted them. `clearEndedState` deletes any that a 0.4.11 leader left. The restarted session finds none. | integration |
-| 11 | Session resumes in the same workspace | per-session entries | The end transaction deleted them. The resumed session starts with an empty cache. | integration |
-| 12 | Another principal sends the same session ID | per-session entries | Another session row, so another scope ID. No hit. | integration |
-| 13 | Another user calls a per-user template's tool | per-user entries | Another scope ID. No hit. | integration |
-| 14 | Rule, temporary block or `blocked: true` added (any replica) | cached entries | Policy runs before the lookup. The call is refused with `tool.decision` and never reads the cache. | integration |
-| 15 | Tool gets `approval: required` | cached entries | Every call waits for an approval first, then can hit. | integration |
-| 16 | User removed from `access`, or a grant expires | the user's entries | Policy refuses first. The entries expire on their own. | unit |
-| 17 | Deny entry or workspace scope change | the session's entries | Policy refuses first. | unit |
-| 18 | User sets a new secret | per-user entries | Not deleted. They are the user's own results and expire within the lifetime. The admin page says so. | unit |
-| 19 | Entry expires | lookup | `expires_at > now()` fails, so it is a miss. The next pass deletes it. | integration |
-| 20 | Result larger than `toolResultCacheMaxEntryBytes` | store | Not stored, `entry_too_large`. The result is returned. | integration |
-| 21 | The template's unexpired entries are full | store | Not stored, `template_full`. Nothing is evicted. The result is returned. | integration |
-| 22 | Two replicas miss the same key | each other | Both forward. The advisory lock runs the stores in turn. One row stays. | integration, `-count=50 -race` |
-| 23 | Replica dies | call before the lookup | The client's request fails, as today. Nothing changes. | none, phase 1 behaviour |
-| 24 | Replica dies | lookup | The request fails, as today. A read changes nothing. | none, phase 1 behaviour |
-| 25 | Replica dies | forward, before the store | The result is not stored. The next call is a miss. | none, phase 1 behaviour |
-| 26 | Replica dies | store transaction | PostgreSQL rolls it back and frees the advisory lock. | integration |
-| 27 | Leader changes | cleanup pass | Each batch is its own statement. The new leader's pass deletes the rest. | unit |
-| 28 | Store or lookup fails, or times out | call | Lookup: a miss, and the call is forwarded. Store: the result is returned, `failed` is counted. Both log a warning without the arguments. | unit |
-| 29 | Arguments with duplicate names, invalid UTF-8, or not an object | call | No key. Forwarded, `cache_skip: arguments`. | unit |
-| 30 | Template or server sets an invalid `ttl` | — | A template `ttl` outside 1s to 24h makes the template invalid. A server's is ignored, and the default applies. | unit |
-| 31 | Cache scope broader than the template's | — | The template is invalid, with the reason of §2. | unit |
-| 32 | Call of the built-in `toolgate` server | — | Never cached. | unit |
-| 33 | `onCall` server with no live instance | call that would hit | The instance starts first (§5), then the call hits. | integration |
-| 34 | 0.4.11 replica during the rollout | calls | It forwards every call and ignores the table. | none |
+| RC1 | Template changes to a new valid generation | entries of the old generation | The key holds the generation, so no call reads the old entries. The leader deletes them on its next pass. | integration |
+| RC2 | Template changes | a call that looked up and is forwarding on the old generation | The store goes under the old generation. Nobody reads it, and the next pass deletes it. | integration |
+| RC3 | Template becomes invalid | entries of the last valid generation | Calls keep using the last valid generation (phase 4 §6), so its entries keep serving. Nothing is deleted. | unit |
+| RC4 | Template deleted, or deleted and created again | entries of its UID | The UID is not in `current`, so the next pass deletes them. A new template has a new UID. | integration |
+| RC5 | Instance outdated (runs an older generation than the template) | call | Forwarded, nothing looked up or stored, `cache: skipped`, `cache_skip: outdated-instance`. | integration |
+| RC6 | Instance replaced or repaired at the same generation | entries | Entries stay and serve. The key has no instance. | integration |
+| RC7 | The tool loses `readOnlyHint` in a tool list change | entries, and a call forwarding | The next call is not looked up or stored (`not-read-only`). The in-flight call can still store. Its entry is not read while the hint is missing. | integration |
+| RC8 | The tool gets `readOnlyHint` back | unexpired entries | They serve again until they expire. | unit |
+| RC9 | Session ends | a per-session store | The key-share lock orders them. Either the store commits first and the end transaction deletes the entry, or the store sees the ended session and stores nothing (`session_ended`). | integration, `-count=50 -race` |
+| RC10 | Session restarts in another workspace or attestation | per-session entries | The end transaction deleted them. `clearEndedState` deletes any that a 0.4.11 leader left. The restarted session finds none. | integration |
+| RC11 | Session resumes in the same workspace | per-session entries | The end transaction deleted them. The resumed session starts with an empty cache. | integration |
+| RC12 | Another principal sends the same session ID | per-session entries | Another session row, so another scope ID. No hit. | integration |
+| RC13 | Another user calls a per-user template's tool | per-user entries | Another scope ID. No hit. | integration |
+| RC14 | Rule, temporary block or `blocked: true` added (any replica) | cached entries | Policy runs before the lookup. The call is refused with `tool.decision` and never reads the cache. | integration |
+| RC15 | Tool gets `approval: required` | cached entries | Every call waits for an approval first, then can hit. | integration |
+| RC16 | User removed from `access`, or a grant expires | the user's entries | Policy refuses first. The entries expire on their own. | unit |
+| RC17 | Deny entry or workspace scope change | the session's entries | Policy refuses first. | unit |
+| RC18 | User sets a new secret | per-user entries | Not deleted. They are the user's own results and expire within the lifetime. The admin page says so. | unit |
+| RC19 | Entry expires | lookup | `expires_at > now()` fails, so it is a miss. The next pass deletes it. | integration |
+| RC20 | Result larger than `toolResultCacheMaxEntryBytes` | store | Not stored, `entry_too_large`. The result is returned. | integration |
+| RC21 | The template's unexpired entries are full | store | Not stored, `template_full`. Nothing is evicted. The result is returned. | integration |
+| RC22 | Two replicas miss the same key | each other | Both forward. The advisory lock runs the stores in turn. One row stays. | integration, `-count=50 -race` |
+| RC23 | Replica dies | call before the lookup | The client's request fails, as today. Nothing changes. | none, phase 1 behaviour |
+| RC24 | Replica dies | lookup | The request fails, as today. A read changes nothing. | none, phase 1 behaviour |
+| RC25 | Replica dies | forward, before the store | The result is not stored. The next call is a miss. | none, phase 1 behaviour |
+| RC26 | Replica dies | store transaction | PostgreSQL rolls it back and frees the advisory lock. | integration |
+| RC27 | Leader changes | cleanup pass | Each batch is its own statement. The new leader's pass deletes the rest. | unit |
+| RC28 | Store or lookup fails, or times out | call | Lookup: a miss, and the call is forwarded. Store: the result is returned, `failed` is counted. Both log a warning without the arguments. | unit |
+| RC29 | Arguments with duplicate names, invalid UTF-8, or not an object | call | No key. Forwarded, `cache_skip: arguments`. | unit |
+| RC30 | Template or server sets an invalid `ttl` | — | A template `ttl` outside 1s to 24h makes the template invalid. A server's is ignored, and the default applies. | unit |
+| RC31 | Cache scope broader than the template's | — | The template is invalid, with the reason of §2. | unit |
+| RC32 | Call of the built-in `toolgate` server | — | Never cached. | unit |
+| RC33 | `onCall` server with no live instance | call that would hit | The instance starts first (§5), then the call hits. | integration |
+| RC34 | 0.4.11 replica during the rollout | calls | It forwards every call and ignores the table. | `test/e2e: TestChartUpgradeAndUninstall`, the existing chart upgrade test, which keeps calls working during the rollout |
+| RC35 | Exchanged token passes half-life (`instance-credentials.md`) | a hit on a per-user `${exchange:…}` instance | The hit runs the exchange claim after its `tool.decision` commits, so the token is refreshed in place, and the instance and the MCP session survive. | integration: `TestCacheHitRefreshesExchangedToken` |
+| RC36 | The IdP refuses the user's exchange (`invalid_grant`) | per-user entries of a `${exchange:…}` template | Hits go on while the token in the Secret is valid, because a hit never reaches the server. The hit's refresh fails, the instance stops at the token's expiry, and the next call must start a new instance, whose exchange fails. So the call is refused within one token lifetime, not the cache lifetime. | integration: `TestRefusedExchangeEndsCacheHits` |
 
 ## 13. Tests
 
@@ -374,11 +389,11 @@ Names say the behaviour. No test name or comment carries an issue number or a ro
 - `TestKeyHash`: each fixed part changes the hash; a per-user and a per-session key with the same text give different hashes.
 - `TestLifetime`: the template's `ttl` wins; the server's suggestion applies without one; a bad suggestion falls back to 5 minutes.
 - `TestCacheScope`: `cache.scope` narrows; without it, the template's effective scope applies.
-- `TestEligibility`: the built-in server, an outdated instance, a missing or false `readOnlyHint` and missing annotations.
+- `TestEligibility`: the built-in server, an outdated instance, a missing or false `readOnlyHint` and missing annotations. An instance of the last valid generation of an invalid template is eligible.
 - `TestHitMeta`: `age` is set and cut to seconds; the stored `_meta` keys stay; a server's own `toolgate/cache` is replaced.
 
 **Unit**, `internal/catalog` and `api/v1alpha1`:
-- `TestCacheScopeBroaderIsInvalid`, with the exact reason; `TestCacheSettingsBounds` for `ttl`, `ignoreArgs` and `normalize`; `TestCacheNormalizeOfIgnoredArgumentIsInvalid`. The CRD tests check the CEL messages.
+- `TestCacheScopeBroaderIsInvalid`, with the exact reason; `TestCacheSettingsBounds` for `ttl`, `ignoreArgs` and `normalize`; `TestCacheNormalizeOfIgnoredArgumentIsInvalid`. `TestCRDValidatesCacheSettings` (envtest) installs the CRD and checks the CEL messages, the `maxItems` and the `enum` of `normalize`.
 
 **Integration** (`//go:build integration`, PostgreSQL in Docker), `internal/gateway` and `internal/resultcache`. The test MCP server (`test/mcpserver`) gains a tool `count` with `readOnlyHint: true`, which returns how often it was called. A flag sets its `_meta["toolgate/cache"].ttl`. So a test sees whether a call reached the server.
 - `TestRepeatedCallIsServedFromTheCache`: the second call returns the first result with `toolgate/cache.age`, the server count stays 1, and `tool.result` has `cache: hit`.
@@ -391,6 +406,8 @@ Names say the behaviour. No test name or comment carries an issue number or a ro
 - `TestToolWithoutReadOnlyHintIsNotCached`, and a tool that loses the hint is no longer served.
 - `TestSizeLimits`: an entry over the entry limit and a full template are not stored, and the result is still returned.
 - `TestCleanupDeletesStaleEntries`: expired entries, old generations, deleted templates and ended sessions, in batches.
+- `TestCacheHitRefreshesExchangedToken`: a hit after half-life claims and refreshes, and the instance doesn't stop at the old expiry.
+- `TestRefusedExchangeEndsCacheHits`: after the fake token endpoint refuses the user, hits go on until the token expires, then the call fails with the exchange's reason.
 - `TestConcurrentMissesKeepOneEntry` and `TestStoreRacingSessionEnd`. Both run with `-count=50 -race`. They start the two sides together on a barrier and wait on conditions with deadlines, never on sleeps or wall-clock speed.
 
 **Metrics:** the series budget test with a cached template, and a test that a hit counts `hit` and `cached` and a miss counts `miss` and `forwarded`.
@@ -419,6 +436,10 @@ The owner's "Done when" list:
 - **Only `ttl` can come from the server.** A server-suggested `ignoreArgs` or `normalize` would let a server's claim merge different calls into one key. Only the admin decides that.
 - **Default lifetime 5 minutes, maximum 24 hours.** The maximum bounds how long a result can outlive a change at the source, such as prices.
 - **The `_meta` age format** is Go's duration text (`12m0s`), not the issue's example `12m`. It is one standard function, and models read both.
+- **`normalize` is bounded by the schema, not by CEL.** A CEL rule over unbounded lists can pass the CRD cost budget, and the API server then refuses the CRD at install.
+- **A hit refreshes an exchanged token** (row RC35). A hit is a call by an active user. Without it, an instance that serves only hits stops at the token's expiry and loses its upstream session.
+- **Cached results stay readable after the IdP refuses a user,** until the token expires (row RC36). Keying such entries by instance would bound this better, but it would empty the cache each time the instance restarts. The admin page says so.
+- **Results are stored in plain text.** Encrypting them with the secrets keyset would need the keyset on every replica's hot path and still give the gateway the plain result. `SPEC.md` §12 names the cache as a place where results are stored, and the admin page says so (§11).
 - **`_meta` and the model.** The issue puts the age in `_meta` "so the model can judge freshness". The design does that. This design does not check whether Claude Code shows a result's `_meta` to the model. If it does not, a text note in the result is a later change, because it changes what the server returned.
 
 ## 16. Not in scope

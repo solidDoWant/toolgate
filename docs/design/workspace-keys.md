@@ -34,7 +34,7 @@ Kubernetes is not involved. The key path makes no TokenReview call and reads no 
 
 ## 2. State
 
-One additive migration, the next free number, for example `00015_workspace_keys.sql`.
+One additive migration, `00016_workspace_keys.sql`. The five 0.4.12 designs take fixed numbers, in the recommended build order: `00015_upstream_sessions`, `00016_workspace_keys`, `00017_instance_credentials`, `00018_tool_result_cache` and `00019_persistent_volumes`. If master already has this number when the PR rebases, take the next free number and say so in the PR.
 
 **Access requests.** `access_requests.kind` accepts `key` as well as `server`, `change` and `scope`. The migration drops `access_requests_kind_check` and `access_requests_shape_check` and adds them back with `(kind = 'key' AND change IS NOT NULL)` added to the shape check. This is the same method as `00007_phase_4.sql`.
 
@@ -185,7 +185,7 @@ Registering never makes a key usable. Only an approval in the browser does (sect
    - When the request is approved, it prints "Key `dev` is active. Sessions that use it run in workspace `registered/alice/dev`. To use it, run: toolgate configure --attestation-key-file PATH" with the absolute path. Exit 0.
    - When it is denied or expires, it prints the existing messages of `awaitDecision` and exits 1.
    - Errors print the gateway's message and exit 1. Usage errors exit 2.
-6. Before it sends the request, it reads the `iat` and `exp` claims of the user token that it sends, without verification, with go-jose's `UnsafeClaimsWithoutVerification`. If `exp - iat` is more than 330 s, it prints to standard error: "Warning: your access tokens live N minutes. A session that uses a workspace key loses its verified workspace after 5 minutes, unless access tokens live at most 5 minutes. Ask your admin to make the access-token lifetime 5 minutes or less." It goes on. Section 9 gives the reason.
+6. Before it sends the request, it reads the `iat` and `exp` claims of the user token that it sends, without verification, with go-jose's `UnsafeClaimsWithoutVerification`. If the token isn't a JWT, or has no `iat` or `exp`, the command skips the warning and goes on. If `exp - iat` is more than 330 s, it prints to standard error: "Warning: your access tokens live N minutes. A session that uses a workspace key loses its verified workspace after 5 minutes, unless access tokens live at most 5 minutes. Ask your admin to make the access-token lifetime 5 minutes or less." It goes on. Section 9 gives the reason.
 
 `register` does not change `config.json`. The user runs `toolgate configure` after the approval. To replace a key, the user registers the same name with a new `--key-file` path, approves it, and runs `toolgate configure --attestation-key-file` with the new path (section 6).
 
@@ -306,7 +306,7 @@ No other claims are sent. The gateway ignores any other claims.
 `auth.Middleware` runs the attestation step for `Kind == user` when `workspaceAttestation` or `workspaceKeys` is on. When both are off, the header is ignored with no event, as today. The step:
 
 1. Applies the existing header checks: repeated, or over 16 KiB, gives `attestation header repeated or too large`.
-2. Parses the value with `jose.ParseSignedCompact(value, tokenAlgorithms)` and reads the protected header's `typ` (`jose.HeaderType`).
+2. Parses the value with `jose.ParseSignedCompact(value, tokenAlgorithms)` and reads the protected header's `typ` (`jose.HeaderType`). `tokenAlgorithms` (`internal/auth/auth.go`) already includes `jose.EdDSA`. This step uses that list and never a narrower one, or every key assertion would go to TokenReview.
 3. If `typ` is `toolgate-workspace-key+jwt`, it goes to the key verifier below. If `workspaceKeys` is off, the verdict is `attestation workspace keys off`.
 4. If the parse fails, or `typ` has any other value, the value goes to the existing verifier of phase 3 §10 (TokenReview or SPIFFE). If `workspaceAttestation` is off, the verdict is `attestation token invalid`.
 
@@ -328,6 +328,8 @@ type WorkspaceKey struct {
     Name      string
     Status    string // active, replaced or revoked
     PublicKey ed25519.PublicKey
+    // LastUsedAt is null until the first attested request.
+    LastUsedAt *time.Time
 }
 
 type WorkspaceKeyStore interface {
@@ -357,7 +359,7 @@ The key verifier runs these steps in this order. The first that fails gives the 
    - `jwt.ErrInvalidAudience`: `attestation assertion audience wrong`.
    - `jwt.ErrExpired`: `attestation assertion expired`.
    - `jwt.ErrNotValidYet` or `jwt.ErrIssuedInTheFuture`: `attestation assertion issued in the future`.
-10. Success. The identity gets `Attestation = attested` and `Workspace = <prefix>/<row.Username>/<row.Name>`. Then the verifier calls `Store.TouchWorkspaceKey(row.ID)`. If that write fails, the verifier logs it at warning level and goes on. The request is still attested.
+10. Success. The identity gets `Attestation = attested` and `Workspace = <prefix>/<row.Username>/<row.Name>`. Then, only when `row.LastUsedAt` is null or more than one minute before `now`, the verifier calls `Store.TouchWorkspaceKey(row.ID)`. The `WHERE` clause of `TouchWorkspaceKey` stays, so two replicas that both call it write at most once. If that write fails, the verifier logs it at warning level and goes on. The request is still attested.
 
 The signature check comes before the owner check and the status check. So `attestation key owner mismatch` and `attestation key revoked` are written only for a client that holds the private key. Anyone with the user's token can make the other verdicts with a forged header. They are written to that user's own audit log only.
 
@@ -387,7 +389,7 @@ Every verdict above is a failed attestation, as in phase 3 §10 step 5. The requ
 
 ### No cache
 
-The verifier reads the row on every request that carries an assertion. It keeps nothing in memory. So an approval, a replacement or a revocation takes effect on the next request on every replica. The read is one index lookup on `key_id`. The `last_used_at` write happens at most once a minute per key.
+The verifier reads the row on every request that carries an assertion. It keeps nothing in memory. So an approval, a replacement or a revocation takes effect on the next request on every replica. The read is one index lookup on `key_id`. The `last_used_at` write happens at most once a minute per key, and the verifier sends no `UPDATE` in the other requests of that minute.
 
 ## 9. Sessions
 
@@ -475,34 +477,34 @@ Metrics:
 
 ## 13. Interaction table
 
-Each row is one state change combined with the work in flight at that time. Each row's test proves its rule. Rows are numbered for this document only.
+Each row is one state change combined with the work in flight at that time. Each row's test proves its rule. Row IDs have the prefix `WK`, so they are unique across `docs/design`.
 
 | # | Change | In flight | Rule | Test |
 |---|---|---|---|---|
-| 1 | Register (CLI, user token) | requests that send the new key's assertion | Only a key request is inserted. No key row exists, so each request gets `attestation key not approved` and is unverified. | `TestWorkspaceKeyVerdicts/pending key is unverified` (unit), `TestWorkspaceKeyRegistration/user token alone makes no usable key` (integration) |
-| 2 | Register the same name and key again | its pending request | The same request is returned. No new row and no new event. | `TestWorkspaceKeyRegistration/same key twice returns the pending request` |
-| 3 | Register a key that is active for another name or user | nothing | 409. Nothing is written. | `TestWorkspaceKeyRegistration/active key ID is refused` |
-| 4 | Approve (browser, step-up) | requests on other replicas that send the key's assertion | The commit makes the row active. The next request on any replica reads it and is attested. No cache. | `TestWorkspaceKeyApproval/approved key attests on another replica` |
-| 5 | Approve | an MCP session that this client opened while the key was pending | That session is bound to the claimed workspace. Its next request is attested, so it gets 404 (phase 3 §10 binding). A new session is attested. | `TestWorkspaceKeySessionBinding/approval during an unverified session gives 404` |
-| 6 | Approve with a CLI token | nothing | Impossible. `/ui/approvals/{id}/approve` reads only the UI session cookie and gets 401 without one. With a cookie whose sign-in is older than 5 minutes, `RequireStepUp` redirects to a step-up and the request stays pending. | `TestWorkspaceKeyApproval/bearer token cannot approve`, `TestWorkspaceKeyApproval/stale sign-in cannot approve` |
-| 7 | Approve | another approval of the same request on another replica | The compare-and-set lets one win. The other page shows the status. | `TestWorkspaceKeyApproval/two approvals at once` |
-| 8 | Approve | a revoke of the same name | Both take the `user_scopes` lock first. If revoke wins, the request is denied and the approval finds nothing to approve. If the approval wins, the revoke then revokes the new key. | `TestWorkspaceKeyApproval/approval and revoke at once` (integration, `-count=50 -race`) |
-| 9 | Approve | the key ID became active for another user | Rolled back with 409. The request stays pending. | `TestWorkspaceKeyApproval/key ID taken meanwhile` |
-| 10 | Approve the 21st key | nothing | Rolled back with 409. The request stays pending. | `TestWorkspaceKeyApproval/limit of 20 keys` |
-| 11 | Deny | CLI waiting | `access.deny`. No key row. The CLI exits 1. An active key with the same name stays active. | `TestWorkspaceKeyApproval/deny keeps the active key` |
-| 12 | Expire | CLI waiting | The leader's pass writes `access.expire`. No key row. The CLI exits 1. | `TestWorkspaceKeyApproval/expired request makes no key` |
-| 13 | Replace (approval of a new key for an active name) | sessions that use the old key | The old row is `replaced` in the same transaction. The next request with the old key gets `attestation key revoked`, is unverified, and its MCP session gets 404. A session with the new key gets the same workspace, so lists still apply and an ended session resumes. | `TestWorkspaceKeyApproval/replace keeps the workspace` |
-| 14 | Revoke | requests on other replicas | A request that read the row before the commit finishes as attested. The next request reads `revoked`, gets `attestation key revoked` and is unverified. An open GET stream stays open, but it carries only notifications, and every call is a new request. | `TestWorkspaceKeyRevocation/revoke applies on the next request` |
-| 15 | Revoke | pending requests for that name | Each is denied in the same transaction, with `access.deny`. | `TestWorkspaceKeyRevocation/revoke denies pending requests` |
-| 16 | User deleted or disabled at the IdP | sessions with the user's keys | The user token fails, so every request gets 401 before the attestation runs. The key rows stay. They are of no use without that user's token. None new. The existing tests of a refused user token cover the 401. |
-| 17 | `workspaceKeys` turned off (restart) | sessions bound to `registered/…` workspaces | Assertions get `attestation workspace keys off` when `workspaceAttestation` is on. Otherwise the header is ignored with no event. Requests are unverified and bound MCP sessions get 404. Registration and approval answer 409. List and revoke work. Rows stay, and turning the setting on again makes them work again. | `TestWorkspaceKeysOff` (integration) |
-| 18 | `workspaceKeysPrefix` changed (restart) | bound sessions, workspace lists | Keys give the new workspace ID. Bound MCP sessions get 404. Lists under the old ID no longer match. The admin docs say so. | `TestWorkspaceKeyVerdicts/prefix is read from the configuration` (unit) |
-| 19 | Assertion expires | an MCP session whose headers were not refreshed | `attestation assertion expired`, unverified, 404. A user token of at most 5 minutes gets a 401 first, and Claude Code runs the helper again (section 9). | `TestWorkspaceKeyVerdicts/expired assertion` (unit). The helper behaviour is documented, not tested. |
-| 20 | `workspaceAttestation` with `match.by: email` is on too | a Coder pod's request | Routed by `typ`. The pod token never reaches the key verifier. The pod path does not change. | `TestAttestedUserSession/pod with email match while workspace keys are on` (e2e) |
-| 21 | Database unavailable | a request with an assertion | 503 with `Retry-After: 1`. No `auth.refuse`. | `TestWorkspaceKeyVerdicts/store error gives unavailable` (unit) |
-| 22 | `last_used_at` write fails | the request | Logged at warning level. The request stays attested. | `TestWorkspaceKeyVerdicts/touch failure keeps the attestation` (unit) |
-| 23 | Rolling upgrade from 0.4.11 | key requests and assertions | Turn `workspaceKeys` on only after every replica runs the new version, and the admin docs and the CHANGELOG say so. An old replica with `workspaceAttestation` on sends a key assertion to TokenReview, which gives `attestation token invalid`. An old replica does not approve a `key` request: its approve path runs `ApproveChangeRequest`, which rolls back for a kind other than `change`. | `TestWorkspaceKeysUpgrade/change approval rolls back a key request` (integration: it calls `ApproveChangeRequest` on a `key` request, as a 0.4.11 replica does) |
-| 24 | Ended key rows deleted after 7 days | assertions of that key | `attestation key unknown` instead of `attestation key revoked`. Still unverified. | `TestWorkspaceKeyCleanup` (integration) |
+| WK1 | Register (CLI, user token) | requests that send the new key's assertion | Only a key request is inserted. No key row exists, so each request gets `attestation key not approved` and is unverified. | `TestWorkspaceKeyVerdicts/pending key is unverified` (unit), `TestWorkspaceKeyRegistration/user token alone makes no usable key` (integration) |
+| WK2 | Register the same name and key again | its pending request | The same request is returned. No new row and no new event. | `TestWorkspaceKeyRegistration/same key twice returns the pending request` |
+| WK3 | Register a key that is active for another name or user | nothing | 409. Nothing is written. | `TestWorkspaceKeyRegistration/active key ID is refused` |
+| WK4 | Approve (browser, step-up) | requests on other replicas that send the key's assertion | The commit makes the row active. The next request on any replica reads it and is attested. No cache. | `TestWorkspaceKeyApproval/approved key attests on another replica` |
+| WK5 | Approve | an MCP session that this client opened while the key was pending | That session is bound to the claimed workspace. Its next request is attested, so it gets 404 (phase 3 §10 binding). A new session is attested. | `TestWorkspaceKeySessionBinding/approval during an unverified session gives 404` |
+| WK6 | Approve with a CLI token | nothing | Impossible. `/ui/approvals/{id}/approve` reads only the UI session cookie and gets 401 without one. With a cookie whose sign-in is older than 5 minutes, `RequireStepUp` redirects to a step-up and the request stays pending. | `TestWorkspaceKeyApproval/bearer token cannot approve`, `TestWorkspaceKeyApproval/stale sign-in cannot approve` |
+| WK7 | Approve | another approval of the same request on another replica | The compare-and-set lets one win. The other page shows the status. | `TestWorkspaceKeyApproval/two approvals at once` |
+| WK8 | Approve | a revoke of the same name | Both take the `user_scopes` lock first. If revoke wins, the request is denied and the approval finds nothing to approve. If the approval wins, the revoke then revokes the new key. | `TestWorkspaceKeyApproval/approval and revoke at once` (integration, `-count=50 -race`) |
+| WK9 | Approve | the key ID became active for another user | Rolled back with 409. The request stays pending. | `TestWorkspaceKeyApproval/key ID taken meanwhile` |
+| WK10 | Approve the 21st key | nothing | Rolled back with 409. The request stays pending. | `TestWorkspaceKeyApproval/limit of 20 keys` |
+| WK11 | Deny | CLI waiting | `access.deny`. No key row. The CLI exits 1. An active key with the same name stays active. | `TestWorkspaceKeyApproval/deny keeps the active key` |
+| WK12 | Expire | CLI waiting | The leader's pass writes `access.expire`. No key row. The CLI exits 1. | `TestWorkspaceKeyApproval/expired request makes no key` |
+| WK13 | Replace (approval of a new key for an active name) | sessions that use the old key | The old row is `replaced` in the same transaction. The next request with the old key gets `attestation key revoked`, is unverified, and its MCP session gets 404. A session with the new key gets the same workspace, so lists still apply and an ended session resumes. | `TestWorkspaceKeyApproval/replace keeps the workspace` |
+| WK14 | Revoke | requests on other replicas | A request that read the row before the commit finishes as attested. The next request reads `revoked`, gets `attestation key revoked` and is unverified. An open GET stream stays open, but it carries only notifications, and every call is a new request. | `TestWorkspaceKeyRevocation/revoke applies on the next request` |
+| WK15 | Revoke | pending requests for that name | Each is denied in the same transaction, with `access.deny`. | `TestWorkspaceKeyRevocation/revoke denies pending requests` |
+| WK16 | User deleted or disabled at the IdP | sessions with the user's keys | The user token fails, so every request gets 401 before the attestation runs. The key rows stay. They are of no use without that user's token. | None new. The existing tests of a refused user token cover the 401. |
+| WK17 | `workspaceKeys` turned off (restart) | sessions bound to `registered/…` workspaces | Assertions get `attestation workspace keys off` when `workspaceAttestation` is on. Otherwise the header is ignored with no event. Requests are unverified and bound MCP sessions get 404. Registration and approval answer 409. List and revoke work. Rows stay, and turning the setting on again makes them work again. | `TestWorkspaceKeysOff` (integration) |
+| WK18 | `workspaceKeysPrefix` changed (restart) | bound sessions, workspace lists | Keys give the new workspace ID. Bound MCP sessions get 404. Lists under the old ID no longer match. The admin docs say so. | `TestWorkspaceKeyVerdicts/prefix is read from the configuration` (unit) |
+| WK19 | Assertion expires | an MCP session whose headers were not refreshed | `attestation assertion expired`, unverified, 404. A user token of at most 5 minutes gets a 401 first, and Claude Code runs the helper again (section 9). | `TestWorkspaceKeyVerdicts/expired assertion` (unit). The helper behaviour is documented, not tested. |
+| WK20 | `workspaceAttestation` with `match.by: email` is on too | a Coder pod's request | Routed by `typ`. The pod token never reaches the key verifier. The pod path does not change. | `TestAttestedUserSession/pod with email match while workspace keys are on` (e2e) |
+| WK21 | Database unavailable | a request with an assertion | 503 with `Retry-After: 1`. No `auth.refuse`. | `TestWorkspaceKeyVerdicts/store error gives unavailable` (unit) |
+| WK22 | `last_used_at` write fails | the request | Logged at warning level. The request stays attested. | `TestWorkspaceKeyVerdicts/touch failure keeps the attestation` (unit) |
+| WK23 | Rolling upgrade from 0.4.11 | key requests and assertions | Turn `workspaceKeys` on only after every replica runs the new version, and the admin docs and the CHANGELOG say so. An old replica with `workspaceAttestation` on sends a key assertion to TokenReview, which gives `attestation token invalid`. An old replica does not approve a `key` request: its approve path runs `ApproveChangeRequest`, which rolls back for a kind other than `change`. | `TestWorkspaceKeysUpgrade/change approval rolls back a key request` (integration: it calls `ApproveChangeRequest` on a `key` request, as a 0.4.11 replica does) |
+| WK24 | Ended key rows deleted after 7 days | assertions of that key | `attestation key unknown` instead of `attestation key revoked`. Still unverified. | `TestWorkspaceKeyCleanup` (integration) |
 
 ## 14. Threat model
 
@@ -520,7 +522,7 @@ The key proves one thing: the session runs where the private key is. With the us
 
 - **Code that runs in the workspace.** It can read the key file and the user's sign-in. It is in the workspace, so it is attested, as intended. The key does not prove that the machine was not changed. The issue's non-goals say so.
 - **A user who approves an attacker's request.** The approval page shows the fingerprint and where the request came from, and the CLI prints the fingerprint. The user must compare them. The user can revoke a key at once, and revoking also denies pending requests for the name.
-- **The user's preferred_username.** It forms the middle of the workspace ID. If the IdP lets users change it, a user can choose the name in their own future workspace IDs. Workspace lists are per user, so this gives no access to another user's lists. Rules only refuse, so a rule that names `registered/alice/*` can stop matching Alice if she changes her user name before she registers. An admin who writes rules for one user's keys must match on the principal, or use an IdP that does not let users change the name.
+- **The user's preferred_username.** It forms the middle of the workspace ID. It isn't unique at every IdP, so two principals can hold the same workspace ID, such as `registered/alice/dev`. If the IdP lets users change it, a user can choose the name in their own future workspace IDs. Workspace lists are per user, so this gives no access to another user's lists. Rules only refuse, so a rule that names `registered/alice/*` can stop matching Alice if she changes her user name before she registers. An admin who writes rules for one user's keys must match on the principal, or use an IdP that does not let users change the name.
 - **A user token that lives longer than 5 minutes.** Sessions lose their verified workspace after 5 minutes (section 9). This is an availability problem, not an access problem.
 
 **What a stolen user token can still do:** revoke the user's keys and deny pending requests. Both only take access away.
@@ -551,7 +553,7 @@ The issue leaves these open, or they needed a decision against the code. Each is
 18. **The key file is PKCS#8 PEM**, and the client refuses a file that other users can read, as OpenSSH does.
 19. **`register` does not write `config.json`.** The issue names `configure` as the way to save the source, and a key that is not approved yet must not become the source.
 20. **Two settings**, `workspaceKeys` (bool) and `workspaceKeysPrefix`, so the switch can be an environment variable like `otlpIngest`.
-21. **Turn the setting on only after the whole rollout** (row 23), the same advice as for earlier features that old replicas do not know.
+21. **Turn the setting on only after the whole rollout** (row WK23), the same advice as for earlier features that old replicas do not know.
 
 ## 16. Work items
 
@@ -561,7 +563,7 @@ These are the pieces for the issue's decomposition. Each piece updates its own d
 2. **Verifier and configuration.** `internal/auth/workspacekeys.go`, the routing in `auth.Middleware`, the two settings and their start checks, the chart values, `docs/admin/configuration.md` (generated) and `docs/admin/chart-values.md`. Sections 3 and 8.
 3. **Approval page and Workspaces page.** The `key` case on the approval page and in the list, the Workspaces card, revoke from the UI, the screenshot seed, and the audit summary lines. Sections 5 and 11.
 4. **CLI.** `workspace register`, `workspace keys list|revoke`, `configure --attestation-key-file`, the new source in `internal/client/attestation`, and the check of the variable against Claude Code's filter. Sections 4, 6 and 10. `SPEC.md` §13 lists the new commands and the new `configure` flag.
-5. **Docs.** `docs/admin/workspace-attestation.md` describes the new source: the setting, the prefix, the 5-minute rule for access tokens, the new reasons, and the threat model of section 14, including "the key protects against a stolen user token, not against code running in the workspace". The user docs (`docs/user/README.md`) describe `register`, the approval, `configure --attestation-key-file`, `keys list` and `keys revoke`, and the same threat model in user words. `docs/admin/security-model.md` names the third source. The CHANGELOG notes that the feature is off by default and must be turned on only after the rollout.
+5. **Docs.** `docs/admin/workspace-attestation.md` describes the new source: the setting, the prefix, the 5-minute rule for access tokens, the new reasons, and the threat model of section 14, including "the key protects against a stolen user token, not against code running in the workspace". Its checklist for admins says that `preferred_username` isn't unique at every IdP, so two users can get the same `registered/…` workspace ID, and that a rule for one user's keys must also match the principal. The user docs (`docs/user/README.md`) describe `register`, the approval, `configure --attestation-key-file`, `keys list` and `keys revoke`, and the same threat model in user words. `docs/admin/security-model.md` names the third source. The CHANGELOG notes that the feature is off by default and must be turned on only after the rollout.
 6. **Related doc fix: KubeVirt with `containerPath`.** `docs/admin/workspace-attestation.md` still describes the KubeVirt setup as a TokenRequest exchange. Rewrite that part. Do not change any code for it.
    - The preferred setup, for KubeVirt 1.8 and later, with the feature gate `ContainerPathVolumes`:
      - A MutatingAdmissionPolicy adds a projected service-account token with audience `toolgate` to the `compute` container of the `virt-launcher` pod. The policy matches the launcher pods of the workspace namespace and service account. It must use a JSONPatch mutation, because an ApplyConfiguration mutation cannot change the atomic list `projected.sources`.
@@ -592,6 +594,8 @@ Test names describe behaviour. They carry no tracking IDs.
 - missing jti
 - algorithm other than EdDSA
 - workspace keys off
+- key assertion while only workspaceAttestation is on
+- no touch within a minute of the last use
 - prefix is read from the configuration
 - store error gives unavailable
 - touch failure keeps the attestation
@@ -601,7 +605,7 @@ Each subtest checks the identity's attestation and workspace, and the exact reas
 
 **Unit, `internal/config`:** `TestWorkspaceKeysSetting`: off by default, the default prefix, each forbidden prefix, a prefix equal to the Coder workspace ID's first segment, and the setting without the web UI.
 
-**Unit, client:** `TestWorkspaceKeySource`: the assertion's header and claims (decoded with go-jose), the conflict with each other source, a group-readable key file, a file that is not an Ed25519 key, and the environment variable winning over `config.json`. `TestConfigureAttestationKeyFile`: it saves the absolute path, refuses a second source, and removes the setting with an empty value. `TestWorkspaceRegister`: it makes a key with mode 0600 and a parent directory with mode 0700, reuses an existing file, prints the fingerprint, waits for approval, and prints the warning for a long-lived access token.
+**Unit, client:** `TestWorkspaceKeySource`: the assertion's header and claims (decoded with go-jose), the conflict with each other source, a group-readable key file, a file that is not an Ed25519 key, and the environment variable winning over `config.json`. `TestConfigureAttestationKeyFile`: it saves the absolute path, refuses a second source, and removes the setting with an empty value. `TestWorkspaceRegister`: it makes a key with mode 0600 and a parent directory with mode 0700, reuses an existing file, prints the fingerprint, waits for approval, and prints the warning for a long-lived access token, and no warning for a token that isn't a JWT.
 
 **Integration, `internal/gateway` and `internal/ui`** (PostgreSQL in Docker):
 

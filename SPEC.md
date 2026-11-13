@@ -285,7 +285,7 @@ In globs, `*` matches any run of characters, including `/`. A template that does
 - `grant.*`, `approval.*`, `block.*`;
 - `instance.health` and `instance.reapply`, with no payload.
 
-Every event carries principal, workspace, session, attestation, server, tool, trace ID and request ID. Tool arguments and results are not logged to stdout. They are stored only when `audit.payloads` is on. Payloads over 64 KiB go to S3 (with object lock when the bucket supports it), referenced from the row. Rows are kept for `audit.retention` (default 90 days) and deleted in batches. Secrets and tokens are never logged.
+Every event carries principal, workspace, session, attestation, server, tool, trace ID and request ID. Tool arguments and results are not logged to stdout. They are stored only when `audit.payloads` is on. Results are also stored in the tool-result cache, for tools whose template turns it on, until the entry expires (`docs/design/tool-result-cache.md`). Payloads over 64 KiB go to S3 (with object lock when the bucket supports it), referenced from the row. Rows are kept for `audit.retention` (default 90 days) and deleted in batches. Secrets and tokens are never logged.
 
 **Gateway traces:** OpenTelemetry (`go.opentelemetry.io/otel`) spans for each request, policy decision, render, apply and forward. Incoming `traceparent` is honoured, so Claude Code's tool spans (it sends `traceparent` on HTTP MCP requests) become the parents. Metrics are Prometheus-format at `/metrics` on a separate port.
 
