@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Internal
+
+- The gateway now keeps the token of a user's request with that request, so that a later change can exchange it for a token of an MCP server. The token never appears in a log, a database row or a JSON document. Service account and SPIFFE requests do not keep their token.
+
 ## 0.4.11
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release shows the title of each Claude Code session on the usage dashboard, and fixes several panels of that dashboard. No upgrade steps are needed. Users get the new hooks when they update the plugin.

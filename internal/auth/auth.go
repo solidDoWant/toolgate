@@ -495,7 +495,16 @@ func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 			identity.Workspace = claimedPrefix + workspace
 		}
 
-		next.ServeHTTP(writer, request.WithContext(WithIdentity(request.Context(), identity)))
+		ctx := WithIdentity(request.Context(), identity)
+
+		// Only a user's own token can be exchanged for one of an instance.
+		// A workload's token is never kept.
+		if identity.Kind == KindUser {
+			token, _ := bearerToken(request.Header.Get("Authorization"))
+			ctx = WithSubjectToken(ctx, SubjectToken(token))
+		}
+
+		next.ServeHTTP(writer, request.WithContext(ctx))
 	})
 }
 
@@ -568,6 +577,15 @@ func headerValue(request *http.Request, name string) (value string, set, valid b
 	return values[0], true, headerValuePattern.MatchString(values[0])
 }
 
+// bearerToken returns the token of an Authorization header value, and
+// whether it holds a non-empty bearer token.
+func bearerToken(header string) (string, bool) {
+	scheme, token, found := strings.Cut(header, " ")
+	token = strings.TrimSpace(token)
+
+	return token, found && strings.EqualFold(scheme, "Bearer") && token != ""
+}
+
 // authenticate verifies the bearer token. It returns the identity without the
 // header fields and, for a user, the token's claims; or the refusal to
 // record.
@@ -581,10 +599,8 @@ func (a *Authenticator) authenticate(request *http.Request) (Identity, map[strin
 		return Identity{}, nil, &Refusal{Reason: "token too large"}, ""
 	}
 
-	scheme, token, found := strings.Cut(header[0], " ")
-	token = strings.TrimSpace(token)
-
-	if !found || !strings.EqualFold(scheme, "Bearer") || token == "" {
+	token, found := bearerToken(header[0])
+	if !found {
 		return Identity{}, nil, &Refusal{Reason: reasonMissingToken}, ""
 	}
 
