@@ -416,37 +416,37 @@ Earlier phases' rows still hold. Rows continue the numbering. Each row is one ev
 
 | # | Event | In flight | Rule | Test |
 |---|---|---|---|---|
-| 279 | Template `size` grows or shrinks | Volume recorded | The PVC asks for the row's size and binds to the old PV. New volumes get the new size. No expansion. | integration |
-| 280 | Template `storageClassName` changes | Volume recorded | The row keeps its class, and the PVC uses it. New volumes use the new class. | integration |
-| 281 | Template `scope` changes | Instances running | Instances stop (`SPEC.md` §9). New instances use rows of the new scope ID. The old rows age out by `unusedRetention`. | integration |
-| 282 | A volume is removed from the template, or renamed | Instances running | Old instances keep their claim until they stop. The row is released and ages out by `unusedRetention`. | integration |
-| 283 | Template deleted | Instance running and holding | The instance stops (`SPEC.md` §9). After the release, the clean-up deletes the volume with `template-deleted`. | e2e |
-| 284 | Template deleted and re-created with the same name | — | New UID, so new rows and empty volumes. The old rows are deleted as `template-deleted`. | integration |
-| 285 | Instance stops (idle, disable, session end) | Pods writing | Scale to zero, wait for the pods up to 2 min, delete the namespace, release in the `stopped` write. | e2e |
-| 286 | Restart or replace | Old instance holds | New row waits in `pending` until the old row is `stopped`, then claims. Bounded by `startTimeout`. | integration, `-count=50 -race` |
-| 287 | Two claims for one volume at once | Each other | The row lock orders them. One holds. The other waits. | integration, `-count=50 -race` |
-| 288 | Instance fails at start | Volume claimed, maybe bound | Teardown records an unrecorded bound PV, drains, deletes the namespace and releases. | integration |
-| 289 | MCP server pod crashes | Instance `ready` | Same namespace, same PVC, data kept. If the instance is replaced, row 286 applies. | e2e |
-| 290 | Leader dies during claim, pre-bind, PVC apply or record | — | The new leader repeats the step. Each step is safe to repeat (§7). | integration |
-| 291 | Leader dies during the drain | Pods stopping | The new leader keeps the bound from `stopping_at`. | integration |
-| 292 | Recorded PV deleted by hand | No instance | Next start: `volume.lost`, `pv_name` cleared, a new empty volume. | e2e |
-| 293 | Recorded PV deleted by hand | Instance `ready` | Kubernetes keeps the PV until the PVC is gone (`kubernetes.io/pv-protection`). After the stop, row 292 applies. | integration |
-| 294 | Recorded PV still `Bound` to an old claim | Start | Wait with the claim in the reason. After `startTimeout`, fail. | integration |
-| 295 | Recorded PV lost its labels, or has another row's ID | Start or clean-up | Start fails. Clean-up forgets the row. toolgate never changes that PV. | integration |
-| 296 | Recorded PV's reclaim policy changed to `Delete` | Start | Start fails. toolgate doesn't bind it. | integration |
-| 297 | StorageClass missing | Start of a new volume | Fail with the class in the reason. A recorded volume doesn't need its class. | integration |
-| 298 | StorageClass has `reclaimPolicy: Delete` | Start of a new volume | Fail with the Retain reason. Nothing is provisioned. | e2e |
-| 299 | Feature turned off | Instances running, rows present | Templates become invalid, and running instances keep running. No volume work, and nothing deleted. | integration |
-| 300 | User at the size limit | Start of a new per-user volume | Fail with the limit reason, `instance.fail`, `limit_refused`. Existing volumes still bind. | integration |
-| 301 | Two new volumes for one user at once, near the limit | Each other | The per-user advisory lock orders them. Only the one that fits starts. | integration, `-count=50 -race` |
-| 302 | Clean-up decides a deletion | Start for the same row | Both take the row lock. Clean-up only marks a row with no holder. A start that finds the mark waits, then gets a new volume. | integration, `-count=50 -race` |
-| 303 | Admin deletes a held volume | Instance running | 202. Deleted after the release. | integration |
-| 304 | Clean-up running | Leader change | The new leader reads `delete_reason` and `reclaim_patched_at` and goes on. | integration |
-| 305 | PV deleted by hand | Clean-up | Not found, so the row is deleted. | integration |
-| 306 | Sweep pass | Instance `stopping`, drain under way | The sweep skips the namespace of a `stopping` row. | integration |
-| 307 | Namespace stuck `Terminating` | New start waits | The old row stays `stopping`, so the new start fails after `startTimeout` with the wait reason. | integration |
-| 308 | Dynamic PVC binds to a PV with another row's ID | Record | Fail. The PV is not recorded. | unit |
-| 309 | Non-admin calls the volume API | — | 403. | integration |
+| 318 | Template `size` grows or shrinks | Volume recorded | The PVC asks for the row's size and binds to the old PV. New volumes get the new size. No expansion. | integration |
+| 319 | Template `storageClassName` changes | Volume recorded | The row keeps its class, and the PVC uses it. New volumes use the new class. | integration |
+| 320 | Template `scope` changes | Instances running | Instances stop (`SPEC.md` §9). New instances use rows of the new scope ID. The old rows age out by `unusedRetention`. | integration |
+| 321 | A volume is removed from the template, or renamed | Instances running | Old instances keep their claim until they stop. The row is released and ages out by `unusedRetention`. | integration |
+| 322 | Template deleted | Instance running and holding | The instance stops (`SPEC.md` §9). After the release, the clean-up deletes the volume with `template-deleted`. | e2e |
+| 323 | Template deleted and re-created with the same name | — | New UID, so new rows and empty volumes. The old rows are deleted as `template-deleted`. | integration |
+| 324 | Instance stops (idle, disable, session end) | Pods writing | Scale to zero, wait for the pods up to 2 min, delete the namespace, release in the `stopped` write. | e2e |
+| 325 | Restart or replace | Old instance holds | New row waits in `pending` until the old row is `stopped`, then claims. Bounded by `startTimeout`. | integration, `-count=50 -race` |
+| 326 | Two claims for one volume at once | Each other | The row lock orders them. One holds. The other waits. | integration, `-count=50 -race` |
+| 327 | Instance fails at start | Volume claimed, maybe bound | Teardown records an unrecorded bound PV, drains, deletes the namespace and releases. | integration |
+| 328 | MCP server pod crashes | Instance `ready` | Same namespace, same PVC, data kept. If the instance is replaced, row 325 applies. | e2e |
+| 329 | Leader dies during claim, pre-bind, PVC apply or record | — | The new leader repeats the step. Each step is safe to repeat (§7). | integration |
+| 330 | Leader dies during the drain | Pods stopping | The new leader keeps the bound from `stopping_at`. | integration |
+| 331 | Recorded PV deleted by hand | No instance | Next start: `volume.lost`, `pv_name` cleared, a new empty volume. | e2e |
+| 332 | Recorded PV deleted by hand | Instance `ready` | Kubernetes keeps the PV until the PVC is gone (`kubernetes.io/pv-protection`). After the stop, row 331 applies. | integration |
+| 333 | Recorded PV still `Bound` to an old claim | Start | Wait with the claim in the reason. After `startTimeout`, fail. | integration |
+| 334 | Recorded PV lost its labels, or has another row's ID | Start or clean-up | Start fails. Clean-up forgets the row. toolgate never changes that PV. | integration |
+| 335 | Recorded PV's reclaim policy changed to `Delete` | Start | Start fails. toolgate doesn't bind it. | integration |
+| 336 | StorageClass missing | Start of a new volume | Fail with the class in the reason. A recorded volume doesn't need its class. | integration |
+| 337 | StorageClass has `reclaimPolicy: Delete` | Start of a new volume | Fail with the Retain reason. Nothing is provisioned. | e2e |
+| 338 | Feature turned off | Instances running, rows present | Templates become invalid, and running instances keep running. No volume work, and nothing deleted. | integration |
+| 339 | User at the size limit | Start of a new per-user volume | Fail with the limit reason, `instance.fail`, `limit_refused`. Existing volumes still bind. | integration |
+| 340 | Two new volumes for one user at once, near the limit | Each other | The per-user advisory lock orders them. Only the one that fits starts. | integration, `-count=50 -race` |
+| 341 | Clean-up decides a deletion | Start for the same row | Both take the row lock. Clean-up only marks a row with no holder. A start that finds the mark waits, then gets a new volume. | integration, `-count=50 -race` |
+| 342 | Admin deletes a held volume | Instance running | 202. Deleted after the release. | integration |
+| 343 | Clean-up running | Leader change | The new leader reads `delete_reason` and `reclaim_patched_at` and goes on. | integration |
+| 344 | PV deleted by hand | Clean-up | Not found, so the row is deleted. | integration |
+| 345 | Sweep pass | Instance `stopping`, drain under way | The sweep skips the namespace of a `stopping` row. | integration |
+| 346 | Namespace stuck `Terminating` | New start waits | The old row stays `stopping`, so the new start fails after `startTimeout` with the wait reason. | integration |
+| 347 | Dynamic PVC binds to a PV with another row's ID | Record | Fail. The PV is not recorded. | unit |
+| 348 | Non-admin calls the volume API | — | 403. | integration |
 
 ## 14. Tests
 
@@ -456,19 +456,19 @@ Test names describe behaviour. Timing-sensitive tests pass `-count=50 -race`.
 - `TestValidatePersistentVolumes`: each problem of §2, feature on and off, every scope pair in the table.
 - `TestRenderVolumeClaim`: labels, annotations, namespace, size and class from the row, `volumeName` only when recorded.
 - `TestVolumeStartChecks`: each phase and label case of §4 step 3 against a fake client, with the exact reasons.
-- `TestRecordRefusesAnotherVolumesPV` (row 308).
+- `TestRecordRefusesAnotherVolumesPV` (row 347).
 
 **Integration** (PostgreSQL, envtest). envtest runs no controllers, so the tests set PV phases and PVC binding by hand through the status subresource:
-- `TestVolumeClaimIsExclusive` (rows 286, 287), `-count=50 -race`.
-- `TestVolumeLimitPerUser` (rows 300, 301), `-count=50 -race`.
-- `TestVolumeCleanupRacesStart` (row 302), `-count=50 -race`.
-- `TestVolumeCleanup`: template deleted, unused, admin, held, missing PV, wrong labels, the reclaim wait (rows 283, 295, 303, 305).
-- `TestVolumeTemplateChanges` (rows 279 to 282, 284).
-- `TestVolumeStepsRepeatAfterLeaderChange` (rows 290, 291, 304): stop after each step and run a fresh starter or teardown.
-- `TestTeardownDrainsVolumePods`: scale patch, the wait, the 2 min bound (row 291), the release in the `stopped` write.
-- `TestSweepSkipsStoppingNamespaces` (row 306).
-- `TestVolumeFeatureOff` (row 299).
-- `TestAdminVolumesAPI`: list, owner filter, paging, delete, 404, 403 for a non-admin (rows 303, 309).
+- `TestVolumeClaimIsExclusive` (rows 325, 326), `-count=50 -race`.
+- `TestVolumeLimitPerUser` (rows 339, 340), `-count=50 -race`.
+- `TestVolumeCleanupRacesStart` (row 341), `-count=50 -race`.
+- `TestVolumeCleanup`: template deleted, unused, admin, held, missing PV, wrong labels, the reclaim wait (rows 322, 334, 342, 344).
+- `TestVolumeTemplateChanges` (rows 318 to 321, 323).
+- `TestVolumeStepsRepeatAfterLeaderChange` (rows 329, 330, 343): stop after each step and run a fresh starter or teardown.
+- `TestTeardownDrainsVolumePods`: scale patch, the wait, the 2 min bound (row 330), the release in the `stopped` write.
+- `TestSweepSkipsStoppingNamespaces` (row 345).
+- `TestVolumeFeatureOff` (row 338).
+- `TestAdminVolumesAPI`: list, owner filter, paging, delete, 404, 403 for a non-admin (rows 342, 348).
 - `TestCRDValidatesPersistentVolumes` (`api/v1alpha1`, envtest): the three CEL rules, the name pattern and the size rule.
 - `test/chart`: the ClusterRole has no PV or StorageClass rules by default, and exactly §9's rules when enabled. `admission_integration_test.go` gains cases: an unlabelled PV can't be patched or deleted, a PV bound in another namespace can't be labelled, a labelled PV can't lose its ID or point at a claim outside `tg-`, and a `Retain` PV can't be deleted.
 
@@ -477,8 +477,8 @@ Test names describe behaviour. Timing-sensitive tests pass `-count=50 -race`.
 - `TestPersistentVolumeSurvivesCrash`: write a note, force-delete the MCP server pod with no grace period, and read the note. Then write again, kill the leader gateway pod while the instance stops, start again, and read the note.
 - `TestPersistentVolumeIsolation`: a per-user template for two users, and a second template with the same volume name. Each reads only its own note.
 - `TestPersistentVolumeCleanup`: delete a template, and the PV is gone. Let a volume pass a short `unusedRetention`, and its PV is gone. `toolgate admin volumes delete`, and its PV is gone.
-- `TestPersistentVolumeNeedsRetainClass`: a template with class `standard` fails to start with the Retain reason (row 298).
-- `TestPersistentVolumeLostIsReplaced`: delete the recorded PV by hand, start, and get an empty volume with `volume.lost` (row 292).
+- `TestPersistentVolumeNeedsRetainClass`: a template with class `standard` fails to start with the Retain reason (row 337).
+- `TestPersistentVolumeLostIsReplaced`: delete the recorded PV by hand, start, and get an empty volume with `volume.lost` (row 331).
 
 ## 15. Acceptance
 
