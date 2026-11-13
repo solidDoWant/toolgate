@@ -34,7 +34,7 @@ A verified fact comes from a source that toolgate trusts. A claimed fact is a va
 | Workspace of a pod | The pod and its owner, from the service-account token: `k8s/NAMESPACE/OWNER-KIND/OWNER-NAME`. | Yes |
 | Workspace of a user | The `X-Toolgate-Workspace` header, shown as `claimed/NAME`. | No |
 | Session | The `X-Toolgate-Session` header. | No |
-| Attestation | `attested` for a pod that signed in with a service-account token from an allowed namespace. `user` for a person. | Yes, computed |
+| Attestation | `attested` for a pod that signed in with a service-account token from an allowed namespace. `user` for a person. A person is also `attested` when the session has a workload token, a SPIFFE JWT-SVID or a signature from a registered workspace key that belongs to them. | Yes, computed |
 
 The gateway checks that a claimed value contains only letters, digits, `.`, `_` and `-`, and has 128 characters at most. It refuses other values with 400. A claimed value can never get into a template as YAML. It is always one text value.
 
@@ -58,6 +58,8 @@ A pod that signs in with a service-account token is `attested`. Kubernetes vouch
 - Nobody can get a token for the audience `toolgate` for a service account that they do not control.
 
 See [Pod sign-in](pod-sign-in.md).
+
+A user session can be attested by three sources: a pod token, a SPIFFE JWT-SVID, or a registered workspace key. A workspace key proves only that the session runs where the private key is. It does not protect against code that runs in that workspace. See [Workspace attestation](workspace-attestation.md#registered-workspace-keys).
 
 ## Where instances run
 
