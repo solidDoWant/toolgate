@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Registered workspace keys
+
+- A user can register a key pair for a machine outside the cluster, such as a laptop. Sessions from that machine then get a verified workspace, such as `registered/alice/dev`. Users run `toolgate workspace register NAME`, approve the key in the browser, and run `toolgate configure --attestation-key-file PATH`. They manage keys with `toolgate workspace keys list` and `toolgate workspace keys revoke`. See "Registered workspace keys" in `docs/admin/workspace-attestation.md`.
+- The feature is off by default. Turn it on with `config.workspaceKeys.enabled` only after every replica runs the new version. An old replica cannot approve a key request, and it sends a key assertion to TokenReview, where the attestation fails. The feature also needs the web UI, and user access tokens that live at most 5 minutes.
 - Templates have a new field, `persistentVolumes`, and the gateway has three new settings: `persistentVolumes.enabled` (default `false`), `persistentVolumes.unusedRetention` and `persistentVolumes.limitPerUser`. The catalog checks the field. Instances do not use it yet. See "Persistent volumes" in `docs/admin/templates-and-rules.md`.
 
 ## 0.4.11
