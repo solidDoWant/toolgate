@@ -122,7 +122,36 @@ func TestHeadersReadsTheSessionFileOfTheParentProcess(t *testing.T) {
 	assert.Equal(t, "from-hook", headers["X-Toolgate-Session"])
 }
 
-func TestHeadersWithoutSessionPrintsNoHeaders(t *testing.T) {
+func TestHeadersWithoutSessionPrintsCredentialHeaders(t *testing.T) {
+	isolateUserConfig(t)
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("TOOLGATE_SESSION", "")
+	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
+
+	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
+	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
+	gatewayURL := startGateway(t, provider, provider.ClientID)
+
+	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+
+	code, stdout, stderr := runHeaders(t)
+	require.Equal(t, 0, code, "stderr: %s", stderr)
+	assert.Contains(t, stderr, "no Claude Code session found")
+
+	var headers map[string]string
+	require.NoError(t, json.Unmarshal([]byte(stdout), &headers))
+	assert.Len(t, headers, 2)
+	assert.NotContains(t, headers, "X-Toolgate-Session")
+	assert.Equal(t, "laptop-widgets", headers["X-Toolgate-Workspace"])
+
+	identity, status := identityThroughGateway(t, provider, headers)
+	require.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "alice", identity.Principal)
+	assert.Empty(t, identity.Session, "the MCP endpoint ties the session to the MCP session")
+}
+
+func TestHeadersWithoutSessionOrSignIn(t *testing.T) {
 	isolateUserConfig(t)
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	t.Setenv("TOOLGATE_SESSION", "")
@@ -130,7 +159,7 @@ func TestHeadersWithoutSessionPrintsNoHeaders(t *testing.T) {
 	code, stdout, stderr := runHeaders(t)
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
-	assert.Equal(t, "No Claude Code session found. Start Claude Code with the toolgate plugin, or set TOOLGATE_SESSION.\n", stderr)
+	assert.Contains(t, stderr, "not signed in")
 }
 
 func TestHeadersWithoutSignIn(t *testing.T) {

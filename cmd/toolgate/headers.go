@@ -16,8 +16,10 @@ import (
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 )
 
-// noSessionMessage is printed when no Claude Code session is found.
-const noSessionMessage = "No Claude Code session found. Start Claude Code with the toolgate plugin, or set TOOLGATE_SESSION."
+// noSessionMessage is printed when no Claude Code session is found and the
+// headers go out without a session ID. Claude Code runs the helper with no
+// session for `claude mcp list`, which only checks that the gateway answers.
+const noSessionMessage = "toolgate headers: no Claude Code session found. Sending the credential headers without X-Toolgate-Session: the gateway ties the session to the MCP session. To tie it to a Claude Code session, start Claude Code with the toolgate plugin, or set TOOLGATE_SESSION."
 
 // printHeaders runs `toolgate headers`: it prints the headers for Claude
 // Code's headersHelper as a JSON object and returns the exit code.
@@ -28,13 +30,7 @@ func printHeaders(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	values, err := buildHeaders(context.Background())
-	if errors.Is(err, headers.ErrNoSession) {
-		_, _ = fmt.Fprintln(stderr, noSessionMessage)
-
-		return 1
-	}
-
+	values, err := buildHeaders(context.Background(), stderr)
 	if errors.Is(err, headers.ErrSignInAgain) {
 		_, _ = fmt.Fprintln(stderr, headers.SignInAgainMessage)
 
@@ -62,10 +58,17 @@ func printHeaders(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func buildHeaders(ctx context.Context) (map[string]string, error) {
-	// The session is looked up first: without one, no headers are printed
-	// and the IdP is not asked for a token.
+func buildHeaders(ctx context.Context, stderr io.Writer) (map[string]string, error) {
+	// The session is looked up first, and waited for: a real Claude Code
+	// session must not run untied because its hook was slow. Only when no
+	// session file appears does the helper fall back to credential headers.
 	session, err := headers.FindSession(ctx, headers.SessionOptions{})
+	if errors.Is(err, headers.ErrNoSession) {
+		_, _ = fmt.Fprintln(stderr, noSessionMessage)
+
+		session, err = "", nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +78,9 @@ func buildHeaders(ctx context.Context) (map[string]string, error) {
 		return nil, err
 	}
 
-	values[auth.SessionHeader] = session
+	if session != "" {
+		values[auth.SessionHeader] = session
+	}
 
 	if mode := toolSearchMode(os.Getenv(headers.ToolSearchEnv)); mode != "" {
 		values[auth.ToolSearchHeader] = mode
