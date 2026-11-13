@@ -37,9 +37,13 @@
           if goModToolchain != null then builtins.head goModToolchain
           else if goModGo != null then builtins.head goModGo
           else throw "toolgate: go.mod has neither a `toolchain goX.Y.Z` nor a `go X.Y.Z` line";
+        # Pinned to the 1.26 series: nixpkgs' default Go (1.27.3) still has
+        # GO-2026-6859, which the image build's govulncheck refuses. Move to
+        # pkgs.go once nixpkgs ships a Go 1.27 with the fix.
+        goPkg = pkgs.go_1_26;
         go =
-          if pkgs.lib.versionAtLeast pkgs.go.version minimumGoVersion then pkgs.go
-          else throw "toolgate: go.mod asks for Go ${minimumGoVersion}, but nixpkgs has Go ${pkgs.go.version}; update flake.lock (nix flake update nixpkgs) or lower go.mod.";
+          if pkgs.lib.versionAtLeast goPkg.version minimumGoVersion then goPkg
+          else throw "toolgate: go.mod asks for Go ${minimumGoVersion}, but nixpkgs has Go ${goPkg.version}; update flake.lock (nix flake update nixpkgs) or lower go.mod.";
 
         # The gateway image for one Linux architecture: the static toolgate
         # binary that `make build-images` built (and checked with
@@ -83,9 +87,15 @@
         # KUBEBUILDER_ASSETS here, so tests never download binaries.
         # Kubernetes matches the k8s.io/client-go minor version in go.mod;
         # etcd 3.6 is the series the Kubernetes release is tested with.
+        # Only the etcd server is needed, built without its own test suite:
+        # some of etcd's tests fail in the Nix build sandbox, and then
+        # nixpkgs' binary cache has no build to download.
+        etcdServer = pkgs.etcd_3_6.passthru.deps.etcdserver.overrideAttrs (_: {
+          doCheck = false;
+        });
         envtestAssets = pkgs.linkFarm "toolgate-envtest-assets" [
           { name = "kube-apiserver"; path = "${pkgs.kubernetes}/bin/kube-apiserver"; }
-          { name = "etcd"; path = "${pkgs.etcd_3_6}/bin/etcd"; }
+          { name = "etcd"; path = "${etcdServer}/bin/etcd"; }
           { name = "kubectl"; path = "${pkgs.kubectl}/bin/kubectl"; }
         ];
       in
