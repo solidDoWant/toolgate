@@ -37,9 +37,13 @@
           if goModToolchain != null then builtins.head goModToolchain
           else if goModGo != null then builtins.head goModGo
           else throw "toolgate: go.mod has neither a `toolchain goX.Y.Z` nor a `go X.Y.Z` line";
+        # Pinned to the 1.26 series: nixpkgs' default Go (1.27.3) still has
+        # GO-2026-6859, which the image build's govulncheck refuses. Move to
+        # pkgs.go once nixpkgs ships a Go 1.27 with the fix.
+        goPkg = pkgs.go_1_26;
         go =
-          if pkgs.lib.versionAtLeast pkgs.go.version minimumGoVersion then pkgs.go
-          else throw "toolgate: go.mod asks for Go ${minimumGoVersion}, but nixpkgs has Go ${pkgs.go.version}; update flake.lock (nix flake update nixpkgs) or lower go.mod.";
+          if pkgs.lib.versionAtLeast goPkg.version minimumGoVersion then goPkg
+          else throw "toolgate: go.mod asks for Go ${minimumGoVersion}, but nixpkgs has Go ${goPkg.version}; update flake.lock (nix flake update nixpkgs) or lower go.mod.";
 
         # The gateway image for one Linux architecture: the static toolgate
         # binary that `make build-images` built (and checked with
