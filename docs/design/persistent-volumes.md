@@ -112,7 +112,7 @@ The pod spec refers to a volume by `persistentVolumeClaim.claimName: <name>`. to
 
 ### What toolgate renders
 
-For each volume, toolgate makes one PersistentVolumeClaim (PVC) in the instance namespace. It is not part of `Render`'s template objects. The starter builds it as a typed object (§4, step 6):
+For each volume, toolgate makes one PersistentVolumeClaim (PVC) in the instance namespace. It is not part of `Render`'s template objects. The starter builds it as a typed object (§4, step 6). A `reapply` repair (phase 3) applies it again too, so a PVC that someone deleted comes back (§4, "Repairs"):
 
 ```yaml
 apiVersion: v1
@@ -148,7 +148,7 @@ No principal goes in a label. The row ID ties the PV to its row, and the row hol
 
 ## 3. State
 
-One additive migration, `00008_persistent_volumes.sql` (phase 1 §7, "Database migrations").
+One additive migration, `00019_persistent_volumes.sql` (phase 1 §7, "Database migrations"). The five 0.4.12 designs take fixed numbers, in the recommended build order: `00015_upstream_sessions`, `00016_workspace_keys`, `00017_instance_credentials`, `00018_tool_result_cache` and `00019_persistent_volumes`. If master already has this number when the PR rebases, take the next free number and say so in the PR. This design is built after `instance-credentials.md`, so its worker writes the shared start order (§4, "Start order with both features").
 
 **`persistent_volumes`**, one row per (template UID, volume name, scope ID):
 
@@ -183,11 +183,14 @@ Indexes:
 
 ## 4. Starting an instance
 
-These steps run in `Starter.startPending` for a template with `persistentVolumes`, after `Render` succeeds and before `applyAll` applies the template objects. Each step is safe to repeat, because a new leader repeats the whole step.
+These steps run in `Starter.startPending` for a template with `persistentVolumes`, in the order that "Start order with both features" (below) gives: steps 1 to 3 before `Render`, steps 4 to 6 after it, and step 7 last. Each step is safe to repeat, because a new leader repeats the whole step.
+
+**Feature off.** If the gateway setting `persistentVolumes.enabled` is `false`, `startPending` fails a row whose generation has `persistentVolumes`, before any other step, with "persistentVolumes needs the gateway setting persistentVolumes.enabled". This covers the last valid generation of a template that the setting made invalid, which a restart, a repair, the sweep or a lazy start can still render.
 
 1. **Claim** all the template's volumes in one transaction, in volume-name order. Two instances that lock in the same order cannot deadlock. For each volume:
    - Insert the row with `ON CONFLICT DO NOTHING`, then `SELECT … FOR UPDATE` it. A new row gets `size_bytes` from the template's `size` and `storage_class` from its `storageClassName`.
-   - If `delete_reason` is set, the volume is being deleted. Roll back and **wait** (below).
+   - If `delete_reason` is `unused` and `reclaim_patched_at` is null, the clean-up hasn't touched the PV yet. Set `delete_reason = ''`, `delete_requested_at = null` and `problem = ''`, and go on with the claim. The user who came back keeps the data. No audit event is written.
+   - If `delete_reason` is set otherwise (`admin`, or `unused` with `reclaim_patched_at` set), the volume is being deleted. Roll back and **wait** (below). A `template-deleted` row has an old template UID, so no start finds it.
    - If `instance_id` is this instance, the claim is already held. Go on.
    - If `instance_id` is another instance whose row exists and is not `stopped`, roll back and **wait**.
    - Otherwise set `instance_id` to this instance and `last_used_at = now()`.
@@ -210,7 +213,7 @@ These steps run in `Starter.startPending` for a template with `persistentVolumes
 
 4. **Prepare the namespace** as today (`prepareNamespace`).
 
-5. **Pre-bind each recorded PV** whose `claimRef` doesn't name this instance's claim yet. Patch `spec.claimRef` to `{apiVersion: v1, kind: PersistentVolumeClaim, namespace: tg-<id>, name: <volume name>}`, with no `uid` and no `resourceVersion`. Use a merge patch with an optimistic lock (`client.MergeFromWithOptions(old, client.MergeFromWithOptimisticLock{})`). A conflict ends the step, and the next pass starts again at step 3. This is the issue's "clear `spec.claimRef`" step. toolgate never sets `claimRef` to empty (§16, choice 2).
+5. **Pre-bind each recorded PV** whose `claimRef` doesn't name this instance's claim yet. Patch `spec.claimRef` to `{apiVersion: v1, kind: PersistentVolumeClaim, namespace: tg-<id>, name: <volume name>}`, with no `uid` and no `resourceVersion`. Use a merge patch with an optimistic lock (`client.MergeFromWithOptions(old, client.MergeFromWithOptimisticLock{})`). The patch body must set `claimRef.uid` and `claimRef.resourceVersion` to `null`, or the merge keeps the old values. `TestVolumeStartChecks` checks the body. A conflict ends the step, and the next pass starts again at step 3. This is the issue's "clear `spec.claimRef`" step. toolgate never sets `claimRef` to empty (§16, choice 2).
 
 6. **Apply the PVCs** (§2), with `volumeName` set for a recorded volume. A new volume has no `volumeName`, so the class's provisioner makes a PV.
 
@@ -218,14 +221,35 @@ These steps run in `Starter.startPending` for a template with `persistentVolumes
 
 8. **Record each new PV.** On each `checkStarting` step, for each held row with `pv_name` null:
    - Read the PVC. If it is not `Bound`, wait. Classes with `volumeBindingMode: WaitForFirstConsumer` bind only after the pod is scheduled.
-   - Read the PV that `spec.volumeName` names. If it carries a `toolgate.soliddowant.dev/volume-id` label of another row, fail with "PersistentVolume `<pv>` belongs to another volume." This stops a claim from taking another user's PV.
+   - Read the PV that `spec.volumeName` names. toolgate records it only when all three of these hold: its name is `pvc-<the PVC's UID>`, its `spec.claimRef.uid` is the PVC's UID, and it has the annotation `pv.kubernetes.io/provisioned-by`. Otherwise fail with "PersistentVolume `<pv>` wasn't provisioned for volume `<name>`.", and change nothing on that PV. The reason: the PV controller, or the scheduler's volume binder under `WaitForFirstConsumer`, binds a new claim to an existing `Available` PV of the same class before it provisions one. Such a PV existed before the PVC, so its name can't hold the PVC's UID. A `claimRef.uid` alone proves nothing, because the controller sets it on that binding too.
+   - If it carries a `toolgate.soliddowant.dev/volume-id` label of another row, fail with "PersistentVolume `<pv>` belongs to another volume." This stops a claim from taking another user's PV.
    - If its reclaim policy is not `Retain`, fail as in step 3.
    - Add the labels of §2 with a merge patch with an optimistic lock.
    - Then write `pv_name` and `size_bytes` (the PV's `spec.capacity.storage`) with a compare-and-set on `pv_name IS NULL AND instance_id = <this instance>`. Write `volume.create` and count `created`.
 
    **An instance is not `ready` until every row it holds has `pv_name`.** `checkStarting` checks this before the MCP `initialize`. So a ready instance never has an unrecorded PV.
 
-**Waiting.** A wait leaves the row `pending`, sets `instances.reason` to the wait reason, and returns. A wait ends when the next pass finds the cause gone. `startPending` now checks `timedOut` for a `pending` row that waits. After `startTimeout`, counted from `attempt_started_at`, the instance fails with "Timed out waiting for volume `<name>`: `<wait reason>`". A call waiting for the instance gets that reason, as today.
+**Waiting.** A wait leaves the row `pending`, sets `instances.reason` to the wait reason, and returns. A wait ends when the next pass finds the cause gone. `startPending` now checks `timedOut` for a `pending` row that waits. After `startTimeout`, counted from `attempt_started_at`, the instance fails with "Timed out waiting for volume `<name>`: `<wait reason>`". A call waiting for the instance gets that reason, as today. A template with `${exchange:…}` uses the same timeout for both waits (below).
+
+### Start order with both features
+
+This section is the same in `instance-credentials.md` and `persistent-volumes.md`. A change to one copy must change the other.
+
+`Starter.startPending` runs these steps in this order for an in-cluster `pending` row. A template that uses only one of the two features skips the steps of the other. A step that waits leaves the row `pending` and returns, and the next pass starts again at step 1. Each step is safe to repeat.
+
+1. **Volumes.** `persistent-volumes.md` §4, steps 1 to 3: claim the volumes, check the StorageClasses of new volumes, and check the recorded PVs. These steps read only PostgreSQL and the API server, and they render nothing.
+2. **Exchanges.** `instance-credentials.md` §3, "Start", step 3. It runs only after step 1 claimed every volume and found no wait.
+3. **Render.** `Render`, with the delivered tokens.
+4. **Volumes.** `persistent-volumes.md` §4, steps 4 to 6: the namespace, the pre-bind and the PVCs.
+5. **Apply.** `applyAll`, Secrets first, then the `pending` to `starting` write (`MarkStarting`), which also writes the exchange rows.
+
+**Exchange rows of a template with volumes.** If the generation has both `${exchange:…}` and `persistentVolumes`, the request that inserts the `pending` row inserts its exchange rows with `refresh_after = 'infinity'`, and with `wanted_since` and `claimed_at` null. It runs no exchange after the commit. So no request exchanges while the row waits for a volume, and no delivered token waits in the leader's memory for a volume. At step 2, the leader sets `wanted_since = now()` and `refresh_after = now()` on each row that has no `wanted_since`, and notifies `instance:<id>` in the same transaction. Each waiting request wakes on that notification, claims and exchanges (`instance-credentials.md` §3, "Start", step 4).
+
+**One timeout.** A row that waits at step 1 or step 2 fails when `startTimeout` has passed since `attempt_started_at`. The insert sets `attempt_started_at`, and `SetInstancePending` resets it, so a row that the sweep sends back to `pending` gets a full `startTimeout` again. The reason names the wait that the row is in when the time passes:
+- at step 1: "Timed out waiting for volume `<name>`: `<wait reason>`";
+- at step 2: "No exchanged token for `<exchange>` arrived within `<startTimeout>`. Enable `<server>` again to retry."
+
+**Repairs.** A `reapply` repair (`Repairer.reapply`, phase 3) renders and applies only the template objects. For an instance that holds volumes, it now also runs steps 3, 5 and 6 for each row the instance holds, before `applyAll`. So a PVC that someone deleted while its pod was gone comes back at once, bound to the recorded PV. A ready instance has only recorded rows (step 8). If step 3 fails or waits, the reapply returns the reason as an error, and the repair escalates as phase 3 says. `Sweep.restart` sends the row back to `pending`, so the whole start path runs again.
 
 **A recorded volume ignores template changes to its size and class.** The PVC asks for the row's `size_bytes` and `storage_class`, so it binds to the existing PV. A new size or class applies to new volumes only (§13).
 
@@ -233,7 +257,7 @@ These steps run in `Starter.startPending` for a template with `persistentVolumes
 
 `Teardown.Advance` changes for a `stopping` row with its own namespace that holds at least one volume. Rows that hold none behave as today. The steps run before the namespace is deleted:
 
-1. **Record unrecorded PVs.** Run §4 step 8 for each held row with `pv_name` null. A PVC that never bound has nothing to record. Teardown does not fail the instance here, because it is already stopping. A label conflict sets `problem` and skips that row.
+1. **Record unrecorded PVs.** Run §4 step 8 for each held row with `pv_name` null. A PVC that never bound has nothing to record. Teardown does not fail the instance here, because it is already stopping. A label conflict, or a PV that wasn't provisioned for the claim, sets `problem` and skips that row. toolgate never labels or records such a PV.
 2. **Scale to zero.** While `now() - stopping_at` is less than `VolumeDrainTimeout` (2 minutes, scaled by `internal/testtime`):
    - set `spec.replicas` to 0 with a merge patch on each Deployment and StatefulSet in the namespace whose `spec.replicas` is not 0. This covers objects that a HelmRelease made, because the whole namespace belongs to the instance;
    - list the Pods in the namespace. If a Pod that is not `Succeeded` or `Failed` mounts one of the held claims, set the reason "Waiting for pods to stop before the namespace is deleted." and return. The next pass checks again.
@@ -278,16 +302,18 @@ The leader runs `VolumeCleaner` on each full pass, after `Templates` is loaded (
 - **Unused.** `last_used_at` is older than `persistentVolumes.unusedRetention`, and the setting is not 0. Reason `unused`.
 - **Admin.** `DELETE /api/v1/admin/volumes/{id}` sets the reason `admin` on any row, held or not (§11). A held volume is deleted after its holder releases it.
 
-A held row is never deleted. A start that finds `delete_reason` set waits (§4, step 1). After the deletion, it inserts a new row, and the provisioner makes a new, empty volume.
+A held row is never deleted. A start that finds an `unused` mark whose PV is untouched clears it and keeps the volume. A start that finds any other mark waits (§4, step 1). After the deletion, it inserts a new row, and the provisioner makes a new, empty volume.
 
 **Deleting.** For each row with `delete_reason` set and `instance_id` null:
 1. If `pv_name` is null, delete the row.
 2. Read the PV. If it is not found, delete the row.
 3. If its labels don't match the row (§4, step 3), toolgate never touches it. Set `problem` to "PersistentVolume `<pv>` doesn't carry toolgate's labels for this volume, so toolgate didn't delete it.", delete the row, and count `delete_failed`. The admin finds it in the log.
 4. If it is `Bound`, it is bound to a claim that isn't toolgate's live claim. Set `problem` and try again on the next pass.
-5. If `reclaim_patched_at` is null, set `spec.persistentVolumeReclaimPolicy: Delete` with a merge patch with an optimistic lock, and set `reclaim_patched_at`. For a `Released` PV, the PV controller then hands it to its provisioner, which deletes the storage and the PV.
-6. If the PV is `Available`, or `reclaim_patched_at` is more than 10 minutes old (`VolumeReclaimWait`, scaled), delete the PV object with a UID precondition. On Kubernetes 1.33 and later, a CSI provisioner deletes the storage of a deleted PV that has the `Delete` policy.
-7. When a read finds the PV gone, delete the row and count `deleted`.
+5. If `reclaim_patched_at` is null, set it to `now()` in a transaction that locks the row and checks that `delete_reason` is still set and `instance_id` is still null. Commit before the PV is touched. If the check fails, a start cleared the mark or holds the volume, so stop for this row. So a start that finds `reclaim_patched_at` null knows that the PV still has `Retain` (§4, step 1).
+6. If the PV's reclaim policy is not `Delete`, set `spec.persistentVolumeReclaimPolicy: Delete` with a merge patch with an optimistic lock. This runs on every pass while it is needed, so a leader that died between step 5 and this step is caught up. For a `Released` PV, the PV controller then hands it to its provisioner, which deletes the storage and the PV.
+7. If the PV is `Available`, or `reclaim_patched_at` is more than 10 minutes old (`VolumeReclaimWait`, scaled), delete the PV object with a UID precondition. On Kubernetes 1.33 and later, a CSI provisioner deletes the storage of a deleted PV that has the `Delete` policy.
+8. When a read finds the PV gone, delete the row and count `deleted`.
+9. **Bound.** If the row still exists 1 hour (`VolumeForgetWait`, scaled) after the later of `delete_requested_at` and `last_used_at`, toolgate forgets it. It deletes the row, logs a warning with the PV name and the `problem`, and counts `delete_failed`. The later time counts from the release of a volume that an admin marked while it was held. This bounds a deletion that never ends, such as a PV that stays `Bound` to a claim that isn't toolgate's, or a provisioner that never deletes. A start for the same volume then makes a new row and a new volume. The PV keeps its labels, so the admin finds it with the `kubectl` query of the admin docs. toolgate never touches that PV again.
 
 **Per-user size limit.** The setting `persistentVolumes.limitPerUser` (default `10Gi`, `0` for no limit) bounds the sum of `size_bytes` of a user's `per-user` rows, rows being deleted included. It applies only when a start makes a new row (§4, step 1). When the new volume would pass the limit, the instance fails with:
 
@@ -320,7 +346,11 @@ toolgate reads PVs and StorageClasses one at a time with the manager's uncached 
     variables.isVolume && (request.operation == "UPDATE" || request.operation == "DELETE") && (
       oldObject.metadata.labels[?"toolgate.soliddowant.dev/volume-id"].orValue("") != "" ||
       (request.operation == "UPDATE" && has(oldObject.spec.claimRef) &&
-       oldObject.spec.claimRef.namespace.startsWith("tg-")))
+       oldObject.spec.claimRef.namespace.startsWith("tg-") &&
+       has(oldObject.spec.claimRef.uid) &&
+       oldObject.metadata.name == "pvc-" + oldObject.spec.claimRef.uid &&
+       has(oldObject.metadata.annotations) &&
+       oldObject.metadata.annotations[?"pv.kubernetes.io/provisioned-by"].orValue("") != ""))
 validations:
   # Keep the labels that tie a PV to its row, and point claims only at instance namespaces.
   - expression: >-
@@ -341,11 +371,14 @@ validations:
     reason: Forbidden
 ```
 
-The first labelling (§4, step 8) is the only change to a PV without toolgate's label. It is allowed only while the PV is bound to a claim in a `tg-` namespace, which only toolgate makes. In code, toolgate also checks the row's labels before each change (§4, step 3), so it never changes a PV it didn't record and label.
+The first labelling (§4, step 8) is the only change to a PV without toolgate's label. It is allowed only while the PV is bound to a claim in a `tg-` namespace, which only toolgate makes, and only when a provisioner made the PV for that claim: the PV's name is `pvc-<claim UID>` and it has the `pv.kubernetes.io/provisioned-by` annotation. So even a compromised gateway can't label, and then delete, a static or retained PV that the PV controller bound to one of its claims. In code, toolgate also checks the row's labels before each change (§4, step 3), so it never changes a PV it didn't record and label.
+
+**Provisioner rule.** Persistent volumes need a provisioner that names each PV `pvc-<claim UID>`. That is the default of the CSI external-provisioner (`--volume-name-prefix=pvc`, no `--volume-name-uuid-length`), of the in-tree provisioners and of the local-path provisioner. With another name, every new volume fails at §4, step 8, and toolgate changes nothing. The admin docs say so, and they say to keep no `Available` PV in a class that persistent volumes use. Kubernetes can bind a new claim to such a PV, and the server's pod can mount it before toolgate fails the start.
 
 ## 10. Settings
 
-Flat settings in `internal/config`, in the generated reference:
+Flat settings in `internal/config`, in the generated reference. A flat field can have a dotted name, as `otlp.metricsEndpoint` and `telemetry.dropSessionIdFromMetrics` do: the field's `json` tag holds the dotted name, and its `env` tag the variable. `applyEnv` reads `env` tags on top-level fields of the types `Duration`, `string`, `bool`, `int`, `Audiences` and `[]string`. So the fields are `PersistentVolumesEnabled bool`, `PersistentVolumesUnusedRetention Duration` and `PersistentVolumesLimitPerUser string`. `Config.Validate` parses the limit with `resource.ParseQuantity`, and refuses a value that doesn't parse or is negative with "persistentVolumes.limitPerUser: must be a Kubernetes quantity, such as 10Gi, or 0".
+
 | Setting | Default | Values | Environment variable |
 |---|---|---|---|
 | `persistentVolumes.enabled` | `false` | `true` or `false` | `TOOLGATE_PERSISTENT_VOLUMES_ENABLED` |
@@ -354,7 +387,9 @@ Flat settings in `internal/config`, in the generated reference:
 
 The chart sets them from `config.persistentVolumes.enabled`, `.unusedRetention` and `.limitPerUser`.
 
-**Turning the feature off.** Templates with `persistentVolumes` become invalid. Their running instances keep running, as for any invalid template. The reconciler does no volume work: no claims, no records, no drain and no clean-up. Rows and PVs stay. Turning it on again goes on from the rows.
+**Turning the feature off.** Templates with `persistentVolumes` become invalid. Their running instances keep running, as for any invalid template. A start of the last valid generation fails at once with the setting's reason (§4, "Feature off"). The reconciler does no other volume work: no claims, no records, no drain and no clean-up. The release in the `stopped` write still runs, because it is only a row update, so a volume is never held by a stopped instance. Rows and PVs stay. Turning it on again goes on from the rows.
+
+**Rolling upgrade.** Turn the setting on only after every replica runs the new version. The CHANGELOG and the admin page say so. A 0.4.11 leader doesn't know the field, so it starts such a template with no PVC, and it deletes a namespace with no drain (row 356).
 
 ## 11. API and CLI
 
@@ -436,10 +471,10 @@ Earlier phases' rows still hold. Rows continue the numbering. Each row is one ev
 | 335 | Recorded PV's reclaim policy changed to `Delete` | Start | Start fails. toolgate doesn't bind it. | integration |
 | 336 | StorageClass missing | Start of a new volume | Fail with the class in the reason. A recorded volume doesn't need its class. | integration |
 | 337 | StorageClass has `reclaimPolicy: Delete` | Start of a new volume | Fail with the Retain reason. Nothing is provisioned. | e2e |
-| 338 | Feature turned off | Instances running, rows present | Templates become invalid, and running instances keep running. No volume work, and nothing deleted. | integration |
+| 338 | Feature turned off | Instances running, rows present | Templates become invalid, and running instances keep running. A start of the last valid generation (restart, repair, sweep, lazy start) fails at once with "persistentVolumes needs the gateway setting persistentVolumes.enabled". The release in the `stopped` write still runs. No other volume work, and nothing deleted. | integration |
 | 339 | User at the size limit | Start of a new per-user volume | Fail with the limit reason, `instance.fail`, `limit_refused`. Existing volumes still bind. | integration |
 | 340 | Two new volumes for one user at once, near the limit | Each other | The per-user advisory lock orders them. Only the one that fits starts. | integration, `-count=50 -race` |
-| 341 | Clean-up decides a deletion | Start for the same row | Both take the row lock. Clean-up only marks a row with no holder. A start that finds the mark waits, then gets a new volume. | integration, `-count=50 -race` |
+| 341 | Clean-up decides a deletion | Start for the same row | Both take the row lock. Clean-up only marks a row with no holder. A start that finds an `unused` mark with `reclaim_patched_at` null clears it and claims the volume. A start that finds any other mark waits. After `startTimeout` it fails with the wait reason. A start after the deletion gets a new volume. | integration, `-count=50 -race` |
 | 342 | Admin deletes a held volume | Instance running | 202. Deleted after the release. | integration |
 | 343 | Clean-up running | Leader change | The new leader reads `delete_reason` and `reclaim_patched_at` and goes on. | integration |
 | 344 | PV deleted by hand | Clean-up | Not found, so the row is deleted. | integration |
@@ -447,6 +482,12 @@ Earlier phases' rows still hold. Rows continue the numbering. Each row is one ev
 | 346 | Namespace stuck `Terminating` | New start waits | The old row stays `stopping`, so the new start fails after `startTimeout` with the wait reason. | integration |
 | 347 | Dynamic PVC binds to a PV with another row's ID | Record | Fail. The PV is not recorded. | unit |
 | 348 | Non-admin calls the volume API | — | 403. | integration |
+| 353 | A new claim binds to a static or retained PV of the same class | Record | The PV's name isn't `pvc-<claim UID>`, or it lacks `pv.kubernetes.io/provisioned-by`. The start fails with "wasn't provisioned for volume". toolgate never labels, records, pre-binds or deletes that PV, and the admission policy refuses the label. | unit, admission integration |
+| 354 | User starts again after `unusedRetention` | `unused` mark, `reclaim_patched_at` null | The claim clears the mark and binds the old PV. The data stays. | integration, `-count=50 -race` |
+| 355 | Deletion never ends (PV `Bound` elsewhere, or the provisioner never deletes) | Starts for the same volume | After `VolumeForgetWait`, the row is forgotten with a warning and `delete_failed`. The next start makes a new row and a new volume. | integration |
+| 356 | Rolling upgrade from 0.4.11 | Templates with `persistentVolumes` | The setting is turned on only after every replica runs the new version. An old leader starts such a template without PVCs and tears down without the drain. PVC protection keeps the data. | none, the CHANGELOG and admin note |
+| 357 | Template with `${exchange:…}` and `persistentVolumes` restarts | Old instance drains the volume | The new row waits at step 1 with its exchange rows closed. When the volume is free, the leader opens them. One timeout from `attempt_started_at` covers both waits, and the reason names the current wait. | integration, `-count=50 -race` |
+| 358 | PVC deleted by hand while its pod is gone | `reapply` repair | The repair applies the PVC again, bound to the recorded PV, before the template objects. | integration |
 
 ## 14. Tests
 
@@ -455,22 +496,25 @@ Test names describe behaviour. Timing-sensitive tests pass `-count=50 -race`.
 **Unit** (`internal/catalog`, `internal/runtime`):
 - `TestValidatePersistentVolumes`: each problem of §2, feature on and off, every scope pair in the table.
 - `TestRenderVolumeClaim`: labels, annotations, namespace, size and class from the row, `volumeName` only when recorded.
-- `TestVolumeStartChecks`: each phase and label case of §4 step 3 against a fake client, with the exact reasons.
+- `TestVolumeStartChecks`: each phase and label case of §4 step 3 against a fake client, with the exact reasons, and the pre-bind patch body of step 5 with `uid` and `resourceVersion` set to `null`.
 - `TestRecordRefusesAnotherVolumesPV` (row 347).
+- `TestRecordRefusesPVNotProvisionedForTheClaim` (row 353): a PV with another name, with no `provisioned-by` annotation, and with another `claimRef.uid`.
 
 **Integration** (PostgreSQL, envtest). envtest runs no controllers, so the tests set PV phases and PVC binding by hand through the status subresource:
 - `TestVolumeClaimIsExclusive` (rows 325, 326), `-count=50 -race`.
 - `TestVolumeLimitPerUser` (rows 339, 340), `-count=50 -race`.
-- `TestVolumeCleanupRacesStart` (row 341), `-count=50 -race`.
-- `TestVolumeCleanup`: template deleted, unused, admin, held, missing PV, wrong labels, the reclaim wait (rows 322, 334, 342, 344).
+- `TestVolumeCleanupRacesStart` (rows 341, 354), `-count=50 -race`.
+- `TestVolumeCleanup`: template deleted, unused, admin, held, missing PV, wrong labels, the reclaim wait, a leader that died between steps 5 and 6, and the forget bound (rows 322, 334, 342, 344, 355).
+- `TestStartOrderWithVolumesAndExchanges` (row 357), `-count=50 -race`. It is shared with `instance-credentials.md` (row X32).
+- `TestReapplyRecreatesVolumeClaims` (row 358).
 - `TestVolumeTemplateChanges` (rows 318 to 321, 323).
 - `TestVolumeStepsRepeatAfterLeaderChange` (rows 329, 330, 343): stop after each step and run a fresh starter or teardown.
 - `TestTeardownDrainsVolumePods`: scale patch, the wait, the 2 min bound (row 330), the release in the `stopped` write.
 - `TestSweepSkipsStoppingNamespaces` (row 345).
-- `TestVolumeFeatureOff` (row 338).
+- `TestVolumeFeatureOff` (row 338): templates invalid, a restart of the last valid generation fails with the setting's reason, and a stop still releases.
 - `TestAdminVolumesAPI`: list, owner filter, paging, delete, 404, 403 for a non-admin (rows 342, 348).
 - `TestCRDValidatesPersistentVolumes` (`api/v1alpha1`, envtest): the three CEL rules, the name pattern and the size rule.
-- `test/chart`: the ClusterRole has no PV or StorageClass rules by default, and exactly §9's rules when enabled. `admission_integration_test.go` gains cases: an unlabelled PV can't be patched or deleted, a PV bound in another namespace can't be labelled, a labelled PV can't lose its ID or point at a claim outside `tg-`, and a `Retain` PV can't be deleted.
+- `test/chart`: the ClusterRole has no PV or StorageClass rules by default, and exactly §9's rules when enabled. `admission_integration_test.go` gains cases: an unlabelled PV can't be patched or deleted, a PV bound in another namespace can't be labelled, a labelled PV can't lose its ID or point at a claim outside `tg-`, a `Retain` PV can't be deleted, and a PV bound to a `tg-` claim can't get its first label when its name isn't `pvc-<claim UID>` or it has no `pv.kubernetes.io/provisioned-by` annotation.
 
 **e2e** (kind). kind's default class `standard` uses the local-path provisioner with `reclaimPolicy: Delete`. The harness adds a class `toolgate-retain` with provisioner `rancher.io/local-path`, `reclaimPolicy: Retain` and `volumeBindingMode: WaitForFirstConsumer`. The local-path provisioner keeps a `Retain` PV's directory after release, and deletes it when the policy is `Delete` and the PV is `Released`. The cluster has one node, so the PV's node affinity always fits. The test MCP server gains two tools, `write_note` and `read_note`, which write and read one file in the directory named by `--data-dir`. The chart runs with `persistentVolumes.enabled: true` and the time scale of `internal/testtime`.
 - `TestPersistentVolumeKeepsDataAcrossInstances`: write a note, let the instance stop, start again, read the note. The same PV name is in the row both times.
@@ -519,8 +563,12 @@ The issue leaves these open, or conflicts with the code. Each is the smallest op
 13. **Waiting for the old holder counts toward `startTimeout`.** No new timeout.
 14. **The limit defaults to `10Gi`, and applies only to new per-user volumes.** It never deletes data. `per-template` volumes count toward no user.
 15. **The admin commands use the API**, so an admin needs only a sign-in, not the gateway's configuration.
-16. **A deleted template's volumes are deleted at once**, with no grace time, as the issue says.
+16. **A deleted template's volumes are deleted at once**, with no grace time, as the issue says. A template that Flux prunes and creates again gets a new UID, so its old volumes are deleted. A grace time would protect nothing unless the new UID could take the old rows, and that hands data to a template that can have another author. The admin page warns that deleting and re-creating a template deletes its data.
 17. **An instance isn't `ready` until its PVs are recorded**, so a ready instance never has a PV that toolgate can lose.
+18. **toolgate records only a PV provisioned for its claim** (§4, step 8, and §9). The PV's name must hold the claim's UID. This needs the default PV naming of the provisioner, and it is the one fact that a PV made before the claim can't have.
+19. **A returning user cancels an `unused` deletion** that hasn't touched the PV yet (§4, step 1). Otherwise the user would wait while toolgate deletes the data they came back for.
+20. **A deletion that never ends is forgotten after 1 hour** (§8, step 9). Without a bound, one stuck PV blocks its volume for good, because the unique index allows one row.
+21. **The settings keep their dotted names.** The configuration loader supports a flat field with a dotted name and an environment variable, as `otlp.metricsEndpoint` shows. The limit is a `string` field, because `applyEnv` has no quantity type.
 
 **Principle 4 (secrets).** A server can write what it receives, its own tokens included, to its volume. Before this feature, that disk went away at each stop. Now it stays until clean-up. `docs/admin/persistent-volumes.md` and `docs/admin/security-model.md` say so. toolgate itself still puts no secret in a volume.
 
