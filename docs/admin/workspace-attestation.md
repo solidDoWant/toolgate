@@ -59,7 +59,7 @@ Run it for `create` and `update`, and for `virtualmachines` and `virtualmachinei
 
 ## Give the client its token
 
-The client reads the workload token from one of three variables. The user documentation describes them: `TOOLGATE_ATTESTATION_TOKEN_FILE`, `TOOLGATE_ATTESTATION_SPIFFE_SOCKET` and `TOOLGATE_ATTESTATION_TOKEN_REQUEST`. Set at most one of them in the workspace.
+The client reads the workload token from one of four variables. The user documentation describes them: `TOOLGATE_ATTESTATION_TOKEN_FILE`, `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`, `TOOLGATE_ATTESTATION_TOKEN_REQUEST` and `TOOLGATE_ATTESTATION_SIGNER_FILE`. Set at most one of them in the workspace. `TOOLGATE_ATTESTATION_SIGNER_FILE` is the path of a registered workspace key. The client signs a short assertion with the key on each run.
 
 For a pod, mount a projected token with the audience `toolgate` and set `TOOLGATE_ATTESTATION_TOKEN_FILE` to its path:
 
@@ -91,7 +91,7 @@ Claude Code 2.1.318 removes these variables from the helper:
 - `TOOLGATE_ATTESTATION_TOKEN_REQUEST`
 - `CODER_AGENT_TOKEN`
 
-It keeps `TOOLGATE_GATEWAY`, `TOOLGATE_SESSION`, `TOOLGATE_WORKSPACE`, `TOOLGATE_TOOL_SEARCH`, `TOOLGATE_SPIFFE_SOCKET`, `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`, `TOOLGATE_KUBE_API` and `XDG_RUNTIME_DIR`.
+It keeps `TOOLGATE_GATEWAY`, `TOOLGATE_SESSION`, `TOOLGATE_WORKSPACE`, `TOOLGATE_TOOL_SEARCH`, `TOOLGATE_SPIFFE_SOCKET`, `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`, `TOOLGATE_ATTESTATION_SIGNER_FILE`, `TOOLGATE_KUBE_API` and `XDG_RUNTIME_DIR`.
 
 So save the token command and the attestation source in the toolgate configuration file. Run `toolgate configure` as the workspace user, for example in the startup script of the workspace:
 
@@ -102,7 +102,7 @@ toolgate configure \
   --attestation-token-file /var/run/secrets/toolgate/token
 ```
 
-Use `--attestation-token-request DIR` in place of `--attestation-token-file` for a KubeVirt guest. The command writes `config.json` in the toolgate configuration directory with mode 0600. It changes only the settings that you give. An empty value removes a setting. If a variable is set, the client uses the variable and not the file. The file holds a command line and paths, not a token.
+Use `--attestation-token-request DIR` in place of `--attestation-token-file` for a KubeVirt guest. Use `--attestation-key-file PATH` for a registered workspace key. The command loads the key, saves its absolute path and prints its fingerprint. Give only one of the three attestation flags. The command writes `config.json` in the toolgate configuration directory with mode 0600. It changes only the settings that you give. An empty value removes a setting. If a variable is set, the client uses the variable and not the file. The file holds a command line and paths, not a token.
 
 ## KubeVirt virtual machines
 

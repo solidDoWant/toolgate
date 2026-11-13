@@ -131,7 +131,7 @@ func TestAttestationVariablesConflict(t *testing.T) {
 
 		code, _, stderr := runCLI(t, "", "sessions")
 		assert.Equal(t, 1, code)
-		assert.Equal(t, "Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET and TOOLGATE_ATTESTATION_TOKEN_REQUEST.\n", stderr)
+		assert.Equal(t, "Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET, TOOLGATE_ATTESTATION_TOKEN_REQUEST and TOOLGATE_ATTESTATION_SIGNER_FILE.\n", stderr)
 	})
 
 	t.Run("with TOOLGATE_SPIFFE_SOCKET", func(t *testing.T) {
