@@ -127,9 +127,37 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 	}
 
 	problems = append(problems, validateHealthCheck(spec)...)
+	problems = append(problems, validateUpdatePolicy(spec)...)
 	problems = append(problems, remoteProblems...)
 
 	return problems
+}
+
+// minUpdateIdleFor is the shortest idleFor of the whenIdle update policy: a
+// running call keeps its instance's last use at most a minute old.
+const minUpdateIdleFor = time.Minute
+
+// validateUpdatePolicy checks the template's updatePolicy, if any.
+func validateUpdatePolicy(spec v1alpha1.MCPServerTemplateSpec) []string {
+	policy := spec.UpdatePolicy
+	if policy == nil {
+		return nil
+	}
+
+	switch policy.Mode {
+	case v1alpha1.UpdateModeManual, v1alpha1.UpdateModeImmediate:
+		if policy.IdleFor != nil {
+			return []string{"updatePolicy.idleFor is allowed only with mode whenIdle"}
+		}
+	case v1alpha1.UpdateModeWhenIdle:
+		if policy.IdleFor == nil || policy.IdleFor.Duration < minUpdateIdleFor {
+			return []string{"updatePolicy.idleFor must be at least " + minUpdateIdleFor.String() + " with mode whenIdle"}
+		}
+	default:
+		return []string{fmt.Sprintf("updatePolicy.mode %q must be one of manual, immediate, whenIdle", policy.Mode)}
+	}
+
+	return nil
 }
 
 // Health check bounds. The CRD's CEL rules check

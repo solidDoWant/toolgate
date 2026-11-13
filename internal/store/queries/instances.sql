@@ -156,3 +156,10 @@ WHERE id = @id AND status = 'ready' AND desired = 'running' AND unhealthy_since 
 UPDATE instances
 SET repairs = array_append(repairs, @repaired_at::timestamptz), updated_at = now()
 WHERE id = @id AND status = 'ready' AND desired = 'running' AND unhealthy_since IS NOT NULL;
+
+-- name: AddReadyInstanceRepair :execrows
+-- Records a reapply repair of a ready instance whose objects are missing. It
+-- needs no unhealthy mark: the default ping check doesn't set one.
+UPDATE instances
+SET repairs = array_append(repairs, @repaired_at::timestamptz), updated_at = now()
+WHERE id = @id AND status = 'ready' AND desired = 'running';
