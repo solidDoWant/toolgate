@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -53,6 +54,15 @@ type UpstreamOptions struct {
 	// and records a refusal. Nil sends no extra headers.
 	Remote *RemoteAuth
 
+	// Adopt joins an upstream session another connection initialized: no
+	// `initialize` and no `notifications/initialized` reach the server.
+	// It needs a revision before 2026-07-28.
+	Adopt *AdoptedSession
+	// DeleteOnClose, when set and false at Close, keeps the DELETE that
+	// would end the upstream session from reaching the server. When true,
+	// the DELETE is sent.
+	DeleteOnClose *atomic.Bool
+
 	// listenEnded, when set, is called once the response stream of a
 	// 2026-07-28 `subscriptions/listen` request ends.
 	listenEnded func()
@@ -63,7 +73,15 @@ type UpstreamOptions struct {
 // that has none yet, runs a probe: it
 // connects on 2025-11-25 and runs `tools/list`, and tries 2026-07-28 only
 // after a version answer.
+//
+// Setting Adopt or DeleteOnClose makes a forwarding connection: it opens
+// no GET stream, and a 404 for its session sets the SessionNotFound flag in
+// the context of the call that got it.
 func ConnectUpstream(ctx context.Context, endpoint, revision string, options UpstreamOptions) (*mcp.ClientSession, string, error) {
+	if options.Adopt != nil && (revision == "" || revision >= RevisionStateless) {
+		return nil, "", errAdoptNeedsSessions
+	}
+
 	if revision != "" {
 		session, err := connectOn(ctx, endpoint, revision, options, nil)
 		if err != nil {
@@ -176,8 +194,17 @@ func connectOn(ctx context.Context, endpoint, revision string, options UpstreamO
 		httpClient = &recorded
 	}
 
+	disableSSE := options.DisableStandaloneSSE
+
+	if options.Adopt != nil || options.DeleteOnClose != nil {
+		forwarding := *httpClient
+		forwarding.Transport = &forwardingTransport{base: httpClient.Transport, adopt: options.Adopt, deleteOnClose: options.DeleteOnClose}
+		httpClient = &forwarding
+		disableSSE = true
+	}
+
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint: endpoint, HTTPClient: httpClient, DisableStandaloneSSE: options.DisableStandaloneSSE,
+		Endpoint: endpoint, HTTPClient: httpClient, DisableStandaloneSSE: disableSSE,
 	}, &mcp.ClientSessionOptions{ProtocolVersion: revision})
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", endpoint, err)
