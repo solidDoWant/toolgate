@@ -4,6 +4,11 @@
 
 - Templates can set `tools.<name>.cache`, the settings of the tool result cache. toolgate checks the settings, but calls do not use the cache yet.
 
+### Registered workspace keys
+
+- A user can register a key pair for a machine outside the cluster, such as a laptop. Sessions from that machine then get a verified workspace, such as `registered/alice/dev`. Users run `toolgate workspace register NAME`, approve the key in the browser, and run `toolgate configure --attestation-key-file PATH`. They manage keys with `toolgate workspace keys list` and `toolgate workspace keys revoke`. See "Registered workspace keys" in `docs/admin/workspace-attestation.md`.
+- The feature is off by default. Turn it on with `config.workspaceKeys.enabled` only after every replica runs the new version. An old replica cannot approve a key request, and it sends a key assertion to TokenReview, where the attestation fails. The feature also needs the web UI, and user access tokens that live at most 5 minutes.
+
 ## 0.4.11
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release shows the title of each Claude Code session on the usage dashboard, and fixes several panels of that dashboard. No upgrade steps are needed. Users get the new hooks when they update the plugin.
