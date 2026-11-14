@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/resultcache"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -206,6 +207,10 @@ func endSessionInTx(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, id in
 
 	if err := queries.DeleteSessionFoundTools(ctx, id); err != nil {
 		return false, fmt.Errorf("delete found tools: %w", err)
+	}
+
+	if err := resultcache.DeleteSessionEntries(ctx, tx, id); err != nil {
+		return false, err
 	}
 
 	mcpSessions, err := queries.EndSessionMCPSessions(ctx, id)

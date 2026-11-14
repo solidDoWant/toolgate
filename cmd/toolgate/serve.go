@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/resultcache"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -237,7 +239,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	resultCache := resultcache.NewPostgres(server.Database(), cfg.ToolResultCacheMaxEntryBytes, int64(cfg.ToolResultCacheMaxTemplateBytes))
+
 	mcpHandler := gateway.NewMCPHandler(gateway.MCPOptions{
+		ResultCache:   resultCache,
 		Metrics:       metrics,
 		Database:      server.Database(),
 		Catalog:       templates,
@@ -314,6 +319,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			listener:        listener,
 			tracerProvider:  server.TracerProvider(),
 			embedder:        searchEmbedder,
+			resultCache:     resultCache,
 		})
 		if err != nil {
 			logger.Error("gateway failed to start", "error", err)

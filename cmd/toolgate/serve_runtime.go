@@ -8,6 +8,8 @@ import (
 	"os"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/resultcache"
+
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -65,6 +67,8 @@ type runtimeOptions struct {
 	tracerProvider trace.TracerProvider
 	// embedder embeds the tool search rows; nil means words only.
 	embedder *embeddings.Client
+	// resultCache is cleaned on the leader's full pass.
+	resultCache resultcache.Store
 }
 
 // skipControllerNameValidation turns off controller-runtime's check that
@@ -152,7 +156,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, err
 	}
 
-	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: exchangeNames(cfg.TokenExchanges), TemplateSecretsNamespace: cfg.TemplateSecretsNamespace}
+	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: exchangeNames(cfg.TokenExchanges), TemplateSecretsNamespace: cfg.TemplateSecretsNamespace, PersistentVolumes: cfg.PersistentVolumesEnabled}
 
 	if options.ruleLister != nil {
 		options.ruleLister.set(mgr.GetClient(), watched)
@@ -325,8 +329,8 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	queries := db.New(pool)
 	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
-		runtime.RowCleanup(queries, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, updater.Step, repairer.Step, teardown.Step, starter.Step, monitor.Step)))))))))
+		runtime.RowCleanup(queries, runtime.ResultCacheCleanup(options.resultCache, options.catalog.LastValidByUID, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, updater.Step, repairer.Step, teardown.Step, starter.Step, monitor.Step))))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

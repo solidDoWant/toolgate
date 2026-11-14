@@ -187,6 +187,16 @@ config:
     # same time, for all users and shared instances together. At least 1.
     instances: 200
 
+  # -- The largest tool result, in bytes, that the tool result cache stores.
+  # From `1024` to `16777216`. A larger result is returned and not cached.
+  toolResultCacheMaxEntryBytes: 1048576
+
+  # -- The most bytes of unexpired cached results that one template may hold.
+  # From `1048576` to `1073741824`, and at least
+  # `toolResultCacheMaxEntryBytes`. At the limit, new results are not cached
+  # until entries expire. Nothing is evicted.
+  toolResultCacheMaxTemplateBytes: 67108864
+
   # -- Put the owner's verified email and name on the annotations of instance
   # namespaces and objects. Set it to `false` to keep personal data off
   # cluster objects. The owner's subject is annotated either way.

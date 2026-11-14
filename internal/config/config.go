@@ -7,6 +7,7 @@ package config
 
 import (
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
 
@@ -262,6 +263,19 @@ type Config struct {
 	// sets it from `config.limits.instances`.
 	InstanceLimit int `json:"instanceLimit" env:"TOOLGATE_INSTANCE_LIMIT"`
 
+	// The largest tool result, in bytes, that the tool result cache stores.
+	// A larger result is returned to the caller and not cached. It must be
+	// from 1024 to 16777216. The chart sets it from
+	// `config.toolResultCacheMaxEntryBytes`.
+	ToolResultCacheMaxEntryBytes int `json:"toolResultCacheMaxEntryBytes" env:"TOOLGATE_TOOL_RESULT_CACHE_MAX_ENTRY_BYTES"`
+
+	// The most bytes of unexpired cached results that one template may hold.
+	// At the limit, new results of that template are not cached until
+	// entries expire. Nothing is evicted. It must be from 1048576 to
+	// 1073741824, and at least `toolResultCacheMaxEntryBytes`. The chart sets
+	// it from `config.toolResultCacheMaxTemplateBytes`.
+	ToolResultCacheMaxTemplateBytes int `json:"toolResultCacheMaxTemplateBytes" env:"TOOLGATE_TOOL_RESULT_CACHE_MAX_TEMPLATE_BYTES"`
+
 	// How long a session can go without requests before the gateway ends
 	// it. An ended session keeps its list of enabled servers for
 	// `sessionResumeWindow`, but its per-session MCP servers stop. A later
@@ -387,6 +401,21 @@ type Config struct {
 	// it on and no embeddings request was sent. Write it as a Go duration,
 	// such as `15m`. It must be from 1 minute to 24 hours.
 	ToolSearchEmbeddingsScaleToZeroIdleTimeout Duration `json:"toolSearchEmbeddingsScaleToZeroIdleTimeout" env:"TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_IDLE_TIMEOUT"`
+
+	// When it is `true`, templates may set `persistentVolumes`: volumes that
+	// outlive the instance. When it is `false`, a template with
+	// `persistentVolumes` is invalid. Turn it on only after every gateway
+	// replica runs a version that knows the field.
+	PersistentVolumesEnabled bool `json:"persistentVolumes.enabled" env:"TOOLGATE_PERSISTENT_VOLUMES_ENABLED"`
+
+	// How long toolgate keeps a volume that no instance uses before it
+	// deletes it. Write it as a Go duration, such as `720h`. `0` never
+	// deletes unused volumes. Otherwise it must be at least `1h`.
+	PersistentVolumesUnusedRetention Duration `json:"persistentVolumes.unusedRetention" env:"TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION"`
+
+	// The most storage that the volumes of one user may request in total, as
+	// a Kubernetes quantity such as `10Gi`. `0` means no limit.
+	PersistentVolumesLimitPerUser string `json:"persistentVolumes.limitPerUser" env:"TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER"`
 
 	// The URL of the S3 API that stores large audit payloads, such as
 	// `https://s3.example.com`. If it is empty, the gateway uses the AWS S3
@@ -746,11 +775,16 @@ func Default() Config {
 		OIDCUIScopes:           []string{"openid", "email", "profile"},
 		InstanceLimitPerUser:   20,
 		InstanceLimit:          200,
-		SessionIdleTimeout:     Duration(2 * time.Hour),
-		SessionResumeWindow:    Duration(24 * time.Hour),
-		ApprovalTimeout:        Duration(10 * time.Minute),
 
-		WorkspaceKeysPrefix: "registered",
+		ToolResultCacheMaxEntryBytes:    1 << 20,
+		ToolResultCacheMaxTemplateBytes: 64 << 20,
+		SessionIdleTimeout:              Duration(2 * time.Hour),
+		SessionResumeWindow:             Duration(24 * time.Hour),
+		ApprovalTimeout:                 Duration(10 * time.Minute),
+
+		PersistentVolumesUnusedRetention: Duration(720 * time.Hour),
+		PersistentVolumesLimitPerUser:    "10Gi",
+		WorkspaceKeysPrefix:              "registered",
 
 		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
 
@@ -1174,6 +1208,7 @@ func (c Config) Validate() []error {
 		problems = append(problems, fmt.Errorf("oidcIssuerURL: %q is not an http or https URL", c.OIDCIssuerURL))
 	}
 
+	problems = append(problems, c.validatePersistentVolumes()...)
 	problems = append(problems, c.OIDCAudience.validate("oidcAudience")...)
 	problems = append(problems, c.validateAdditionalIssuers()...)
 
@@ -1233,6 +1268,8 @@ func (c Config) Validate() []error {
 	if c.InstanceLimitPerUser < 1 {
 		problems = append(problems, errors.New("instanceLimitPerUser: must be at least 1"))
 	}
+
+	problems = append(problems, c.validateToolResultCacheLimits()...)
 
 	if c.InstanceLimit < 1 {
 		problems = append(problems, errors.New("instanceLimit: must be at least 1"))
@@ -1438,6 +1475,26 @@ func (c Config) OTLPEndpointFor(signal string) string {
 	return endpoint
 }
 
+// minPersistentVolumesUnusedRetention is the shortest non-zero retention of
+// unused volumes.
+const minPersistentVolumesUnusedRetention = time.Hour
+
+func (c Config) validatePersistentVolumes() []error {
+	var problems []error
+
+	limit, err := resource.ParseQuantity(c.PersistentVolumesLimitPerUser)
+	if err != nil || limit.Sign() < 0 {
+		problems = append(problems, errors.New("persistentVolumes.limitPerUser: must be a Kubernetes quantity, such as 10Gi, or 0"))
+	}
+
+	retention := time.Duration(c.PersistentVolumesUnusedRetention)
+	if retention != 0 && retention < minPersistentVolumesUnusedRetention {
+		problems = append(problems, errors.New("persistentVolumes.unusedRetention: must be 0 or at least 1h"))
+	}
+
+	return problems
+}
+
 // TokenExchange is one entry of the tokenExchanges setting.
 type TokenExchange struct {
 	Name               string   `json:"name"`
@@ -1552,6 +1609,23 @@ func (c *Config) validateTemplateSecretsNamespace() []error {
 
 	if slices.Contains(c.CatalogNamespaces, namespace) {
 		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not be one of catalogNamespaces, where template authors write", namespace))
+	}
+
+	return problems
+}
+
+// validateToolResultCacheLimits checks the two tool result cache size limits.
+func (c Config) validateToolResultCacheLimits() []error {
+	var problems []error
+
+	if c.ToolResultCacheMaxEntryBytes < 1024 || c.ToolResultCacheMaxEntryBytes > 16<<20 {
+		problems = append(problems, errors.New("toolResultCacheMaxEntryBytes: must be from 1024 to 16777216"))
+	}
+
+	if c.ToolResultCacheMaxTemplateBytes < 1<<20 || c.ToolResultCacheMaxTemplateBytes > 1<<30 {
+		problems = append(problems, errors.New("toolResultCacheMaxTemplateBytes: must be from 1048576 to 1073741824"))
+	} else if c.ToolResultCacheMaxTemplateBytes < c.ToolResultCacheMaxEntryBytes {
+		problems = append(problems, errors.New("toolResultCacheMaxTemplateBytes: must be at least toolResultCacheMaxEntryBytes"))
 	}
 
 	return problems

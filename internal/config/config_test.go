@@ -50,32 +50,38 @@ logLevel: debug
 	require.NoError(t, err)
 
 	assert.Equal(t, config.Config{
-		ListenAddress:               ":8443",
-		MetricsListenAddress:        ":9090",
-		DatabaseURL:                 validDatabaseURL,
-		MigrateOnStart:              true,
-		ShutdownTimeout:             config.Duration(45 * time.Second),
-		LogLevel:                    "debug",
-		OTLPEndpoint:                "http://collector:4318",
-		OIDCIssuerURL:               "https://idp.example",
-		OIDCAudience:                config.Audiences{"toolgate"},
-		OIDCEmailClaim:              "email",
-		OIDCEmailVerifiedClaim:      "email_verified",
-		OIDCGroupsClaim:             "roles",
-		OIDCCLIClientID:             "toolgate-cli",
-		OIDCCLIScopes:               []string{"openid", "email", "profile", "offline_access"},
-		ServiceAccountNamespaces:    []string{"ci", "agents"},
-		InstanceLimitPerUser:        20,
-		InstanceLimit:               200,
-		SessionIdleTimeout:          config.Duration(2 * time.Hour),
-		SessionResumeWindow:         config.Duration(24 * time.Hour),
-		ApprovalTimeout:             config.Duration(10 * time.Minute),
-		WorkspaceKeysPrefix:         "registered",
-		PublicURL:                   "https://toolgate.example",
-		OIDCUIClientID:              "toolgate-ui",
-		OIDCUIScopes:                []string{"openid", "email", "profile"},
-		AdminGroup:                  "toolgate-admins",
-		ToolSearchEmbeddingsTimeout: config.Duration(2 * time.Second),
+		ListenAddress:            ":8443",
+		MetricsListenAddress:     ":9090",
+		DatabaseURL:              validDatabaseURL,
+		MigrateOnStart:           true,
+		ShutdownTimeout:          config.Duration(45 * time.Second),
+		LogLevel:                 "debug",
+		OTLPEndpoint:             "http://collector:4318",
+		OIDCIssuerURL:            "https://idp.example",
+		OIDCAudience:             config.Audiences{"toolgate"},
+		OIDCEmailClaim:           "email",
+		OIDCEmailVerifiedClaim:   "email_verified",
+		OIDCGroupsClaim:          "roles",
+		OIDCCLIClientID:          "toolgate-cli",
+		OIDCCLIScopes:            []string{"openid", "email", "profile", "offline_access"},
+		ServiceAccountNamespaces: []string{"ci", "agents"},
+		InstanceLimitPerUser:     20,
+		InstanceLimit:            200,
+
+		ToolResultCacheMaxEntryBytes:    1048576,
+		ToolResultCacheMaxTemplateBytes: 67108864,
+		SessionIdleTimeout:              config.Duration(2 * time.Hour),
+		SessionResumeWindow:             config.Duration(24 * time.Hour),
+		ApprovalTimeout:                 config.Duration(10 * time.Minute),
+		WorkspaceKeysPrefix:             "registered",
+		PublicURL:                       "https://toolgate.example",
+		OIDCUIClientID:                  "toolgate-ui",
+		OIDCUIScopes:                    []string{"openid", "email", "profile"},
+		AdminGroup:                      "toolgate-admins",
+		ToolSearchEmbeddingsTimeout:     config.Duration(2 * time.Second),
+
+		PersistentVolumesUnusedRetention: config.Duration(720 * time.Hour),
+		PersistentVolumesLimitPerUser:    "10Gi",
 
 		ToolSearchEmbeddingsScaleToZeroIdleTimeout: config.Duration(15 * time.Minute),
 	}, cfg)
@@ -689,6 +695,58 @@ telemetry.dropSessionIdFromMetrics: true
 	assert.False(t, config.Default().TelemetryDropSessionIDFromMetrics)
 }
 
+func TestPersistentVolumesSettings(t *testing.T) {
+	base := map[string]string{
+		"TOOLGATE_DATABASE_URL":    validDatabaseURL,
+		"TOOLGATE_OIDC_ISSUER_URL": "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":   "toolgate",
+	}
+	with := func(extra map[string]string) func(string) string {
+		values := map[string]string{}
+		for key, value := range base {
+			values[key] = value
+		}
+
+		for key, value := range extra {
+			values[key] = value
+		}
+
+		return envFrom(values)
+	}
+
+	cfg, err := config.Load("", with(nil))
+	require.NoError(t, err)
+	assert.False(t, cfg.PersistentVolumesEnabled)
+	assert.Equal(t, config.Duration(720*time.Hour), cfg.PersistentVolumesUnusedRetention)
+	assert.Equal(t, "10Gi", cfg.PersistentVolumesLimitPerUser)
+
+	cfg, err = config.Load("", with(map[string]string{
+		"TOOLGATE_PERSISTENT_VOLUMES_ENABLED":          "true",
+		"TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION": "1h",
+		"TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER":   "0",
+	}))
+	require.NoError(t, err)
+	assert.True(t, cfg.PersistentVolumesEnabled)
+	assert.Equal(t, config.Duration(time.Hour), cfg.PersistentVolumesUnusedRetention)
+	assert.Equal(t, "0", cfg.PersistentVolumesLimitPerUser)
+
+	cfg, err = config.Load("", with(map[string]string{"TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION": "0"}))
+	require.NoError(t, err)
+	assert.Zero(t, cfg.PersistentVolumesUnusedRetention)
+
+	for _, test := range []struct{ name, variable, value, want string }{
+		{"limit not a quantity", "TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER", "abc", "persistentVolumes.limitPerUser: must be a Kubernetes quantity, such as 10Gi, or 0"},
+		{"limit negative", "TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER", "-1Gi", "persistentVolumes.limitPerUser: must be a Kubernetes quantity, such as 10Gi, or 0"},
+		{"retention under one hour", "TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION", "59m", "persistentVolumes.unusedRetention"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := config.Load("", with(map[string]string{test.variable: test.value}))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.want)
+		})
+	}
+}
+
 func TestTemplateSecretsNamespaceConfig(t *testing.T) {
 	base := map[string]string{
 		"TOOLGATE_DATABASE_URL":       validDatabaseURL,
@@ -733,6 +791,43 @@ func TestTemplateSecretsNamespaceConfig(t *testing.T) {
 
 			require.NoError(t, err)
 			assert.Equal(t, test.namespace, cfg.TemplateSecretsNamespace)
+		})
+	}
+}
+
+func TestToolResultCacheLimitsValidation(t *testing.T) {
+	tests := map[string]struct {
+		entry, template string
+		wantErr         string
+	}{
+		"smallest entry limit":        {entry: "1024", template: "1048576"},
+		"entry limit below minimum":   {entry: "1023", template: "1048576", wantErr: "toolResultCacheMaxEntryBytes"},
+		"largest entry limit":         {entry: "16777216", template: "1073741824"},
+		"entry limit above maximum":   {entry: "16777217", template: "1073741824", wantErr: "toolResultCacheMaxEntryBytes"},
+		"template limit at minimum":   {entry: "1024", template: "1048576"},
+		"template limit below min":    {entry: "1024", template: "1048575", wantErr: "toolResultCacheMaxTemplateBytes"},
+		"template limit at maximum":   {entry: "1024", template: "1073741824"},
+		"template limit above max":    {entry: "1024", template: "1073741825", wantErr: "toolResultCacheMaxTemplateBytes"},
+		"template limit equals entry": {entry: "2097152", template: "2097152"},
+		"template limit below entry":  {entry: "2097152", template: "2097151", wantErr: "at least toolResultCacheMaxEntryBytes"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := config.Load("", envFrom(map[string]string{
+				"TOOLGATE_DATABASE_URL":                         validDatabaseURL,
+				"TOOLGATE_OIDC_ISSUER_URL":                      "https://idp.example",
+				"TOOLGATE_OIDC_AUDIENCE":                        "toolgate",
+				"TOOLGATE_TOOL_RESULT_CACHE_MAX_ENTRY_BYTES":    test.entry,
+				"TOOLGATE_TOOL_RESULT_CACHE_MAX_TEMPLATE_BYTES": test.template,
+			}))
+			if test.wantErr == "" {
+				require.NoError(t, err)
+
+				return
+			}
+
+			require.ErrorContains(t, err, test.wantErr)
 		})
 	}
 }

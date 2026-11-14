@@ -262,6 +262,20 @@ type ToolCatalog struct {
 	LearnedAt    pgtype.Timestamptz
 }
 
+type ToolResultCache struct {
+	Key         []byte
+	TemplateUid string
+	Generation  int64
+	Tool        string
+	Scope       string
+	ScopeID     string
+	SessionPk   pgtype.Int8
+	Result      []byte
+	SizeBytes   int32
+	StoredAt    pgtype.Timestamptz
+	ExpiresAt   pgtype.Timestamptz
+}
+
 type ToolSearch struct {
 	TemplateUid      string
 	TemplateNs       string
