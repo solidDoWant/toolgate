@@ -194,7 +194,7 @@ func TestTokenRequestFailures(t *testing.T) {
 
 func TestOnlyOneSource(t *testing.T) {
 	err := Source{TokenFile: "a", TokenRequest: "b"}.Validate()
-	require.EqualError(t, err, "Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET and TOOLGATE_ATTESTATION_TOKEN_REQUEST.")
+	require.EqualError(t, err, "Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET, TOOLGATE_ATTESTATION_TOKEN_REQUEST and TOOLGATE_ATTESTATION_SIGNER_FILE.")
 	require.NoError(t, Source{TokenFile: "a"}.Validate())
 	require.NoError(t, Source{}.Validate())
 

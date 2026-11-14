@@ -68,9 +68,10 @@ type Settings struct {
 	// behaviour.
 	TokenStore string `json:"tokenStore,omitempty"`
 
-	// TokenCommand, AttestationTokenFile and AttestationTokenRequest are the
-	// file forms of TOOLGATE_TOKEN_COMMAND, TOOLGATE_ATTESTATION_TOKEN_FILE
-	// and TOOLGATE_ATTESTATION_TOKEN_REQUEST, set by `toolgate configure`.
+	// TokenCommand, AttestationTokenFile, AttestationTokenRequest and
+	// AttestationKeyFile are the file forms of TOOLGATE_TOKEN_COMMAND,
+	// TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_TOKEN_REQUEST and
+	// TOOLGATE_ATTESTATION_SIGNER_FILE, set by `toolgate configure`.
 	// Claude Code removes variables with credential-like names from the
 	// environment of a plugin's headersHelper, so the helper reads them
 	// here. A set environment variable wins. They hold a command line and
@@ -78,6 +79,7 @@ type Settings struct {
 	TokenCommand            string `json:"tokenCommand,omitempty"`
 	AttestationTokenFile    string `json:"attestationTokenFile,omitempty"`
 	AttestationTokenRequest string `json:"attestationTokenRequest,omitempty"`
+	AttestationKeyFile      string `json:"attestationKeyFile,omitempty"`
 }
 
 // KeepConfigured copies the fields set by `toolgate configure` from previous
@@ -86,6 +88,7 @@ func (settings *Settings) KeepConfigured(previous Settings) {
 	settings.TokenCommand = previous.TokenCommand
 	settings.AttestationTokenFile = previous.AttestationTokenFile
 	settings.AttestationTokenRequest = previous.AttestationTokenRequest
+	settings.AttestationKeyFile = previous.AttestationKeyFile
 }
 
 // Options configures Run.

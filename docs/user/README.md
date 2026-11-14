@@ -383,12 +383,15 @@ Set at most one of these variables:
 - `TOOLGATE_ATTESTATION_TOKEN_FILE`: the path of a projected service-account token with the audience `toolgate`. toolgate reads the file on each run, because Kubernetes rotates it.
 - `TOOLGATE_ATTESTATION_SPIFFE_SOCKET`: the address of a SPIFFE Workload API. toolgate gets a new JWT-SVID for the audience `toolgate` on each run, within 5 seconds.
 - `TOOLGATE_ATTESTATION_TOKEN_REQUEST`: for a KubeVirt virtual machine. The value is the directory of the mounted `serviceAccount` disk, which holds `token`, `namespace` and `ca.crt`. toolgate asks the Kubernetes API server for a token with the audience `toolgate` that lasts 600 seconds. It uses the URL in `TOOLGATE_KUBE_API`, or `https://kubernetes.default.svc` when that is not set. The virtual machine must be able to reach the API server. toolgate asks again on each run.
+- `TOOLGATE_ATTESTATION_SIGNER_FILE`: the path of your registered workspace key. The file holds one PEM `PRIVATE KEY` block with an Ed25519 key. Only you can read it (mode 0600). On each run, toolgate signs a new assertion with the key. The assertion is valid for 300 seconds. If other users can read the file, toolgate refuses it with `The key file PATH can be read by other users. Run chmod 600 PATH.` If the file is not an Ed25519 key, toolgate refuses it with `The key file PATH doesn't hold an Ed25519 private key.`
+
+Claude Code keeps `TOOLGATE_ATTESTATION_SIGNER_FILE` in the environment of the plugin helper. You can also save the path with `toolgate configure --attestation-key-file PATH`. The command loads the key, saves the absolute path and prints `Saved the settings in DIR. The key's fingerprint is SHA256:…`. Save only one of `--attestation-token-file`, `--attestation-token-request` and `--attestation-key-file`. To change from one to another, remove the old one with an empty value in the same command, for example `toolgate configure --attestation-token-file '' --attestation-key-file ~/.config/toolgate/workspace.key`. If a variable is set, toolgate uses the variables and not the saved settings.
 
 Every command that calls the gateway sends the token in the `X-Toolgate-Attestation` header: `headers`, `otel-headers`, `hook session-start`, `servers`, `secret`, `sessions`, `workspace` and `audit tail`. `toolgate headers` adds the header to its output.
 
 If toolgate cannot get the token, the command shows the reason, never the token, and exits with a non-zero code. It sends no request, because a request without the attestation would change the attestation of your session without a warning. If the Kubernetes API server refuses a token request, the command shows its status and message.
 
-If you set more than one of the variables, every command exits with `Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET and TOOLGATE_ATTESTATION_TOKEN_REQUEST.` You cannot combine them with `TOOLGATE_SPIFFE_SOCKET`.
+If you set more than one of the variables, every command exits with `Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET, TOOLGATE_ATTESTATION_TOKEN_REQUEST and TOOLGATE_ATTESTATION_SIGNER_FILE.` You cannot combine them with `TOOLGATE_SPIFFE_SOCKET`.
 
 ### Prove where your session runs with a workspace key
 
