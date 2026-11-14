@@ -483,6 +483,24 @@ type Config struct {
 	// path segment, `match.by` must be `claim`, and it must contain
 	// `{<match.key>}` and every placeholder `workspaceID` uses.
 	WorkspaceAttestation *WorkspaceAttestation `json:"workspaceAttestation"`
+
+	// When it is `true`, users can register a workspace key: a key pair
+	// that a workspace holds and that the user approves in the web UI. A
+	// request that carries a signed assertion from an approved key gets a
+	// verified workspace ID of `<workspaceKeysPrefix>/<username>/<name>`.
+	// It needs the web UI (`oidcUIClientID`), because only the web UI can
+	// approve a key. It does not depend on `workspaceAttestation`: either,
+	// both or neither can be on. Turn it on only after every replica runs a
+	// version that knows it.
+	WorkspaceKeys bool `json:"workspaceKeys" env:"TOOLGATE_WORKSPACE_KEYS"`
+
+	// The first segment of the workspace ID of a registered key. It is used
+	// only when `workspaceKeys` is `true`. It must match
+	// `^[A-Za-z0-9._-]{1,63}$`, must not be `claimed` or `k8s`, and must not
+	// be the first segment of `workspaceAttestation.workspaceID`. If you
+	// change it, bound sessions stop working, and workspace lists under the
+	// old prefix no longer match.
+	WorkspaceKeysPrefix string `json:"workspaceKeysPrefix" env:"TOOLGATE_WORKSPACE_KEYS_PREFIX"`
 }
 
 // WorkspaceAttestation is the workspaceAttestation setting.
@@ -550,6 +568,36 @@ func (c Config) validateWorkspaceAttestation() []error {
 	problems := auth.ValidateAttestation(*options)
 	for index, problem := range problems {
 		problems[index] = fmt.Errorf("workspaceAttestation.%w", problem)
+	}
+
+	return problems
+}
+
+var workspaceKeysPrefixPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,63}$`)
+
+func (c Config) validateWorkspaceKeys() []error {
+	if !c.WorkspaceKeys {
+		return nil
+	}
+
+	var problems []error
+
+	if !c.UIEnabled() {
+		problems = append(problems, errors.New("workspaceKeys: needs the web UI (oidcUIClientID), because only the web UI can approve a key.")) //nolint:staticcheck // the message is fixed by the design and ends in a period
+	}
+
+	prefix := c.WorkspaceKeysPrefix
+
+	switch {
+	case !workspaceKeysPrefixPattern.MatchString(prefix):
+		problems = append(problems, fmt.Errorf("workspaceKeysPrefix: %q must match %s", prefix, workspaceKeysPrefixPattern))
+	case prefix == "claimed" || prefix == "k8s":
+		problems = append(problems, fmt.Errorf("workspaceKeysPrefix: must not be %q", prefix))
+	case c.WorkspaceAttestation != nil:
+		first, _, _ := strings.Cut(c.WorkspaceAttestation.WorkspaceID, "/")
+		if first == prefix {
+			problems = append(problems, fmt.Errorf("workspaceKeysPrefix: %q is the first segment of workspaceAttestation.workspaceID", prefix))
+		}
 	}
 
 	return problems
@@ -706,6 +754,7 @@ func Default() Config {
 
 		PersistentVolumesUnusedRetention: Duration(720 * time.Hour),
 		PersistentVolumesLimitPerUser:    "10Gi",
+		WorkspaceKeysPrefix: "registered",
 
 		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
 
@@ -1211,6 +1260,7 @@ func (c Config) Validate() []error {
 	problems = append(problems, c.validateResolvers()...)
 	problems = append(problems, c.validateSPIFFETrustDomains()...)
 	problems = append(problems, c.validateWorkspaceAttestation()...)
+	problems = append(problems, c.validateWorkspaceKeys()...)
 
 	if c.AuditPayloads && c.AuditS3Bucket == "" {
 		problems = append(problems, errors.New("auditS3Bucket: required when auditPayloads is true"))

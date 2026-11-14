@@ -35,6 +35,11 @@ const (
 	// KubeVirt serviceAccount disk.
 	TokenRequestEnv = "TOOLGATE_ATTESTATION_TOKEN_REQUEST"
 
+	// SignerFileEnv names the variable that holds the path of a registered
+	// workspace key. The name avoids the words Claude Code filters out of a
+	// plugin helper's environment.
+	SignerFileEnv = "TOOLGATE_ATTESTATION_SIGNER_FILE"
+
 	// KubeAPIEnv names the variable that holds the Kubernetes API URL for
 	// token requests.
 	KubeAPIEnv = "TOOLGATE_KUBE_API"
@@ -57,7 +62,7 @@ const (
 )
 
 // ConflictMessage is the error when more than one attestation variable is set.
-const ConflictMessage = "Set only one of " + TokenFileEnv + ", " + SPIFFESocketEnv + " and " + TokenRequestEnv + "."
+const ConflictMessage = "Set only one of " + TokenFileEnv + ", " + SPIFFESocketEnv + ", " + TokenRequestEnv + " and " + SignerFileEnv + "."
 
 // Source is the configured way to get the attestation token. The zero value
 // means no attestation.
@@ -65,6 +70,7 @@ type Source struct {
 	TokenFile    string
 	SPIFFESocket string
 	TokenRequest string
+	KeyFile      string
 	KubeAPI      string
 }
 
@@ -79,20 +85,21 @@ func FromEnv() Source {
 		TokenFile:    strings.TrimSpace(os.Getenv(TokenFileEnv)),
 		SPIFFESocket: strings.TrimSpace(os.Getenv(SPIFFESocketEnv)),
 		TokenRequest: strings.TrimSpace(os.Getenv(TokenRequestEnv)),
+		KeyFile:      strings.TrimSpace(os.Getenv(SignerFileEnv)),
 		KubeAPI:      kubeAPI,
 	}
 }
 
 // Configured reports whether any source is set.
 func (s Source) Configured() bool {
-	return s.TokenFile != "" || s.SPIFFESocket != "" || s.TokenRequest != ""
+	return s.TokenFile != "" || s.SPIFFESocket != "" || s.TokenRequest != "" || s.KeyFile != ""
 }
 
 // Validate refuses a setup with more than one source.
 func (s Source) Validate() error {
 	count := 0
 
-	for _, value := range []string{s.TokenFile, s.SPIFFESocket, s.TokenRequest} {
+	for _, value := range []string{s.TokenFile, s.SPIFFESocket, s.TokenRequest, s.KeyFile} {
 		if value != "" {
 			count++
 		}
@@ -121,6 +128,10 @@ func (s Source) Names() []string {
 		names = append(names, TokenRequestEnv)
 	}
 
+	if s.KeyFile != "" {
+		names = append(names, SignerFileEnv)
+	}
+
 	return names
 }
 
@@ -138,6 +149,8 @@ func (s Source) Token(ctx context.Context) (string, error) {
 		return fetchSVID(ctx, s.SPIFFESocket)
 	case s.TokenRequest != "":
 		return requestToken(ctx, s.TokenRequest, s.KubeAPI)
+	case s.KeyFile != "":
+		return signAssertion(s.KeyFile, time.Now())
 	}
 
 	return "", nil

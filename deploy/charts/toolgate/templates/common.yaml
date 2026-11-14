@@ -207,6 +207,10 @@ resolver gets its own projected service-account token with its audience.
 {{- end }}
 {{- $_ := set $file "workspaceAttestation" . }}
 {{- end }}
+{{- if ($config.workspaceKeys | default dict).enabled }}
+{{- $_ := set $file "workspaceKeys" true }}
+{{- $_ := set $file "workspaceKeysPrefix" (($config.workspaceKeys).workspaceIDPrefix | default "registered") }}
+{{- end }}
 {{- if $file }}
 {{- $_ := set $gateway "args" (concat ($gateway.args | default list) (list "--config" "/etc/toolgate/config.yaml")) }}
 {{- $_ := set $resources "configMaps" (merge ($resources.configMaps | default dict) (dict "config" (dict "data" (dict "config.yaml" (toYaml $file))))) }}

@@ -46,7 +46,7 @@ func ForVariable(variable string) string {
 	switch {
 	case strings.HasPrefix(variable, "session."), strings.HasPrefix(variable, "workspace."):
 		return PerSession
-	case strings.HasPrefix(variable, "principal."), strings.HasPrefix(variable, "secret:"), strings.HasPrefix(variable, "resolver:"):
+	case strings.HasPrefix(variable, "principal."), strings.HasPrefix(variable, "secret:"), strings.HasPrefix(variable, "resolver:"), strings.HasPrefix(variable, "exchange:"):
 		return PerUser
 	default:
 		return Shared
@@ -67,6 +67,10 @@ func Display(variable string) string {
 		return "${secret:…}"
 	case strings.HasPrefix(variable, "resolver:"):
 		return "${resolver:…}"
+	case strings.HasPrefix(variable, "exchange:"):
+		return "${exchange:…}"
+	case strings.HasPrefix(variable, "templateSecret:"):
+		return "${templateSecret:…}"
 	default:
 		return "${" + variable + "}"
 	}

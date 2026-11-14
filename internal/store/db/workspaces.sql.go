@@ -333,6 +333,56 @@ func (q *Queries) ExpireSessionServerRequests(ctx context.Context, sessionPk pgt
 	return items, nil
 }
 
+const findPendingAccessRequestOfChange = `-- name: FindPendingAccessRequestOfChange :one
+SELECT id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope FROM access_requests
+WHERE principal = $1 AND kind = $2 AND workspace = $3 AND verified = $4
+  AND session_pk IS NULL
+  AND (change - 'askedBy') = $5::jsonb
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1
+`
+
+type FindPendingAccessRequestOfChangeParams struct {
+	Principal string
+	Kind      string
+	Workspace string
+	Verified  bool
+	Change    []byte
+}
+
+// Returns the oldest pending change or scope request of the principal
+// without a target session that hasn't expired, with the kind, workspace,
+// verified flag and change, ignoring the session that asked. Run it after
+// LockPrincipalAccessRequests in the same transaction.
+func (q *Queries) FindPendingAccessRequestOfChange(ctx context.Context, arg FindPendingAccessRequestOfChangeParams) (AccessRequest, error) {
+	row := q.db.QueryRow(ctx, findPendingAccessRequestOfChange,
+		arg.Principal,
+		arg.Kind,
+		arg.Workspace,
+		arg.Verified,
+		arg.Change,
+	)
+	var i AccessRequest
+	err := row.Scan(
+		&i.ID,
+		&i.Principal,
+		&i.Kind,
+		&i.SessionPk,
+		&i.Workspace,
+		&i.Verified,
+		&i.Server,
+		&i.Change,
+		&i.Status,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.DecidedAt,
+		&i.DecidedBy,
+		&i.DecidedScope,
+	)
+	return i, err
+}
+
 const findPendingScopeRequest = `-- name: FindPendingScopeRequest :one
 SELECT id, principal, kind, session_pk, workspace, verified, server, change, status, created_at, expires_at, decided_at, decided_by, decided_scope FROM access_requests
 WHERE principal = $1 AND kind = 'scope' AND workspace = $2

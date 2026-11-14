@@ -277,6 +277,18 @@ config:
   # docs/admin/workspace-attestation.md.
   workspaceAttestation: null
 
+  workspaceKeys:
+    # -- Let users register workspace keys, which the user approves in the
+    # web UI, so a workspace gets a verified workspace ID. Needs
+    # `config.oidcUIClientID`. Turn it on only after every replica runs a
+    # version that knows it. Independent of `config.workspaceAttestation`.
+    enabled: false
+    # -- First segment of the workspace ID of a registered key. It matches
+    # `^[A-Za-z0-9._-]{1,63}$`, is not `claimed` or `k8s`, and is not the
+    # first segment of `config.workspaceAttestation.workspaceID`. Changing it
+    # ends bound sessions.
+    workspaceIDPrefix: registered
+
   # -- More environment variables for the gateway container, as a list of
   # Kubernetes `EnvVar` objects.
   extraEnv: []

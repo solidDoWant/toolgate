@@ -16,6 +16,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 - [Workspace attestation](workspace-attestation.md): how a user session in a workspace gets a verified workspace, and why the pod labels can be trusted.
 - [The web UI](web-ui.md): how to turn on the web UI, its OIDC client, its sessions and its admins.
 - [Tool search](tool-search.md): how search ranks tools, and the optional embeddings endpoint.
+- [Tool result cache](tool-result-cache.md): when to cache the results of a tool, what the database stores, and the limits.
 - [MCP revisions](mcp-revisions.md): which MCP revisions the gateway speaks with clients and upstream servers, and the 400 for a 2026-07-28 client without a session header.
 - [claude.ai connectors](connectors.md): how users connect from a claude.ai custom connector, with the Authentik provider, the gateway settings and the route from the internet.
 

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/client/attestation"
@@ -50,6 +51,7 @@ func attestationSource() attestation.Source {
 	saved := savedSettings()
 	source.TokenFile = strings.TrimSpace(saved.AttestationTokenFile)
 	source.TokenRequest = strings.TrimSpace(saved.AttestationTokenRequest)
+	source.KeyFile = strings.TrimSpace(saved.AttestationKeyFile)
 
 	return source
 }
@@ -64,6 +66,7 @@ func configure(args []string, stdout, stderr io.Writer) int {
 	flags.String("token-command", "", "command that prints the user's access token (as "+tokencommand.Env+")")
 	flags.String("attestation-token-file", "", "path of the workload token file (as "+attestation.TokenFileEnv+")")
 	flags.String("attestation-token-request", "", "directory for a TokenRequest token (as "+attestation.TokenRequestEnv+")")
+	flags.String("attestation-key-file", "", "path of a registered workspace key (as "+attestation.SignerFileEnv+")")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -95,6 +98,8 @@ func configure(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	keyFileGiven := false
+
 	flags.Visit(func(set *flag.Flag) {
 		value := strings.TrimSpace(set.Value.String())
 
@@ -107,8 +112,24 @@ func configure(args []string, stdout, stderr io.Writer) int {
 			settings.AttestationTokenFile = value
 		case "attestation-token-request":
 			settings.AttestationTokenRequest = value
+		case "attestation-key-file":
+			settings.AttestationKeyFile = value
+			keyFileGiven = true
 		}
 	})
+
+	fingerprint := ""
+
+	if keyFileGiven && settings.AttestationKeyFile != "" {
+		path, keyFingerprint, err := checkKeyFile(settings.AttestationKeyFile)
+		if err != nil {
+			_, _ = fmt.Fprintf(stderr, "toolgate configure: %v\n", err)
+
+			return 2
+		}
+
+		settings.AttestationKeyFile, fingerprint = path, keyFingerprint
+	}
 
 	if err := validateConfigured(&settings); err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate configure: %v\n", err)
@@ -120,6 +141,12 @@ func configure(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "toolgate configure: %v\n", err)
 
 		return 1
+	}
+
+	if fingerprint != "" {
+		_, _ = fmt.Fprintf(stdout, "Saved the settings in %s. The key's fingerprint is %s.\n", dir, fingerprint)
+
+		return 0
 	}
 
 	_, _ = fmt.Fprintf(stdout, "Saved the settings in %s.\n", dir)
@@ -137,9 +164,38 @@ func validateConfigured(settings *login.Settings) error {
 		settings.Gateway = gateway
 	}
 
-	if settings.AttestationTokenFile != "" && settings.AttestationTokenRequest != "" {
-		return errors.New("set only one of --attestation-token-file and --attestation-token-request")
+	sources := 0
+
+	for _, value := range []string{settings.AttestationTokenFile, settings.AttestationTokenRequest, settings.AttestationKeyFile} {
+		if value != "" {
+			sources++
+		}
+	}
+
+	if sources > 1 {
+		return errors.New("set only one of --attestation-token-file, --attestation-token-request and --attestation-key-file")
 	}
 
 	return nil
+}
+
+// checkKeyFile loads a workspace key as every later run will, and returns its
+// absolute path and fingerprint.
+func checkKeyFile(path string) (string, string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", "", fmt.Errorf("resolve the key file path: %w", err)
+	}
+
+	key, err := attestation.LoadKeyFile(absolute)
+	if err != nil {
+		return "", "", err
+	}
+
+	keyID, err := attestation.KeyID(key.Public())
+	if err != nil {
+		return "", "", err
+	}
+
+	return absolute, attestation.Fingerprint(keyID), nil
 }

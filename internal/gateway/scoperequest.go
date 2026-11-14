@@ -443,7 +443,11 @@ func (w *Workspaces) ApproveScopeRequest(ctx context.Context, tx pgx.Tx, identit
 		return err
 	}
 
-	return w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove)
+	if err := w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove); err != nil {
+		return err
+	}
+
+	return w.settleRedundantRequests(ctx, tx, identity, id)
 }
 
 // insertAllowEntry inserts an allow entry within the principal's limit.

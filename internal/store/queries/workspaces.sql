@@ -250,3 +250,16 @@ WHERE access_requests.principal = @principal
   AND (access_requests.status <> 'pending' OR access_requests.expires_at <= now())
 ORDER BY coalesce(access_requests.decided_at, access_requests.expires_at) DESC, access_requests.id DESC
 LIMIT 5;
+
+-- name: FindPendingAccessRequestOfChange :one
+-- Returns the oldest pending change or scope request of the principal
+-- without a target session that hasn't expired, with the kind, workspace,
+-- verified flag and change, ignoring the session that asked. Run it after
+-- LockPrincipalAccessRequests in the same transaction.
+SELECT * FROM access_requests
+WHERE principal = @principal AND kind = @kind AND workspace = @workspace AND verified = @verified
+  AND session_pk IS NULL
+  AND (change - 'askedBy') = @change::jsonb
+  AND status = 'pending' AND expires_at > now()
+ORDER BY created_at, id
+LIMIT 1;

@@ -475,7 +475,11 @@ func (w *Workspaces) ApproveChangeRequest(ctx context.Context, tx pgx.Tx, identi
 		return err
 	}
 
-	return w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove)
+	if err := w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove); err != nil {
+		return err
+	}
+
+	return w.settleRedundantRequests(ctx, tx, identity, id)
 }
 
 // ApproveServerRequest approves identity's pending server request with
@@ -539,7 +543,11 @@ func (w *Workspaces) ApproveServerRequest(ctx context.Context, tx pgx.Tx, identi
 		return err
 	}
 
-	return w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove)
+	if err := w.recordAccessDecision(ctx, tx, identity, request, TypeAccessApprove); err != nil {
+		return err
+	}
+
+	return w.settleRedundantRequests(ctx, tx, identity, id)
 }
 
 // addToSession is the "session" choice of a server request: the session
@@ -1002,9 +1010,16 @@ func (w *Workspaces) requestChange(ctx context.Context, tx pgx.Tx, identity auth
 		workspace = identity.Workspace
 	}
 
+	verified := VerifiedWorkspace(identity) != ""
+
+	pending, found, err := findPendingRequest(ctx, queries, identity.Principal, accessKindChange, workspace, verified, encoded)
+	if err != nil || found {
+		return WorkspaceResult{Request: pending}, err
+	}
+
 	request, err := queries.InsertChangeRequestWithinLimit(ctx, db.InsertChangeRequestWithinLimitParams{
 		ID: id, Principal: identity.Principal, Workspace: workspace,
-		Verified:        VerifiedWorkspace(identity) != "",
+		Verified:        verified,
 		Change:          encoded,
 		ApprovalTimeout: pgtype.Interval{Microseconds: testtime.Scale(w.approvalTimeout).Microseconds(), Valid: true},
 		PendingLimit:    MaxPendingAccessRequestsPerPrincipal,
@@ -1026,5 +1041,25 @@ func (w *Workspaces) requestChange(ctx context.Context, tx pgx.Tx, identity auth
 		return WorkspaceResult{}, err
 	}
 
-	return WorkspaceResult{Request: id}, nil
+	return WorkspaceResult{Request: id, Inserted: true}, nil
+}
+
+// findPendingRequest returns the ID of the principal's oldest pending
+// request without a target session that has the kind, workspace, verified
+// flag and change, ignoring the session that asked, so that asking again
+// for the same change waits on the same request. change is the encoded,
+// normalized change. Run it after LockPrincipalAccessRequests.
+func findPendingRequest(ctx context.Context, queries *db.Queries, principal, kind, workspace string, verified bool, change []byte) (string, bool, error) {
+	request, err := queries.FindPendingAccessRequestOfChange(ctx, db.FindPendingAccessRequestOfChangeParams{
+		Principal: principal, Kind: kind, Workspace: workspace, Verified: verified, Change: change,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+
+	if err != nil {
+		return "", false, fmt.Errorf("read access request: %w", err)
+	}
+
+	return request.ID, true, nil
 }
