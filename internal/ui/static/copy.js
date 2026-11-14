@@ -19,6 +19,13 @@
     var idButton = event.target.closest("button[data-copy-text]");
     if (idButton) {
       var holder = document.createElement("span");
+      // Out of the flow, so the page does not move while the text is selected.
+      holder.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none;white-space:pre";
+      var idleTitle = idButton.getAttribute("data-idle-title");
+      if (idleTitle === null) {
+        idleTitle = idButton.getAttribute("title");
+        idButton.setAttribute("data-idle-title", idleTitle);
+      }
       holder.textContent = idButton.getAttribute("data-copy-text");
       document.body.appendChild(holder);
       copyText(holder.textContent, holder).then(
@@ -26,7 +33,7 @@
         function () { idButton.setAttribute("title", "Copy failed"); }
       ).finally(function () {
         holder.remove();
-        window.setTimeout(function () { idButton.setAttribute("title", "Copy the full ID"); }, 2000);
+        window.setTimeout(function () { idButton.setAttribute("title", idleTitle); }, 2000);
       });
       return;
     }
