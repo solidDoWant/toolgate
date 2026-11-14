@@ -29,7 +29,20 @@ const (
 	sessionIDTool = "session_id"
 	// liveSessionsTool returns how many sessions the server holds.
 	liveSessionsTool = "live_sessions"
+	// writeNoteTool writes its text argument to the note file in the data
+	// directory, and readNoteTool returns the note, or an empty text when
+	// there is none.
+	writeNoteTool = "write_note"
+	readNoteTool  = "read_note"
 )
+
+// noteFileName is the file in the data directory that holds the note.
+const noteFileName = "note.txt"
+
+// noteArguments are the arguments of write_note.
+type noteArguments struct {
+	Text string `json:"text"`
+}
 
 // maxSecretFileSize bounds each file the secrets tool reads.
 const maxSecretFileSize = 1 << 20
@@ -40,6 +53,8 @@ type options struct {
 	Tools []string
 	// SecretsDir is the directory the secrets tool reads.
 	SecretsDir string
+	// DataDir is the directory the note tools write to and read from.
+	DataDir string
 	// Environ returns the environment the env tool reports.
 	Environ func() []string
 	// Calls counts the calls to each tool. Optional.
@@ -145,6 +160,29 @@ func newServer(options options) (*mcp.Server, error) {
 					options.Calls.add(name)
 
 					return textResult(strconv.Itoa(countSessions(server))), nil, nil
+				})
+		case writeNoteTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Writes the text to the note file in the data directory."},
+				func(_ context.Context, _ *mcp.CallToolRequest, arguments noteArguments) (*mcp.CallToolResult, any, error) {
+					options.Calls.add(name)
+
+					if err := writeNote(options.DataDir, arguments.Text); err != nil {
+						return nil, nil, err
+					}
+
+					return textResult("ok"), nil, nil
+				})
+		case readNoteTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns the note in the data directory, or an empty text."},
+				func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+					options.Calls.add(name)
+
+					text, err := readNote(options.DataDir)
+					if err != nil {
+						return nil, nil, err
+					}
+
+					return textResult(text), nil, nil
 				})
 		default:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Echoes its arguments."},
@@ -253,4 +291,27 @@ func parseTools(list string) []string {
 	}
 
 	return slices.Clip(names)
+}
+
+// writeNote replaces the note in dir with text.
+func writeNote(dir, text string) error {
+	if dir == "" {
+		return errors.New("the server has no data directory")
+	}
+
+	return os.WriteFile(filepath.Join(dir, noteFileName), []byte(text), 0o600)
+}
+
+// readNote returns the note in dir, or an empty text when there is none.
+func readNote(dir string) (string, error) {
+	if dir == "" {
+		return "", errors.New("the server has no data directory")
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, noteFileName))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+
+	return string(data), err
 }

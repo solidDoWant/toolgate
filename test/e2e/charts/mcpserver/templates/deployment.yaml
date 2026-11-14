@@ -19,6 +19,9 @@ spec:
           imagePullPolicy: Never
           env:
             - {name: MCPSERVER_TOOLS, value: {{ .Values.tools | quote }}}
+            {{- if .Values.dataClaim }}
+            - {name: MCPSERVER_DATA_DIR, value: /data}
+            {{- end }}
           ports:
             - {name: mcp, containerPort: 8080}
           securityContext:
@@ -27,3 +30,12 @@ spec:
           readinessProbe:
             tcpSocket: {port: 8080}
             periodSeconds: 1
+          {{- if .Values.dataClaim }}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+          {{- end }}
+      {{- if .Values.dataClaim }}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: {{ .Values.dataClaim | quote }}}
+      {{- end }}

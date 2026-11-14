@@ -3,3 +3,6 @@
 image: ""
 # tools are the tool names the server lists.
 tools: env,secrets
+# dataClaim is the name of a PersistentVolumeClaim to mount at /data. The
+# server's write_note and read_note tools use it. Empty mounts nothing.
+dataClaim: ""

@@ -1,0 +1,12 @@
+# A StorageClass whose PersistentVolumes outlive their claims, for the
+# persistent volume tests. kind's default class `standard` uses the same
+# provisioner with reclaimPolicy Delete. The local-path provisioner keeps the
+# directory of a Retained volume and deletes it when the policy becomes
+# Delete and the volume is Released.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: toolgate-retain
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer

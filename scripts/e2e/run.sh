@@ -158,6 +158,7 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 	(select(.kind == "Deployment" and .metadata.name == "s3") | .spec.template.spec.containers[0].image) = strenv(S3_IMAGE)
 ' test/e2e/manifests/dependencies.yaml | kubectl -n "$deps_namespace" apply -f - >&2
 kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
+kubectl apply -f test/e2e/manifests/storageclass.yaml >&2
 kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry deployment/otel-lgtm --timeout 5m >&2
 
 # Port-forwards to the telemetry test backend, alive until the script exits.
@@ -254,6 +255,8 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.ui.publicURL="https://$TOOLGATE_E2E_UI_LISTEN" \
 	--set config.ui.approvalTimeout=1m \
 	--set config.workspaceKeys.enabled=true \
+	--set config.persistentVolumes.enabled=true \
+	--set config.persistentVolumes.unusedRetention=1h \
 	--set 'config.extraEnv[1].name=TOOLGATE_OTLP_INGEST' \
 	--set 'config.extraEnv[1].value=true' \
 	--set 'config.extraEnv[2].name=TOOLGATE_SECRETS_KEYSET_FILE' \
