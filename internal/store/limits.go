@@ -20,6 +20,12 @@ const (
 	// MaxPendingApprovalsPerPrincipal is the most pending approvals one
 	// principal has.
 	MaxPendingApprovalsPerPrincipal = 100
+	// MaxPersistentVolumeProblemBytes is the longest persistent volume
+	// problem text.
+	MaxPersistentVolumeProblemBytes = 1024
+	// PersistentVolumePageSize is the rows in one page of the admin volume
+	// list.
+	PersistentVolumePageSize = 200
 )
 
 // ErrLimitReached is returned by an insert that would pass its row limit.
