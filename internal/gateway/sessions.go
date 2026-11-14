@@ -44,6 +44,9 @@ type sessionStore struct {
 	// inside the restart's transaction tx; nil
 	// restores nothing.
 	restore func(ctx context.Context, tx pgx.Tx, current requestContext, servers []db.SessionServer) error
+	// exchangeRestored runs the exchanges of the instances the restore
+	// inserted, after the restart commits. Nil means none run.
+	exchangeRestored func(ctx context.Context, current requestContext, held *heldClaims)
 	// toolSearchStarted is called after a request starts or resumes a
 	// session with tool search on, so that a scaled-down embeddings server
 	// starts before the session's first search; nil does nothing. Requests
@@ -155,6 +158,15 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity, searc
 // restored in the same transaction, so a restore that fails part-way leaves
 // the session ended and the next request tries the whole restart again.
 func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Identity) (session db.Session, err error) {
+	ctx, held := withHeldClaims(ctx)
+
+	defer func() {
+		if err == nil && s.exchangeRestored != nil {
+			subjectToken, _ := auth.SubjectTokenFrom(ctx)
+			s.exchangeRestored(ctx, requestContext{identity: identity, session: session, subjectToken: subjectToken}, held)
+		}
+	}()
+
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
 

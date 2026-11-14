@@ -180,6 +180,14 @@ func (s *Sweep) restart(ctx context.Context, instance db.Instance) error {
 			return err
 		}
 
+		// A render needs a fresh token, and the leader holds none.
+		err = db.New(tx).ResetInstanceExchangesForRepending(ctx, db.ResetInstanceExchangesForRependingParams{
+			InstanceID: instance.ID, Closed: len(template.Spec.PersistentVolumes) > 0,
+		})
+		if err != nil {
+			return err
+		}
+
 		return store.Notify(ctx, tx, store.KindInstance, instance.ID)
 	})
 	if err != nil {

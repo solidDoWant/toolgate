@@ -36,10 +36,10 @@ SELECT * FROM instances WHERE id = @id;
 -- name: InsertInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, uses_exchange
 ) VALUES (
     @id, @template_ns, @template_name, @template_uid, @generation, @scope, @scope_key,
-    @owner_principal, @render_session, @namespace, @trace_context, now()
+    @owner_principal, @render_session, @namespace, @trace_context, now(), @uses_exchange
 )
 RETURNING *;
 
@@ -86,6 +86,12 @@ WHERE id = @id AND status = 'pending';
 -- name: SetInstanceDesiredStopped :execrows
 UPDATE instances
 SET desired = 'stopped', updated_at = now()
+WHERE id = @id AND desired = 'running';
+
+-- name: SetInstanceDesiredStoppedExpired :execrows
+-- The stop write for an instance whose exchanged token expired.
+UPDATE instances
+SET desired = 'stopped', credential_expired = true, updated_at = now()
 WHERE id = @id AND desired = 'running';
 
 -- name: SetInstanceStopping :execrows
@@ -142,10 +148,12 @@ SELECT * FROM instances WHERE id = @id FOR UPDATE;
 -- the repair history.
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at, repairs
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at, repairs,
+    uses_exchange
 ) VALUES (
     @id, @template_ns, @template_name, @template_uid, @generation, @scope, @scope_key,
-    @owner_principal, @render_session, @namespace, @trace_context, now(), @last_used_at, @repairs::timestamptz[]
+    @owner_principal, @render_session, @namespace, @trace_context, now(), @last_used_at, @repairs::timestamptz[],
+    @uses_exchange
 )
 RETURNING *;
 

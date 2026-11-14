@@ -18,6 +18,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -424,22 +425,6 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 
 	ctx, budget := upstreamlimit.WithBudget(ctx, upstreamResponseBudget)
 
-	upstream, err := m.upstreams.acquire(ctx, m.database, instance, template, remoteIdentity(current), current.session.ID)
-	if err != nil {
-		span.SetStatus(codes.Error, "connect")
-
-		var missing *runtime.MissingSecretError
-
-		switch {
-		case errors.As(err, &missing):
-			return errorResult(missing.Error()), "failed"
-		case errors.Is(err, runtime.ErrCredentialRefused):
-			return errorResult(runtime.CredentialRefusedReason(template)), "failed"
-		}
-
-		return errorResult(fmt.Sprintf("Server `%s` can't be reached. Try again, or call `%s` to see its status.", template.Name, ToolServerStatus)), "failed"
-	}
-
 	params := &mcp.CallToolParams{Name: tool}
 	if len(arguments) > 0 {
 		params.Arguments = arguments
@@ -451,13 +436,46 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 		return errorResult(fmt.Sprintf("The result of `%s` is larger than 16 MiB, the limit, so the gateway didn't forward it.", ProxiedToolName(template.Name, tool))), "too-large"
 	}
 
-	// A copy that belongs to no stored row serves this one call, and then
-	// its upstream session ends.
-	if upstream.once {
-		defer upstream.End()
+	var (
+		upstream forwardingCopy
+		result   *mcp.CallToolResult
+		err      error
+	)
+
+	// A 404 for the upstream session means the server forgot it, for
+	// example after a restart, and didn't run the call: the call is sent
+	// once more on a new upstream session.
+	for attempt := 0; ; attempt++ {
+		var notFound bool
+
+		upstream, result, notFound, err = m.forwardOnce(ctx, current, instance, template, params)
+		if upstream.upstreamCopy == nil {
+			span.SetStatus(codes.Error, "connect")
+
+			var missing *runtime.MissingSecretError
+
+			switch {
+			case errors.As(err, &missing):
+				return errorResult(missing.Error()), "failed"
+			case errors.Is(err, runtime.ErrCredentialRefused):
+				return errorResult(runtime.CredentialRefusedReason(template)), "failed"
+			}
+
+			return errorResult(fmt.Sprintf("Server `%s` can't be reached. Try again, or call `%s` to see its status.", template.Name, ToolServerStatus)), "failed"
+		}
+
+		if !notFound {
+			break
+		}
+
+		opsmetrics.UpstreamSessionEvent(opsmetrics.UpstreamNotFound)
+		m.dropLostSession(ctx, upstream)
+
+		if attempt > 0 {
+			break
+		}
 	}
 
-	result, err := upstream.session.CallTool(ctx, params)
 	if err != nil {
 		span.SetStatus(codes.Error, "call")
 
@@ -497,6 +515,49 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 	}
 
 	return result, "ok"
+}
+
+// forwardOnce sends one tools/call on the copy the pair's call is forwarded
+// on. notFound reports that the server answered 404 for the copy's upstream
+// session. The returned copy is nil when none could be made, and err says
+// why.
+func (m *metaTools) forwardOnce(ctx context.Context, current requestContext, instance db.Instance, template *v1alpha1.MCPServerTemplate, params *mcp.CallToolParams) (forwardingCopy, *mcp.CallToolResult, bool, error) {
+	upstream, err := m.upstreams.acquire(ctx, m.database, instance, template, remoteIdentity(current), current.session.ID)
+	if err != nil {
+		return forwardingCopy{}, nil, false, err
+	}
+
+	defer upstream.done(m.upstreams.now())
+
+	// A copy that belongs to no stored row serves this one call, and then
+	// its upstream session ends.
+	if upstream.once {
+		defer upstream.End()
+	}
+
+	flag := &runtime.SessionNotFound{}
+
+	result, err := upstream.session.CallTool(runtime.WithSessionNotFound(ctx, flag), params)
+	notFound := err != nil && (errors.Is(err, mcp.ErrSessionMissing) || flag.Found())
+
+	return upstream, result, notFound, err
+}
+
+// dropLostSession drops the copy of an upstream session the server forgot,
+// and deletes its row unless another replica already removed or replaced
+// it. A failed delete is left to the next forward, which gets 404 again.
+func (m *metaTools) dropLostSession(ctx context.Context, upstream forwardingCopy) {
+	if !upstream.once {
+		m.upstreams.release(upstream.key, upstream.upstreamCopy)
+	}
+
+	if upstream.row == 0 {
+		return
+	}
+
+	_, _ = db.New(m.database).DeleteUpstreamSessionIfUnchanged(context.WithoutCancel(ctx), db.DeleteUpstreamSessionIfUnchangedParams{
+		ID: upstream.row, UpstreamSessionID: upstream.key.upstream,
+	})
 }
 
 // remoteIdentity is the identity a remote server's headers are filled in
@@ -707,6 +768,8 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 
 	var refusal *callRefusal
 
+	ctx, held := withHeldClaims(ctx)
+
 	attempt := func() error {
 		instance, refusal = db.Instance{}, nil
 
@@ -805,6 +868,10 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 	err = attempt()
 	if retryable(err) {
 		err = attempt()
+	}
+
+	if err == nil {
+		m.runHeldClaims(ctx, current, held)
 	}
 
 	var limitErr *instanceLimitError

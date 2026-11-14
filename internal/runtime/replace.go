@@ -18,6 +18,7 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
@@ -182,7 +183,7 @@ func (r *Replacer) replace(ctx context.Context, instance db.Instance, reason, us
 			return err
 		}
 
-		if _, err := queries.SetInstanceDesiredStopped(ctx, current.ID); err != nil {
+		if _, err := setDesiredStopped(ctx, queries, current.ID, stopReason); err != nil {
 			return err
 		}
 
@@ -257,6 +258,8 @@ func (r *Replacer) insertReplacement(ctx context.Context, queries *db.Queries, c
 		return db.Instance{}, fmt.Errorf("template %s/%s is gone", current.TemplateNs, current.TemplateName)
 	}
 
+	exchanges := catalog.ExchangeNames(template)
+
 	generated, err := uuid.NewV7()
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("instance ID: %w", err)
@@ -290,9 +293,24 @@ func (r *Replacer) insertReplacement(ctx context.Context, queries *db.Queries, c
 		TraceContext:   telemetry.EncodeContext(ctx),
 		LastUsedAt:     pgtype.Timestamptz{Time: lastUsed.Time, Valid: lastUsed.Valid},
 		Repairs:        repairs,
+		UsesExchange:   len(exchanges) > 0,
 	})
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("insert replacement: %w", err)
+	}
+
+	// The replacement waits for a token from its owner's next request: the
+	// leader holds none, because it keeps no token after it applies it. With
+	// persistent volumes the rows stay closed until the volume steps are done.
+	closed := len(template.Spec.PersistentVolumes) > 0
+
+	for _, exchange := range exchanges {
+		err := queries.InsertInstanceExchange(ctx, db.InsertInstanceExchangeParams{
+			InstanceID: id, Exchange: exchange, Closed: closed, Wanted: !closed, Claimed: false,
+		})
+		if err != nil {
+			return db.Instance{}, fmt.Errorf("insert exchange %s of replacement: %w", exchange, err)
+		}
 	}
 
 	return replacement, nil

@@ -291,10 +291,10 @@ func (q *Queries) GetNewestInstance(ctx context.Context, arg GetNewestInstancePa
 const insertInstance = `-- name: InsertInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, uses_exchange
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, now()
+    $8, $9, $10, $11, now(), $12
 )
 RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision, uses_exchange, credential_expired, stopping_at
 `
@@ -311,6 +311,7 @@ type InsertInstanceParams struct {
 	RenderSession  pgtype.Int8
 	Namespace      string
 	TraceContext   string
+	UsesExchange   bool
 }
 
 func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) (Instance, error) {
@@ -326,6 +327,7 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 		arg.RenderSession,
 		arg.Namespace,
 		arg.TraceContext,
+		arg.UsesExchange,
 	)
 	var i Instance
 	err := row.Scan(
@@ -369,10 +371,12 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 const insertReplacementInstance = `-- name: InsertReplacementInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at, repairs
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, last_used_at, repairs,
+    uses_exchange
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, now(), $12, $13::timestamptz[]
+    $8, $9, $10, $11, now(), $12, $13::timestamptz[],
+    $14
 )
 RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision, uses_exchange, credential_expired, stopping_at
 `
@@ -391,6 +395,7 @@ type InsertReplacementInstanceParams struct {
 	TraceContext   string
 	LastUsedAt     pgtype.Timestamptz
 	Repairs        []pgtype.Timestamptz
+	UsesExchange   bool
 }
 
 // Inserts the pending row that replaces an instance. last_used_at is carried
@@ -411,6 +416,7 @@ func (q *Queries) InsertReplacementInstance(ctx context.Context, arg InsertRepla
 		arg.TraceContext,
 		arg.LastUsedAt,
 		arg.Repairs,
+		arg.UsesExchange,
 	)
 	var i Instance
 	err := row.Scan(
@@ -634,6 +640,21 @@ WHERE id = $1 AND desired = 'running'
 
 func (q *Queries) SetInstanceDesiredStopped(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.Exec(ctx, setInstanceDesiredStopped, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setInstanceDesiredStoppedExpired = `-- name: SetInstanceDesiredStoppedExpired :execrows
+UPDATE instances
+SET desired = 'stopped', credential_expired = true, updated_at = now()
+WHERE id = $1 AND desired = 'running'
+`
+
+// The stop write for an instance whose exchanged token expired.
+func (q *Queries) SetInstanceDesiredStoppedExpired(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, setInstanceDesiredStoppedExpired, id)
 	if err != nil {
 		return 0, err
 	}

@@ -12,9 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 	"github.com/solidDoWant/toolgate/internal/resultcache"
+	"github.com/solidDoWant/toolgate/internal/secrets"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -123,6 +125,13 @@ type MCPOptions struct {
 	// (store.Listener.SubscribeReplies). Nil means none: a client's answer
 	// to a request of this replica that reaches another replica is lost.
 	SubscribeReplies func() (<-chan []byte, func())
+	// TokenExchanges are the configured token exchanges. A start of a
+	// template that uses one exchanges the caller's token and delivers it
+	// to the leader.
+	TokenExchanges []*credentials.Exchanger
+	// CredentialsCipher encrypts each exchanged token on its way to the
+	// leader. It is needed when TokenExchanges is set.
+	CredentialsCipher *secrets.Cipher
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -259,9 +268,9 @@ type mcpEndpoint struct {
 	bindings map[string]*mcpSession
 	// adopting holds the copies being built from their rows.
 	adopting map[string]*adoption
-	// releaseUpstreams releases this replica's copies of upstream sessions
+	// upstreams holds this replica's copies of upstream sessions, released
 	// at Shutdown.
-	releaseUpstreams func()
+	upstreams *upstreams
 	// streams holds the open GET streams, for Shutdown and closeCopy.
 	streams    map[uint64]openStream
 	nextStream uint64
@@ -358,6 +367,13 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
 		embedder:             options.Embedder,
+		exchanges:            make(map[string]*credentials.Exchanger, len(options.TokenExchanges)),
+		credentialsCipher:    options.CredentialsCipher,
+		logger:               logger,
+	}
+
+	for _, exchanger := range options.TokenExchanges {
+		tools.exchanges[exchanger.Name()] = exchanger
 	}
 
 	if tools.workspaces == nil {
@@ -365,7 +381,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 	}
 
 	endpoint.callTool = tools.callTool
-	endpoint.releaseUpstreams = tools.upstreams.releaseAll
+	endpoint.upstreams = tools.upstreams
 	endpoint.describeTools = func(ctx context.Context, target *sessionTools, identity auth.Identity) {
 		target.mu.Lock()
 		described := target.findDescription != ""
@@ -385,6 +401,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 	}
 	endpoint.waiters = &tools.waiters
 	endpoint.sessions.restore = tools.restoreServers
+	endpoint.sessions.exchangeRestored = tools.runHeldClaims
 
 	var (
 		events  <-chan store.Event

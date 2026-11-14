@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -108,7 +110,7 @@ func (d *StopDecider) Decide(ctx context.Context, instance db.Instance) (db.Inst
 		return current, err
 	}
 
-	changed, err := queries.SetInstanceDesiredStopped(ctx, current.ID)
+	changed, err := setDesiredStopped(ctx, queries, current.ID, reason)
 	if err != nil {
 		return current, fmt.Errorf("stop instance %s: %w", current.ID, err)
 	}
@@ -129,6 +131,20 @@ func (d *StopDecider) Decide(ctx context.Context, instance db.Instance) (db.Inst
 	current.Desired = desiredStopped
 
 	return current, nil
+}
+
+// exchangeExpiredReasonPrefix starts the stop reason of an instance whose
+// exchanged token expired. Its stop write also marks the row.
+const exchangeExpiredReasonPrefix = "its exchanged token "
+
+// setDesiredStopped writes desired = stopped for the stop reason, marking
+// the row credential_expired when an exchanged token expired.
+func setDesiredStopped(ctx context.Context, queries *db.Queries, id, reason string) (int64, error) {
+	if strings.HasPrefix(reason, exchangeExpiredReasonPrefix) {
+		return queries.SetInstanceDesiredStoppedExpired(ctx, id)
+	}
+
+	return queries.SetInstanceDesiredStopped(ctx, id)
 }
 
 // stopReason returns why the instance must stop, or "" if it keeps running.
@@ -153,6 +169,17 @@ func (d *StopDecider) stopReason(ctx context.Context, queries *db.Queries, insta
 		if !allowed {
 			return "the owner no longer has access to the template", nil
 		}
+	}
+
+	expired, err := queries.FirstExpiredInstanceExchange(ctx, db.FirstExpiredInstanceExchangeParams{
+		InstanceID: instance.ID, Now: pgtype.Timestamptz{Time: d.now(), Valid: true},
+	})
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("read exchanged tokens of instance %s: %w", instance.ID, err)
+	}
+
+	if err == nil {
+		return exchangeExpiredReasonPrefix + "`" + expired + "` expired", nil
 	}
 
 	enablers, err := queries.CountLiveEnablers(ctx, db.CountLiveEnablersParams{

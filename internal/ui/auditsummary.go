@@ -53,7 +53,7 @@ var auditCategories = []struct {
 	{"servers", "Server lifecycle", []string{
 		"server.enable", "server.disable", "instance.start", "instance.ready", "instance.fail", "instance.stop",
 		"instance.health", "instance.reapply", "secret.set", "secret.delete",
-		"volume.create", "volume.lost", "volume.delete",
+		"volume.create", "volume.lost", "volume.delete", "credential.exchange",
 	}},
 }
 
@@ -213,6 +213,12 @@ func summarize(event auditEvent) auditSummary {
 		return auditSummary{"Volume lost: ", detailString(details, "volume"), "", outcomeNone}
 	case "volume.delete":
 		return auditSummary{"Volume deleted: ", detailString(details, "volume"), "", outcomeOK}
+	case "credential.exchange":
+		if detailString(details, "outcome") == "failure" {
+			return auditSummary{"Credential exchange failed for ", event.Server, " (" + detailString(details, "error") + ")", outcomeError}
+		}
+
+		return auditSummary{"Credential exchanged for ", event.Server, "", outcomeOK}
 	default:
 		return auditSummary{"Event " + event.Type, "", "", outcomeNone}
 	}
@@ -261,6 +267,7 @@ var auditTypeLabels = map[string]string{
 	"instance.health": "Instance health changed", "instance.reapply": "Instance repaired",
 	"secret.set": "Secret set", "secret.delete": "Secret deleted", "volume.delete": "Volume deleted",
 	"volume.create": "Volume created", "volume.lost": "Volume lost",
+	"credential.exchange": "Credential exchanged",
 }
 
 // auditTypeLabel is the readable name of an event type.

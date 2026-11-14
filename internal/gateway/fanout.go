@@ -39,6 +39,10 @@ type catalogChanges struct {
 // expires_at of live grants and temporary blocks. When it fires, every MCP session is re-synced
 // and the timer is set again. It is also reset after every grant: or block:
 // notification and after missed notifications.
+//
+// It also releases this replica's upstream copies that are no longer needed:
+// once a minute those idle for copyIdleTimeout, and on session:<id> those of
+// the session whose rows are no longer live.
 func (e *mcpEndpoint) fanOut(tools *metaTools, events <-chan store.Event, changed catalogChanges) {
 	everyone := func(requestContext) bool { return true }
 
@@ -55,8 +59,13 @@ func (e *mcpEndpoint) fanOut(tools *metaTools, events <-chan store.Event, change
 
 	resetExpiry()
 
+	idle := time.NewTicker(copyIdleCheck)
+	defer idle.Stop()
+
 	for {
 		select {
+		case <-idle.C:
+			tools.upstreams.releaseIdle()
 		case <-changed.rules:
 			e.resync(tools, everyone)
 		case <-changed.templates:
@@ -130,6 +139,7 @@ func (e *mcpEndpoint) handleEvent(tools *metaTools, event store.Event) {
 			return
 		}
 
+		tools.releaseEndedSessionCopies(id)
 		e.resync(tools, func(current requestContext) bool { return current.session.ID == id })
 	}
 }

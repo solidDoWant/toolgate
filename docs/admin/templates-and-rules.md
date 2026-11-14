@@ -151,6 +151,8 @@ The template is also invalid in these cases:
 
 toolgate does not check that a resource uses the claim.
 
+The [persistent volumes guide](persistent-volumes.md) covers the StorageClass, clean-up and the size limit.
+
 ## Health checks
 
 A template can add a `healthCheck`. It is a `GET` request to a Service in the instance namespace. The request passes when the status is the one you expect. Without a `healthCheck`, toolgate only does its MCP ping.

@@ -344,6 +344,8 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
 
+	refresher := &runtime.ExchangeRefresher{Pool: pool, Client: mgr.GetClient(), Tokens: deliveries, Log: logger}
+
 	// Judging instances against a partial catalog would stop instances whose
 	// template exists, so the first pass waits until every watched template
 	// has been read.
@@ -351,7 +353,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
 		runtime.RowCleanup(queries, runtime.ResultCacheCleanup(options.resultCache, options.catalog.LastValidByUID, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, updater.Step, repairer.Step, teardown.Step, starter.Step, monitor.Step))))))))))
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, updater.Step, repairer.Step, teardown.Step, starter.Step, refresher.Step, monitor.Step))))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
