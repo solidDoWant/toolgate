@@ -155,8 +155,7 @@ func TestWorkspaceRegister(t *testing.T) {
 
 		assert.Contains(t, run.stdout, "Registered key `dev` with fingerprint SHA256:xyz.")
 		assert.Contains(t, run.stdout, "Approve it at https://gw/ui/approvals/abc.")
-		assert.Contains(t, run.stdout, "Key `dev` is active. Sessions that use it run in workspace `registered/alice/dev`. "+
-			"To use it, run: toolgate configure --attestation-key-file "+path)
+		assert.Contains(t, run.stdout, "Key `dev` is active. Sessions that use it run in workspace `registered/alice/dev`.")
 		assert.Equal(t, 2, gateway.polls)
 		assert.Empty(t, run.stderr)
 

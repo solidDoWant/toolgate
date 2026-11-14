@@ -272,7 +272,7 @@ Every other failed assertion does not get a 401. The request is unverified, as d
 
 1. The user runs `toolgate workspace register NAME` on the machine. It makes the key and prints a fingerprint and a link.
 2. The user opens the link in a browser, signs in again, compares the fingerprint on the page with the one in the terminal, and approves. A bearer token cannot approve a key.
-3. The user runs `toolgate configure --attestation-key-file PATH`.
+3. When no other attestation source is saved, the command saves the key in `config.json` by itself. If another source is saved, the command keeps it and prints the `toolgate configure --attestation-key-file PATH` command that switches. `--use` replaces the other source, and `--no-use` changes nothing.
 
 The [user guide](../user/README.md) describes the commands. A user can list and revoke keys on the Workspaces page, or with `toolgate workspace keys list` and `toolgate workspace keys revoke NAME`. A revoked key stops working on the next request, on every replica. Revoking also denies the pending requests for that name. A user has at most 20 active keys.
 

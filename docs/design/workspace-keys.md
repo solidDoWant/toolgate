@@ -182,12 +182,19 @@ Registering never makes a key usable. Only an approval in the browser does (sect
      Waiting… (Ctrl-C stops waiting; the request stays open until it expires.)
      ```
      It polls `GET /api/v1/access-requests/{id}` every 2 s, as `workspace allow` does today (`awaitDecision`).
-   - When the request is approved, it prints "Key `dev` is active. Sessions that use it run in workspace `registered/alice/dev`. To use it, run: toolgate configure --attestation-key-file PATH" with the absolute path. Exit 0.
+   - When the request is approved, it prints "Key `dev` is active. Sessions that use it run in workspace `registered/alice/dev`." and then uses the key as the next paragraph says. Exit 0.
    - When it is denied or expires, it prints the existing messages of `awaitDecision` and exits 1.
    - Errors print the gateway's message and exit 1. Usage errors exit 2.
 6. The command gives no warning about the lifetime of the user token. An expired assertion of a valid key gets a 401, so the client signs a new one (section 9).
 
-`register` does not change `config.json`. The user runs `toolgate configure` after the approval. To replace a key, the user registers the same name with a new `--key-file` path, approves it, and runs `toolgate configure --attestation-key-file` with the new path (section 6).
+After the approval, `register` saves the key in `config.json` as `configure --attestation-key-file` does, with these rules. There is at most one attestation source.
+
+- No source is saved: it saves `attestationKeyFile` and prints that the key is now in use and that a running Claude Code session picks it up when it reconnects. The headers helper reads `config.json` on each run.
+- Another source is saved (a token file, a TokenRequest directory or another key file): it changes nothing, says which source stays in use and prints the `configure --attestation-key-file PATH` command that switches. With `--use` it replaces the source.
+- The saved source is the key file that this registration replaces (its fingerprint is the one that the gateway gave as `replaces`): it switches to the new key file. To replace a key, the user registers the same name with a new `--key-file` path.
+- `--no-use`: it never changes `config.json`. `--use` and `--no-use` together are a usage error (exit 2).
+- Waiting stops (Ctrl-C, timeout or expiry): it changes nothing and prints the `configure` command to run after a later approval. A denial prints no command.
+- Environment variables still win over `config.json` (section 6).
 
 ## 5. Approving a key
 
