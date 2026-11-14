@@ -20,11 +20,11 @@
 {{template "fact-start" "Server"}}{{.Approval.Server}}{{template "fact-end"}}
 {{template "fact-start" "Tool"}}<span class="font-mono">{{.Approval.Tool}}</span>{{template "fact-end"}}
 {{template "fact-start" "Made by"}}{{template "who" .Who}}{{template "fact-end"}}
-{{template "fact-start" "Session"}}<a href="{{.Approval.SessionPage}}">{{.Approval.SessionLabel}}</a> {{template "short-id" .Approval.Session}}{{template "fact-end"}}
+{{template "fact-start" "Session"}}<a href="{{.Approval.SessionPage}}">{{.Approval.SessionLabel}}</a> {{template "full-id" .Approval.Session}}{{template "fact-end"}}
 {{template "fact-start" "Workspace"}}{{template "ws" (workspace .Approval.Workspace)}}{{template "fact-end"}}
 {{template "fact-start" "Requested"}}{{template "reltime" (since .Approval.CreatedAt)}}{{template "fact-end"}}
 {{template "fact-start" "Expires"}}{{template "reltime" (until .Approval.ExpiresAt)}}{{template "fact-end"}}
-{{template "fact-start" "Request"}}{{template "short-id" .Approval.ID}}{{template "fact-end"}}
+{{template "fact-start" "Request"}}{{template "full-id" .Approval.ID}}{{template "fact-end"}}
 {{template "facts-end"}}
 {{if or .PayloadsOff .ArgumentsNote .Arguments}}{{template "card-start" (dict "Title" "Arguments")}}
 {{with .PayloadsOff}}<p class="note m-0 text-sm text-muted">{{.}}</p>

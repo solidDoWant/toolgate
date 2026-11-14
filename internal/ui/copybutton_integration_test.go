@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,10 +24,10 @@ const layoutScript = `JSON.stringify({
 })`
 
 func TestCopyButtonDoesNotMoveThePage(t *testing.T) {
-	for _, outcome := range []struct{ name, stub, title string }{
-		{"copy still running", `new Promise(function () {})`, "Copy the full ID"},
-		{"copy done", `Promise.resolve()`, "Copied"},
-		{"copy refused", `Promise.reject(new Error("denied"))`, "Copy failed"},
+	for _, outcome := range []struct{ name, stub, title, state string }{
+		{"copy still running", `new Promise(function () {})`, "Copy the full ID", ""},
+		{"copy done", `Promise.resolve()`, "Copied", "done"},
+		{"copy refused", `Promise.reject(new Error("denied"))`, "Copy failed", "failed"},
 	} {
 		t.Run(outcome.name, func(t *testing.T) {
 			env := startUIEnv(t, "toolgate-admins")
@@ -52,18 +53,62 @@ func TestCopyButtonDoesNotMoveThePage(t *testing.T) {
 				return layout
 			}
 
+			// The full ID is on the page as text, not shortened.
+			text, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector("main").innerText`))
+			require.NoError(t, err)
+			assert.Contains(t, text, approvalID(1), "the whole request ID is readable")
+
 			before := measure()
 
-			require.NoError(t, chromedp.Do(ctx, chromedp.Click(chromedp.CSS(buttons))))
+			// The button's centre, for the pointer events.
+			centre, err := chromedp.Run(ctx, chromedp.Evaluate[[]float64](`(function () { var b = document.querySelector('`+buttons+`').getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2]; })()`))
+			require.NoError(t, err)
 
-			if outcome.title != "Copy the full ID" {
-				require.Eventually(t, func() bool {
-					title, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('`+buttons+`').title`))
-					return err == nil && title == outcome.title
-				}, 10*time.Second, 20*time.Millisecond)
+			steps := []struct {
+				name string
+				do   func() error
+			}{
+				{"hover", func() error {
+					_, err := chromedp.Run(ctx, chromedp.MouseEvent(input.DispatchMouseEventTypeMouseMoved, centre[0], centre[1]))
+					return err
+				}},
+				{"mouse down", func() error {
+					_, err := chromedp.Run(ctx, chromedp.MouseEvent(input.DispatchMouseEventTypeMousePressed, centre[0], centre[1], chromedp.ButtonLeft, chromedp.ClickCount(1)))
+					return err
+				}},
+				{"mouse up", func() error {
+					_, err := chromedp.Run(ctx, chromedp.MouseEvent(input.DispatchMouseEventTypeMouseReleased, centre[0], centre[1], chromedp.ButtonLeft, chromedp.ClickCount(1)))
+					return err
+				}},
+			}
+			for _, step := range steps {
+				require.NoError(t, step.do(), step.name)
+				assert.Equal(t, before, measure(), "nothing moves after %s", step.name)
 			}
 
-			assert.Equal(t, before, measure(), "the copy button and everything around it keep their place and size")
+			if outcome.state != "" {
+				require.Eventually(t, func() bool {
+					state, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('`+buttons+`').getAttribute("data-state") || ""`))
+					return err == nil && state == outcome.state
+				}, 10*time.Second, 20*time.Millisecond)
+
+				title, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('`+buttons+`').title`))
+				require.NoError(t, err)
+				assert.Equal(t, outcome.title, title)
+
+				announced, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('main [data-copy-status]').textContent`))
+				require.NoError(t, err)
+				assert.Equal(t, outcome.title, announced, "screen readers hear the result")
+
+				assert.Equal(t, before, measure(), "nothing moves once the clipboard call is done")
+
+				// After the confirmation time the button is idle again.
+				require.Eventually(t, func() bool {
+					state, err := chromedp.Run(ctx, chromedp.Evaluate[string](`document.querySelector('`+buttons+`').getAttribute("data-state") || ""`))
+					return err == nil && state == ""
+				}, 10*time.Second, 50*time.Millisecond)
+				assert.Equal(t, before, measure(), "nothing moves when the confirmation ends")
+			}
 		})
 	}
 }

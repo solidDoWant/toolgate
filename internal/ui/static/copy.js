@@ -19,21 +19,37 @@
     var idButton = event.target.closest("button[data-copy-text]");
     if (idButton) {
       var holder = document.createElement("span");
-      // Out of the flow, so the page does not move while the text is selected.
-      holder.style.cssText = "position:fixed;top:0;left:0;opacity:0;pointer-events:none;white-space:pre";
-      var idleTitle = idButton.getAttribute("data-idle-title");
-      if (idleTitle === null) {
-        idleTitle = idButton.getAttribute("title");
-        idButton.setAttribute("data-idle-title", idleTitle);
-      }
+      // Out of the flow and one pixel big, so the page does not move or
+      // scroll while the text is selected.
+      holder.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;overflow:hidden;opacity:0;pointer-events:none;white-space:pre";
       holder.textContent = idButton.getAttribute("data-copy-text");
       document.body.appendChild(holder);
+      var status = idButton.nextElementSibling;
+      var idleTitle = idButton.getAttribute("data-idle-title");
+      if (idleTitle === null) {
+        idleTitle = idButton.getAttribute("aria-label");
+        idButton.setAttribute("data-idle-title", idleTitle);
+      }
+      var show = function (state, message) {
+        idButton.setAttribute("data-state", state);
+        idButton.setAttribute("title", message);
+        if (status && status.hasAttribute("data-copy-status")) {
+          status.textContent = message;
+        }
+      };
+      window.clearTimeout(idButton.copyTimer);
       copyText(holder.textContent, holder).then(
-        function () { idButton.setAttribute("title", "Copied"); },
-        function () { idButton.setAttribute("title", "Copy failed"); }
+        function () { show("done", "Copied"); },
+        function () { show("failed", "Copy failed"); }
       ).finally(function () {
         holder.remove();
-        window.setTimeout(function () { idButton.setAttribute("title", idleTitle); }, 2000);
+        idButton.copyTimer = window.setTimeout(function () {
+          idButton.removeAttribute("data-state");
+          idButton.setAttribute("title", idleTitle);
+          if (status && status.hasAttribute("data-copy-status")) {
+            status.textContent = "";
+          }
+        }, 2000);
       });
       return;
     }

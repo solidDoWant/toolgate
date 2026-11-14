@@ -26,10 +26,10 @@
 {{with .Error}}<p class="flash error mb-4" role="alert">{{.}}</p>
 {{end}}{{if .Message}}<p class="flash status mb-4" role="status">{{.Message}}</p>
 {{end}}<dl id="access-request" class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">
-{{template "fact-start" "Request"}}{{template "short-id" .ID}}{{template "fact-end"}}
+{{template "fact-start" "Request"}}{{template "full-id" .ID}}{{template "fact-end"}}
 {{template "fact-start" "Kind"}}{{.Kind}}{{template "fact-end"}}
 {{with .Server}}{{template "fact-start" "Server"}}{{.}}{{template "fact-end"}}
-{{end}}{{with .Session}}{{template "fact-start" "Session"}}{{if $.Data.SessionPage}}<a href="{{$.Data.SessionPage}}">{{$.Data.SessionLabel}}</a> {{end}}{{template "short-id" .}}{{template "fact-end"}}
+{{end}}{{with .Session}}{{template "fact-start" "Session"}}{{if $.Data.SessionPage}}<a href="{{$.Data.SessionPage}}">{{$.Data.SessionLabel}}</a> {{end}}{{template "full-id" .}}{{template "fact-end"}}
 {{end}}{{template "fact-start" "Workspace"}}{{template "ws" (workspace .Workspace)}}{{template "fact-end"}}
 {{template "fact-start" "Requested"}}{{template "reltime" (since .CreatedAt)}}{{template "fact-end"}}
 {{template "fact-start" "Expires"}}{{template "reltime" (until .ExpiresAt)}}{{template "fact-end"}}

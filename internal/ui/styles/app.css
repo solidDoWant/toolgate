@@ -208,15 +208,53 @@
   }
 }
 
-/* The copy button next to a shortened ID: icon-sized, on the ID's line. It is
-   outside a layer so it wins over the base button style. */
+/* The copy button next to an ID: a fixed-size box, so hover, focus, press and
+   the copied state never change its size. It is outside a layer so it wins
+   over the base button style. The three icons share the box; data-state
+   picks the one that shows. */
 button.copy-id-button {
-  display: inline-flex;
-  padding: 0.125rem;
+  position: relative;
+  display: inline-block;
+  vertical-align: middle;
+  box-sizing: border-box;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  margin: 0;
   border: 0;
+  border-radius: 0.25rem;
   background: transparent;
   line-height: 1;
+  cursor: pointer;
+}
+button.copy-id-button svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -7px 0 0 -7px;
+}
+button.copy-id-button .icon-done,
+button.copy-id-button .icon-failed,
+button.copy-id-button[data-state="done"] .icon-copy,
+button.copy-id-button[data-state="failed"] .icon-copy {
+  visibility: hidden;
+}
+button.copy-id-button[data-state="done"] .icon-done,
+button.copy-id-button[data-state="failed"] .icon-failed {
+  visibility: visible;
+}
+button.copy-id-button[data-state="done"] {
+  color: var(--ok-text);
+}
+button.copy-id-button[data-state="failed"] {
+  color: var(--danger);
 }
 button.copy-id-button:hover {
   background: var(--neutral-bg);
+}
+button.copy-id-button:active {
+  transform: none;
+}
+button.copy-id-button:focus-visible {
+  outline-offset: 0;
 }
