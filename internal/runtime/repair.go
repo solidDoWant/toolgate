@@ -226,6 +226,17 @@ func (r *Repairer) reapply(ctx context.Context, instance db.Instance, now time.T
 		return nil
 	}
 
+	if instance.UsesExchange {
+		// The leader keeps no exchanged token, so it can't render the
+		// instance again. A replacement waits for a new one.
+		r.Log.InfoContext(ctx, "replacing an unhealthy instance that uses an exchanged token instead of reapplying",
+			slog.String("instance", instance.ID))
+
+		_, err := r.Replacer.replace(ctx, instance, ReplaceReasonHealthCheck, "", true)
+
+		return err
+	}
+
 	if template.Generation != instance.Generation || string(template.UID) != instance.TemplateUid {
 		// The catalog holds only the template's current generation, so
 		// the instance can't be rendered at its own: it is replaced
