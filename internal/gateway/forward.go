@@ -311,6 +311,8 @@ func (m *metaTools) decideAndRun(ctx context.Context, current requestContext, re
 		return nil, fmt.Errorf("The call wasn't forwarded: the gateway can't record it. Try again later. (%w)", err) //nolint:staticcheck // A sentence for the model.
 	}
 
+	m.refreshInBackground(ctx, current, instance)
+
 	return m.forwardAndRecord(ctx, current, request, instance, template, tool, request.Params.Arguments)
 }
 
@@ -826,7 +828,10 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 			}
 
 			olderFailure := err == nil && newest.FailedAt.Valid && newest.Generation != template.Generation
-			if !lazy && !olderFailure {
+			// An instance that stopped because its exchanged token expired
+			// starts again on the next call, whatever its start mode.
+			expired := err == nil && newest.CredentialExpired
+			if !lazy && !olderFailure && !expired {
 				return nil
 			}
 
