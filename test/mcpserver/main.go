@@ -29,6 +29,9 @@
 // returns the user of the token, so a test can check which key reached the
 // server.
 //
+// The write_note and read_note tools write and read one file in -data-dir,
+// so a test sees whether a volume kept its data.
+//
 // The count tool is marked readOnlyHint and returns how often it was
 // called, so a test sees whether a call reached the server. -count-ttl sets
 // its cache lifetime suggestion.
@@ -38,6 +41,7 @@
 //	-listen      MCPSERVER_LISTEN       listen address (default :8080)
 //	-tools       MCPSERVER_TOOLS        comma-separated tool names (default env,secrets)
 //	-secrets-dir MCPSERVER_SECRETS_DIR  directory the secrets tool reads (default /secrets)
+//	-data-dir    MCPSERVER_DATA_DIR     directory the write_note and read_note tools use
 //	-mode        MCPSERVER_MODE        default, 2026-only, 2025-only or both
 //	-tools-file  MCPSERVER_TOOLS_FILE  file with the tool declarations
 //	-bearer-tokens MCPSERVER_BEARER_TOKENS  token=user pairs; /mcp answers 401 to any other bearer token
@@ -87,6 +91,7 @@ func run(args []string) error {
 	listen := flags.String("listen", envOr("MCPSERVER_LISTEN", ":8080"), "listen address")
 	tools := flags.String("tools", envOr("MCPSERVER_TOOLS", envTool+","+secretsTool), "comma-separated tool names")
 	secretsDir := flags.String("secrets-dir", envOr("MCPSERVER_SECRETS_DIR", "/secrets"), "directory the secrets tool reads")
+	dataDir := flags.String("data-dir", envOr("MCPSERVER_DATA_DIR", ""), "directory the write_note and read_note tools use")
 	mode := flags.String("mode", envOr("MCPSERVER_MODE", modeDefault), "default, 2026-only, 2025-only or both")
 	toolsFile := flags.String("tools-file", envOr("MCPSERVER_TOOLS_FILE", ""), "file with the tool declarations")
 	bearerTokens := flags.String("bearer-tokens", envOr("MCPSERVER_BEARER_TOKENS", ""), "token=user pairs; /mcp refuses other tokens")
@@ -98,7 +103,7 @@ func run(args []string) error {
 	}
 
 	mux, err := newHandler(handlerConfig{
-		Mode: *mode, Tools: *tools, ToolsFile: *toolsFile, SecretsDir: *secretsDir, Health: *health, BearerTokens: *bearerTokens,
+		Mode: *mode, Tools: *tools, ToolsFile: *toolsFile, SecretsDir: *secretsDir, DataDir: *dataDir, Health: *health, BearerTokens: *bearerTokens,
 		CountTTL: *countTTL,
 	})
 	if err != nil {
@@ -194,6 +199,7 @@ type handlerConfig struct {
 	Tools      string
 	ToolsFile  string
 	SecretsDir string
+	DataDir    string
 	Health     string
 	// BearerTokens is a comma-separated list of token=user pairs. When it
 	// is set, /mcp answers 401 unless the request carries one of the tokens
@@ -244,7 +250,7 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 
 		server, set, err = newToolListServer(specs, calls, versions)
 	} else {
-		server, err = newServer(options{Tools: parseTools(config.Tools), SecretsDir: config.SecretsDir, Environ: os.Environ, Calls: calls, Users: users, CountTTL: config.CountTTL})
+		server, err = newServer(options{Tools: parseTools(config.Tools), SecretsDir: config.SecretsDir, DataDir: config.DataDir, Environ: os.Environ, Calls: calls, Users: users, CountTTL: config.CountTTL})
 	}
 
 	if err != nil {

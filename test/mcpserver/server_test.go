@@ -170,3 +170,18 @@ func TestCountToolWithoutTTLHasNoSuggestion(t *testing.T) {
 	require.Len(t, listed.Tools, 1)
 	assert.NotContains(t, listed.Tools[0].Meta, "toolgate/cache")
 }
+
+func TestNoteToolsKeepTextInDataDir(t *testing.T) {
+	dir := t.TempDir()
+	session := connect(t, options{Tools: []string{"write_note", "read_note"}, DataDir: dir})
+
+	assert.Empty(t, callText(t, session, "read_note"), "no note yet")
+
+	_, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "write_note", Arguments: map[string]any{"text": "hello"}})
+	require.NoError(t, err)
+
+	// A new server on the same directory reads the note, as a new instance
+	// on the same volume does.
+	other := connect(t, options{Tools: []string{"read_note"}, DataDir: dir})
+	assert.Equal(t, "hello", callText(t, other, "read_note"))
+}
