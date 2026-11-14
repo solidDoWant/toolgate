@@ -54,6 +54,7 @@ docs/admin/
   metrics.md               Every metric the gateway exports, the series budget, example queries.
   templates-and-rules.md   How to write MCPServerTemplate and ToolgateRule objects.
   telemetry.md             How to send Claude Code telemetry through the gateway, with the usage queries.
+  template-secrets.md      How to give templates shared values from Secrets in one namespace.
   security-model.md        What toolgate protects against, and what claimed workspaces and sessions cannot.
   operations.md            Backups, upgrades, key rotation, instance limits, the audit log, uninstall.
   tool-search.md           Run tool search: the embeddings endpoint, the chart model server, notes and limits.

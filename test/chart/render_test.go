@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -771,4 +772,107 @@ func TestOIDCAdditionalIssuersSetting(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "needs an issuerURL")
 	})
+}
+
+func TestChartTemplateSecretsRole(t *testing.T) {
+	const secretsNamespace = "toolgate-template-secrets"
+
+	readsSecrets := func(rule rbacv1.PolicyRule) bool {
+		return slices.Contains(rule.Resources, "secrets") && (slices.Contains(rule.Verbs, "get") || slices.Contains(rule.Verbs, "list") || slices.Contains(rule.Verbs, "watch"))
+	}
+
+	t.Run("off by default", func(t *testing.T) {
+		manifests := renderQuickStart(t)
+		for _, candidate := range manifests {
+			assert.NotEqual(t, "toolgate-template-secrets", strings.TrimPrefix(candidate.Metadata.Name, releaseName+"-"))
+		}
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		for _, variable := range deployment.Spec.Template.Spec.Containers[0].Env {
+			assert.NotEqual(t, "TOOLGATE_TEMPLATE_SECRETS_NAMESPACE", variable.Name)
+		}
+	})
+
+	t.Run("Role and RoleBinding in that namespace only", func(t *testing.T) {
+		manifests, err := render(t, append([]string{"config.templateSecretsNamespace=" + secretsNamespace}, quickStartValues...))
+		require.NoError(t, err)
+
+		var roles []rbacv1.Role
+
+		var bindings []rbacv1.RoleBinding
+
+		for _, candidate := range manifests {
+			switch candidate.Kind {
+			case "Role":
+				var role rbacv1.Role
+				require.NoError(t, yaml.UnmarshalStrict(candidate.raw, &role))
+				roles = append(roles, role)
+			case "RoleBinding":
+				var binding rbacv1.RoleBinding
+				require.NoError(t, yaml.UnmarshalStrict(candidate.raw, &binding))
+				bindings = append(bindings, binding)
+			}
+		}
+
+		var secretRoles []rbacv1.Role
+
+		for _, role := range roles {
+			for _, rule := range role.Rules {
+				if readsSecrets(rule) {
+					secretRoles = append(secretRoles, role)
+				}
+			}
+		}
+
+		require.Len(t, secretRoles, 1, "only one Role reads Secrets")
+		assert.Equal(t, secretsNamespace, secretRoles[0].Namespace)
+		assert.Equal(t, releaseName+"-template-secrets", secretRoles[0].Name)
+		assert.Equal(t, []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get", "list", "watch"}}}, secretRoles[0].Rules)
+
+		var found bool
+
+		for _, binding := range bindings {
+			if binding.Name != secretRoles[0].Name {
+				continue
+			}
+
+			found = true
+
+			assert.Equal(t, secretsNamespace, binding.Namespace)
+			assert.Equal(t, secretRoles[0].Name, binding.RoleRef.Name)
+			assert.Equal(t, []rbacv1.Subject{{Kind: "ServiceAccount", Name: "toolgate", Namespace: releaseNamespace}}, binding.Subjects)
+		}
+
+		assert.True(t, found, "a RoleBinding to the gateway's service account")
+
+		cluster := find[rbacv1.ClusterRole](t, manifests, "ClusterRole")
+		for _, rule := range cluster.Rules {
+			assert.False(t, readsSecrets(rule), "the ClusterRole never reads Secrets")
+		}
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{Name: "TOOLGATE_TEMPLATE_SECRETS_NAMESPACE", Value: secretsNamespace})
+	})
+
+	refused := []struct {
+		name    string
+		set     []string
+		message string
+	}{
+		{name: "not a DNS label", set: []string{"config.templateSecretsNamespace=Not_A_Namespace"}, message: "must be a namespace name"},
+		{name: "instance prefix", set: []string{"config.templateSecretsNamespace=tg-secrets"}, message: "must not start with tg-"},
+		{name: "the release namespace", set: []string{"config.templateSecretsNamespace=" + releaseNamespace}, message: "must not be the release namespace"},
+		{name: "the shared namespace", set: []string{"config.templateSecretsNamespace=shared", "config.sharedNamespace.name=shared"}, message: "must not be config.sharedNamespace.name"},
+		{name: "kube-system", set: []string{"config.templateSecretsNamespace=kube-system"}, message: "must not be kube-system"},
+		{name: "a catalog namespace", set: []string{"config.templateSecretsNamespace=catalog-b", "config.catalogNamespaces={catalog-a,catalog-b}"}, message: "must not be one of config.catalogNamespaces"},
+	}
+
+	for _, test := range refused {
+		t.Run("refuses "+test.name, func(t *testing.T) {
+			_, err := render(t, append(slices.Clone(test.set), quickStartValues...))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), test.message)
+		})
+	}
 }
