@@ -5,6 +5,7 @@ package runtime
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
@@ -77,6 +79,14 @@ type SecretSource interface {
 	Secret(ctx context.Context, name string) (string, time.Time, error)
 }
 
+// TemplateSecretSource reads the keys of the Secrets the admin keeps for
+// ${templateSecret:NAME/KEY}.
+type TemplateSecretSource interface {
+	// TemplateSecret returns the bytes of key in the template secret name and
+	// the resourceVersion of that Secret.
+	TemplateSecret(ctx context.Context, name, key string) (value []byte, version string, err error)
+}
+
 // Input is everything one render needs.
 type Input struct {
 	Template *v1alpha1.MCPServerTemplate
@@ -86,9 +96,34 @@ type Input struct {
 	// Resolvers calls the resolvers ${resolver:…} names. Nil means none are
 	// configured.
 	Resolvers ResolverCaller
+	// ExchangeTokens holds the delivered token of each exchange, by exchange
+	// name, for ${exchange:NAME}.
+	ExchangeTokens map[string]string
+	// TemplateSecrets reads ${templateSecret:NAME/KEY}. Nil means the
+	// feature is off.
+	TemplateSecrets TemplateSecretSource
 	// Metadata is put on every rendered object, and on the pod template of
 	// the kinds that have one. Its keys win over the template's own.
 	Metadata InstanceMetadata
+}
+
+// ExchangeTarget is the Secret key one exchange's token was rendered into.
+type ExchangeTarget struct {
+	Exchange string
+	Secret   string
+	Key      string
+}
+
+// TemplateSecretTarget is the Secret key one template secret value was
+// rendered into, and where the value came from.
+type TemplateSecretTarget struct {
+	TargetSecret string
+	TargetKey    string
+	// TargetField is "data" or "stringData".
+	TargetField   string
+	SourceName    string
+	SourceKey     string
+	SourceVersion string
 }
 
 // Result is a rendered instance.
@@ -106,6 +141,10 @@ type Result struct {
 	// Metadata is the labels and annotations the objects carry, for the
 	// objects toolgate adds around them.
 	Metadata InstanceMetadata
+	// Exchanges lists the Secret keys that hold exchanged tokens.
+	Exchanges []ExchangeTarget
+	// TemplateSecrets lists the Secret keys that hold template secret values.
+	TemplateSecrets []TemplateSecretTarget
 }
 
 // VariableError is a variable that could not be rendered. Its message names
@@ -149,6 +188,10 @@ func Render(ctx context.Context, input Input) (*Result, error) {
 			return nil, fmt.Errorf("%s must be a Kubernetes object", where)
 		}
 
+		renderer.kind, _ = object["kind"].(string)
+		renderer.apiVersion, _ = object["apiVersion"].(string)
+		firstExchange, firstTemplateSecret := len(renderer.exchanges), len(renderer.templateSecrets)
+
 		rendered, err := renderer.node(object, []string{where})
 		if err != nil {
 			return nil, err
@@ -168,6 +211,14 @@ func Render(ctx context.Context, input Input) (*Result, error) {
 
 		decoded.SetNamespace(input.Instance.Namespace)
 
+		for index := firstExchange; index < len(renderer.exchanges); index++ {
+			renderer.exchanges[index].Secret = decoded.GetName()
+		}
+
+		for index := firstTemplateSecret; index < len(renderer.templateSecrets); index++ {
+			renderer.templateSecrets[index].TargetSecret = decoded.GetName()
+		}
+
 		labels := mergeKeys(decoded.GetLabels(), input.Metadata.Labels)
 		labels[LabelInstance] = input.Instance.ID
 		labels[LabelTemplate] = input.Template.Name
@@ -184,6 +235,8 @@ func Render(ctx context.Context, input Input) (*Result, error) {
 	}
 
 	result.SecretVersions = renderer.secretsUsed
+	result.Exchanges = renderer.exchanges
+	result.TemplateSecrets = renderer.templateSecrets
 
 	for name := range renderer.secretsUsed {
 		result.SecretsUsed = append(result.SecretsUsed, name)
@@ -264,6 +317,10 @@ func (noSecrets) Secret(context.Context, string) (string, time.Time, error) {
 // configured.
 var errNoResolvers = errors.New("no resolvers are configured")
 
+// errNoTemplateSecrets is the error of ${templateSecret:…} when no template
+// secrets namespace is configured.
+var errNoTemplateSecrets = errors.New("no template secrets namespace is configured")
+
 type renderer struct {
 	ctx         context.Context
 	input       Input
@@ -271,6 +328,10 @@ type renderer struct {
 	// resolved holds each resolver's value: each render calls each resolver
 	// it names once.
 	resolved map[string]Resolved
+	// kind and apiVersion are those of the resource being rendered.
+	kind, apiVersion string
+	exchanges        []ExchangeTarget
+	templateSecrets  []TemplateSecretTarget
 }
 
 // node returns a copy of node with every string value rendered. path is the
@@ -329,6 +390,11 @@ func (r *renderer) text(text string, path []string) (string, error) {
 			}
 
 			variable := rest[2 : 2+end]
+
+			if isCredentialVariable(variable) && (index != 0 || len(rest) != 2+end+1) {
+				return "", &VariableError{Path: formatPath(path), Variable: variable,
+					Reason: "must be the whole value, with no other text"}
+			}
 
 			value, err := r.variable(variable, path)
 			if err != nil {
@@ -407,7 +473,108 @@ func (r *renderer) variable(variable string, path []string) (string, error) {
 		return resolved.Value, nil
 	}
 
+	if name, found := strings.CutPrefix(variable, "exchange:"); found {
+		return r.exchange(variable, name, path)
+	}
+
+	if name, found := strings.CutPrefix(variable, "templateSecret:"); found {
+		return r.templateSecret(variable, name, path)
+	}
+
 	return "", fail("is not a known variable", nil)
+}
+
+// isCredentialVariable reports whether variable is one that must be the whole
+// value of a Secret key.
+func isCredentialVariable(variable string) bool {
+	return strings.HasPrefix(variable, "exchange:") || strings.HasPrefix(variable, "templateSecret:")
+}
+
+// secretField returns the field ("data" or "stringData") and key when path
+// is a value directly under data or stringData of a core Secret.
+func (r *renderer) secretField(path []string) (field, key string, ok bool) {
+	if r.kind != "Secret" || r.apiVersion != "v1" || len(path) != 3 {
+		return "", "", false
+	}
+
+	if path[1] != "data" && path[1] != "stringData" {
+		return "", "", false
+	}
+
+	return path[1], path[2], true
+}
+
+// credentialValue returns what a Secret key holds for the value bytes: the
+// text under stringData, which must be UTF-8, and the standard base64 under
+// data.
+func credentialValue(field string, value []byte) (string, bool) {
+	if field == "data" {
+		return base64.StdEncoding.EncodeToString(value), true
+	}
+
+	return string(value), utf8.Valid(value)
+}
+
+func (r *renderer) exchange(variable, name string, path []string) (string, error) {
+	fail := func(reason string) error {
+		return &VariableError{Path: formatPath(path), Variable: variable, Reason: reason}
+	}
+
+	field, key, ok := r.secretField(path)
+	if !ok {
+		return "", fail("is allowed only in the data or stringData values of a Secret")
+	}
+
+	token, found := r.input.ExchangeTokens[name]
+	if !found {
+		return "", fail("has no exchanged token")
+	}
+
+	value, valid := credentialValue(field, []byte(token))
+	if !valid {
+		return "", fail("is not UTF-8 text; it can't go in stringData")
+	}
+
+	r.exchanges = append(r.exchanges, ExchangeTarget{Exchange: name, Key: key})
+
+	return value, nil
+}
+
+func (r *renderer) templateSecret(variable, name string, path []string) (string, error) {
+	fail := func(reason string, err error) error {
+		return &VariableError{Path: formatPath(path), Variable: variable, Reason: reason, Err: err}
+	}
+
+	field, key, ok := r.secretField(path)
+	if !ok {
+		return "", fail("is allowed only in the data or stringData values of a Secret", nil)
+	}
+
+	sourceName, sourceKey, split := strings.Cut(name, "/")
+	if !split || sourceName == "" || sourceKey == "" {
+		return "", fail("must be NAME/KEY, with a Secret name and a key", nil)
+	}
+
+	if r.input.TemplateSecrets == nil {
+		return "", fail("could not be read", errNoTemplateSecrets)
+	}
+
+	bytes, version, err := r.input.TemplateSecrets.TemplateSecret(r.ctx, sourceName, sourceKey)
+	if err != nil {
+		return "", fail("could not be read", err)
+	}
+
+	value, valid := credentialValue(field, bytes)
+	if !valid {
+		return "", fail("could not be read", fmt.Errorf(
+			"the value of key %s in Secret %s isn't UTF-8 text; use it under data", sourceKey, sourceName))
+	}
+
+	r.templateSecrets = append(r.templateSecrets, TemplateSecretTarget{
+		TargetKey: key, TargetField: field, SourceName: sourceName, SourceKey: sourceKey, SourceVersion: version,
+	})
+
+	return value, nil
 }
 
 // resolve calls the resolver name once per render and returns its value.

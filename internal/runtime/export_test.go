@@ -25,3 +25,6 @@ var SnapshotIdentity = snapshotIdentity
 func (s *Starter) RenderIdentity(ctx context.Context, instance db.Instance) (Identity, error) {
 	return s.identity(ctx, instance)
 }
+
+// OrderForApply is the order applyAll applies rendered objects in.
+var OrderForApply = orderForApply
