@@ -24,7 +24,6 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
-	"github.com/solidDoWant/toolgate/internal/config"
 )
 
 // Token exchange request values (RFC 8693).
@@ -57,6 +56,10 @@ const (
 	ErrorUnreachable  = "unreachable"
 	ErrorBadAnswer    = "bad-answer"
 	ErrorClientSecret = "client-secret"
+	// ErrorUnavailable is an exchange whose TokenExchange can't be used:
+	// it is missing, isn't valid, or names a token endpoint that isn't
+	// allowed. Nothing was sent.
+	ErrorUnavailable = "unavailable"
 )
 
 // oauthErrorCode is the form of an OAuth error code the reason may name.
@@ -80,7 +83,7 @@ type Exchanged struct {
 // ExchangeError is a failed exchange. Its text names the exchange and a
 // cause, and never a token, a client secret or the answer's body.
 type ExchangeError struct {
-	// Exchange is the configured name.
+	// Exchange is the exchange's name.
 	Exchange string
 	// Code is the audit error code: the OAuth error code, or one of the
 	// Error* constants.
@@ -91,34 +94,63 @@ type ExchangeError struct {
 	reason string
 }
 
+// UnavailableError is the failure of an exchange whose TokenExchange can't
+// be used. cause says why, and never holds a secret.
+func UnavailableError(name string, cause error) *ExchangeError {
+	return &ExchangeError{
+		Exchange: name,
+		Code:     ErrorUnavailable,
+		reason:   fmt.Sprintf("Token exchange `%s` failed: %s", name, cause),
+	}
+}
+
 // Error returns the reason text.
 func (e *ExchangeError) Error() string { return e.reason }
 
-// Exchanger runs token exchanges for one configured entry.
+// ExchangeSpec is one token exchange, as its TokenExchange resource
+// describes it when the exchange runs.
+type ExchangeSpec struct {
+	// Name is the name templates use in `${exchange:NAME}`.
+	Name               string
+	TokenURL           string
+	ClientID           string
+	Audience           string
+	Scope              string
+	RequestedTokenType string
+	// Timeout bounds one exchange.
+	Timeout time.Duration
+	// ClientSecret reads the client secret for one exchange, so a rotated
+	// secret applies from the next exchange. Its error names where the
+	// secret is, never a value.
+	ClientSecret func(ctx context.Context) ([]byte, error)
+}
+
+// Exchanger runs token exchanges for one exchange spec.
 type Exchanger struct {
 	// Now is the clock. Nil means time.Now.
 	Now func() time.Time
 
-	entry   config.TokenExchange
+	spec    ExchangeSpec
 	client  *http.Client
 	metrics *Metrics
 	logger  *slog.Logger
 }
 
-// NewExchanger returns the exchanger of entry. It reads the entry's caFile
-// now. Metrics and logger may be nil.
-func NewExchanger(entry config.TokenExchange, metrics *Metrics, logger *slog.Logger) (*Exchanger, error) {
+// NewTransport returns the transport exchanges use. caFile is a PEM bundle
+// of the CAs the token endpoints are trusted with; empty means the system
+// roots.
+func NewTransport(caFile string) (*http.Transport, error) {
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 
-	if entry.CAFile != "" {
-		pem, err := os.ReadFile(entry.CAFile)
+	if caFile != "" {
+		pem, err := os.ReadFile(caFile)
 		if err != nil {
-			return nil, fmt.Errorf("token exchange %s: caFile: %w", entry.Name, err)
+			return nil, fmt.Errorf("token exchange caFile: %w", err)
 		}
 
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("token exchange %s: caFile %s has no PEM certificate", entry.Name, entry.CAFile)
+			return nil, fmt.Errorf("token exchange caFile %s has no PEM certificate", caFile)
 		}
 
 		tlsConfig.RootCAs = pool
@@ -127,29 +159,35 @@ func NewExchanger(entry config.TokenExchange, metrics *Metrics, logger *slog.Log
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.TLSClientConfig = tlsConfig
 
+	return transport, nil
+}
+
+// NewExchanger returns the exchanger of spec, sending its requests through
+// transport. Metrics and logger may be nil.
+func NewExchanger(spec ExchangeSpec, transport http.RoundTripper, metrics *Metrics, logger *slog.Logger) *Exchanger {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
 
 	return &Exchanger{
-		entry: entry,
+		spec: spec,
 		client: &http.Client{
 			Transport: transport,
-			Timeout:   entry.ExchangeTimeout(),
+			Timeout:   spec.Timeout,
 			// Redirects aren't followed: the request carries the subject
 			// token and the client secret.
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 		metrics: metrics,
 		logger:  logger,
-	}, nil
+	}
 }
 
-// Name is the configured name of the exchange.
-func (e *Exchanger) Name() string { return e.entry.Name }
+// Name is the name of the exchange.
+func (e *Exchanger) Name() string { return e.spec.Name }
 
 // Timeout bounds one exchange.
-func (e *Exchanger) Timeout() time.Duration { return e.entry.ExchangeTimeout() }
+func (e *Exchanger) Timeout() time.Duration { return e.spec.Timeout }
 
 func (e *Exchanger) now() time.Time {
 	if e.Now != nil {
@@ -174,15 +212,15 @@ func (e *Exchanger) Exchange(ctx context.Context, subject auth.SubjectToken, kin
 		}
 	}
 
-	e.metrics.observe(e.entry.Name, kind, outcome)
+	e.metrics.observe(e.spec.Name, kind, outcome)
 
 	return exchanged, err
 }
 
 func (e *Exchanger) exchange(ctx context.Context, subject auth.SubjectToken) (Exchanged, error) {
-	secret, err := readClientSecret(e.entry.ClientSecretFile)
+	secret, err := e.clientSecret(ctx)
 	if err != nil {
-		return Exchanged{}, e.fail(ErrorClientSecret, false, "its client secret file can't be read.")
+		return Exchanged{}, e.fail(ErrorClientSecret, false, "its client secret can't be read: "+err.Error())
 	}
 
 	params := url.Values{
@@ -190,22 +228,22 @@ func (e *Exchanger) exchange(ctx context.Context, subject auth.SubjectToken) (Ex
 		"subject_token":      {subject.Reveal()},
 		"subject_token_type": {tokenTypeAccessToken},
 	}
-	if e.entry.Audience != "" {
-		params.Set("audience", e.entry.Audience)
+	if e.spec.Audience != "" {
+		params.Set("audience", e.spec.Audience)
 	}
 
-	if e.entry.RequestedTokenType != "" {
-		params.Set("requested_token_type", e.entry.RequestedTokenType)
+	if e.spec.RequestedTokenType != "" {
+		params.Set("requested_token_type", e.spec.RequestedTokenType)
 	}
 
 	// A new Config for each exchange, so nothing is cached between them.
 	// The auth style is fixed, so auto-detection never sends the subject
 	// token twice.
 	request := &clientcredentials.Config{
-		ClientID:       e.entry.ClientID,
+		ClientID:       e.spec.ClientID,
 		ClientSecret:   secret,
-		TokenURL:       e.entry.TokenURL,
-		Scopes:         strings.Fields(e.entry.Scope),
+		TokenURL:       e.spec.TokenURL,
+		Scopes:         strings.Fields(e.spec.Scope),
 		AuthStyle:      oauth2.AuthStyleInHeader,
 		EndpointParams: params,
 	}
@@ -220,17 +258,21 @@ func (e *Exchanger) exchange(ctx context.Context, subject auth.SubjectToken) (Ex
 	return e.checkAnswer(answer, issuedAt)
 }
 
-// readClientSecret reads the client secret file, without its trailing white
-// space. A missing or empty file is an error.
-func readClientSecret(path string) (string, error) {
-	content, err := os.ReadFile(path)
+// clientSecret reads the client secret, without its trailing white space.
+// A missing or empty secret is an error.
+func (e *Exchanger) clientSecret(ctx context.Context) (string, error) {
+	if e.spec.ClientSecret == nil {
+		return "", errors.New("no client secret is set")
+	}
+
+	content, err := e.spec.ClientSecret(ctx)
 	if err != nil {
 		return "", err
 	}
 
 	secret := strings.TrimRightFunc(string(content), unicode.IsSpace)
 	if secret == "" {
-		return "", errors.New("empty client secret file")
+		return "", errors.New("the client secret is empty")
 	}
 
 	return secret, nil
@@ -243,7 +285,7 @@ func (e *Exchanger) requestError(err error) *ExchangeError {
 	if errors.As(err, &retrieveErr) {
 		if retrieveErr.ErrorDescription != "" {
 			e.logger.Warn("token endpoint error description",
-				"exchange", e.entry.Name,
+				"exchange", e.spec.Name,
 				"description", cleanDescription(retrieveErr.ErrorDescription))
 		}
 
@@ -261,7 +303,7 @@ func (e *Exchanger) requestError(err error) *ExchangeError {
 
 	var netErr net.Error
 	if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout()) {
-		return e.fail(ErrorTimeout, false, fmt.Sprintf("the token endpoint didn't answer within %s.", e.entry.ExchangeTimeout()))
+		return e.fail(ErrorTimeout, false, fmt.Sprintf("the token endpoint didn't answer within %s.", e.spec.Timeout))
 	}
 
 	var urlErr *url.Error
@@ -284,9 +326,9 @@ func (e *Exchanger) checkAnswer(answer *oauth2.Token, issuedAt time.Time) (Excha
 		return Exchanged{}, e.fail(ErrorBadAnswer, false, "the answer has a token larger than 4 KiB")
 	}
 
-	if e.entry.RequestedTokenType != "" {
+	if e.spec.RequestedTokenType != "" {
 		issued, _ := answer.Extra("issued_token_type").(string)
-		if issued != e.entry.RequestedTokenType {
+		if issued != e.spec.RequestedTokenType {
 			return Exchanged{}, e.fail(ErrorBadAnswer, false, "the answer has a different `issued_token_type`")
 		}
 	}
@@ -367,9 +409,9 @@ func cleanDescription(description string) string {
 
 func (e *Exchanger) fail(code string, refused bool, cause string) *ExchangeError {
 	return &ExchangeError{
-		Exchange: e.entry.Name,
+		Exchange: e.spec.Name,
 		Code:     code,
 		Refused:  refused,
-		reason:   fmt.Sprintf("Token exchange `%s` failed: %s", e.entry.Name, cause),
+		reason:   fmt.Sprintf("Token exchange `%s` failed: %s", e.spec.Name, cause),
 	}
 }

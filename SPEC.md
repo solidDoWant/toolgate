@@ -131,7 +131,7 @@ All are in API group `toolgate.soliddowant.dev`, version `v1alpha1`. The chart i
 - **`MCPServerTemplate`** (namespaced, in the namespaces the gateway is configured to watch): one catalog entry (see "Catalog entries and instances").
 - **`ToolgateRule`**: a standing block rule (see "Policy").
 - **`SettingsProfile`**: Claude Code settings handed to clients (see "Client: CLI and Claude Code plugin").
-- **`TokenExchange`** (namespaced, in the catalog namespaces): an OAuth token exchange that templates in the same namespace use. The gateway uses it only if its `tokenURL` is on the chart-only allow-list (by default the token endpoints of the user OIDC issuers). Its `Valid` condition gives the reason when it is not valid.
+- **`TokenExchange`** (namespaced, in the catalog namespaces): an OAuth token exchange that templates in the same namespace use as `${exchange:NAME}`. A template can't use one from another namespace. The gateway uses it only if its `tokenURL` is on the chart-only allow-list (by default the token endpoints of the user OIDC issuers), and checks the list again before each exchange. It trusts the chart's one CA bundle (`config.tokenExchange.caFile`) or the system roots. Edits apply from the next exchange. Its `Valid` condition gives the reason when it is not valid, and a template that uses a missing or invalid one is invalid.
 
 Every resource is validated by CEL rules in its CRD and again when toolgate reads it. An invalid resource is skipped, with the reason in its `status.conditions` and in the log. For an `MCPServerTemplate`, the condition is `Valid`. Its status is `False` and its message gives the reason. A previously valid version keeps working until a valid replacement arrives.
 

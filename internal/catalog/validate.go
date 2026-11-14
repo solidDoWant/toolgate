@@ -65,9 +65,9 @@ type Validator struct {
 	// Resolvers are the names of the configured resolvers. A template that
 	// names any other resolver is invalid.
 	Resolvers []string
-	// Exchanges are the names of the configured token exchanges. A template
-	// that names any other exchange is invalid.
-	Exchanges []string
+	// Exchanges says whether a template may use a token exchange. Nil
+	// means none may: every template that uses `${exchange:…}` is invalid.
+	Exchanges ExchangeLookup
 	// TemplateSecretsNamespace is the gateway's template secrets namespace.
 	// When it is empty, every template that uses `${templateSecret:…}` is
 	// invalid.
@@ -75,6 +75,13 @@ type Validator struct {
 	// PersistentVolumes is the gateway setting persistentVolumes.enabled.
 	// When it is false, a template with persistentVolumes is invalid.
 	PersistentVolumes bool
+}
+
+// ExchangeLookup decides whether a template may use a token exchange.
+type ExchangeLookup interface {
+	// ExchangeProblem returns why a template in namespace can't use the
+	// token exchange name, or "" when it can.
+	ExchangeProblem(namespace, name string) string
 }
 
 // Validate returns every problem found in template, or nil when it is valid.
@@ -134,7 +141,7 @@ func (v Validator) Validate(template *v1alpha1.MCPServerTemplate) []string {
 	}
 
 	for index, raw := range spec.Resources {
-		problems = append(problems, v.validateResource(index, raw.Raw)...)
+		problems = append(problems, v.validateResource(template.Namespace, index, raw.Raw)...)
 	}
 
 	problems = append(problems, validateHealthCheck(spec)...)
@@ -259,7 +266,7 @@ func Reason(problems []string) string {
 	return reason
 }
 
-func (v Validator) validateResource(index int, raw []byte) []string {
+func (v Validator) validateResource(namespace string, index int, raw []byte) []string {
 	where := "resources[" + strconv.Itoa(index) + "]"
 
 	var object map[string]any
@@ -308,7 +315,7 @@ func (v Validator) validateResource(index int, raw []byte) []string {
 			}
 
 			if inSecretData {
-				variableProblems = append(variableProblems, v.credentialVariableProblems(location, text, variable)...)
+				variableProblems = append(variableProblems, v.credentialVariableProblems(namespace, location, text, variable)...)
 			}
 		}
 	})
@@ -454,8 +461,10 @@ var secretKeyPattern = regexp.MustCompile(`^[-._a-zA-Z0-9]{1,253}$`)
 
 // credentialVariableProblems checks one `${exchange:…}` or
 // `${templateSecret:…}` variable in a Secret value: it must be the whole
-// value, and it must name something the gateway has. It never reads a Secret.
-func (v Validator) credentialVariableProblems(location, text, variable string) []string {
+// value, and it must name something the gateway has: a usable TokenExchange
+// in the template's own namespace, or a template secret. It never reads a
+// Secret.
+func (v Validator) credentialVariableProblems(namespace, location, text, variable string) []string {
 	var problems []string
 
 	argument, isExchange := strings.CutPrefix(variable, exchangePrefix)
@@ -471,8 +480,10 @@ func (v Validator) credentialVariableProblems(location, text, variable string) [
 	}
 
 	if isExchange {
-		if !slices.Contains(v.Exchanges, argument) {
+		if v.Exchanges == nil {
 			problems = append(problems, fmt.Sprintf("%s: token exchange `%s` isn't configured", location, argument))
+		} else if problem := v.Exchanges.ExchangeProblem(namespace, argument); problem != "" {
+			problems = append(problems, location+": "+problem)
 		}
 
 		return problems

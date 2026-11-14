@@ -55,6 +55,9 @@ type runtimeOptions struct {
 	rules   *policy.Rules
 	// ruleLister gets the manager's cache for the Blocks page. Nil is fine.
 	ruleLister *ruleLister
+	// exchanges gets the manager's cache to build token exchangers. Nil
+	// means the gateway runs no exchanges.
+	exchanges *lateExchangeSource
 	// profiles gets the manager's cache for the settings route. Nil is fine.
 	profiles *lateReader
 	// secrets reads the users' secrets for instance renders.
@@ -154,7 +157,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// reconciler subscribes and takes the delivered tokens.
 	deliveries := &credentials.DeliveredTokens{}
 
-	if len(cfg.TokenExchanges) > 0 {
+	if cfg.SecretsKeysetFile != "" {
 		cipher, err := secrets.LoadKeyset(cfg.SecretsKeysetFile)
 		if err != nil {
 			return nil, err
@@ -179,7 +182,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, err
 	}
 
-	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: exchangeNames(cfg.TokenExchanges), TemplateSecretsNamespace: cfg.TemplateSecretsNamespace, PersistentVolumes: cfg.PersistentVolumesEnabled}
+	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: tokenexchange.Lookup{Reader: mgr.GetClient()}, TemplateSecretsNamespace: cfg.TemplateSecretsNamespace, PersistentVolumes: cfg.PersistentVolumesEnabled}
 
 	if options.ruleLister != nil {
 		options.ruleLister.set(mgr.GetClient(), watched)
@@ -187,6 +190,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 
 	if options.profiles != nil {
 		options.profiles.set(mgr.GetCache())
+	}
+
+	if options.exchanges != nil {
+		options.exchanges.set(mgr.GetClient(), templateSecretSource(mgr, cfg))
 	}
 
 	if err := setupCatalog(mgr, options.catalog, options.rules, watched, validator, logger); err != nil {
@@ -445,17 +452,10 @@ func setupCatalog(mgr manager.Manager, templates *catalog.Catalog, rules *policy
 // setupTokenExchanges registers the reconciler that writes the Valid
 // condition of TokenExchange resources. It runs on the leader only.
 func setupTokenExchanges(mgr manager.Manager, cfg config.Config, watched []string, logger *slog.Logger) error {
-	var allowList tokenexchange.AllowList = &tokenexchange.DiscoveredAllowList{Issuers: cfg.UserIssuerURLs()}
-	if len(cfg.TokenExchangeAllowedTokenURLs) > 0 {
-		allowList = tokenexchange.StaticAllowList(cfg.TokenExchangeAllowedTokenURLs)
-	}
-
-	checker := tokenexchange.Checker{AllowList: allowList, HasKeyset: cfg.SecretsKeysetFile != ""}
-
-	// Client secrets are read through the API, never a cache, so the
-	// status never reflects an old value, and only the leader reads them.
-	if cfg.TemplateSecretsNamespace != "" {
-		checker.Secrets = runtime.APITemplateSecrets{Reader: mgr.GetAPIReader(), Namespace: cfg.TemplateSecretsNamespace}
+	checker := tokenexchange.Checker{
+		AllowList: tokenExchangeAllowList(cfg),
+		HasKeyset: cfg.SecretsKeysetFile != "",
+		Secrets:   templateSecretSource(mgr, cfg),
 	}
 
 	reconciler := &tokenexchange.Reconciler{Client: mgr.GetClient(), Checker: checker, Log: logger, Namespaces: watched}
@@ -464,6 +464,17 @@ func setupTokenExchanges(mgr manager.Manager, cfg config.Config, watched []strin
 	}
 
 	return nil
+}
+
+// templateSecretSource reads client secrets of token exchanges from the
+// template secrets namespace, or is nil when the gateway has none. It reads
+// through the API, never a cache, so a rotated secret applies at once.
+func templateSecretSource(mgr manager.Manager, cfg config.Config) tokenexchange.SecretSource {
+	if cfg.TemplateSecretsNamespace == "" {
+		return nil
+	}
+
+	return runtime.APITemplateSecrets{Reader: mgr.GetAPIReader(), Namespace: cfg.TemplateSecretsNamespace}
 }
 
 // kubeScheme returns the client-go types and toolgate's custom resources.
@@ -529,16 +540,6 @@ func newTemplateSecretCache(mgr manager.Manager, namespace string) (cache.Cache,
 	}
 
 	return secretCache, nil
-}
-
-// exchangeNames returns the names of the configured token exchanges.
-func exchangeNames(exchanges []config.TokenExchange) []string {
-	names := make([]string, 0, len(exchanges))
-	for _, exchange := range exchanges {
-		names = append(names, exchange.Name)
-	}
-
-	return names
 }
 
 // volumeLimitPerUser returns the per-user volume limit in bytes. The

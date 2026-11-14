@@ -192,21 +192,8 @@ resolver gets its own projected service-account token with its audience.
 {{- end }}
 {{- $_ := set $file "resolvers" . }}
 {{- end }}
-{{- with $config.tokenExchanges }}
-{{- range $exchange := . }}
-{{- if not (regexMatch "^[a-z][a-z0-9-]{0,62}$" (toString $exchange.name)) }}
-{{- fail (printf "config.tokenExchanges: name %q must be lowercase letters, digits and -, starting with a letter, at most 63 characters" (toString $exchange.name)) }}
-{{- end }}
-{{- range $field := list "tokenURL" "clientID" "clientSecretFile" }}
-{{- if not (get $exchange $field) }}
-{{- fail (printf "config.tokenExchanges: exchange %q needs a %s" $exchange.name $field) }}
-{{- end }}
-{{- end }}
-{{- if not (hasPrefix "https://" (toString $exchange.tokenURL)) }}
-{{- fail (printf "config.tokenExchanges: exchange %q: tokenURL must start with https://" $exchange.name) }}
-{{- end }}
-{{- end }}
-{{- $_ := set $file "tokenExchanges" . }}
+{{- if hasKey $config "tokenExchanges" }}
+{{- fail "config.tokenExchanges was removed: define each exchange as a TokenExchange resource in the namespace of the templates that use it, and set config.tokenExchange.caFile for a private CA" }}
 {{- end }}
 {{- with ($config.tokenExchange).allowedTokenURLs }}
 {{- range $allowed := . }}
@@ -215,6 +202,9 @@ resolver gets its own projected service-account token with its audience.
 {{- end }}
 {{- end }}
 {{- $_ := set $file "tokenExchangeAllowedTokenURLs" . }}
+{{- end }}
+{{- with ($config.tokenExchange).caFile }}
+{{- $_ := set $file "tokenExchangeCAFile" . }}
 {{- end }}
 {{- with $config.oidc.additionalIssuers }}
 {{- range $issuer := . }}

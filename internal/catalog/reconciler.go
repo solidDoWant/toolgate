@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -85,12 +86,40 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		return fmt.Errorf("catalog: %w", err)
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
+	controllerBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.MCPServerTemplate{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.watched))).
 		WatchesRawSource(requeue).
 		WithOptions(controller.Options{NeedLeaderElection: ptr.To(false)}).
-		Named("catalog").
-		Complete(r)
+		Named("catalog")
+
+	// A template's validity depends on the TokenExchange resources of its
+	// namespace, so a change to one, its status included, checks the
+	// namespace's templates again.
+	if r.Validator.Exchanges != nil {
+		controllerBuilder = controllerBuilder.Watches(&v1alpha1.TokenExchange{},
+			handler.EnqueueRequestsFromMapFunc(r.namespaceTemplates),
+			builder.WithPredicates(predicate.NewPredicateFuncs(r.watched)))
+	}
+
+	return controllerBuilder.Complete(r)
+}
+
+// namespaceTemplates returns a request for every template in the object's
+// namespace.
+func (r *Reconciler) namespaceTemplates(ctx context.Context, object client.Object) []reconcile.Request {
+	var templates v1alpha1.MCPServerTemplateList
+	if err := r.Client.List(ctx, &templates, client.InNamespace(object.GetNamespace())); err != nil {
+		r.logger().WarnContext(ctx, "catalog: listing templates after a token exchange change", "namespace", object.GetNamespace(), "error", err)
+
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(templates.Items))
+	for _, template := range templates.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: template.Namespace, Name: template.Name}})
+	}
+
+	return requests
 }
 
 // StartupRESTMapper returns a RESTMapper holding the kinds the API server

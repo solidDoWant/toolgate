@@ -2,8 +2,10 @@ package credentials_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -23,7 +25,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
-	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/credentials"
 )
 
@@ -34,7 +35,7 @@ const (
 
 // tokenEndpoint is a TLS token endpoint answering with handler, and an entry
 // pointing at it with its certificate as caFile.
-func tokenEndpoint(t *testing.T, handler http.HandlerFunc) (*httptest.Server, config.TokenExchange) {
+func tokenEndpoint(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *endpointEntry) {
 	t.Helper()
 
 	server := httptest.NewTLSServer(handler)
@@ -47,13 +48,44 @@ func tokenEndpoint(t *testing.T, handler http.HandlerFunc) (*httptest.Server, co
 	secretFile := filepath.Join(dir, "client-secret")
 	require.NoError(t, os.WriteFile(secretFile, []byte(testClientSecret+"\n"), 0o600))
 
-	return server, config.TokenExchange{
-		Name:             "temporal",
-		TokenURL:         server.URL + "/token",
-		ClientID:         "toolgate-client",
-		ClientSecretFile: secretFile,
+	entry := &endpointEntry{
+		ExchangeSpec: credentials.ExchangeSpec{
+			Name:     "temporal",
+			TokenURL: server.URL + "/token",
+			ClientID: "toolgate-client",
+			Timeout:  10 * time.Second,
+		},
 		CAFile:           caFile,
+		ClientSecretFile: secretFile,
 	}
+	entry.ClientSecret = func(context.Context) ([]byte, error) {
+		content, err := os.ReadFile(entry.ClientSecretFile)
+		if err != nil {
+			return nil, errors.New("the test secret file can't be read")
+		}
+
+		return content, nil
+	}
+
+	return server, entry
+}
+
+// endpointEntry is an exchange spec with the CA file of its endpoint and
+// the file its client secret is read from.
+type endpointEntry struct {
+	credentials.ExchangeSpec
+
+	CAFile           string
+	ClientSecretFile string
+}
+
+func buildExchanger(t *testing.T, entry *endpointEntry, metrics *credentials.Metrics, logger *slog.Logger) *credentials.Exchanger {
+	t.Helper()
+
+	transport, err := credentials.NewTransport(entry.CAFile)
+	require.NoError(t, err)
+
+	return credentials.NewExchanger(entry.ExchangeSpec, transport, metrics, logger)
 }
 
 func answerJSON(writer http.ResponseWriter, status int, body map[string]any) {
@@ -74,12 +106,11 @@ func signedJWT(t *testing.T, expiry time.Time) string {
 	return token
 }
 
-func newExchanger(t *testing.T, entry config.TokenExchange, now time.Time) (*credentials.Exchanger, *credentials.Metrics) {
+func newExchanger(t *testing.T, entry *endpointEntry, now time.Time) (*credentials.Exchanger, *credentials.Metrics) {
 	t.Helper()
 
 	metrics := credentials.NewMetrics()
-	exchanger, err := credentials.NewExchanger(entry, metrics, nil)
-	require.NoError(t, err)
+	exchanger := buildExchanger(t, entry, metrics, nil)
 
 	exchanger.Now = func() time.Time { return now }
 
@@ -392,19 +423,20 @@ func TestExchangeErrorsNameCodeOnly(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server, entry := tokenEndpoint(t, test.handler)
-			entry.Timeout = config.Duration(test.timeout)
+			if test.timeout != 0 {
+				entry.Timeout = test.timeout
+			}
 
 			var logs bytes.Buffer
 
 			metrics := credentials.NewMetrics()
-			exchanger, err := credentials.NewExchanger(entry, metrics, slog.New(slog.NewJSONHandler(&logs, nil)))
-			require.NoError(t, err)
+			exchanger := buildExchanger(t, entry, metrics, slog.New(slog.NewJSONHandler(&logs, nil)))
 
 			if test.closed {
 				server.Close()
 			}
 
-			_, err = exchanger.Exchange(t.Context(), auth.SubjectToken(testSubjectToken), credentials.KindRefresh)
+			_, err := exchanger.Exchange(t.Context(), auth.SubjectToken(testSubjectToken), credentials.KindRefresh)
 
 			if test.timeout != 0 {
 				close(release)
@@ -461,7 +493,7 @@ func TestClientSecretReadForEachExchange(t *testing.T) {
 		t.Helper()
 
 		err := exchange()
-		require.EqualError(t, err, "Token exchange `temporal` failed: its client secret file can't be read.")
+		require.ErrorContains(t, err, "Token exchange `temporal` failed: its client secret can't be read: ")
 
 		var exchangeErr *credentials.ExchangeError
 		require.ErrorAs(t, err, &exchangeErr)

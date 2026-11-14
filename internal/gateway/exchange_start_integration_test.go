@@ -6,13 +6,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/tink-crypto/tink-go/v2/aead"
 	"github.com/tink-crypto/tink-go/v2/keyset"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,13 +33,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
-	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
+	"github.com/solidDoWant/toolgate/internal/tokenexchange"
 )
 
 // fakeTokenEndpoint answers token exchanges with a token naming the
@@ -112,17 +111,28 @@ func newExchangeStartFixture(t *testing.T, extra ...func(*gateway.MCPOptions)) *
 	server := httptest.NewTLSServer(http.HandlerFunc(endpoint.serveHTTP))
 	t.Cleanup(server.Close)
 
-	dir := t.TempDir()
-	caFile := filepath.Join(dir, "ca.pem")
-	require.NoError(t, os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0o600))
+	// The TokenExchange the templates of the catalog namespace use, as
+	// the reconciler leaves it once it is valid.
+	resource := &v1alpha1.TokenExchange{
+		ObjectMeta: metav1.ObjectMeta{Namespace: templateNamespace, Name: "temporal", Generation: 1},
+		Spec: v1alpha1.TokenExchangeSpec{
+			TokenURL: server.URL + "/token", ClientID: "toolgate",
+			ClientSecretRef: v1alpha1.SecretKeyRef{Name: "exchange-client", Key: "client-secret"},
+		},
+	}
+	meta.SetStatusCondition(&resource.Status.Conditions, metav1.Condition{
+		Type: tokenexchange.ConditionValid, Status: metav1.ConditionTrue, Reason: tokenexchange.ReasonValid, ObservedGeneration: 1,
+	})
 
-	secretFile := filepath.Join(dir, "client-secret")
-	require.NoError(t, os.WriteFile(secretFile, []byte("client-secret"), 0o600))
+	exchangeScheme := k8sruntime.NewScheme()
+	require.NoError(t, v1alpha1.AddToScheme(exchangeScheme))
 
-	exchanger, err := credentials.NewExchanger(config.TokenExchange{
-		Name: "temporal", TokenURL: server.URL + "/token", ClientID: "toolgate", ClientSecretFile: secretFile, CAFile: caFile,
-	}, nil, nil)
-	require.NoError(t, err)
+	exchanges := &tokenexchange.Source{
+		Reader:    clientfake.NewClientBuilder().WithScheme(exchangeScheme).WithObjects(resource).Build(),
+		AllowList: tokenexchange.StaticAllowList{server.URL + "/token"},
+		Secrets:   staticClientSecret("client-secret"),
+		Transport: server.Client().Transport,
+	}
 
 	handle, err := keyset.NewHandle(aead.AES256GCMKeyTemplate())
 	require.NoError(t, err)
@@ -132,7 +142,7 @@ func newExchangeStartFixture(t *testing.T, extra ...func(*gateway.MCPOptions)) *
 
 	fixture := &exchangeFixture{endpoint: endpoint, tokens: &credentials.DeliveredTokens{}, applied: map[string][]string{}}
 	fixture.mcpFixture = newMCPFixture(t, func(options *gateway.MCPOptions) {
-		options.TokenExchanges = []*credentials.Exchanger{exchanger}
+		options.TokenExchanges = exchanges
 		options.CredentialsCipher = cipher
 
 		for _, change := range extra {
@@ -167,6 +177,13 @@ func newExchangeStartFixture(t *testing.T, extra ...func(*gateway.MCPOptions)) *
 	}
 
 	return fixture
+}
+
+// staticClientSecret is a template secrets source that holds one value.
+type staticClientSecret string
+
+func (s staticClientSecret) TemplateSecret(context.Context, string, string) ([]byte, string, error) {
+	return []byte(s), "1", nil
 }
 
 // listenForDeliveries is the leader's receiving side: it opens each
