@@ -30,6 +30,8 @@ A hit never reaches the server, so it skips the checks of the server. The gatewa
 
 A hit still needs a ready instance, because the read-only hint comes from the live instance. An `onCall` server that is not running starts for a call that then hits. A call also skips the cache while the instance runs an older version of the template than the current one. The audit event shows `cache_skip: outdated-instance`.
 
+A hit counts as a call by the user. For a `${exchange:...}` template, a hit refreshes the exchanged token in the same way as a forwarded call. So an instance that gets only hits keeps a valid token and does not stop when the old token expires.
+
 ## The scope
 
 The cache scope says who shares a result. It is `per-session`, `per-user` or `shared`. When you leave it out, the cache uses the scope of the template.
