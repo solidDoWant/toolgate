@@ -30,11 +30,19 @@ const e2eSharedNamespace = "toolgate-shared"
 func sharedNamespaceResources(t *testing.T, image string) []k8sruntime.RawExtension {
 	t.Helper()
 
+	return sharedNamespaceResourcesWithTools(t, image, testServerTools)
+}
+
+// sharedNamespaceResourcesWithTools is sharedNamespaceResources for a test
+// MCP server that serves tools.
+func sharedNamespaceResourcesWithTools(t *testing.T, image string, tools []string) []k8sruntime.RawExtension {
+	t.Helper()
+
 	instanceLabels := map[string]any{"app": "mcp", runtime.LabelInstance: "${instance.id}"}
 
 	var resources []k8sruntime.RawExtension
 
-	for _, resource := range testServerResources(t, image, 0, nil) {
+	for _, resource := range testServerResourcesWithTools(t, image, tools, 0, nil) {
 		var object map[string]any
 		require.NoError(t, json.Unmarshal(resource.Raw, &object))
 
