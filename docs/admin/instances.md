@@ -146,6 +146,18 @@ These reasons make the instance fail at once:
 - `PersistentVolume <pv> wasn't provisioned for volume <name>.` or `PersistentVolume <pv> belongs to another volume.`: the claim bound to a PV that toolgate did not make for it.
 - `<server> needs a <size> volume <name>, but your volumes already use <used> of your <limit> limit.` and the rest of that message: the size limit for one user. The audit log also gets an `instance.fail` event.
 
+## Start order with volumes and token exchange
+
+A template can have both `persistentVolumes` and `${exchange:…}` (see [Token exchange](token-exchange.md)). Its instance then starts in this order:
+
+1. toolgate claims the volumes and checks them. If a volume is not free, the instance waits with one of the wait reasons above.
+2. When every volume is free, toolgate asks for the exchanged tokens. The request of the user runs the exchange and sends the tokens to the leader.
+3. toolgate renders the template, creates the claims for the volumes and applies the objects.
+
+No exchange runs while the instance waits for a volume. So an exchanged token never expires while the instance waits.
+
+Both waits share one `startTimeout`. The time counts from the start of the attempt, not from the end of the volume wait. If the time passes in the volume wait, the reason is `Timed out waiting for volume <name>: <wait reason>`. If the time passes in the token wait, the reason is the token reason of [Token exchange](token-exchange.md).
+
 ## Metrics
 
 The gateway serves these metrics on its metrics port. Only the replica that holds the leader Lease sets them. The other replicas report `0`.

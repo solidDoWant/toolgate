@@ -22,6 +22,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tink-crypto/tink-go/v2/aead"
@@ -475,4 +476,36 @@ func TestTwoUsersGetTheirOwnTokens(t *testing.T) {
 	require.Len(t, instances, 2)
 	assert.NotEqual(t, instances[0].Namespace, instances[1].Namespace)
 	assert.Equal(t, int64(2), fixture.endpoint.answered.Load())
+}
+
+// A template with persistent volumes waits for its volumes before anyone
+// exchanges: the enable inserts closed exchange rows and runs no exchange.
+func TestEnableWithVolumesInsertsClosedExchangeRows(t *testing.T) {
+	fixture := newExchangeStartFixture(t)
+	template := fixture.addTokenTemplate("temporal-mcp")
+	template.Spec.PersistentVolumes = []v1alpha1.PersistentVolume{{Name: "data", Size: "1Gi"}}
+	fixture.catalog.Set(template, nil)
+	session := fixture.connect(t, alice())
+
+	results := startEnable(t, session, template.Name)
+	instance := fixture.awaitInstance(t, template, "user:alice")
+	assert.True(t, instance.UsesExchange)
+
+	rows, err := db.New(fixture.pool).ListInstanceExchanges(t.Context(), instance.ID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.False(t, rows[0].WantedSince.Valid, "the row is closed until the leader has the volumes")
+	assert.False(t, rows[0].ClaimedAt.Valid, "the inserting request holds no claim")
+	assert.Equal(t, pgtype.Infinity, rows[0].RefreshAfter.InfinityModifier, "no request may claim the row")
+
+	// This leader has persistent volumes off, so the start fails at the
+	// volume step. The enable returns only after its own exchanges ran.
+	instance = fixture.step(t, instance.ID)
+	require.Equal(t, "failed", instance.Status)
+	require.NotEmpty(t, awaitEnable(t, results).err)
+
+	assert.Zero(t, fixture.endpoint.requests.Load(), "no exchange runs while the row waits for its volumes")
+	assert.Empty(t, fixture.exchangeEvents(t, template.Name))
+	_, held := fixture.tokens.Get(instance.ID, "temporal")
+	assert.False(t, held)
 }
