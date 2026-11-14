@@ -31,6 +31,27 @@ func (q *Queries) AddInstanceRepair(ctx context.Context, arg AddInstanceRepairPa
 	return result.RowsAffected(), nil
 }
 
+const addReadyInstanceRepair = `-- name: AddReadyInstanceRepair :execrows
+UPDATE instances
+SET repairs = array_append(repairs, $1::timestamptz), updated_at = now()
+WHERE id = $2 AND status = 'ready' AND desired = 'running'
+`
+
+type AddReadyInstanceRepairParams struct {
+	RepairedAt pgtype.Timestamptz
+	ID         string
+}
+
+// Records a reapply repair of a ready instance whose objects are missing. It
+// needs no unhealthy mark: the default ping check doesn't set one.
+func (q *Queries) AddReadyInstanceRepair(ctx context.Context, arg AddReadyInstanceRepairParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addReadyInstanceRepair, arg.RepairedAt, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const countLiveInstances = `-- name: CountLiveInstances :one
 SELECT count(*) FROM instances
 WHERE desired = 'running' AND status NOT IN ('stopping', 'stopped') AND namespace <> ''

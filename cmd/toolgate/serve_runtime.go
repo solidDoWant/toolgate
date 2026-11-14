@@ -268,6 +268,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Template:   options.catalog.Running,
 		Connect:    runtime.MCPMonitorConnector,
 		RemoteAuth: starter.RemoteAuth,
+		Reapply:    repairer.ReapplyMissing,
 		Logger:     logger,
 	}
 	if err := mgr.Add(manager.RunnableFunc(monitor.Run)); err != nil {
@@ -281,7 +282,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
 		runtime.RowCleanup(queries, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, repairer.Step, teardown.Step, starter.Step, monitor.Step)))))))))
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, repairer.Step, teardown.Step, starter.Step, monitor.Step)))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

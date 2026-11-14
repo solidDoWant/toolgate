@@ -253,6 +253,10 @@ AC-2-06. It keeps phase 1's one row per attempt, and phase 1's rule that only th
 4. `session_servers` rows are keyed by template, not instance, so every session keeps the server enabled. Its tools leave `tools/list` while the new instance starts, and come back with `list_changed` when it is ready.
 5. Enable and call already select the live instance for (template, scope key) (phase 1 §3), so a waiting enable moves to the new row.
 
+**Update policy.** The template's `updatePolicy` (`mode`: `manual` by default, `immediate` or `whenIdle`; `idleFor`, at least 1 minute, required with `whenIdle` and not allowed otherwise) decides whether the reconciler starts a replacement itself. On its 30 s pass it replaces (step 2 above, reason `template-update`) every `ready` live instance whose generation differs from the template's, when the mode is `immediate`, or when it is `whenIdle` and `coalesce(last_used_at, ready_at)` is at least `idleFor` old. A call moves `last_used_at` when it starts and every minute while it runs, so an instance with a call in flight is never idle. Secret changes are not covered.
+
+**Deleted objects.** When the default MCP ping fails 3 times in a row and a rendered object of the instance is missing, the reconciler applies the instance's objects again, counted as a repair (same bound as the health check `reapply` mode), instead of failing the row. With no object missing, or the repairs used up, the row fails as before.
+
 ### Resolvers
 
 AC-2-18. Configuration, in the YAML file only:

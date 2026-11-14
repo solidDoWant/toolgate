@@ -12,7 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -265,9 +270,29 @@ func (r *Repairer) reapply(ctx context.Context, instance db.Instance, now time.T
 	r.Metrics.observeRepair(instance.TemplateName, RepairReapply)
 	r.Log.InfoContext(ctx, "reapplying unhealthy instance", slog.String("instance", instance.ID))
 
-	identity, err := r.Starter.identity(ctx, instance)
+	result, err := r.render(ctx, instance, template)
 	if err != nil {
 		return err
+	}
+
+	return r.apply(ctx, instance, template, result)
+}
+
+func (r *Repairer) apply(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, result *Result) error {
+	spanAttributes := trace.WithAttributes(attribute.String("toolgate.server", template.Name),
+		attribute.String("toolgate.instance", instance.ID))
+
+	if _, err := r.Starter.applyAll(ctx, instance, template, result, spanAttributes); err != nil {
+		return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+	}
+
+	return nil
+}
+
+func (r *Repairer) render(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate) (*Result, error) {
+	identity, err := r.Starter.identity(ctx, instance)
+	if err != nil {
+		return nil, err
 	}
 
 	result, err := Render(ctx, Input{
@@ -279,17 +304,106 @@ func (r *Repairer) reapply(ctx context.Context, instance db.Instance, now time.T
 		Metadata:  r.Starter.metadata(instance, template, identity),
 	})
 	if err != nil {
-		return fmt.Errorf("reapply instance %s: render: %w", instance.ID, err)
+		return nil, fmt.Errorf("reapply instance %s: render: %w", instance.ID, err)
 	}
 
-	spanAttributes := trace.WithAttributes(attribute.String("toolgate.server", template.Name),
-		attribute.String("toolgate.instance", instance.ID))
+	return result, nil
+}
 
-	if _, err := r.Starter.applyAll(ctx, instance, template, result, spanAttributes); err != nil {
-		return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+// ReapplyMissing applies an instance's objects again when one of them is
+// missing from the cluster, for example a Pod deleted by hand. It reports
+// whether it did. Each reapply counts as a repair, so objects that keep
+// vanishing use up the same bound as any other repair. An instance of
+// another template generation, or one with its repairs used up, is left
+// alone.
+func (r *Repairer) ReapplyMissing(ctx context.Context, instance db.Instance) (bool, error) {
+	template, found := r.Starter.Template(types.NamespacedName{Namespace: instance.TemplateNs, Name: instance.TemplateName})
+	if !found || template.Generation != instance.Generation || string(template.UID) != instance.TemplateUid {
+		return false, nil
 	}
 
-	return nil
+	now := r.now()
+	if len(recentRepairs(instance.Repairs, now)) >= repairPolicyMax(instance) {
+		return false, nil
+	}
+
+	result, err := r.render(ctx, instance, template)
+	if err != nil {
+		return false, err
+	}
+
+	missing, err := r.anyMissing(ctx, result)
+	if err != nil || !missing {
+		return false, err
+	}
+
+	recorded := false
+
+	err = pgx.BeginFunc(ctx, r.Pool, func(tx pgx.Tx) error {
+		queries := db.New(tx)
+
+		changed, err := queries.AddReadyInstanceRepair(ctx, db.AddReadyInstanceRepairParams{
+			ID: instance.ID, RepairedAt: pgtype.Timestamptz{Time: now, Valid: true},
+		})
+		if err != nil || changed == 0 {
+			return err
+		}
+
+		recorded = true
+
+		return audit.NewRecorder(r.output(), queries).Record(ctx, audit.Event{
+			Type:    audit.TypeInstanceReapply,
+			Server:  instance.TemplateName,
+			Details: map[string]any{"instance": instance.ID, "owner": instance.OwnerPrincipal},
+		})
+	})
+	if err != nil {
+		return false, fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+	}
+
+	if !recorded {
+		return false, nil
+	}
+
+	r.Metrics.observeRepair(instance.TemplateName, RepairReapply)
+	r.Log.InfoContext(ctx, "an instance object is missing; applying the instance's objects again",
+		slog.String("instance", instance.ID))
+
+	if err := r.apply(ctx, instance, template, result); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// anyMissing reports whether one of the rendered objects doesn't exist.
+func (r *Repairer) anyMissing(ctx context.Context, result *Result) (bool, error) {
+	for _, object := range result.Objects {
+		existing := &unstructured.Unstructured{}
+		existing.SetGroupVersionKind(object.GroupVersionKind())
+
+		err := r.Starter.Client.Get(ctx, client.ObjectKeyFromObject(object), existing)
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+
+		if err != nil {
+			return false, fmt.Errorf("read %s %s: %w", object.GetKind(), object.GetName(), err)
+		}
+	}
+
+	return false, nil
+}
+
+// repairPolicyMax is the repair bound of the instance, the default when its
+// health check can't be read.
+func repairPolicyMax(instance db.Instance) int {
+	policy, err := repairPolicyOf(instance)
+	if err != nil {
+		return defaultMaxRepairs
+	}
+
+	return policy.maxRepairs
 }
 
 func (r *Repairer) output() io.Writer {

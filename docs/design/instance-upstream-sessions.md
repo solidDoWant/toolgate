@@ -36,7 +36,7 @@ Phase 1's split stays (phase 1 §1). Nothing here touches Kubernetes objects.
 
 ## 3. State
 
-One additive migration, with the next free number, named `upstream_sessions` (phase 1 §7, "Database migrations").
+One additive migration, `00015_upstream_sessions.sql` (phase 1 §7, "Database migrations"). The five 0.4.12 designs take fixed numbers, in the recommended build order: `00015_upstream_sessions`, `00016_workspace_keys`, `00017_instance_credentials`, `00018_tool_result_cache` and `00019_persistent_volumes`. If master already has this number when the PR rebases, take the next free number and say so in the PR.
 
 ```sql
 CREATE TABLE upstream_sessions (
@@ -82,6 +82,8 @@ CREATE INDEX upstream_sessions_ended_idx ON upstream_sessions (ended_at)
   So the go-sdk still writes and parses every message, sets the session and revision headers, and reads SSE streams. The wrapper only short-cuts two messages whose answers are already known. This isn't a protocol implementation. `Adopt` is valid only for a revision before 2026-07-28.
 - **`DeleteOnClose`** (`*atomic.Bool`): when it is set and false at `Close`, the same wrapper answers the go-sdk's `DELETE` with HTTP 204 and sends nothing. So closing a copy never ends an upstream session that other replicas use. When it is true, the `DELETE` goes to the server.
 
+Every forwarding copy uses the wrapper, with or without `Adopt`. The wrapper has one more job: **it detects a lost session.** go-sdk v1.8.0 returns `mcp.ErrSessionMissing` for a 404 only when the body is not a JSON-RPC error (`checkResponse` in `streamable.go`). The MCP TypeScript and Python SDKs answer an unknown session with 404 and a JSON-RPC error body, and the go-sdk then returns an error that wraps `jsonrpc2.ErrRejected` instead. So the forward puts a `*runtime.SessionNotFound` flag in the context of each call. The go-sdk builds the HTTP request with that context (`http.NewRequestWithContext`). The wrapper sets the flag when a response has status 404 and its request carried `Mcp-Session-Id`. It reads neither body.
+
 Forwarding wraps this in a type `upstreamCopy` (`internal/gateway/forward.go`) with two methods:
 - `Release()` sets the flag false and closes the copy. The upstream session lives on.
 - `End()` sets the flag true and closes the copy. The go-sdk sends `DELETE`. After a 404 the go-sdk sends no `DELETE` anyway (`ErrSessionMissing`).
@@ -96,9 +98,9 @@ The call has passed every phase 1 step up to step 4, so `tool.decision` (allow) 
 
 1. **Revision and sessionless servers.** If the instance's `mcp_revision` is 2026-07-28 or later, or this replica learned that the instance is sessionless (step 4), forward as today: one copy per instance on this replica, and no rows.
 2. **Read the row.** `SELECT id, upstream_session_id, initialize_result FROM upstream_sessions WHERE instance_id = $1 AND session_pk = $2 AND ended_at IS NULL`. This is one primary-key-sized index read. Every call already writes two audit rows, so the read is small next to them. If the read fails, the call fails with the existing message "Server `<server>` can't be reached. Try again, or call `toolgate_server_status` to see its status." and outcome `failed`.
-3. **A row exists.** Use this replica's copy keyed by (instance ID, `upstream_session_id`). If there is none, make one with `Adopt`, with no network round trip, and keep it. Go to step 6.
+3. **A row exists.** Use this replica's copy keyed by (instance ID, `upstream_session_id`). If there is none, make one with `Adopt`, with no network round trip, and keep it. Go to step 6. If the row ends or is removed after step 2, the server answers 404 once the sweep sent its `DELETE`, and step 7 handles it.
 4. **No row.** Only one forward per pair on this replica runs this step at a time. The others wait, then start again at step 2. Connect with no `Adopt`, so the go-sdk sends `initialize` and `notifications/initialized`.
-   - If the session has no ID (`ClientSession.ID()` is empty), the server is sessionless. The replica remembers this for the instance ID in memory, keeps the copy as the instance's one copy, stores nothing, and goes to step 6. An instance's ID names one attempt (phase 1 §2), so the fact holds for the instance's whole life.
+   - If the session has no ID (`ClientSession.ID()` is empty), the server is sessionless. The replica remembers this for the instance ID in memory, keeps the copy as the instance's one copy, stores nothing, and goes to step 6. The fact holds until the replica releases the instance's copies on `instance:<id>` (§4, "Copies"). The sweep can send a ready instance back to `pending` with the same ID and a new generation (`Sweep.restart`), and the new generation can run a server that has sessions. So the fact is forgotten then, and the next forward learns it again.
    - If the ID is longer than 1024 bytes, or has a byte outside `0x21` to `0x7E` (the visible ASCII that the transport spec allows), or the result without `instructions` is larger than 16 KiB, the replica ends its new session (`End()`), logs a warning with the instance ID, and fails the call with the "can't be reached" message.
 5. **Claim the pair.** In one transaction:
    1. `SELECT 1 FROM sessions WHERE id = $session_pk AND ended_at IS NULL FOR KEY SHARE`.
@@ -108,11 +110,12 @@ The call has passed every phase 1 step up to step 4, so `tool.decision` (allow) 
    Then:
    - **A row came back:** this replica won. Keep the copy under its ID.
    - **No row came back:** another replica won the race. Read the live row in the same transaction. After the commit, end the new session (`End()`, best effort), and use the winner's row as in step 3.
+   - **No row came back, and the read finds no live row:** the winner's row was ended or removed between the two statements, by the sweep or by a 404 on another replica. Disable and session end can't do it, because the claim holds the `sessions` row lock. Insert nothing. Forward this one call on the new copy, then end it with `End()`, as in the next item. The next forward starts again at step 2.
    - **Step 1 or 2 failed:** the pair ended while this call was in flight (§6, rows 296 and 300). Insert nothing. Forward this one call on the new copy, then end it with `End()`.
 
    The lock on the `sessions` row orders the claim against disable and session end. Both of those take `FOR UPDATE` on that row first (phase 1 §3, "Locks"). `FOR KEY SHARE` doesn't block the `last_seen_at` touches.
 6. **Call.** `tools/call` on the copy, as today.
-7. **HTTP 404.** If the error matches `errors.Is(err, mcp.ErrSessionMissing)`, the server forgot the session, for example after a restart. A 404 means the server didn't run the call, so one retry is safe.
+7. **HTTP 404.** If the error matches `errors.Is(err, mcp.ErrSessionMissing)`, or the call's `SessionNotFound` flag is set (§4, "Connecting"), the server forgot the session, for example after a restart. A 404 means the server didn't run the call, so one retry is safe.
    1. Drop the copy.
    2. `DELETE FROM upstream_sessions WHERE id = $row AND upstream_session_id = $old`. If another replica already removed or replaced it, this matches nothing, and that is fine.
    3. Start again at step 2, once. A second 404 fails the call with the existing "Server `<server>` returned an error" message.
@@ -126,7 +129,8 @@ The remote owner check (`errRemoteNotOwner`) stays before step 1. A remote serve
 
 - A replica keeps its copies in a map keyed by (instance ID, upstream session ID). Sessionless and 2026-07-28 instances use (instance ID, empty).
 - A replica releases a copy that served no call for 30 minutes, with `Release()`. A ticker checks once a minute. Releasing never ends the upstream session.
-- On `instance:<id>` for an instance that isn't `ready`, a replica releases every copy of that instance. This extends today's `dropUnlessReady`, which closed the one copy with a `DELETE`.
+- On `instance:<id>` for an instance that isn't `ready`, a replica releases every copy of that instance and forgets that the instance is sessionless. This extends today's `dropUnlessReady`, which closed the one copy with a `DELETE`.
+- Each copy of a row also records the row's `session_pk`. On `session:<id>`, a replica reads that session's live rows (`SELECT instance_id, upstream_session_id FROM upstream_sessions WHERE session_pk = $1 AND ended_at IS NULL`, through `upstream_sessions_session_live_idx`). It releases each of its copies for that session that matches no live row. So a disable or a session end frees the copy at once, and not only after 30 minutes. Sessionless and 2026-07-28 copies belong to no session, and this rule never releases them.
 - On shutdown, a replica releases every copy.
 - Concurrent calls on one copy are safe. The go-sdk client session allows them.
 
@@ -150,7 +154,7 @@ It already notifies `session:<id>`, which wakes the sweep. Every path that remov
 
 **The sweep** (new file `internal/runtime/upstreamsessions.go`). It is a leader-only runnable, added with `mgr.Add` like the monitor. It runs on its own goroutine, so a slow server never delays the reconciler's pass. It runs when it gets the Lease, every 30 s, and after `session:`, `instance:` and missed notifications. One run does this:
 
-1. End the rows of invalid pairs, in one statement. A pair is invalid when its instance isn't live (phase 1 §2), its session has `ended_at` set, or its session has no `session_servers` row for the instance's template. This catches every path the two transactions above miss, such as a row a replica inserted during a rolling upgrade.
+1. End the rows of invalid pairs, in one statement. A pair is invalid when its instance isn't live (phase 1 §2), its session has `ended_at` set, or its session has no `session_servers` row for the instance's template. This catches every path the two transactions above miss, such as a row a replica inserted during a rolling upgrade. This statement reads every live row, so it is not an indexed read like the other steps. Live rows are at most 32 for each live session, a few thousand at homelab size, and one scan of them every 30 s on the leader is a small load. The design accepts that cost.
 2. Read at most 256 ended rows, oldest first.
 3. For each row, send `DELETE` when the instance is live or the instance is remote. An in-cluster instance that stopped is losing its pods, so its sessions go with them, and a `DELETE` would only wait on a dead address. The `DELETE` comes from a copy made with `Adopt` and closed with `End()`, so the go-sdk sends it. A remote instance's copy gets its owner's headers through `Starter.RemoteAuth`, as the monitor does. If the headers can't be filled in, for example because a secret was deleted, it sends nothing.
 4. Send at most 8 `DELETE`s at once, each with a 5 s timeout. A failure or a timeout is counted (§9) and logged at debug level. The sweep doesn't retry.
@@ -195,8 +199,12 @@ Phase 1's rows (phase 1 §4) and the rows of phases 2 to 4 still hold, except wh
 | 313 | Forward to a remote server, on two replicas | — | As row 287. Each copy sends the owner's headers. | integration: remote server uses one upstream session across replicas |
 | 314 | Remote server refuses the credential | adopted copy | The replica releases the copy and returns the refusal message, as today. The row stays. The next forward makes a new copy with the headers read again. | integration: remote server uses one upstream session across replicas |
 | 315 | Server sends an over-long or invalid session ID, or a result over 16 KiB | first forward | The replica ends the new session, stores nothing, logs a warning with the instance ID, and fails the call with "can't be reached". | integration: invalid upstream session ID fails the call |
-| 316 | Rolling upgrade: replicas of the old and the new version | forwards | Old replicas keep one session per instance and don't read the table. An old leader doesn't sweep. The guarantee of this design holds once every replica runs the new version. The new leader's first sweep ends rows of pairs that ended meanwhile. | e2e: the existing chart upgrade test, which keeps calls working during the rollout |
+| 316 | Rolling upgrade: replicas of the old and the new version | forwards | Old replicas keep one session per instance and don't read the table. An old leader doesn't sweep. The guarantee of this design holds once every replica runs the new version. The new leader's first sweep ends rows of pairs that ended meanwhile. | `test/e2e: TestChartUpgradeAndUninstall`, the existing chart upgrade test, which keeps calls working during the rollout |
 | 317 | Two calls of one pair at once | one copy | Both run on the same copy. The go-sdk allows concurrent calls on a session. | integration: one upstream session across replicas |
+| 349 | Sweep sends a ready instance back to `pending` (`Sweep.restart`) | a replica that learned the instance is sessionless | The `instance:<id>` notification releases the copies and the sessionless fact is forgotten. The first forward after the new start sends `initialize` again and learns the fact for the new generation. | integration: sessionless fact is forgotten when the instance leaves ready |
+| 350 | Server answers 404 with a JSON-RPC error body (TypeScript or Python SDK) | forward on the stored ID | The wrapper sets the call's `SessionNotFound` flag, so step 7 runs as in row 291. | unit: not-found with a JSON-RPC body is detected. Integration: forward starts a new upstream session after a restart, with a subtest for a JSON-RPC body |
+| 351 | First forward loses the insert race | the winner's row ended or removed before the read | Insert nothing. Forward this call on the new copy, then end it. The next forward claims again. | integration: lost race with no live row forwards once and ends its session |
+| 352 | Disable or session end | this replica's copy of the pair | The `session:<id>` notification releases the copy, because its row is no longer live. The sweep sends the `DELETE`. | integration: disable releases the copy on every replica |
 
 Any combination not in this table is a design gap: hand back `HANDOFF: question` with the case.
 
@@ -254,14 +262,15 @@ The test MCP server (`test/mcpserver`) gains two tools:
 - `TestAdoptedSessionSendsStoredIDWithoutInitialize`: a server behind a recording handler sees no `initialize` and no `notifications/initialized`, and sees the stored ID on `tools/call`.
 - `TestForwardingCopiesReleaseWithoutDelete`: `Release()` sends no `DELETE`, and `End()` sends one.
 - `TestForwardingCopiesOpenNoGetStream`: the server sees no GET.
-- `TestCallToolAfterNotFoundMatchesErrSessionMissing`: go-sdk v1.8.0 returns an error matching `mcp.ErrSessionMissing` for an HTTP 404 to `tools/call`. If it doesn't, the worker hands back `HANDOFF: question`.
+- `TestCallToolAfterNotFoundMatchesErrSessionMissing`: go-sdk v1.8.0 returns an error matching `mcp.ErrSessionMissing` for an HTTP 404 with a plain-text body to `tools/call`. If it doesn't, the worker hands back `HANDOFF: question`.
+- `TestNotFoundWithJSONRPCBodyIsDetected`: a 404 with the body `{"jsonrpc":"2.0","error":{"code":-32001,"message":"Session not found"},"id":null}` sets the call's `SessionNotFound` flag. If the go-sdk doesn't pass the call's context to the HTTP request, the worker hands back `HANDOFF: question`.
 
 **Integration** (`internal/gateway`, two replicas in one process, as the cross-replica tests do, with an in-process go-sdk upstream that records session IDs and `DELETE`s):
 - `TestForwardUsesOneUpstreamSessionAcrossReplicas`
 - `TestEachToolgateSessionGetsItsOwnUpstreamSession`
 - `TestFirstForwardRaceKeepsOneUpstreamSession` (-count=50)
 - `TestConcurrentFirstForwardsOnOneReplicaInitializeOnce` (-count=50)
-- `TestForwardStartsNewUpstreamSessionAfterRestart`
+- `TestForwardStartsNewUpstreamSessionAfterRestart`, with a subtest for a 404 with a JSON-RPC error body
 - `TestForwardRetriesOnlyOnceAfterNotFound`
 - `TestConcurrentNotFoundOnTwoReplicasKeepsOneRow` (-count=50)
 - `TestDisableEndsUpstreamSession`
@@ -275,6 +284,9 @@ The test MCP server (`test/mcpserver`) gains two tools:
 - `TestRemoteServerUsesOneUpstreamSessionAcrossReplicas`, with a subtest for a refused credential
 - `TestInvalidUpstreamSessionIDFailsTheCall`
 - `TestFailedClaimLeavesNoRow`: the claim transaction fails after `initialize`. No row is stored, and the next forward starts a new session.
+- `TestLostRaceWithNoLiveRowForwardsOnceAndEnds` (-count=50)
+- `TestSessionlessFactIsForgottenWhenInstanceLeavesReady`
+- `TestDisableReleasesCopyOnEveryReplica`
 
 **Integration** (`internal/runtime`, the sweep against PostgreSQL and a recording upstream):
 - `TestInstanceStopRemovesRowsWithoutDelete`
@@ -291,7 +303,9 @@ The test MCP server (`test/mcpserver`) gains two tools:
 - **Adopting a session short-cuts `initialize` in an HTTP wrapper.** go-sdk v1.8.0 can't start a client session on a known ID through public API. The wrapper answers `initialize` with the server's own stored result, encoded by the go-sdk's `jsonrpc` package. The other choice, a fork of the go-sdk or a hand-written Streamable HTTP client, breaks the rules on protocol code.
 - **Forwarding copies open no GET stream.** Nothing reads it today, and one stream per pair and replica costs connections.
 - **Server-to-client requests stay as today** (§7), because `SPEC.md` §16 keeps sampling and roots out.
-- **A sessionless server is remembered in each replica's memory, not stored.** One extra `initialize` per replica and instance is cheaper than a column the reconciler writes.
+- **A sessionless server is remembered in each replica's memory, not stored.** One extra `initialize` per replica and instance is cheaper than a column the reconciler writes. The fact is forgotten when the instance leaves `ready` (row 349), because the sweep can restart an instance ID at a new generation.
+- **A 404 is detected in the HTTP wrapper too** (row 350). The go-sdk recognizes only a plain-text 404 as a lost session. The wrapper reads only the status and the request's `Mcp-Session-Id` header, so it implements no protocol.
+- **The sweep's first statement scans the live rows** (§5). An index on changed pairs would need state about the last run. The scan is small at homelab size.
 - **Phase 1 row 4 changes for disable and session end.** A call in flight when its pair ends can be cut off by the sweep's `DELETE` (rows 294 and 298). Holding the `DELETE` until in-flight calls finish needs a count of calls across replicas.
 - **The claim re-checks the pair under the `sessions` row lock.** Otherwise a first forward that races a disable leaves a live row, and a quick re-enable reuses old state (row 296).
 - **Per-session instances use the same table.** They get one row, and no special case.
