@@ -263,6 +263,9 @@ func TestSetBoundsNameAndValue(t *testing.T) {
 		{name: "name too long", secret: strings.Repeat("a", 129), size: 1, assertErr: require.Error},
 		{name: "slash in name", secret: "a/b", size: 1, assertErr: require.Error},
 		{name: "empty name", secret: "", size: 1, assertErr: require.Error},
+		{name: "name starting with a dash", secret: "--help", size: 1, assertErr: require.Error},
+		{name: "dash inside a name", secret: "a-b", size: 1},
+		{name: "name starting with a dot", secret: ".a", size: 1},
 		{name: "largest value", secret: "big", size: secrets.MaxValueBytes},
 		{name: "value too large", secret: "big", size: secrets.MaxValueBytes + 1, assertErr: require.Error},
 	}

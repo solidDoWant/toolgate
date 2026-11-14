@@ -19,6 +19,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -236,6 +237,16 @@ type Config struct {
 	// of the namespaces the gateway makes for single servers. If it is empty,
 	// every `namespace: shared` template is invalid.
 	SharedNamespace string `json:"sharedNamespace" env:"TOOLGATE_SHARED_NAMESPACE"`
+
+	// The namespace that holds the Secrets that templates read with
+	// `${templateSecret:NAME/KEY}`. The chart sets it from
+	// `config.templateSecretsNamespace` and gives the gateway read access to
+	// Secrets in this namespace only. The admin creates the namespace and
+	// its Secrets, and must not label it `toolgate.soliddowant.dev/writable`.
+	// It must be a namespace name that does not start with `tg-`, and it
+	// must not be `leaseNamespace`, `sharedNamespace`, `kube-system` or one
+	// of `catalogNamespaces`. If it is empty, the feature is off.
+	TemplateSecretsNamespace string `json:"templateSecretsNamespace" env:"TOOLGATE_TEMPLATE_SECRETS_NAMESPACE"`
 
 	// The maximum number of MCP server instances that run for one user at
 	// the same time. Per-session and per-user instances count for the user
@@ -1160,6 +1171,8 @@ func (c Config) Validate() []error {
 		}
 	}
 
+	problems = append(problems, c.validateTemplateSecretsNamespace()...)
+
 	for _, item := range c.GatewayPodLabels {
 		key, value, found := strings.Cut(item, "=")
 		if !found || len(validation.IsQualifiedName(key)) > 0 || len(validation.IsValidLabelValue(value)) > 0 {
@@ -1451,6 +1464,43 @@ func (c Config) validateTokenExchanges() []error {
 		if exchange.Timeout < 0 || exchange.Timeout > MaxTokenExchangeTimeout {
 			problems = append(problems, fmt.Errorf("%s.timeout: must be at most 60s", where))
 		}
+	}
+
+	return problems
+}
+
+// validateTemplateSecretsNamespace checks the template secrets namespace
+// against the namespaces it must stay apart from.
+func (c *Config) validateTemplateSecretsNamespace() []error {
+	namespace := c.TemplateSecretsNamespace
+	if namespace == "" {
+		return nil
+	}
+
+	if invalid := validation.IsDNS1123Label(namespace); len(invalid) > 0 {
+		return []error{fmt.Errorf("templateSecretsNamespace: %q is not a namespace name", namespace)}
+	}
+
+	var problems []error
+
+	if strings.HasPrefix(namespace, "tg-") {
+		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not start with tg-, the prefix of instance namespaces", namespace))
+	}
+
+	if namespace == c.LeaseNamespace {
+		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not be leaseNamespace, which holds the gateway's own Secrets", namespace))
+	}
+
+	if namespace == c.SharedNamespace {
+		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not be sharedNamespace, where instances run", namespace))
+	}
+
+	if namespace == "kube-system" {
+		problems = append(problems, errors.New("templateSecretsNamespace: must not be kube-system"))
+	}
+
+	if slices.Contains(c.CatalogNamespaces, namespace) {
+		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not be one of catalogNamespaces, where template authors write", namespace))
 	}
 
 	return problems

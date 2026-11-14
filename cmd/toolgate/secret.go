@@ -47,6 +47,12 @@ func secret(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 		return 0
 	case "set", "delete":
+		if len(rest) > 0 && isHelpWord(rest[0]) {
+			_, _ = fmt.Fprint(stdout, secretUsage)
+
+			return 0
+		}
+
 		if len(rest) != 1 {
 			_, _ = fmt.Fprintf(stderr, "toolgate secret %s: give exactly one secret name\n", command)
 
@@ -54,7 +60,7 @@ func secret(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		}
 
 		if !secrets.ValidName(rest[0]) {
-			_, _ = fmt.Fprintf(stderr, "toolgate secret %s: the name must match ^[A-Za-z0-9._-]{1,128}$\n", command)
+			_, _ = fmt.Fprintf(stderr, "toolgate secret %s: the name must match ^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$\n", command)
 
 			return 2
 		}
@@ -93,6 +99,10 @@ func secret(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func isHelpWord(argument string) bool {
+	return argument == "help" || argument == "-h" || argument == "--help"
+}
+
 // readSecretValue reads the value from stdin. From a terminal it reads one
 // line without echo, and refuses when echo can't be turned off. Otherwise it
 // reads everything, as is, up to the gateway's limit.
@@ -114,6 +124,10 @@ func readSecretValue(name string, stdin io.Reader, prompt io.Writer) ([]byte, er
 	value, err := io.ReadAll(io.LimitReader(stdin, secrets.MaxValueBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read the value from standard input: %w", err)
+	}
+
+	if len(value) == 0 {
+		return nil, errors.New("the value from standard input is empty; pipe the value in, or run the command in a terminal")
 	}
 
 	if len(value) > secrets.MaxValueBytes {

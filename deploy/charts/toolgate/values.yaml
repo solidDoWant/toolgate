@@ -121,6 +121,16 @@ config:
   # namespace.
   catalogNamespaces: []
 
+  # -- Namespace that holds the Secrets that templates read with
+  # `${templateSecret:NAME/KEY}`. Empty means the feature is off. The chart
+  # lets the gateway read Secrets in this namespace only. You create the
+  # namespace and its Secrets, and must not label it
+  # `toolgate.soliddowant.dev/writable`. It must not start with `tg-`, and
+  # must not be the release namespace, `config.sharedNamespace.name`,
+  # `kube-system` or one of `config.catalogNamespaces`. See the template
+  # secrets page of the admin docs.
+  templateSecretsNamespace: ""
+
   logging:
     # -- Lowest level of the JSON log lines: `debug`, `info`, `warn` or
     # `error`.

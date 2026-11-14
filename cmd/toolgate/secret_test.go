@@ -21,8 +21,10 @@ func TestSecretCommandChecksItsInputBeforeCallingTheGateway(t *testing.T) {
 		{name: "no command", args: []string{"secret"}, wantCode: 2, wantStderr: "Usage: toolgate secret"},
 		{name: "unknown command", args: []string{"secret", "show", "x"}, wantCode: 2, wantStderr: `unknown command "show"`},
 		{name: "set without a name", args: []string{"secret", "set"}, wantCode: 2, wantStderr: "exactly one secret name"},
-		{name: "set with an invalid name", args: []string{"secret", "set", "a/b"}, wantCode: 2, wantStderr: "^[A-Za-z0-9._-]{1,128}$"},
-		{name: "set with a name of 129 characters", args: []string{"secret", "set", strings.Repeat("a", 129)}, wantCode: 2, wantStderr: "^[A-Za-z0-9._-]{1,128}$"},
+		{name: "set with an invalid name", args: []string{"secret", "set", "a/b"}, wantCode: 2, wantStderr: "^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$"},
+		{name: "set with a name of 129 characters", args: []string{"secret", "set", strings.Repeat("a", 129)}, wantCode: 2, wantStderr: "^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$"},
+		{name: "set with a name that starts with a dash", args: []string{"secret", "set", "-x"}, wantCode: 2, wantStderr: "the name must match"},
+		{name: "set with an empty value", args: []string{"secret", "set", "empty"}, wantCode: 1, wantStderr: "value from standard input is empty"},
 		{name: "delete with two names", args: []string{"secret", "delete", "a", "b"}, wantCode: 2, wantStderr: "exactly one secret name"},
 		{name: "list with an argument", args: []string{"secret", "list", "a"}, wantCode: 2, wantStderr: `unexpected argument "a"`},
 		{
@@ -70,4 +72,20 @@ func runCLI(t *testing.T, stdin string, args ...string) (int, string, string) {
 	code := runWithInput(args, strings.NewReader(stdin), &stdout, &stderr)
 
 	return code, stdout.String(), stderr.String()
+}
+
+func TestSecretSetAndDeletePrintUsageForHelpWords(t *testing.T) {
+	for _, command := range []string{"set", "delete"} {
+		for _, word := range []string{"--help", "-h", "help"} {
+			t.Run(command+" "+word, func(t *testing.T) {
+				isolateUserConfig(t)
+
+				code, stdout, stderr := runCLI(t, "", "secret", command, word)
+
+				require.Equal(t, 0, code, "stderr: %s", stderr)
+				assert.Contains(t, stdout, "Usage: toolgate secret")
+				assert.Empty(t, stderr)
+			})
+		}
+	}
 }

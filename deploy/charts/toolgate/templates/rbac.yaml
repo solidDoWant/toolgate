@@ -1,6 +1,7 @@
 # The gateway creates instance namespaces on the fly, so it needs a
 # ClusterRole. The admission policy (admission-policy.yaml), not RBAC, confines
-# where these rules can be used. The gateway never reads Secrets.
+# where these rules can be used. These rules only write Secrets. The gateway
+# reads Secrets only in the template secrets namespace, through the Role below.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -127,4 +128,35 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "toolgate.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- with .Values.config.templateSecretsNamespace }}
+---
+# Reading Secrets in the template secrets namespace, and nowhere else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "toolgate.fullname" $ }}-template-secrets
+  namespace: {{ . }}
+  labels:
+    {{- include "toolgate.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "toolgate.fullname" $ }}-template-secrets
+  namespace: {{ . }}
+  labels:
+    {{- include "toolgate.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "toolgate.fullname" $ }}-template-secrets
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "toolgate.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
 {{- end }}
