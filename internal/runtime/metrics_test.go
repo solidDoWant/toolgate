@@ -88,8 +88,8 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 	// Instances 30, stuck 1, sessions 4, calls 60, call duration 8 buckets
 	// + 3, policy 12, starts 20, start duration 7 buckets + 3, waiting 1,
 	// health 10, repairs 30, embedding errors 4, embedding duration 2 ×
-	// (10 buckets + 3), pending 4, leader 1.
-	assert.Equal(t, 30+1+4+60+11+12+20+10+1+10+30+4+26+4+1, metricsbudget.Check(t, registry, templates))
+	// (10 buckets + 3), pending 5, leader 1.
+	assert.Equal(t, 30+1+4+60+11+12+20+10+1+10+30+4+26+5+1, metricsbudget.Check(t, registry, templates))
 }
 
 // A label outside the allowed sets fails the check.

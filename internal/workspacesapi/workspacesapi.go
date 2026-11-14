@@ -232,7 +232,7 @@ type Service interface {
 // request context.
 type Handler struct {
 	Workspaces Service
-	// Keys serves the workspace key routes; nil leaves them out.
+	// Keys serves the workspace key routes.
 	Keys KeyService
 	// Enabled is false when the gateway has no web UI: the workspace routes
 	// answer 409.

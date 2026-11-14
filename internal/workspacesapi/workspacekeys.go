@@ -123,10 +123,6 @@ var KeyOperations = []apidoc.Operation{
 }
 
 func (h *Handler) registerKeyRoutes(mux Mux, authenticate func(http.Handler) http.Handler) {
-	if h.Keys == nil {
-		return
-	}
-
 	mux.Handle("POST "+WorkspaceKeysPath, authenticate(http.HandlerFunc(h.registerKey)))
 	mux.Handle("GET "+WorkspaceKeysPath, authenticate(http.HandlerFunc(h.listKeys)))
 	mux.Handle("DELETE "+WorkspaceKeysPath+"/{name}", authenticate(http.HandlerFunc(h.revokeKey)))
