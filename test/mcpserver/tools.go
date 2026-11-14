@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -186,10 +187,33 @@ func (t toolSpec) tool() (*mcp.Tool, error) {
 	return &mcp.Tool{Name: t.Name, Description: t.Description, InputSchema: parsed}, nil
 }
 
+// textResult is a result with one text content.
+func textResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
+}
+
+// countSessions returns how many sessions the server holds.
+func countSessions(server *mcp.Server) int {
+	count := 0
+
+	for range server.Sessions() {
+		count++
+	}
+
+	return count
+}
+
 // handler counts the call and echoes the arguments.
 func (s *toolSet) handler(name string) mcp.ToolHandler {
 	return func(_ context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		s.calls.add(name)
+
+		switch name {
+		case sessionIDTool:
+			return textResult(request.Session.ID()), nil
+		case liveSessionsTool:
+			return textResult(strconv.Itoa(countSessions(s.server))), nil
+		}
 
 		arguments := map[string]any{}
 

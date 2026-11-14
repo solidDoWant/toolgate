@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,6 +21,10 @@ const (
 	secretsTool = "secrets"
 	// whoamiTool returns the user whose bearer token the request carried.
 	whoamiTool = "whoami"
+	// sessionIDTool returns the Mcp-Session-Id of the request's session.
+	sessionIDTool = "session_id"
+	// liveSessionsTool returns how many sessions the server holds.
+	liveSessionsTool = "live_sessions"
 )
 
 // maxSecretFileSize bounds each file the secrets tool reads.
@@ -89,6 +94,20 @@ func newServer(options options) (*mcp.Server, error) {
 					}
 
 					return nil, map[string]string{"user": options.Users[token]}, nil
+				})
+		case sessionIDTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns the ID of the request's session."},
+				func(_ context.Context, request *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+					options.Calls.add(name)
+
+					return textResult(request.Session.ID()), nil, nil
+				})
+		case liveSessionsTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns how many sessions the server holds."},
+				func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+					options.Calls.add(name)
+
+					return textResult(strconv.Itoa(countSessions(server))), nil, nil
 				})
 		default:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Echoes its arguments."},
