@@ -768,6 +768,8 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 
 	var refusal *callRefusal
 
+	ctx, held := withHeldClaims(ctx)
+
 	attempt := func() error {
 		instance, refusal = db.Instance{}, nil
 
@@ -866,6 +868,10 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 	err = attempt()
 	if retryable(err) {
 		err = attempt()
+	}
+
+	if err == nil {
+		m.runHeldClaims(ctx, current, held)
 	}
 
 	var limitErr *instanceLimitError

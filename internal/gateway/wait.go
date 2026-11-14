@@ -59,6 +59,10 @@ func (m *metaTools) waitForInstance(ctx context.Context, request *mcp.CallToolRe
 		// A replacement moves the wait to the new live row.
 		instance.ID = latest.ID
 
+		// A wait claims at each wake, so a token whose delivery was lost is
+		// exchanged again once its claim expires.
+		m.claimAndExchange(ctx, current, instance.ID)
+
 		if latest.Status != lastStatus {
 			lastStatus = latest.Status
 			progress.send(ctx, template.Name+" is "+latest.Status)

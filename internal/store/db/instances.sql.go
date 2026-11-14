@@ -291,10 +291,10 @@ func (q *Queries) GetNewestInstance(ctx context.Context, arg GetNewestInstancePa
 const insertInstance = `-- name: InsertInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, uses_exchange
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $8, $9, $10, $11, now()
+    $8, $9, $10, $11, now(), $12
 )
 RETURNING id, template_ns, template_name, template_uid, generation, scope, scope_key, owner_principal, render_session, desired, status, reason, namespace, tools, secrets_used, created_at, attempt_started_at, ready_at, failed_at, last_used_at, updated_at, trace_context, restart_requested_at, restart_requested_by, resolved_expires_at, health_check, unhealthy_since, unhealthy_reason, repairs, mcp_revision, uses_exchange, credential_expired, stopping_at
 `
@@ -311,6 +311,7 @@ type InsertInstanceParams struct {
 	RenderSession  pgtype.Int8
 	Namespace      string
 	TraceContext   string
+	UsesExchange   bool
 }
 
 func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) (Instance, error) {
@@ -326,6 +327,7 @@ func (q *Queries) InsertInstance(ctx context.Context, arg InsertInstanceParams) 
 		arg.RenderSession,
 		arg.Namespace,
 		arg.TraceContext,
+		arg.UsesExchange,
 	)
 	var i Instance
 	err := row.Scan(

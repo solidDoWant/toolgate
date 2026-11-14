@@ -5,9 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/embeddings"
+	"github.com/solidDoWant/toolgate/internal/secrets"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -111,6 +114,12 @@ type metaTools struct {
 	// workspaces and sessionIdleTimeout serve the built-in server's tools.
 	workspaces         *Workspaces
 	sessionIdleTimeout time.Duration
+
+	// exchanges are the configured token exchanges by name, and
+	// credentialsCipher seals the tokens they return for the leader.
+	exchanges         map[string]*credentials.Exchanger
+	credentialsCipher *secrets.Cipher
+	logger            *slog.Logger
 }
 
 func (m *metaTools) register(server *mcp.Server) {

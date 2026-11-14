@@ -12,9 +12,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 	"github.com/solidDoWant/toolgate/internal/resultcache"
+	"github.com/solidDoWant/toolgate/internal/secrets"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
@@ -123,6 +125,13 @@ type MCPOptions struct {
 	// (store.Listener.SubscribeReplies). Nil means none: a client's answer
 	// to a request of this replica that reaches another replica is lost.
 	SubscribeReplies func() (<-chan []byte, func())
+	// TokenExchanges are the configured token exchanges. A start of a
+	// template that uses one exchanges the caller's token and delivers it
+	// to the leader.
+	TokenExchanges []*credentials.Exchanger
+	// CredentialsCipher encrypts each exchanged token on its way to the
+	// leader. It is needed when TokenExchanges is set.
+	CredentialsCipher *secrets.Cipher
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -358,6 +367,13 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
 		embedder:             options.Embedder,
+		exchanges:            make(map[string]*credentials.Exchanger, len(options.TokenExchanges)),
+		credentialsCipher:    options.CredentialsCipher,
+		logger:               logger,
+	}
+
+	for _, exchanger := range options.TokenExchanges {
+		tools.exchanges[exchanger.Name()] = exchanger
 	}
 
 	if tools.workspaces == nil {
@@ -385,6 +401,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 	}
 	endpoint.waiters = &tools.waiters
 	endpoint.sessions.restore = tools.restoreServers
+	endpoint.sessions.exchangeRestored = tools.runHeldClaims
 
 	var (
 		events  <-chan store.Event

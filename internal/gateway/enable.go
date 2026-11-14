@@ -315,8 +315,13 @@ type enableOptions struct {
 // one when there is none. requestID, when set, is the session addition's
 // access request, recorded with the allow. A serialization failure or
 // unique violation is retried once.
+//
+// When the transaction inserted an instance whose exchanges this request
+// claimed, it runs them after the commit, before the caller waits.
 func (m *metaTools) enableInTransaction(ctx context.Context, current requestContext, template *v1alpha1.MCPServerTemplate, options enableOptions) (db.Instance, error) {
 	var instance db.Instance
+
+	ctx, held := withHeldClaims(ctx)
 
 	attempt := func() error {
 		return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
@@ -331,6 +336,10 @@ func (m *metaTools) enableInTransaction(ctx context.Context, current requestCont
 	err := attempt()
 	if retryable(err) {
 		err = attempt()
+	}
+
+	if err == nil {
+		m.runHeldClaims(ctx, current, held)
 	}
 
 	return instance, err
@@ -598,9 +607,14 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 		RenderSession:  pgtype.Int8{Int64: current.session.ID, Valid: true},
 		Namespace:      namespace,
 		TraceContext:   telemetry.EncodeContext(ctx),
+		UsesExchange:   catalog.UsesExchange(template),
 	})
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("insert instance: %w", err)
+	}
+
+	if err := insertExchangeRows(ctx, queries, template, instance.ID); err != nil {
+		return db.Instance{}, err
 	}
 
 	return instance, nil

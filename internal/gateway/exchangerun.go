@@ -1,0 +1,280 @@
+package gateway
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/catalog"
+	"github.com/solidDoWant/toolgate/internal/credentials"
+	"github.com/solidDoWant/toolgate/internal/store"
+	"github.com/solidDoWant/toolgate/internal/store/db"
+)
+
+// heldClaims collects the instances a request inserted with their exchange
+// rows already claimed, so the request runs those exchanges after its
+// transaction commits. An insert whose transaction rolled back leaves no
+// row, and runHeldClaims skips it.
+type heldClaims struct {
+	mutex     sync.Mutex
+	instances []string
+}
+
+type heldClaimsKey struct{}
+
+// withHeldClaims returns a context whose instance inserts record the claims
+// they hold in the returned collector.
+func withHeldClaims(ctx context.Context) (context.Context, *heldClaims) {
+	held := &heldClaims{}
+
+	return context.WithValue(ctx, heldClaimsKey{}, held), held
+}
+
+func (h *heldClaims) add(instanceID string) {
+	if h == nil {
+		return
+	}
+
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	if !slices.Contains(h.instances, instanceID) {
+		h.instances = append(h.instances, instanceID)
+	}
+}
+
+func (h *heldClaims) list() []string {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	return slices.Clone(h.instances)
+}
+
+// insertExchangeRows inserts one instance_exchanges row for each exchange
+// the template uses, in the transaction that inserts the pending instance.
+// The inserting request holds the claim of each row, so it exchanges right
+// after the commit. A template that also has persistent volumes gets closed
+// rows: nobody exchanges until the leader has its volumes and opens them.
+func insertExchangeRows(ctx context.Context, queries *db.Queries, template *v1alpha1.MCPServerTemplate, instanceID string) error {
+	names := catalog.ExchangeNames(template)
+	if len(names) == 0 {
+		return nil
+	}
+
+	open := len(template.Spec.PersistentVolumes) == 0
+
+	for _, name := range names {
+		if err := queries.InsertInstanceExchange(ctx, db.InsertInstanceExchangeParams{
+			InstanceID: instanceID, Exchange: name, Closed: !open, Wanted: open, Claimed: open,
+		}); err != nil {
+			return fmt.Errorf("insert exchange %s of instance %s: %w", name, instanceID, err)
+		}
+	}
+
+	if open {
+		held, _ := ctx.Value(heldClaimsKey{}).(*heldClaims)
+		held.add(instanceID)
+	}
+
+	return nil
+}
+
+// runHeldClaims runs the exchanges of the instances this request inserted
+// with their claims held. It runs after the inserting transaction commits.
+func (m *metaTools) runHeldClaims(ctx context.Context, current requestContext, held *heldClaims) {
+	for _, id := range held.list() {
+		instance, err := db.New(m.database).GetInstance(ctx, id)
+		if err != nil {
+			// The insert rolled back, or the row is already gone.
+			continue
+		}
+
+		if !instance.UsesExchange || instance.Desired != "running" {
+			continue
+		}
+
+		rows, err := db.New(m.database).ListInstanceExchanges(ctx, id)
+		if err != nil {
+			m.logger.WarnContext(ctx, "read the exchanges of a new instance", slog.String("instance", id), slog.Any("error", err))
+
+			continue
+		}
+
+		names := make([]string, 0, len(rows))
+		for _, row := range rows {
+			if row.ClaimedAt.Valid {
+				names = append(names, row.Exchange)
+			}
+		}
+
+		m.runExchanges(ctx, current, instance, names)
+	}
+}
+
+// claimAndExchange runs the claim for the instance and the exchanges it
+// returns. A waiting request calls it at each wake, so a lost delivery is
+// retried once its claim expires.
+func (m *metaTools) claimAndExchange(ctx context.Context, current requestContext, instanceID string) {
+	if len(m.exchanges) == 0 || instanceID == "" || current.subjectToken == "" {
+		return
+	}
+
+	timeouts := make(map[string]time.Duration, len(m.exchanges))
+	for name, exchanger := range m.exchanges {
+		timeouts[name] = exchanger.Timeout()
+	}
+
+	queries := db.New(m.database)
+
+	rows, err := queries.ListInstanceExchanges(ctx, instanceID)
+	if err != nil {
+		m.logger.WarnContext(ctx, "read token exchanges", slog.String("instance", instanceID), slog.Any("error", err))
+
+		return
+	}
+
+	// A start whose exchange failed is over: the leader fails the instance
+	// with that reason. Claiming again would exchange in a loop, because
+	// each failure wakes the waiting requests.
+	for _, row := range rows {
+		if row.WantedSince.Valid && row.LastErrorAt.Valid && !row.LastErrorAt.Time.Before(row.WantedSince.Time) {
+			return
+		}
+	}
+
+	claimed, err := (&credentials.Claimer{}).Claim(ctx, queries, instanceID, credentials.Caller{
+		Principal: current.identity.Principal, Kind: current.identity.Kind, TokenExpiry: current.identity.Expiry,
+	}, timeouts)
+	if err != nil {
+		m.logger.WarnContext(ctx, "claim token exchanges", slog.String("instance", instanceID), slog.Any("error", err))
+
+		return
+	}
+
+	if len(claimed) == 0 {
+		return
+	}
+
+	instance, err := queries.GetInstance(ctx, instanceID)
+	if err != nil {
+		m.logger.WarnContext(ctx, "read a claimed instance", slog.String("instance", instanceID), slog.Any("error", err))
+
+		return
+	}
+
+	m.runExchanges(ctx, current, instance, claimed)
+}
+
+// runExchanges runs each named exchange of the instance with the request's
+// token. A success sends the sealed token to the leader; a failure records
+// its reason on the row so the leader fails the start. Either writes
+// credential.exchange in the same transaction.
+func (m *metaTools) runExchanges(ctx context.Context, current requestContext, instance db.Instance, names []string) {
+	for _, name := range names {
+		if err := m.runExchange(ctx, current, instance, name); err != nil {
+			m.logger.WarnContext(ctx, "token exchange", slog.String("instance", instance.ID),
+				slog.String("exchange", name), slog.Any("error", err))
+		}
+	}
+}
+
+func (m *metaTools) runExchange(ctx context.Context, current requestContext, instance db.Instance, name string) error {
+	row, err := m.exchangeRow(ctx, instance.ID, name)
+	if err != nil {
+		return err
+	}
+
+	kind := credentials.KindRefresh
+	if row.WantedSince.Valid {
+		kind = credentials.KindStart
+	}
+
+	exchanger, configured := m.exchanges[name]
+	if !configured {
+		return nil
+	}
+
+	exchanged, err := exchanger.Exchange(ctx, current.subjectToken, kind)
+	if err != nil {
+		return m.recordExchangeFailure(ctx, current, instance, name, kind, err)
+	}
+
+	details := map[string]any{
+		"instance": instance.ID, "exchange": name, "kind": kind, "outcome": "success",
+		"expiresAt": exchanged.ExpiresAt.UTC().Format(time.RFC3339Nano),
+	}
+
+	return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
+		queries := db.New(tx)
+
+		if err := audit.NewRecorder(m.auditOutput, queries).Record(ctx,
+			auditEvent(current, audit.TypeCredentialExchange, instance.TemplateName, details)); err != nil {
+			return err
+		}
+
+		// Queued in the transaction, so the leader gets the token only
+		// with its audit event.
+		return credentials.Send(ctx, queries, m.credentialsCipher, credentials.Delivery{
+			Instance: instance.ID, Exchange: name, Principal: instance.OwnerPrincipal,
+			IssuedAt: exchanged.IssuedAt, ExpiresAt: exchanged.ExpiresAt, Token: exchanged.Token,
+		})
+	})
+}
+
+// recordExchangeFailure writes the reason of a failed exchange on its row,
+// gives up the claim, writes credential.exchange and wakes the leader and
+// the waiting requests, in one transaction.
+func (m *metaTools) recordExchangeFailure(ctx context.Context, current requestContext, instance db.Instance, name, kind string, cause error) error {
+	reason, code := fmt.Sprintf("Token exchange `%s` failed.", name), credentials.ErrorBadAnswer
+
+	var exchangeErr *credentials.ExchangeError
+	if errors.As(cause, &exchangeErr) {
+		reason, code = exchangeErr.Error(), exchangeErr.Code
+	}
+
+	details := map[string]any{
+		"instance": instance.ID, "exchange": name, "kind": kind, "outcome": "failure", "error": code,
+	}
+
+	return pgx.BeginFunc(ctx, m.database, func(tx pgx.Tx) error {
+		queries := db.New(tx)
+
+		if _, err := queries.RecordExchangeFailure(ctx, db.RecordExchangeFailureParams{
+			InstanceID: instance.ID, Exchange: name, LastError: pgtype.Text{String: reason, Valid: true},
+			Retry: kind == credentials.KindRefresh,
+		}); err != nil {
+			return fmt.Errorf("record the failed exchange %s of instance %s: %w", name, instance.ID, err)
+		}
+
+		if err := audit.NewRecorder(m.auditOutput, queries).Record(ctx,
+			auditEvent(current, audit.TypeCredentialExchange, instance.TemplateName, details)); err != nil {
+			return err
+		}
+
+		return store.Notify(ctx, tx, store.KindInstance, instance.ID)
+	})
+}
+
+func (m *metaTools) exchangeRow(ctx context.Context, instanceID, name string) (db.InstanceExchange, error) {
+	rows, err := db.New(m.database).ListInstanceExchanges(ctx, instanceID)
+	if err != nil {
+		return db.InstanceExchange{}, fmt.Errorf("read the exchanges of instance %s: %w", instanceID, err)
+	}
+
+	for _, row := range rows {
+		if row.Exchange == name {
+			return row, nil
+		}
+	}
+
+	return db.InstanceExchange{}, fmt.Errorf("instance %s has no row for exchange %s", instanceID, name)
+}
