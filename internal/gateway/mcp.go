@@ -636,7 +636,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 	session, err := e.sessions.resolve(request.Context(), identity, searchMode)
 	if errors.Is(err, errWorkspaceChanged) {
-		http.Error(writer, "This session started in a different workspace. Start a new Claude Code session to use another workspace.", http.StatusBadRequest)
+		http.Error(writer, "This session started in a different workspace. Start a new Claude Code session to use another workspace. A new attestation key applies to new sessions only.", http.StatusBadRequest)
 
 		return
 	}

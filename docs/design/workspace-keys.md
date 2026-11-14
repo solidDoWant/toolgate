@@ -189,7 +189,7 @@ Registering never makes a key usable. Only an approval in the browser does (sect
 
 After the approval, `register` saves the key in `config.json` as `configure --attestation-key-file` does, with these rules. There is at most one attestation source.
 
-- No source is saved: it saves `attestationKeyFile` and prints that the key is now in use and that a running Claude Code session picks it up when it reconnects. The headers helper reads `config.json` on each run.
+- No source is saved: it saves `attestationKeyFile` and prints that the key is now in use and that new Claude Code sessions use it and a running session keeps its workspace until it ends. The headers helper reads `config.json` on each run.
 - Another source is saved (a token file, a TokenRequest directory or another key file): it changes nothing, says which source stays in use and prints the `configure --attestation-key-file PATH` command that switches. With `--use` it replaces the source.
 - The saved source is the key file that this registration replaces (its fingerprint is the one that the gateway gave as `replaces`): it switches to the new key file. To replace a key, the user registers the same name with a new `--key-file` path.
 - `--no-use`: it never changes `config.json`. `--use` and `--no-use` together are a usage error (exit 2).
