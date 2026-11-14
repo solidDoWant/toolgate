@@ -320,6 +320,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Pool:        pool,
 		Replacer:    replacer,
 		Starter:     starter,
+		Reader:      mgr.GetAPIReader(),
 		AuditOutput: options.auditOutput,
 		Log:         logger,
 		Metrics:     metrics,

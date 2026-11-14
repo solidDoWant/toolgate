@@ -42,7 +42,7 @@ A replacement works like a restart from the web UI. The sessions keep the server
 
 ## A deleted instance object
 
-If an instance fails its health checks three times in a row and one of its objects is missing from the cluster, for example a Pod that someone deleted, toolgate applies the instance's objects again instead of marking the instance failed. It records the `instance.reapply` audit event. This counts as a repair, so the same limit applies: at most three repairs in 30 minutes. After that, the instance fails.
+If an instance fails its health checks three times in a row and one of its objects is missing from the cluster, for example a Pod that someone deleted, toolgate applies the instance's objects again instead of marking the instance failed. It records the `instance.reapply` audit event. This counts as a repair, so the same limit applies: at most three repairs in 30 minutes. After that, the instance fails. If the instance has persistent volumes, toolgate also applies their claims again, so a claim that someone deleted comes back bound to the same volume. If a recorded volume is missing, has wrong labels, or is bound to another claim, the repair fails and escalates like any other.
 
 ## How toolgate removes an instance
 
