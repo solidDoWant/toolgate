@@ -428,6 +428,64 @@ spec:
                     blocked:
                       description: Blocked refuses every call to the tool.
                       type: boolean
+                    cache:
+                      description: |-
+                        Cache turns on caching of the tool's results. The tool must also be
+                        marked readOnlyHint by its server.
+                      properties:
+                        ignoreArgs:
+                          description: IgnoreArgs are top-level argument names left
+                            out of the cache key.
+                          items:
+                            maxLength: 128
+                            minLength: 1
+                            type: string
+                          maxItems: 64
+                          type: array
+                          x-kubernetes-list-type: set
+                        normalize:
+                          additionalProperties:
+                            description: NormalizeOperations are the operations for
+                              one argument.
+                            items:
+                              enum:
+                              - trim
+                              - lowercase
+                              - collapseSpace
+                              type: string
+                            maxItems: 3
+                            minItems: 1
+                            type: array
+                          description: |-
+                            Normalize maps a top-level argument name to the operations applied
+                            to its string value before it goes in the cache key: trim,
+                            lowercase and collapseSpace.
+                          maxProperties: 64
+                          type: object
+                          x-kubernetes-validations:
+                          - message: each normalize entry names an argument of 1 to
+                              128 characters
+                            rule: self.all(name, size(name) >= 1 && size(name) <=
+                              128)
+                        scope:
+                          description: |-
+                            Scope says who shares cached results: per-session, per-user or
+                            shared. It must be the template's effective scope or narrower.
+                            Without it, the template's effective scope is used.
+                          type: string
+                          x-kubernetes-validations:
+                          - message: scope must be one of per-session, per-user, shared
+                            rule: self in ['per-session', 'per-user', 'shared']
+                        ttl:
+                          description: |-
+                            TTL is how long a result is served from the cache, 1s to 24h.
+                            Without it, the server's suggestion is used, else 5m.
+                          type: string
+                          x-kubernetes-validations:
+                          - message: ttl must be between 1s and 24h
+                            rule: duration(self) >= duration('1s') && duration(self)
+                              <= duration('24h')
+                      type: object
                     description:
                       description: Description replaces the tool's description.
                       maxLength: 4096

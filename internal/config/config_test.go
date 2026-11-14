@@ -742,3 +742,51 @@ func TestPersistentVolumesSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestTemplateSecretsNamespaceConfig(t *testing.T) {
+	base := map[string]string{
+		"TOOLGATE_DATABASE_URL":       validDatabaseURL,
+		"TOOLGATE_OIDC_ISSUER_URL":    "https://idp.example",
+		"TOOLGATE_OIDC_AUDIENCE":      "toolgate",
+		"TOOLGATE_LEASE_NAMESPACE":    "toolgate",
+		"TOOLGATE_SHARED_NAMESPACE":   "toolgate-shared",
+		"TOOLGATE_GATEWAY_POD_LABELS": "app=toolgate",
+		"TOOLGATE_CATALOG_NAMESPACES": "catalog-a,catalog-b",
+	}
+
+	tests := []struct {
+		name        string
+		namespace   string
+		wantProblem string
+	}{
+		{name: "empty means off", namespace: ""},
+		{name: "a separate namespace", namespace: "toolgate-template-secrets"},
+		{name: "not a DNS label", namespace: "Not_A_Namespace", wantProblem: `templateSecretsNamespace: "Not_A_Namespace" is not a namespace name`},
+		{name: "instance prefix", namespace: "tg-secrets", wantProblem: "must not start with tg-"},
+		{name: "the gateway's own namespace", namespace: "toolgate", wantProblem: "must not be leaseNamespace"},
+		{name: "the shared namespace", namespace: "toolgate-shared", wantProblem: "must not be sharedNamespace"},
+		{name: "kube-system", namespace: "kube-system", wantProblem: "must not be kube-system"},
+		{name: "first catalog namespace", namespace: "catalog-a", wantProblem: "must not be one of catalogNamespaces"},
+		{name: "second catalog namespace", namespace: "catalog-b", wantProblem: "must not be one of catalogNamespaces"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			env := map[string]string{"TOOLGATE_TEMPLATE_SECRETS_NAMESPACE": test.namespace}
+			for key, value := range base {
+				env[key] = value
+			}
+
+			cfg, err := config.Load("", envFrom(env))
+			if test.wantProblem != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), test.wantProblem)
+
+				return
+			}
+
+			require.NoError(t, err)
+			assert.Equal(t, test.namespace, cfg.TemplateSecretsNamespace)
+		})
+	}
+}

@@ -103,7 +103,7 @@ paths:
         name: name
         required: true
         schema:
-          pattern: ^[A-Za-z0-9._-]{1,128}$
+          pattern: ^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$
           type: string
       responses:
         "204":
@@ -127,7 +127,7 @@ paths:
         name: name
         required: true
         schema:
-          pattern: ^[A-Za-z0-9._-]{1,128}$
+          pattern: ^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$
           type: string
       responses:
         "200":

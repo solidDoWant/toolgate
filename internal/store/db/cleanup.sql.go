@@ -88,3 +88,16 @@ func (q *Queries) DeleteStaleUILogins(ctx context.Context) (int64, error) {
 	}
 	return result.RowsAffected(), nil
 }
+
+const deleteStaleWorkspaceKeys = `-- name: DeleteStaleWorkspaceKeys :execrows
+DELETE FROM workspace_keys WHERE status <> 'active' AND ended_at <= now() - interval '7 days'
+`
+
+// Deletes workspace keys that were revoked or replaced more than 7 days ago.
+func (q *Queries) DeleteStaleWorkspaceKeys(ctx context.Context) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteStaleWorkspaceKeys)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

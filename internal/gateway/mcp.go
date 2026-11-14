@@ -157,6 +157,19 @@ type requestContext struct {
 	// searchMode says the request asked for tool search mode, by header or
 	// by the gateway's setting. It only changes what a tool list holds.
 	searchMode bool
+	// subjectToken is the verified bearer token of a user's request, for a
+	// token exchange made while serving it. It is empty for a workload, and
+	// in every requestContext kept after its request ends.
+	subjectToken auth.SubjectToken
+}
+
+// withoutSubjectToken returns current without its subject token, for keeping
+// after the request ends: an exchange uses only the token of the request it
+// serves.
+func (current requestContext) withoutSubjectToken() requestContext {
+	current.subjectToken = ""
+
+	return current
 }
 
 const requestContextKey = "toolgate"
@@ -612,7 +625,8 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 		return
 	}
 
-	current := requestContext{identity: identity, session: session, searchMode: searchMode}
+	subjectToken, _ := auth.SubjectTokenFrom(request.Context())
+	current := requestContext{identity: identity, session: session, searchMode: searchMode, subjectToken: subjectToken}
 
 	if stateless {
 		e.serveStateless(writer, request, binding, current)

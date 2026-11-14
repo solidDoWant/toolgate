@@ -133,3 +133,23 @@ func TestCountersStayInsideSeriesBudget(t *testing.T) {
 	// may have added folded series.
 	assert.GreaterOrEqual(t, metricsbudget.Check(t, registry, 0), 16+30+20+1+1)
 }
+
+func TestUpstreamSessionEventCountsOnlyKnownEvents(t *testing.T) {
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(opsmetrics.Collectors()...)
+
+	labels := func(event string) map[string]string { return map[string]string{"event": event} }
+
+	for _, event := range []string{"initialize", "adopt", "race_lost", "not_found", "delete_sent", "delete_failed"} {
+		before := opsmetrics.Value("toolgate_upstream_session_events_total", labels(event))
+
+		opsmetrics.UpstreamSessionEvent(event)
+
+		assert.InDelta(t, before+1, opsmetrics.Value("toolgate_upstream_session_events_total", labels(event)), 0, event)
+	}
+
+	opsmetrics.UpstreamSessionEvent("server-supplied-value")
+
+	assert.InDelta(t, 1, opsmetrics.Value("toolgate_upstream_session_events_total", labels("other")), 0)
+	assert.InDelta(t, 0, opsmetrics.Value("toolgate_upstream_session_events_total", labels("server-supplied-value")), 0)
+}

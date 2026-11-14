@@ -79,6 +79,10 @@ Users set their secrets with `toolgate secret set`. The gateway encrypts each va
 
 A person who can read Secrets in the instance namespaces can read the values of running instances. Give this permission only to people who must have it.
 
+## Template secrets
+
+If you set `config.templateSecretsNamespace`, the gateway can read the Secrets in that one namespace. Kubernetes RBAC limits it to that namespace. Anyone who can write a template in a catalog namespace can read every Secret there. [Template secrets](template-secrets.md) tells how to set it up and keep it safe.
+
 ## Connectors on the internet
 
 A claude.ai custom connector reaches the MCP endpoint from the internet. See [claude.ai connectors](connectors.md). The same checks apply to its requests as to every request. The gateway checks the access token against the IdP, and it decides about each tool call and records the decision. The gateway issues no tokens and runs no OAuth server. It sends no client token to an MCP server.

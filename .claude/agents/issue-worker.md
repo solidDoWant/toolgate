@@ -47,6 +47,7 @@ The scheduler (`scripts/agents/scheduler.py`) launches you as a top-level headle
 
 ## Rules
 
+- **Never edit `CHANGELOG.md`.** Put the changelog line in the PR description under a `## Changelog` heading. The release manager writes `CHANGELOG.md` from those at release time. If the issue asks for a `CHANGELOG.md` line, this is what it means. Many PRs editing the same section make every merge conflict with every other open PR.
 - **The design is fixed.** `SPEC.md` and `docs/design/phase-N.md` decide behaviour. If a case isn't decided there (for example a combination missing from the interaction table), or the design seems wrong, don't invent a rule or patch around it: post the case on the issue as a short question (situation, the rows involved, the options) and hand back `HANDOFF: question`.
 - **Stay on the checklist.** Implement what the issue asks. Don't add hardening, extra tests beyond the criteria, or refactors, and file no follow-up issues except real defects.
 

@@ -258,6 +258,16 @@ type UnverifiedServer struct {
 	AddedAt pgtype.Timestamptz
 }
 
+type UpstreamSession struct {
+	ID                int64
+	InstanceID        string
+	SessionPk         int64
+	UpstreamSessionID string
+	InitializeResult  []byte
+	CreatedAt         pgtype.Timestamptz
+	EndedAt           pgtype.Timestamptz
+}
+
 type UserScope struct {
 	ID                int64
 	Principal         string
@@ -274,6 +284,21 @@ type UserSecret struct {
 	KeyID      int64
 	CreatedAt  pgtype.Timestamptz
 	UpdatedAt  pgtype.Timestamptz
+}
+
+type WorkspaceKey struct {
+	ID           int64
+	Principal    string
+	Username     string
+	Name         string
+	KeyID        string
+	PublicKey    []byte
+	Status       string
+	RequestID    string
+	RegisteredAt pgtype.Timestamptz
+	ApprovedAt   pgtype.Timestamptz
+	EndedAt      pgtype.Timestamptz
+	LastUsedAt   pgtype.Timestamptz
 }
 
 type WorkspaceList struct {
