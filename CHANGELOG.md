@@ -2,8 +2,6 @@
 
 ## Unreleased
 
-- Templates have a new field, `persistentVolumes`, and the gateway has three new settings: `persistentVolumes.enabled` (default `false`), `persistentVolumes.unusedRetention` and `persistentVolumes.limitPerUser`. The catalog checks the field. Instances do not use it yet. See "Persistent volumes" in `docs/admin/templates-and-rules.md`.
-
 ### Documentation
 
 - The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
