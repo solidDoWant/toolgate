@@ -49,6 +49,9 @@ type Repairer struct {
 	// AuditOutput receives the instance.reapply and instance.fail events.
 	// Nil discards them; the rows are still written.
 	AuditOutput io.Writer
+	// Reader reads the PersistentVolumes of a reapply. It must read the API
+	// server, not a cache. Nil means the Starter's Client.
+	Reader client.Reader
 	// Now is the clock. Nil means time.Now.
 	Now func() time.Time
 	Log *slog.Logger
@@ -286,7 +289,66 @@ func (r *Repairer) reapply(ctx context.Context, instance db.Instance, now time.T
 		return err
 	}
 
+	if err := r.applyVolumeClaims(ctx, instance, template, result.Metadata); err != nil {
+		return err
+	}
+
 	return r.apply(ctx, instance, template, result)
+}
+
+// applyVolumeClaims checks each volume the instance holds, pre-binds its
+// recorded PV and applies its claim, so a claim that was deleted comes back
+// bound to the recorded PV. A check that fails or waits returns its reason
+// as an error.
+func (r *Repairer) applyVolumeClaims(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate,
+	meta InstanceMetadata,
+) error {
+	rows, err := db.New(r.Pool).ListPersistentVolumesHeldBy(ctx, pgtype.Text{String: instance.ID, Valid: true})
+	if err != nil {
+		return fmt.Errorf("reapply instance %s: list volumes: %w", instance.ID, err)
+	}
+
+	var reader client.Reader = r.Starter.Client
+	if r.Reader != nil {
+		reader = r.Reader
+	}
+
+	for _, row := range rows {
+		if row.PvName.Valid {
+			step, err := checkRecordedVolume(ctx, reader, row, instance)
+			if err != nil {
+				return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+			}
+
+			switch step.Outcome {
+			case volumeGoOn:
+			case volumeLost:
+				return fmt.Errorf("reapply instance %s: PersistentVolume %s of volume %s doesn't exist",
+					instance.ID, row.PvName.String, row.VolumeName)
+			default:
+				if step.Problem {
+					if err := db.New(r.Pool).SetPersistentVolumeProblem(ctx,
+						db.SetPersistentVolumeProblemParams{Problem: step.Reason, ID: row.ID}); err != nil {
+						return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+					}
+				}
+
+				return fmt.Errorf("reapply instance %s: %s", instance.ID, step.Reason)
+			}
+
+			if step.NeedsPreBind {
+				if err := preBind(ctx, r.Starter.Client, step.PV, instance, row.VolumeName); err != nil {
+					return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+				}
+			}
+		}
+
+		if err := applyVolumeClaim(ctx, r.Starter.Client, RenderVolumeClaim(row, instance, template, meta)); err != nil {
+			return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+		}
+	}
+
+	return nil
 }
 
 func (r *Repairer) apply(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, result *Result) error {
