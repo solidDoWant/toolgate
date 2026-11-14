@@ -72,3 +72,27 @@ UPDATE persistent_volumes SET instance_id = NULL, last_used_at = now() WHERE ins
 
 -- name: GetPersistentVolume :one
 SELECT * FROM persistent_volumes WHERE id = @id;
+
+-- name: ListIdlePersistentVolumes :many
+-- Rows with no holder and no deletion decided, for the template check.
+SELECT * FROM persistent_volumes WHERE delete_reason = '' AND instance_id IS NULL ORDER BY id;
+
+-- name: MarkPersistentVolumeUnused :execrows
+-- Decides the unused deletion. A claim that sets last_used_at or the holder
+-- between the list and this update makes it change nothing.
+UPDATE persistent_volumes
+SET delete_reason = 'unused', delete_requested_at = now()
+WHERE id = @id AND delete_reason = '' AND instance_id IS NULL AND last_used_at < @cutoff::timestamptz;
+
+-- name: ListUnusedPersistentVolumes :many
+SELECT * FROM persistent_volumes
+WHERE delete_reason = '' AND instance_id IS NULL AND last_used_at < @cutoff::timestamptz
+ORDER BY id;
+
+-- name: LockPersistentVolumeByID :one
+SELECT * FROM persistent_volumes WHERE id = @id FOR UPDATE;
+
+-- name: DeleteDecidedPersistentVolume :execrows
+-- Deletes the row only while its deletion is still decided and nothing holds
+-- it, so a start that cleared an unused mark or claimed the volume wins.
+DELETE FROM persistent_volumes WHERE id = @id AND delete_reason <> '' AND instance_id IS NULL;

@@ -363,9 +363,14 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// has been read.
 	queries := db.New(pool)
 	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
+	volumeCleaner := &runtime.VolumeCleaner{
+		Pool: pool, Reader: mgr.GetAPIReader(), Writer: mgr.GetClient(), Template: options.catalog.Running,
+		Enabled: cfg.PersistentVolumesEnabled, UnusedRetention: time.Duration(cfg.PersistentVolumesUnusedRetention),
+		Metrics: metrics, AuditOutput: options.auditOutput, Log: logger,
+	}
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
-		runtime.RowCleanup(queries, runtime.ResultCacheCleanup(options.resultCache, options.catalog.LastValidByUID, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, updater.Step, repairer.Step, teardown.Step, starter.Step, refresher.Step, monitor.Step))))))))))
+		volumeCleaner.Pass(runtime.RowCleanup(queries, runtime.ResultCacheCleanup(options.resultCache, options.catalog.LastValidByUID, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, updater.Step, repairer.Step, teardown.Step, starter.Step, refresher.Step, monitor.Step)))))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)

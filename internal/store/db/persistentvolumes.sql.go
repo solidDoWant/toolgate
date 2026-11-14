@@ -84,6 +84,20 @@ func (q *Queries) CountPersistentVolumes(ctx context.Context) ([]CountPersistent
 	return items, nil
 }
 
+const deleteDecidedPersistentVolume = `-- name: DeleteDecidedPersistentVolume :execrows
+DELETE FROM persistent_volumes WHERE id = $1 AND delete_reason <> '' AND instance_id IS NULL
+`
+
+// Deletes the row only while its deletion is still decided and nothing holds
+// it, so a start that cleared an unused mark or claimed the volume wins.
+func (q *Queries) DeleteDecidedPersistentVolume(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDecidedPersistentVolume, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const deletePersistentVolume = `-- name: DeletePersistentVolume :execrows
 DELETE FROM persistent_volumes WHERE id = $1
 `
@@ -159,6 +173,49 @@ func (q *Queries) InsertPersistentVolume(ctx context.Context, arg InsertPersiste
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const listIdlePersistentVolumes = `-- name: ListIdlePersistentVolumes :many
+SELECT id, template_ns, template_name, template_uid, volume_name, scope, scope_id, storage_class, size_bytes, pv_name, instance_id, created_at, last_used_at, delete_reason, delete_requested_at, reclaim_patched_at, problem FROM persistent_volumes WHERE delete_reason = '' AND instance_id IS NULL ORDER BY id
+`
+
+// Rows with no holder and no deletion decided, for the template check.
+func (q *Queries) ListIdlePersistentVolumes(ctx context.Context) ([]PersistentVolume, error) {
+	rows, err := q.db.Query(ctx, listIdlePersistentVolumes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PersistentVolume{}
+	for rows.Next() {
+		var i PersistentVolume
+		if err := rows.Scan(
+			&i.ID,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.TemplateUid,
+			&i.VolumeName,
+			&i.Scope,
+			&i.ScopeID,
+			&i.StorageClass,
+			&i.SizeBytes,
+			&i.PvName,
+			&i.InstanceID,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.DeleteReason,
+			&i.DeleteRequestedAt,
+			&i.ReclaimPatchedAt,
+			&i.Problem,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listPersistentVolumes = `-- name: ListPersistentVolumes :many
@@ -296,6 +353,50 @@ func (q *Queries) ListPersistentVolumesToDelete(ctx context.Context) ([]Persiste
 	return items, nil
 }
 
+const listUnusedPersistentVolumes = `-- name: ListUnusedPersistentVolumes :many
+SELECT id, template_ns, template_name, template_uid, volume_name, scope, scope_id, storage_class, size_bytes, pv_name, instance_id, created_at, last_used_at, delete_reason, delete_requested_at, reclaim_patched_at, problem FROM persistent_volumes
+WHERE delete_reason = '' AND instance_id IS NULL AND last_used_at < $1::timestamptz
+ORDER BY id
+`
+
+func (q *Queries) ListUnusedPersistentVolumes(ctx context.Context, cutoff pgtype.Timestamptz) ([]PersistentVolume, error) {
+	rows, err := q.db.Query(ctx, listUnusedPersistentVolumes, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PersistentVolume{}
+	for rows.Next() {
+		var i PersistentVolume
+		if err := rows.Scan(
+			&i.ID,
+			&i.TemplateNs,
+			&i.TemplateName,
+			&i.TemplateUid,
+			&i.VolumeName,
+			&i.Scope,
+			&i.ScopeID,
+			&i.StorageClass,
+			&i.SizeBytes,
+			&i.PvName,
+			&i.InstanceID,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+			&i.DeleteReason,
+			&i.DeleteRequestedAt,
+			&i.ReclaimPatchedAt,
+			&i.Problem,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockPersistentVolume = `-- name: LockPersistentVolume :one
 SELECT id, template_ns, template_name, template_uid, volume_name, scope, scope_id, storage_class, size_bytes, pv_name, instance_id, created_at, last_used_at, delete_reason, delete_requested_at, reclaim_patched_at, problem FROM persistent_volumes
 WHERE template_uid = $1 AND volume_name = $2 AND scope_id = $3
@@ -310,6 +411,35 @@ type LockPersistentVolumeParams struct {
 
 func (q *Queries) LockPersistentVolume(ctx context.Context, arg LockPersistentVolumeParams) (PersistentVolume, error) {
 	row := q.db.QueryRow(ctx, lockPersistentVolume, arg.TemplateUid, arg.VolumeName, arg.ScopeID)
+	var i PersistentVolume
+	err := row.Scan(
+		&i.ID,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.TemplateUid,
+		&i.VolumeName,
+		&i.Scope,
+		&i.ScopeID,
+		&i.StorageClass,
+		&i.SizeBytes,
+		&i.PvName,
+		&i.InstanceID,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.DeleteReason,
+		&i.DeleteRequestedAt,
+		&i.ReclaimPatchedAt,
+		&i.Problem,
+	)
+	return i, err
+}
+
+const lockPersistentVolumeByID = `-- name: LockPersistentVolumeByID :one
+SELECT id, template_ns, template_name, template_uid, volume_name, scope, scope_id, storage_class, size_bytes, pv_name, instance_id, created_at, last_used_at, delete_reason, delete_requested_at, reclaim_patched_at, problem FROM persistent_volumes WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockPersistentVolumeByID(ctx context.Context, id string) (PersistentVolume, error) {
+	row := q.db.QueryRow(ctx, lockPersistentVolumeByID, id)
 	var i PersistentVolume
 	err := row.Scan(
 		&i.ID,
@@ -349,6 +479,27 @@ type MarkPersistentVolumeForDeletionParams struct {
 // never marked; an admin sets any_holder to mark any row.
 func (q *Queries) MarkPersistentVolumeForDeletion(ctx context.Context, arg MarkPersistentVolumeForDeletionParams) (int64, error) {
 	result, err := q.db.Exec(ctx, markPersistentVolumeForDeletion, arg.DeleteReason, arg.ID, arg.AnyHolder)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const markPersistentVolumeUnused = `-- name: MarkPersistentVolumeUnused :execrows
+UPDATE persistent_volumes
+SET delete_reason = 'unused', delete_requested_at = now()
+WHERE id = $1 AND delete_reason = '' AND instance_id IS NULL AND last_used_at < $2::timestamptz
+`
+
+type MarkPersistentVolumeUnusedParams struct {
+	ID     string
+	Cutoff pgtype.Timestamptz
+}
+
+// Decides the unused deletion. A claim that sets last_used_at or the holder
+// between the list and this update makes it change nothing.
+func (q *Queries) MarkPersistentVolumeUnused(ctx context.Context, arg MarkPersistentVolumeUnusedParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markPersistentVolumeUnused, arg.ID, arg.Cutoff)
 	if err != nil {
 		return 0, err
 	}
