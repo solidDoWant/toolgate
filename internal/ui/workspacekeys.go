@@ -86,7 +86,9 @@ func (u *UI) keyRequestView(ctx context.Context, request db.AccessRequest) (keyR
 // keyRow is one row of the Workspace keys card.
 type keyRow struct {
 	Name, Workspace, Fingerprint string
-	Active                       bool
+	// Short is the fingerprint shortened for the table.
+	Short  string
+	Active bool
 	// Request is the pending request's ID.
 	Request              string
 	Registered, LastUsed time.Time
@@ -108,7 +110,7 @@ func newKeysCard(list gateway.WorkspaceKeyList) keysCard {
 	for _, key := range list.Keys {
 		row := keyRow{
 			Name: key.Name, Workspace: key.Workspace, Fingerprint: key.Fingerprint, Active: key.Status == gateway.KeyStatusActive,
-			Request: key.Request, Registered: key.RegisteredAt, NeverUsed: key.LastUsedAt == nil,
+			Short: shortFingerprint(strings.TrimPrefix(key.Fingerprint, "SHA256:")), Request: key.Request, Registered: key.RegisteredAt, NeverUsed: key.LastUsedAt == nil,
 		}
 
 		if key.LastUsedAt != nil {

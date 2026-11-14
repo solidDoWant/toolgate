@@ -57,14 +57,14 @@
 
 {{with .Keys}}{{if .Show}}{{template "card-start" (dict "Title" "Workspace keys" "Summary" "Keys that let a machine outside the cluster prove where its sessions run.")}}
 {{if .Off}}<p class="mb-3 text-sm text-muted" id="keys-off">Workspace keys are off on this gateway. These keys don't attest.</p>
-{{end}}{{if .Rows}}{{template "table-start" (dict "ID" "workspace-keys" "Label" "Workspace keys" "Columns" (list "Name" "Workspace" "Fingerprint" "Status" "Registered" "Last used" ""))}}
+{{end}}{{if .Rows}}{{template "table-start" (dict "ID" "workspace-keys" "Label" "Workspace keys" "Visible" true "Columns" (list "Name" "Workspace" "Fingerprint" "Status" "Registered" "Last used" ""))}}
 {{range .Rows}}<tr><td data-label="Name">{{.Name}}</td>
 <td data-label="Workspace" class="font-mono">{{.Workspace}}</td>
-<td data-label="Fingerprint" class="font-mono break-all">{{.Fingerprint}}</td>
+<td data-label="Fingerprint">{{template "short-fingerprint" (dict "Short" .Short "Full" .Fingerprint)}}</td>
 <td data-label="Status">{{if .Active}}<span class="badge badge-ok">Active</span>{{else}}<a href="/ui/approvals/{{.Request}}" class="badge badge-warn">Waiting for approval</a>{{end}}</td>
 <td data-label="Registered">{{template "reltime" (since .Registered)}}</td>
 <td data-label="Last used">{{if .Active}}{{if .NeverUsed}}Never{{else}}{{template "reltime" (since .LastUsed)}}{{end}}{{else}}Never{{end}}</td>
-<td data-label="">{{if .Active}}{{template "row-action-confirm" (dict "Label" "Revoke" "Action" "/ui/workspaces/keys/revoke" "Question" (printf "Revoke key %s? Sessions that use it lose their verified workspace on their next request." .Name) "Confirm" "Revoke" "CSRFToken" $.CSRFToken "Fields" (dict "name" .Name))}}{{end}}</td></tr>
+<td data-label="">{{if .Active}}{{template "row-action-confirm" (dict "Label" "Revoke" "Action" "/ui/workspaces/keys/revoke" "Question" (printf "Revoke key %s? Sessions that use it lose their verified workspace on their next request." .Name) "Confirm" "Revoke" "CSRFToken" $.CSRFToken "Right" true "Fields" (dict "name" .Name))}}{{end}}</td></tr>
 {{end}}{{template "table-end"}}
 {{else}}<p class="m-0 text-sm text-muted" id="keys-empty">You have no workspace keys. To add one, run <code>toolgate workspace register NAME</code> on the machine.</p>
 {{end}}{{template "card-end"}}

@@ -168,6 +168,7 @@ func TestWorkspaceKeysCard(t *testing.T) {
 		require.Equal(t, http.StatusOK, status)
 		assert.Contains(t, body, "registered/dave/mine")
 		assert.Contains(t, body, "registered/dave/waiting")
+		assert.Regexp(t, `>SHA256:[A-Za-z0-9_-]{12}…</span>`, body)
 		assert.Contains(t, body, "Waiting for approval")
 		assert.Contains(t, body, ui.ApprovalPath(pending))
 		assert.Contains(t, body, "Revoke key mine? Sessions that use it lose their verified workspace on their next request.")

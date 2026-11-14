@@ -14,12 +14,12 @@ id of the dialog it opens with JavaScript). */}}
 </div>{{end}}
 
 {{/* table-start: ID, Label (the accessible name) and Columns (a list of
-headings; a heading "" is for the row actions). Close with table-end.
+headings; a heading "" is for the row actions) and Visible (true to let a row action's popover reach past the table). Close with table-end.
 Each row's cells carry data-label set to their column's heading. Below
 640px wide every row shows as a card: the first cell is its title, the
 other cells are label and value pairs, and the row actions come last. No
 table scrolls sideways there. */}}
-{{define "table-start"}}<div class="mb-6 rounded-lg border border-border bg-surface sm:overflow-x-auto">
+{{define "table-start"}}<div class="mb-6 rounded-lg border border-border bg-surface {{if .Visible}}sm:overflow-visible{{else}}sm:overflow-x-auto{{end}}">
 <table id="{{.ID}}" class="data-table w-full border-collapse text-sm"{{with .Label}} aria-label="{{.}}"{{end}}>
 <thead><tr>{{range .Columns}}<th scope="col">{{if .}}{{.}}{{else}}<span class="sr-only">Actions</span>{{end}}</th>{{end}}</tr></thead>
 <tbody>{{end}}
@@ -37,6 +37,9 @@ monospace, with the full ID on hover, and a small icon button that copies
 the full ID. The button needs JavaScript; the full ID stays in its title. */}}
 {{define "short-id"}}<span class="whitespace-nowrap"><span class="font-mono text-xs" title="{{.}}">{{short .}}</span> <button type="button" class="copy-id-button inline-flex align-middle text-muted" data-copy-text="{{.}}" title="Copy the full ID" aria-label="Copy the full ID"><svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.500 3.500V9A1.5 1.5 0 0 0 4 10.500h1.500"/></svg></button></span>{{end}}
 
+{{/* short-fingerprint: Short (the text shown) and Full (the fingerprint the copy button copies). */}}
+{{define "short-fingerprint"}}<span class="whitespace-nowrap"><span class="font-mono text-xs" title="{{.Full}}">{{.Short}}</span> <button type="button" class="copy-id-button inline-flex align-middle text-muted" data-copy-text="{{.Full}}" title="Copy the full fingerprint" aria-label="Copy the full fingerprint"><svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.500 3.500V9A1.5 1.5 0 0 0 4 10.500h1.500"/></svg></button></span>{{end}}
+
 {{/* chip: a small labelled value, Label then Value. */}}
 {{define "chip"}}<span class="chip"><span class="chip-label">{{.Label}}</span> <span class="font-mono">{{.Value}}</span></span>{{end}}
 
@@ -47,13 +50,13 @@ item. */}}
 {{/* row-action-confirm: a quiet destructive action that asks before it
 posts. Label (the button), Action (the URL it posts to), Question (asked
 before), Confirm (the confirming button), CSRFToken, HX (true to post
-with htmx and swap the row) and Fields (a dict of hidden form fields). With
+with htmx and swap the row) and Fields (a dict of hidden form fields) and Right (true to open the question over the cell, aligned to its right edge, for the last column of a table whose container shows overflow: see table-start's Visible). With
 Neutral set the action isn't destructive: it shows as a quiet button with a
 primary confirming button. It works without
 JavaScript, as the question opens in a disclosure. */}}
 {{define "row-action-confirm"}}<details class="relative inline-block text-left">
 <summary class="btn btn-small {{if .Neutral}}btn-quiet{{else}}btn-quiet-danger{{end}} list-none">{{.Label}}</summary>
-<form method="post" action="{{.Action}}"{{if .HX}} hx-post="{{.Action}}" hx-target="closest tr" hx-swap="outerHTML"{{end}} class="m-0 mt-1 w-64 rounded-md border border-border bg-surface p-3 text-left">
+<form method="post" action="{{.Action}}"{{if .HX}} hx-post="{{.Action}}" hx-target="closest tr" hx-swap="outerHTML"{{end}} class="m-0 mt-1 w-64{{if .Right}} sm:absolute sm:right-0 sm:z-10 sm:shadow-lg{{end}} rounded-md border border-border bg-surface p-3 text-left">
 <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 {{range $name, $value := .Fields}}<input type="hidden" name="{{$name}}" value="{{$value}}">
 {{end}}<p class="m-0 mb-2 text-sm whitespace-normal">{{.Question}}</p>
