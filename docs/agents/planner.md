@@ -67,6 +67,7 @@ Label the issue `needs-human`, comment on it with exactly what is needed, mentio
 
 ## Hard limits
 
+- Never write "add a line to `CHANGELOG.md`" in an issue. Ask for a changelog line in the PR description instead (the worker rule). Edits to one shared file across parallel PRs make every merge conflict with every other open PR.
 - Never dispatch agents; never push to any branch; never push to `master` or rewrite published history.
 - Never change repository settings, branch protection, secrets, visibility, or collaborators.
 - Never touch anything outside this repository and its VM. The one exception is publishing releases through the `release-manager` (GitHub releases and ghcr.io images and charts). `1.0.0`, deleting or moving tags, and deploying are the human's.

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"slices"
@@ -247,11 +248,25 @@ func (w *Workspaces) recordUnverifiedChange(ctx context.Context, queries *db.Que
 // of the unverified allow list or the default list, in tx. A replica that
 // doesn't know scope requests can't approve it.
 func (w *Workspaces) requestUnverified(ctx context.Context, tx pgx.Tx, identity auth.Identity, change ScopeChange) (WorkspaceResult, error) {
-	change.AskedBy = identity.Session
+	queries := db.New(tx)
 
-	if err := db.New(tx).LockPrincipalAccessRequests(ctx, identity.Principal); err != nil {
+	if err := queries.LockPrincipalAccessRequests(ctx, identity.Principal); err != nil {
 		return WorkspaceResult{}, fmt.Errorf("lock access requests: %w", err)
 	}
+
+	// The change is compared without the session that asked, which the
+	// insert below records.
+	encoded, err := json.Marshal(change)
+	if err != nil {
+		return WorkspaceResult{}, fmt.Errorf("encode change: %w", err)
+	}
+
+	pending, found, err := findPendingRequest(ctx, queries, identity.Principal, accessKindScope, "", true, encoded)
+	if err != nil || found {
+		return WorkspaceResult{Request: pending}, err
+	}
+
+	change.AskedBy = identity.Session
 
 	return w.insertScopeRequest(ctx, tx, identity, change, pgtype.Int8{})
 }

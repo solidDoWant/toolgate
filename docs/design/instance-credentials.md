@@ -116,9 +116,9 @@ Attested user sessions, connectors and `TOOLGATE_TOKEN_COMMAND` tokens are user 
 
 `auth.Identity` holds no token, and it must never get one, because the `sessions` row stores a JSON snapshot of it. The raw bearer token travels like this:
 
-- `auth.Middleware` puts the token that it verified in the request's context with `auth.WithSubjectToken(ctx, token)`, only for an identity of kind `user`. `auth.SubjectToken(ctx)` reads it.
+- `auth.Middleware` puts the token that it verified in the request's context with `auth.WithSubjectToken(ctx, token)`, only for an identity of kind `user`. `auth.SubjectTokenFrom(ctx)` reads it. The reader can't be named `SubjectToken`, because Go doesn't allow a function and a type of the same name in one package.
 - The value has a new type, `auth.SubjectToken`, a string type. Its `String`, `GoString` and `LogValue` methods return `[redacted]`, and its `MarshalJSON` returns an error. So a format verb, a `slog` attribute or a JSON encoding never prints it. Only `internal/credentials` calls its `Reveal()` method, to build the exchange request.
-- Tool handlers don't read the request's context. Per-request data reaches them in `requestContext`, which travels in the go-sdk's `TokenInfo.Extra` (`internal/gateway/mcp.go`). So `mcpEndpoint.ServeHTTP` copies the value into a new field, `requestContext.subjectToken`. Code that has the HTTP request itself, such as resume, reads `auth.SubjectToken(request.Context())`.
+- Tool handlers don't read the request's context. Per-request data reaches them in `requestContext`, which travels in the go-sdk's `TokenInfo.Extra` (`internal/gateway/mcp.go`). So `mcpEndpoint.ServeHTTP` copies the value into a new field, `requestContext.subjectToken`. Code that has the HTTP request itself, such as resume, reads `auth.SubjectTokenFrom(request.Context())`.
 - An exchange uses only the token of the request that it serves. `sessionTools.setCurrent` and `acquireStateless` keep a `requestContext` after its request ends, so they store it with `subjectToken` cleared.
 - The background refresh (§3, "Refresh") copies only the `auth.SubjectToken` value into its goroutine. The goroutine ends after the exchange's `timeout`.
 

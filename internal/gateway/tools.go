@@ -48,7 +48,8 @@ type sessionTools struct {
 	// call answers a call of any proxied tool.
 	call mcp.ToolHandler
 	// current is the identity and session of the latest request on this MCP
-	// session. Fan-out syncs the session with it.
+	// session. Fan-out syncs the session with it. It never holds a subject
+	// token: the request it came from has ended.
 	current requestContext
 
 	mu sync.Mutex
@@ -64,17 +65,18 @@ type sessionTools struct {
 }
 
 func newSessionTools(server *mcp.Server, call mcp.ToolHandler, current requestContext) *sessionTools {
-	return &sessionTools{server: server, call: call, current: current, offered: make(map[string][]byte)}
+	return &sessionTools{server: server, call: call, current: current.withoutSubjectToken(), offered: make(map[string][]byte)}
 }
 
-// setCurrent records the latest request of the session and reports whether
-// its tool search mode differs from the previous request's.
+// setCurrent records the latest request of the session, without its subject
+// token, and reports whether its tool search mode differs from the previous
+// request's.
 func (s *sessionTools) setCurrent(current requestContext) (modeChanged bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	modeChanged = s.current.session.ID != 0 && s.current.searchMode != current.searchMode
-	s.current = current
+	s.current = current.withoutSubjectToken()
 
 	return modeChanged
 }

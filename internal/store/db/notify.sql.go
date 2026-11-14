@@ -20,6 +20,17 @@ func (q *Queries) Notify(ctx context.Context, payload string) error {
 	return err
 }
 
+const notifyCredentials = `-- name: NotifyCredentials :exec
+SELECT pg_notify('toolgate_credentials', $1::text)
+`
+
+// Queues an encrypted exchanged token on the toolgate_credentials channel,
+// for the leader. The payload is never stored in a table.
+func (q *Queries) NotifyCredentials(ctx context.Context, payload string) error {
+	_, err := q.db.Exec(ctx, notifyCredentials, payload)
+	return err
+}
+
 const notifyReply = `-- name: NotifyReply :exec
 SELECT pg_notify('toolgate_mcp_replies', $1::text)
 `

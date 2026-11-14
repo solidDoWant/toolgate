@@ -109,7 +109,34 @@ type Instance struct {
 	UnhealthyReason    string
 	Repairs            []pgtype.Timestamptz
 	McpRevision        string
+	UsesExchange       bool
+	CredentialExpired  bool
 	StoppingAt         pgtype.Timestamptz
+}
+
+type InstanceExchange struct {
+	InstanceID   string
+	Exchange     string
+	Targets      []byte
+	IssuedAt     pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	RefreshAfter pgtype.Timestamptz
+	WantedSince  pgtype.Timestamptz
+	ClaimedAt    pgtype.Timestamptz
+	LastError    pgtype.Text
+	LastErrorAt  pgtype.Timestamptz
+}
+
+type InstanceTemplateSecret struct {
+	InstanceID      string
+	TargetSecret    string
+	TargetKey       string
+	TargetField     string
+	SourceNamespace string
+	SourceName      string
+	SourceKey       string
+	SourceVersion   string
+	LastError       pgtype.Text
 }
 
 type McpSession struct {
@@ -279,6 +306,16 @@ type UnverifiedServer struct {
 	AddedAt pgtype.Timestamptz
 }
 
+type UpstreamSession struct {
+	ID                int64
+	InstanceID        string
+	SessionPk         int64
+	UpstreamSessionID string
+	InitializeResult  []byte
+	CreatedAt         pgtype.Timestamptz
+	EndedAt           pgtype.Timestamptz
+}
+
 type UserScope struct {
 	ID                int64
 	Principal         string
@@ -295,6 +332,21 @@ type UserSecret struct {
 	KeyID      int64
 	CreatedAt  pgtype.Timestamptz
 	UpdatedAt  pgtype.Timestamptz
+}
+
+type WorkspaceKey struct {
+	ID           int64
+	Principal    string
+	Username     string
+	Name         string
+	KeyID        string
+	PublicKey    []byte
+	Status       string
+	RequestID    string
+	RegisteredAt pgtype.Timestamptz
+	ApprovedAt   pgtype.Timestamptz
+	EndedAt      pgtype.Timestamptz
+	LastUsedAt   pgtype.Timestamptz
 }
 
 type WorkspaceList struct {

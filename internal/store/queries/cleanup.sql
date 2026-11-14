@@ -23,3 +23,7 @@ WHERE LEAST(CASE WHEN status = 'denied' THEN decided_at END, used_at, expires_at
 -- Deletes access requests that stopped being live (decided or expired) more
 -- than 7 days ago. LEAST ignores a null decided_at.
 DELETE FROM access_requests WHERE LEAST(decided_at, expires_at) <= now() - interval '7 days';
+
+-- name: DeleteStaleWorkspaceKeys :execrows
+-- Deletes workspace keys that were revoked or replaced more than 7 days ago.
+DELETE FROM workspace_keys WHERE status <> 'active' AND ended_at <= now() - interval '7 days';

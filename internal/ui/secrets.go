@@ -124,7 +124,7 @@ func (u *UI) setSecret(writer http.ResponseWriter, request *http.Request) {
 	_, err := u.options.Secrets.Set(request.Context(), session.Principal, name, value)
 	switch {
 	case errors.Is(err, secrets.ErrInvalidName):
-		http.Error(writer, "The secret name is invalid. It must match ^[A-Za-z0-9._-]{1,128}$.", http.StatusBadRequest)
+		http.Error(writer, "The secret name is invalid. It must match ^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$.", http.StatusBadRequest)
 
 		return
 	case errors.Is(err, secrets.ErrValueTooLong):
