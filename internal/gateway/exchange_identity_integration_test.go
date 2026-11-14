@@ -109,7 +109,7 @@ func newNonUserFixture(t *testing.T) (*mcpFixture, []nonUserClient) {
 	}
 }
 
-// addExchangeTemplate offers a shared template whose Secret takes a token
+// addExchangeTemplate offers a per-user template whose Secret takes a token
 // exchanged from the caller's sign-in, to every identity in clients and to
 // alice.
 func (f *mcpFixture) addExchangeTemplate(name string, clients []nonUserClient) *v1alpha1.MCPServerTemplate {
@@ -123,7 +123,7 @@ func (f *mcpFixture) addExchangeTemplate(name string, clients []nonUserClient) *
 		}
 	}
 
-	template := f.addEnableTemplate(name, "shared", access)
+	template := f.addEnableTemplate(name, "per-user", access)
 	template.Spec.Resources = []k8sruntime.RawExtension{{Raw: []byte(
 		`{"apiVersion":"v1","kind":"Secret","metadata":{"name":"token"},"stringData":{"token":"${exchange:temporal}"}}`,
 	)}}
@@ -192,7 +192,7 @@ func TestExchangeTemplateRefusesNonUserIdentities(t *testing.T) {
 			require.NoError(t, db.New(fixture.pool).EnableServer(t.Context(), db.EnableServerParams{
 				SessionPk: fixture.sessionPK(t, client.principal), TemplateNs: template.Namespace, TemplateName: template.Name,
 			}))
-			fixture.addInstance(t, template, "shared", template.Generation-1, "failed", "it crashed")
+			fixture.addInstance(t, template, "user:"+client.principal, template.Generation-1, "failed", "it crashed")
 
 			result := callTool(t, session, template.Name+"__echo", nil)
 
@@ -245,7 +245,7 @@ func TestExchangeTemplateRefusesNonUserIdentities(t *testing.T) {
 			})
 		})
 
-		instance := fixture.awaitInstance(t, template, "shared")
+		instance := fixture.awaitInstance(t, template, "user:alice")
 		fixture.markReady(t, instance.ID, "echo")
 		wait.Wait()
 

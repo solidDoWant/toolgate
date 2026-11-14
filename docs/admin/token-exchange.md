@@ -48,6 +48,8 @@ env:
     value: ${exchange:temporal}
 ```
 
+Only users who sign in through the IdP can use a template with `${exchange:…}`. Service accounts, SPIFFE workloads and pod sign-in have no user token to exchange. The gateway refuses their enables and their calls with the reason `no-user-token`. If such an identity had the server enabled before the template got the variable, the gateway removes the server from its session when the session resumes.
+
 ## Authentik setup
 
 1. Make a confidential OAuth2 provider, for example `toolgate-token-exchange`, with the `Token exchange` grant type. Bind it to an application.
