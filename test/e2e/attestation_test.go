@@ -293,4 +293,15 @@ func TestAttestedUserSessions(t *testing.T) {
 			assert.Equal(collect, "attested coder/alice/dev", identityOf(t, header))
 		}, 2*time.Minute, 2*time.Second)
 	})
+
+	t.Run("pod with email match while workspace keys are on", func(t *testing.T) {
+		token := workspacePodToken(t, namespace, image, "alice", "dev")
+		header := attestedHeader(t, "alice", groups, token, "")
+		connect(t, header)
+
+		assert.Equal(t, "attested coder/alice/dev", identityOf(t, header), "the pod token is not sent to the key verifier")
+
+		assert.Equal(t, "0", strings.TrimSpace(gatewayQuery(t, admin, "SELECT count(*) FROM audit_events WHERE type = 'auth.refuse' "+
+			"AND principal = 'alice' AND (details->>'reason' LIKE 'attestation key%' OR details->>'reason' = 'attestation workspace keys off')")))
+	})
 }

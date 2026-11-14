@@ -169,8 +169,21 @@ func (a *keyAPI) insertActiveKeys(t *testing.T, principal string, count int) {
 }
 
 func TestWorkspaceKeyRegistration(t *testing.T) {
-	fixture := newMCPFixture(t)
+	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
+
+	t.Run("user token alone makes no usable key", func(t *testing.T) {
+		key := newWorkspaceKey(t)
+		api.requestKey(t, keyUser("reg-alone"), "dev", key.publicKey())
+
+		client := keyUser("reg-alone")
+		client.session = "alone"
+		fixture.startSession(t, fixture.server.URL, withKey(t, client, key))
+
+		assert.Equal(t, "attestation key not approved", refusals.last())
+		fixture.requireSession(t, client, "claimed/default", auth.AttestationUser)
+		assert.Zero(t, api.count(t, `SELECT count(*) FROM workspace_keys WHERE principal = 'reg-alone'`))
+	})
 
 	t.Run("same key twice returns the pending request", func(t *testing.T) {
 		key := newPublicKey(t)
@@ -291,8 +304,51 @@ func TestWorkspaceKeyRegistration(t *testing.T) {
 }
 
 func TestWorkspaceKeyApproval(t *testing.T) {
-	fixture := newMCPFixture(t)
+	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
+
+	t.Run("approved key attests on another replica", func(t *testing.T) {
+		key := newWorkspaceKey(t)
+		requested := api.requestKey(t, keyUser("app-replica"), "dev", key.publicKey())
+
+		client := keyUser("app-replica")
+		client.session = "replica"
+		other := fixture.replica(t)
+
+		fixture.startSession(t, other.URL, withKey(t, client, key))
+		fixture.requireSession(t, client, "claimed/default", auth.AttestationUser)
+
+		require.NoError(t, api.approveKey(t, "app-replica", requested.Request))
+
+		fresh := client
+		fresh.session = "replica-after"
+		fixture.startSession(t, other.URL, withKey(t, fresh, key))
+		fixture.requireSession(t, fresh, "registered/app-replica/dev", auth.AttestationAttested)
+	})
+
+	t.Run("replace keeps the workspace", func(t *testing.T) {
+		oldKey, newKey := newWorkspaceKey(t), newWorkspaceKey(t)
+		api.activateKey(t, "app-keeps", "dev", oldKey.publicKey())
+
+		client := keyUser("app-keeps")
+		client.session = "keeps"
+		mcpSession := fixture.startSession(t, fixture.server.URL, withKey(t, client, oldKey))
+		require.Equal(t, http.StatusOK, fixture.pingStatus(t, withKey(t, client, oldKey), mcpSession))
+
+		replacement := api.requestKey(t, keyUser("app-keeps"), "dev", newKey.publicKey())
+		require.NoError(t, api.approveKey(t, "app-keeps", replacement.Request))
+
+		assert.Equal(t, http.StatusNotFound, fixture.pingStatus(t, withKey(t, client, oldKey), mcpSession))
+		assert.Equal(t, "attestation key revoked", refusals.last())
+
+		assert.Equal(t, http.StatusOK, fixture.pingStatus(t, withKey(t, client, newKey), mcpSession),
+			"the new key gives the same workspace")
+
+		fresh := client
+		fresh.session = "keeps-new"
+		fixture.startSession(t, fixture.server.URL, withKey(t, fresh, newKey))
+		fixture.requireSession(t, fresh, "registered/app-keeps/dev", auth.AttestationAttested)
+	})
 
 	t.Run("approval makes the key active with the request's time", func(t *testing.T) {
 		requested := api.requestKey(t, keyUser("app-row"), "dev", newPublicKey(t))
@@ -471,8 +527,30 @@ func TestWorkspaceKeyApproval(t *testing.T) {
 }
 
 func TestWorkspaceKeyRevocation(t *testing.T) {
-	fixture := newMCPFixture(t)
+	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
+
+	t.Run("revoke applies on the next request", func(t *testing.T) {
+		key := newWorkspaceKey(t)
+		api.activateKey(t, "rev-next", "dev", key.publicKey())
+
+		client := keyUser("rev-next")
+		client.session = "next"
+		mcpSession := fixture.startSession(t, fixture.server.URL, withKey(t, client, key))
+		require.Equal(t, http.StatusOK, fixture.pingStatus(t, withKey(t, client, key), mcpSession))
+
+		revocation, err := api.workspaces.RevokeKey(t.Context(), keyIdentity("rev-next"), "dev", gateway.ViaCLI)
+		require.NoError(t, err)
+		require.True(t, revocation.Revoked)
+
+		assert.Equal(t, http.StatusNotFound, fixture.pingStatus(t, withKey(t, client, key), mcpSession))
+		assert.Equal(t, "attestation key revoked", refusals.last())
+
+		fresh := client
+		fresh.session = "next-new"
+		fixture.startSession(t, fixture.server.URL, withKey(t, fresh, key))
+		fixture.requireSession(t, fresh, "claimed/default", auth.AttestationUser)
+	})
 
 	revoke := func(t *testing.T, on *keyAPI, subject, name string) (int, string) {
 		t.Helper()

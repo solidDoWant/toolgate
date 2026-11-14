@@ -72,6 +72,8 @@ type OIDCUser struct {
 	Email         string
 	EmailVerified bool
 	Groups        []string
+	// PreferredUsername is the preferred_username claim, left out when empty.
+	PreferredUsername string
 }
 
 // TokenClaims are the claims of a token minted with MintAccessToken or
@@ -456,6 +458,10 @@ func (u *oidcUsers) claims(subject string) map[string]any {
 
 	if user.Groups != nil {
 		claims["groups"] = user.Groups
+	}
+
+	if user.PreferredUsername != "" {
+		claims["preferred_username"] = user.PreferredUsername
 	}
 
 	return claims
