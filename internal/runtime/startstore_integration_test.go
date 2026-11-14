@@ -54,7 +54,7 @@ func TestPostgresStartStoreCompareAndSet(t *testing.T) {
 
 	startStore := runtime.PostgresStartStore{Pool: pool}
 
-	changed, err := startStore.MarkStarting(t.Context(), instanceID, 4, nil, time.Time{})
+	changed, err := startStore.MarkStarting(t.Context(), instanceID, 4, nil, time.Time{}, nil)
 	require.NoError(t, err)
 	assert.True(t, changed)
 	expectEvent(t, events)
@@ -140,7 +140,7 @@ func TestPostgresStartStoreMarkReadyStoresTheRevision(t *testing.T) {
 	require.NoError(t, err)
 
 	startStore := runtime.PostgresStartStore{Pool: pool}
-	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, nil, time.Time{})
+	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, nil, time.Time{}, nil)
 	require.NoError(t, err)
 
 	changed, err := startStore.MarkReady(t.Context(), instance, []byte(`[]`), runtime.RevisionStateless)
@@ -198,13 +198,13 @@ func TestPostgresStartStoreCountsStartsAndHealthFailures(t *testing.T) {
 	startStore := runtime.PostgresStartStore{Pool: pool, Metrics: metrics}
 
 	ready := insert("00000000000000000000000000000a01", "one")
-	_, err = startStore.MarkStarting(t.Context(), ready.ID, 1, nil, time.Time{})
+	_, err = startStore.MarkStarting(t.Context(), ready.ID, 1, nil, time.Time{}, nil)
 	require.NoError(t, err)
 	_, err = startStore.MarkReady(t.Context(), ready, []byte(`[]`), runtime.RevisionStateful)
 	require.NoError(t, err)
 
 	failing := insert("00000000000000000000000000000a02", "two")
-	_, err = startStore.MarkStarting(t.Context(), failing.ID, 1, nil, time.Time{})
+	_, err = startStore.MarkStarting(t.Context(), failing.ID, 1, nil, time.Time{}, nil)
 	require.NoError(t, err)
 	_, err = startStore.MarkFailed(t.Context(), failing.ID, "starting", "image pull")
 	require.NoError(t, err)

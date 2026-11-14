@@ -57,6 +57,8 @@ type memoryStore struct {
 	resolvedExpiresAt time.Time
 	// healthCheck is what MarkStarting recorded.
 	healthCheck []byte
+	// templateSecrets is what MarkStarting recorded.
+	templateSecrets []runtime.TemplateSecretTarget
 	// secretsRecorded says RecordSecretsUsed was called.
 	secretsRecorded bool
 	// unhealthy and unhealthyReason are what SetHealth recorded.
@@ -82,7 +84,9 @@ func (m *memoryStore) RecordSecretsUsed(context.Context, string, map[string]time
 	return nil
 }
 
-func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time) (bool, error) {
+func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time,
+	templateSecrets []runtime.TemplateSecretTarget,
+) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -91,6 +95,7 @@ func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64
 	}
 
 	m.status, m.generation, m.resolvedExpiresAt, m.healthCheck = "starting", generation, resolvedExpiresAt, healthCheck
+	m.templateSecrets = templateSecrets
 	m.writes++
 
 	return true, nil
