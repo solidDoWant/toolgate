@@ -75,6 +75,14 @@ A person who can read Secrets in the instance namespaces can also read the copie
 
 The gateway never logs a value. Status messages name the Secret and the key but never the value.
 
+## Use the gateway's own namespace
+
+By default the chart and the gateway refuse the gateway's own namespace as the template secrets namespace. That namespace holds the keyset, the database client certificates and the OIDC client secrets of the gateway.
+
+If your cluster keeps the Secrets of each app in the namespace of the app, and only trusted admins write templates, you can set `config.templateSecrets.allowGatewayNamespace` to `true`. Then `config.templateSecretsNamespace` may be the release namespace. The `Role` and `RoleBinding` go in that namespace and grant `get`, `list` and `watch` on Secrets only. The gateway logs a warning at start. All other rules for the namespace still apply. One change: the release namespace may also be in `config.catalogNamespaces`, because template authors write there already.
+
+**Risk:** with this on, anyone who can write a template can read the gateway's own Secrets. A template can name them in `${templateSecret:NAME/KEY}`, and the value goes into an instance. Use it only when your template authors are already trusted with those Secrets.
+
 ## Move from a Kyverno copy policy
 
 If a Kyverno policy copies Secrets into each instance namespace today, move in these steps:

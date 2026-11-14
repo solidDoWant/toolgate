@@ -36,7 +36,7 @@ settings from `config`.
 {{- if hasPrefix "tg-" . }}
 {{- fail "config.templateSecretsNamespace must not start with tg-: that prefix is for instance namespaces" }}
 {{- end }}
-{{- if eq . $.Release.Namespace }}
+{{- if and (eq . $.Release.Namespace) (not (($.Values.config.templateSecrets).allowGatewayNamespace)) }}
 {{- fail "config.templateSecretsNamespace must not be the release namespace: it holds the gateway's own Secrets" }}
 {{- end }}
 {{- if eq . $.Values.config.sharedNamespace.name }}
@@ -45,7 +45,7 @@ settings from `config`.
 {{- if eq . "kube-system" }}
 {{- fail "config.templateSecretsNamespace must not be kube-system" }}
 {{- end }}
-{{- if has . $.Values.config.catalogNamespaces }}
+{{- if and (has . $.Values.config.catalogNamespaces) (not (and (eq . $.Release.Namespace) ($.Values.config.templateSecrets).allowGatewayNamespace)) }}
 {{- fail "config.templateSecretsNamespace must not be one of config.catalogNamespaces: template authors write there" }}
 {{- end }}
 {{- end }}
@@ -98,6 +98,9 @@ settings from `config`.
 {{- end }}
 {{- with $config.templateSecretsNamespace }}
 {{- $env = append $env (dict "name" "TOOLGATE_TEMPLATE_SECRETS_NAMESPACE" "value" .) }}
+{{- end }}
+{{- if ($config.templateSecrets).allowGatewayNamespace }}
+{{- $env = append $env (dict "name" "TOOLGATE_TEMPLATE_SECRETS_ALLOW_GATEWAY_NAMESPACE" "value" "true") }}
 {{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_LIMIT_PER_USER" "value" (toString (int $config.limits.instancesPerUser))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_LIMIT" "value" (toString (int $config.limits.instances))) -}}

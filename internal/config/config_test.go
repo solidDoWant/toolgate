@@ -761,9 +761,18 @@ func TestTemplateSecretsNamespaceConfig(t *testing.T) {
 	tests := []struct {
 		name        string
 		namespace   string
+		allowOwn    bool
+		catalogs    string
 		wantProblem string
 	}{
 		{name: "empty means off", namespace: ""},
+		{name: "the gateway's own namespace with the opt-in", namespace: "toolgate", allowOwn: true},
+		{name: "the gateway's own namespace is also a catalog namespace with the opt-in", namespace: "toolgate", allowOwn: true, catalogs: "toolgate,catalog-a"},
+		{name: "the gateway's own namespace is also a catalog namespace without the opt-in", namespace: "toolgate", catalogs: "toolgate", wantProblem: "must not be leaseNamespace"},
+		{name: "instance prefix with the opt-in", namespace: "tg-secrets", allowOwn: true, wantProblem: "must not start with tg-"},
+		{name: "the shared namespace with the opt-in", namespace: "toolgate-shared", allowOwn: true, wantProblem: "must not be sharedNamespace"},
+		{name: "kube-system with the opt-in", namespace: "kube-system", allowOwn: true, wantProblem: "must not be kube-system"},
+		{name: "a catalog namespace with the opt-in", namespace: "catalog-a", allowOwn: true, wantProblem: "must not be one of catalogNamespaces"},
 		{name: "a separate namespace", namespace: "toolgate-template-secrets"},
 		{name: "not a DNS label", namespace: "Not_A_Namespace", wantProblem: `templateSecretsNamespace: "Not_A_Namespace" is not a namespace name`},
 		{name: "instance prefix", namespace: "tg-secrets", wantProblem: "must not start with tg-"},
@@ -779,6 +788,14 @@ func TestTemplateSecretsNamespaceConfig(t *testing.T) {
 			env := map[string]string{"TOOLGATE_TEMPLATE_SECRETS_NAMESPACE": test.namespace}
 			for key, value := range base {
 				env[key] = value
+			}
+
+			if test.allowOwn {
+				env["TOOLGATE_TEMPLATE_SECRETS_ALLOW_GATEWAY_NAMESPACE"] = "true"
+			}
+
+			if test.catalogs != "" {
+				env["TOOLGATE_CATALOG_NAMESPACES"] = test.catalogs
 			}
 
 			cfg, err := config.Load("", envFrom(env))
