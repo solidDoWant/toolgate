@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -155,7 +156,12 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 	}
 
 	// Replicas ignore list_changed on forwarding sessions: the reconciler
-	// keeps the tool list. The session speaks the row's MCP revision.
+	// keeps the tool list, so a forwarding connection opens no GET stream.
+	// Closing it ends the upstream session. The session speaks the row's
+	// MCP revision.
+	deleteOnClose := &atomic.Bool{}
+	deleteOnClose.Store(true)
+
 	connectCtx, cancel := upstreamConnectContext(ctx)
 	defer cancel()
 
@@ -163,6 +169,7 @@ func (u *upstreams) session(ctx context.Context, instance db.Instance, template 
 		Implementation: &mcp.Implementation{Name: "toolgate", Version: version.Get()},
 		HTTPClient:     u.httpClient,
 		Remote:         remote,
+		DeleteOnClose:  deleteOnClose,
 	})
 	if err != nil {
 		if remote != nil && remote.Refused() {
