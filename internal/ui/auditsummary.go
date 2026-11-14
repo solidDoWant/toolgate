@@ -53,6 +53,7 @@ var auditCategories = []struct {
 	{"servers", "Server lifecycle", []string{
 		"server.enable", "server.disable", "instance.start", "instance.ready", "instance.fail", "instance.stop",
 		"instance.health", "instance.reapply", "secret.set", "secret.delete",
+		"volume.delete",
 	}},
 }
 
@@ -206,6 +207,8 @@ func summarize(event auditEvent) auditSummary {
 		return auditSummary{"Secret set: ", detailString(details, "secret"), "", outcomeOK}
 	case "secret.delete":
 		return auditSummary{"Secret deleted: ", detailString(details, "secret"), "", outcomeOK}
+	case "volume.delete":
+		return auditSummary{"Volume deleted: ", detailString(details, "volume"), "", outcomeOK}
 	default:
 		return auditSummary{"Event " + event.Type, "", "", outcomeNone}
 	}
@@ -252,7 +255,7 @@ var auditTypeLabels = map[string]string{
 	"server.enable": "Server enabled", "server.disable": "Server disabled", "instance.start": "Instance starting",
 	"instance.ready": "Instance ready", "instance.fail": "Instance failed", "instance.stop": "Instance stopped",
 	"instance.health": "Instance health changed", "instance.reapply": "Instance repaired",
-	"secret.set": "Secret set", "secret.delete": "Secret deleted",
+	"secret.set": "Secret set", "secret.delete": "Secret deleted", "volume.delete": "Volume deleted",
 }
 
 // auditTypeLabel is the readable name of an event type.

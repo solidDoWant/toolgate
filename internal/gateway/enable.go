@@ -648,6 +648,14 @@ func (m *metaTools) removeServer(ctx context.Context, database beginner, current
 			return fmt.Errorf("disable server: %w", err)
 		}
 
+		// The pair's upstream sessions end with it; the sweep sends their
+		// DELETE and removes the rows.
+		if _, err := queries.EndUpstreamSessionsOfTemplate(ctx, db.EndUpstreamSessionsOfTemplateParams{
+			SessionPk: current.session.ID, TemplateNs: template.Namespace, TemplateName: template.Name,
+		}); err != nil {
+			return fmt.Errorf("end upstream sessions: %w", err)
+		}
+
 		if err := audit.NewRecorder(m.auditOutput, queries).Record(ctx, auditEvent(current, "server.disable", template.Name, details)); err != nil {
 			return err
 		}

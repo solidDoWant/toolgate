@@ -70,6 +70,8 @@ The name of the template is the name of the server. It has 31 characters at most
   - `per-session`: one instance for each Claude Code session.
   - `per-user`: one instance for each user, shared by the sessions of that user.
   - `shared`: one instance for all users.
+
+  Each Claude Code session that uses an instance gets its own MCP session on the server. The calls of one Claude Code session always use that one MCP session, on every gateway replica. So a `per-user` or `shared` instance holds one MCP session for each Claude Code session that uses it. A server that keeps a lot of state for each session, such as a browser, uses more memory than before.
 - `namespace`: `per-instance` (the default) or `shared`. See [Where instances run](#where-instances-run).
 - `updatePolicy`: when toolgate replaces instances that started from an older version of the template: `manual` (default), `immediate` or `whenIdle` with `idleFor`. See [Updating outdated instances](instances.md#updating-outdated-instances).
 - `idleStop`: how long a `per-user` or `shared` instance runs without calls before it stops. For a `shared` template, `0` means that the instance does not stop. [Instance stops and cleanup](instances.md) gives the full rules.
@@ -99,7 +101,8 @@ The scope of a template must be as narrow as the variables that the template use
 | The template uses | Broadest scope it can have |
 |---|---|
 | no variable, or only `${instance.*}` and `${template.name}` | `shared` |
-| `${principal.*}`, `${secret:…}` or `${resolver:…}` | `per-user` |
+| `${principal.*}`, `${secret:…}`, `${resolver:…}` or `${exchange:…}` | `per-user` |
+| `${templateSecret:…}` | `shared` (it does not narrow the scope) |
 | `${session.id}` or `${workspace.id}` | `per-session` |
 
 If you do not set `scope`, toolgate uses the broadest scope that the table allows. For example, a template without variables is `shared`, and a template with `${secret:…}` is `per-user`.
@@ -222,12 +225,16 @@ A variable is a value that toolgate puts into the template when it starts an ins
 | `${template.name}` | The name of the template. |
 | `${secret:NAME}` | The user's secret with that name. |
 | `${resolver:NAME}` | A value from the resolver with that name. [Resolvers](#resolvers) tells more. |
+| `${exchange:NAME}` | A token for the calling user, from the token exchange with that name. |
+| `${templateSecret:NAME/KEY}` | The value of key `KEY` in the Secret `NAME` in the template secrets namespace. |
 
 To write a literal `${`, write `$${`. An unknown variable makes the start fail.
 
 You can use `${secret:NAME}` and `${resolver:NAME}` only in `stringData` or `data` of a `Secret`. If a user did not set the secret, the user gets a message with the command that sets it. [User secrets](user-secrets.md) tells how toolgate keeps them.
 
-A `shared` template cannot use `${secret:…}`, `${resolver:…}`, `${principal.*}`, `${workspace.*}` or `${session.*}`, because one instance serves all users.
+You can use `${exchange:NAME}` and `${templateSecret:NAME/KEY}` only in `stringData` or `data` of a `Secret`, and the value must be exactly that one variable, with no other text and no other variable. For example, `token: ${exchange:temporal}` is valid, and `token: "Bearer ${exchange:temporal}"` is not. toolgate updates the key later without rendering the template again, so the key must hold one value from one source. Under `stringData`, the key holds the text of the value. Under `data`, toolgate encodes the value with standard base64, so the key holds exactly the bytes of the value. This differs from `${secret:…}` and `${resolver:…}`, which toolgate puts in as they are. A template is not valid if it names an exchange that is not configured, or uses `${templateSecret:…}` when the gateway has no template secrets namespace. `NAME/KEY` must be a Secret name and a key, split at the first `/`. toolgate never reads the Secret when it checks a template, so you can create the Secret after the template. [Token exchange](token-exchange.md) and [Template secrets](template-secrets.md) tell more.
+
+A `shared` template cannot use `${secret:…}`, `${resolver:…}`, `${exchange:…}`, `${principal.*}`, `${workspace.*}` or `${session.*}`, because one instance serves all users.
 
 ## Resolvers
 

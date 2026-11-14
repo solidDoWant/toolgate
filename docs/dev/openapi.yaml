@@ -38,6 +38,98 @@ paths:
                 type: string
           description: Internal Server Error
       summary: Read one of the caller's access requests
+  /api/v1/admin/volumes:
+    get:
+      parameters:
+      - description: Only the per-user volumes of this principal.
+        in: query
+        name: owner
+        schema:
+          description: Only the per-user volumes of this principal.
+          type: string
+      - description: Continue after this volume ID (the next value of the previous
+          page).
+        in: query
+        name: after
+        schema:
+          description: Continue after this volume ID (the next value of the previous
+            page).
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumesapiList'
+          description: OK
+        "400":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Bad Request
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: List the persistent volumes (admins only)
+  /api/v1/admin/volumes/{id}:
+    delete:
+      parameters:
+      - description: The volume ID.
+        in: path
+        name: id
+        required: true
+        schema:
+          description: The volume ID.
+          type: string
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VolumesapiVolume'
+          description: Accepted
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Not Found
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: Mark a persistent volume for deletion (admins only); the leader deletes
+        it
   /api/v1/audit/tail:
     get:
       parameters:
@@ -516,6 +608,55 @@ components:
         session:
           type: string
         workspace:
+          type: string
+      type: object
+    VolumesapiList:
+      properties:
+        next:
+          type: string
+        volumes:
+          items:
+            $ref: '#/components/schemas/VolumesapiVolume'
+          type:
+          - array
+          - "null"
+      type: object
+    VolumesapiVolume:
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        deleteReason:
+          type: string
+        id:
+          type: string
+        inUseBy:
+          type:
+          - "null"
+          - string
+        lastUsedAt:
+          format: date-time
+          type: string
+        owner:
+          type: string
+        persistentVolume:
+          type:
+          - "null"
+          - string
+        problem:
+          type: string
+        scope:
+          type: string
+        server:
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        storageClass:
+          type: string
+        templateNamespace:
+          type: string
+        volume:
           type: string
       type: object
     WorkspacesapiAccessRequest:

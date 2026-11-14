@@ -41,6 +41,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
 	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/ui"
+	"github.com/solidDoWant/toolgate/internal/volumesapi"
 	"github.com/solidDoWant/toolgate/internal/wellknown"
 	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
@@ -175,6 +176,16 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		IdleTimeout: testtime.Scale(time.Duration(cfg.SessionIdleTimeout)),
 		Entries:     workspaces,
 		Log:         logger,
+	}).Register(server, func(next http.Handler) http.Handler {
+		return authenticator.Middleware(next, false)
+	})
+
+	(&volumesapi.Handler{
+		Queries:    db.New(server.Database()),
+		Pool:       server.Database(),
+		AdminGroup: cfg.AdminGroup,
+		Output:     stdout,
+		Log:        logger,
 	}).Register(server, func(next http.Handler) http.Handler {
 		return authenticator.Middleware(next, false)
 	})
