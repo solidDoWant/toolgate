@@ -1,6 +1,7 @@
 // Package v1alpha1 holds the custom resources toolgate reads: catalog
 // entries (MCPServerTemplate), standing block rules (ToolgateRule) and
-// Claude Code settings profiles (SettingsProfile).
+// Claude Code settings profiles (SettingsProfile) and OAuth token exchanges
+// (TokenExchange).
 //
 // +kubebuilder:object:generate=true
 // +groupName=toolgate.soliddowant.dev
@@ -27,6 +28,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&MCPServerTemplate{}, &MCPServerTemplateList{},
 		&ToolgateRule{}, &ToolgateRuleList{},
 		&SettingsProfile{}, &SettingsProfileList{},
+		&TokenExchange{}, &TokenExchangeList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 

@@ -111,6 +111,7 @@ func TestCRDsAreTemplates(t *testing.T) {
 		"mcpservertemplates.toolgate.soliddowant.dev",
 		"toolgaterules.toolgate.soliddowant.dev",
 		"settingsprofiles.toolgate.soliddowant.dev",
+		"tokenexchanges.toolgate.soliddowant.dev",
 	}
 
 	crds := func(manifests []manifest) map[string]apiextensionsv1.CustomResourceDefinition {
@@ -172,7 +173,11 @@ func TestValuesCannotChangeTheSecurityBoundary(t *testing.T) {
 	}
 
 	baseline := byName(renderQuickStart(t))
-	require.Len(t, baseline, len(guarded))
+	// One of each guarded kind for the gateway, plus the Role and RoleBinding
+	// that read token exchanges in the catalog namespace.
+	require.Len(t, baseline, len(guarded)+2)
+	assert.Contains(t, baseline, "Role/toolgate-token-exchanges")
+	assert.Contains(t, baseline, "RoleBinding/toolgate-token-exchanges")
 
 	for _, tampering := range [][]string{
 		{"rbac.create=false", "rbac.rules[0].apiGroups[0]=*", "clusterRole.rules=null"},

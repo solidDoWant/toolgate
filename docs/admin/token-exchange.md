@@ -38,6 +38,57 @@ The gateway refuses to start if `tokenExchanges` is set and `secretsKeysetFile` 
 
 Mount the client secret and the `caFile` with `resources.persistence` and `advancedMounts.gateway.gateway`, as for resolvers. The [configuration reference](configuration.md) and the [chart values](chart-values.md) list every setting.
 
+## The TokenExchange resource
+
+A `TokenExchange` is a custom resource that describes one token exchange. You put it in a catalog namespace (`config.catalogNamespaces`, or the release namespace when that list is empty), next to the templates that use it. Templates do not use the resource yet. They still use `config.tokenExchanges`. The gateway already checks each `TokenExchange` and writes the result to its status.
+
+```yaml
+apiVersion: toolgate.soliddowant.dev/v1alpha1
+kind: TokenExchange
+metadata:
+  name: temporal
+  namespace: toolgate-catalog
+spec:
+  tokenURL: https://authentik.example.com/application/o/token/
+  clientID: toolgate-token-exchange
+  clientSecretRef:
+    name: toolgate-token-exchange-client
+    key: client-secret
+  audience: temporal-client-id               # optional
+  scope: openid temporal-permissions         # optional
+  requestedTokenType: urn:ietf:params:oauth:token-type:access_token   # optional
+  timeout: 10s                               # optional, at most 60s
+```
+
+The gateway reads the client secret from the Secret `clientSecretRef.name`, key `clientSecretRef.key`, in the template secrets namespace (`config.templateSecretsNamespace`). See [Template secrets](template-secrets.md).
+
+The chart lets the gateway read `TokenExchange` resources in the catalog namespaces only. The gateway writes only their status.
+
+### The allowed token endpoints
+
+The gateway sends a user's access token to the `tokenURL` of an exchange. Anyone who can write a `TokenExchange` chooses that URL. For this reason, the gateway uses a `TokenExchange` only if its `tokenURL` is on an allow-list that only the chart sets.
+
+- Set the list with `config.tokenExchange.allowedTokenURLs`, at most 16 `https://` URLs.
+- If you do not set the list, it holds the token endpoint of `config.oidc.issuerURL` and of each `config.oidc.additionalIssuers` item. The gateway reads these endpoints from the discovery documents of the issuers.
+- If you set the list, it replaces this default. The gateway does not add the issuer endpoints to it.
+- The gateway compares each URL exactly. Only the scheme and the host can differ in case. A longer path, another port or a trailing slash is a different URL.
+
+So catalog authors can define exchanges, but they can send tokens only to the token endpoints that you allowed.
+
+### Status
+
+The gateway writes a `Valid` condition on each `TokenExchange`. Read it with `kubectl get tokenexchange temporal -o yaml`. If the resource is not valid, the condition has status `False` and one of these reasons:
+
+| Reason | Cause |
+|---|---|
+| `BadFields` | A field is wrong. For example, `tokenURL` is not an `https://` URL, `clientID` is empty, or `timeout` is more than `60s`. |
+| `TooMany` | The namespace has more than 16 `TokenExchange` resources. The first 16 by name are checked. The others are not valid. |
+| `NoKeyset` | The gateway has no `secretsKeysetFile`. The gateway needs it to encrypt each exchanged token. |
+| `URLNotAllowed` | The `tokenURL` is not on the allow-list. |
+| `SecretMissing` | The Secret or its key does not exist, the value is empty, or the gateway has no template secrets namespace. The message names the Secret and the key, never the value. |
+
+The gateway checks each resource again every minute. So a Secret that you create later makes the resource valid after a short time.
+
 ## An example template
 
 A template uses the variable as the whole value of a field. Text around it, such as `Bearer ${exchange:temporal}`, is not allowed. See [Templates and rules](templates-and-rules.md) for where the variable can go.

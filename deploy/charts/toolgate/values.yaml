@@ -300,6 +300,17 @@ config:
   # `resources.persistence`.
   tokenExchanges: []
 
+  tokenExchange:
+    # -- Token endpoints that `TokenExchange` resources may send a user's
+    # access token to, such as
+    # `[https://idp.example.com/application/o/token/]`. At most 16
+    # `https://` URLs. A `TokenExchange` whose `tokenURL` isn't listed is
+    # invalid. Empty means the token endpoint of `config.oidc.issuerURL`
+    # and of each `config.oidc.additionalIssuers` item, read from their
+    # discovery documents. A list replaces that default; it doesn't add to
+    # it. See the token exchange page of the admin docs.
+    allowedTokenURLs: []
+
   spiffe:
     # -- SPIFFE trust domains whose JWT-SVIDs may sign in, attested as the
     # workload. Each item has a `name` (the trust domain), exactly one of

@@ -160,6 +160,7 @@ func TestChartRendersTheGateway(t *testing.T) {
 		"mcpservertemplates.toolgate.soliddowant.dev",
 		"toolgaterules.toolgate.soliddowant.dev",
 		"settingsprofiles.toolgate.soliddowant.dev",
+		"tokenexchanges.toolgate.soliddowant.dev",
 	}, crds)
 
 	deployment := find[appsv1.Deployment](t, manifests, "Deployment")
@@ -287,18 +288,136 @@ func TestClusterRoleAddsExtraRules(t *testing.T) {
 	assert.Equal(t, expected, role.Rules)
 }
 
+// findNamed returns the one manifest of kind with name.
+func findNamed[T any](t *testing.T, manifests []manifest, kind, name string) T {
+	t.Helper()
+
+	var named []manifest
+
+	for _, candidate := range ofKind(manifests, kind) {
+		if candidate.Metadata.Name == name {
+			named = append(named, candidate)
+		}
+	}
+
+	return find[T](t, named, kind)
+}
+
 func TestRoleCoversOnlyTheReleaseNamespace(t *testing.T) {
 	manifests := renderQuickStart(t)
-	role := find[rbacv1.Role](t, manifests, "Role")
+	role := findNamed[rbacv1.Role](t, manifests, "Role", releaseName)
 	assert.Equal(t, releaseNamespace, role.Namespace)
 	assert.Equal(t, []rbacv1.PolicyRule{
 		{APIGroups: []string{"coordination.k8s.io"}, Resources: []string{"leases"}, Verbs: []string{"create", "get", "list", "watch", "update", "patch", "delete"}},
 		{APIGroups: []string{""}, Resources: []string{"configmaps"}, Verbs: []string{"get", "list", "watch"}},
 	}, role.Rules)
 
-	binding := find[rbacv1.RoleBinding](t, manifests, "RoleBinding")
+	binding := findNamed[rbacv1.RoleBinding](t, manifests, "RoleBinding", releaseName)
 	assert.Equal(t, releaseNamespace, binding.Namespace)
 	assert.Equal(t, role.Name, binding.RoleRef.Name)
+}
+
+func TestTokenExchangeRolesCoverOnlyTheCatalogNamespaces(t *testing.T) {
+	tests := []struct {
+		name           string
+		set            []string
+		wantNamespaces []string
+	}{
+		{name: "release namespace by default", wantNamespaces: []string{releaseNamespace}},
+		{
+			name:           "each catalog namespace",
+			set:            []string{"config.catalogNamespaces={catalog-a,catalog-b}"},
+			wantNamespaces: []string{"catalog-a", "catalog-b"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			manifests, err := render(t, append(test.set, quickStartValues...))
+			require.NoError(t, err)
+
+			var namespaces []string
+
+			for _, candidate := range ofKind(manifests, "Role") {
+				var role rbacv1.Role
+				require.NoError(t, yaml.UnmarshalStrict(candidate.raw, &role))
+
+				var readsExchanges bool
+
+				for _, rule := range role.Rules {
+					if slices.Contains(rule.Resources, "tokenexchanges") || slices.Contains(rule.Resources, "tokenexchanges/status") {
+						readsExchanges = true
+					}
+				}
+
+				if !readsExchanges {
+					continue
+				}
+
+				namespaces = append(namespaces, role.Namespace)
+				assert.Equal(t, releaseName+"-token-exchanges", role.Name)
+				assert.Equal(t, []rbacv1.PolicyRule{
+					{APIGroups: []string{"toolgate.soliddowant.dev"}, Resources: []string{"tokenexchanges"}, Verbs: []string{"get", "list", "watch"}},
+					{APIGroups: []string{"toolgate.soliddowant.dev"}, Resources: []string{"tokenexchanges/status"}, Verbs: []string{"update", "patch"}},
+				}, role.Rules)
+
+				var bound bool
+
+				for _, bindingManifest := range ofKind(manifests, "RoleBinding") {
+					var binding rbacv1.RoleBinding
+					require.NoError(t, yaml.UnmarshalStrict(bindingManifest.raw, &binding))
+
+					if binding.Namespace == role.Namespace && binding.RoleRef.Name == role.Name {
+						bound = true
+
+						assert.Equal(t, []rbacv1.Subject{{Kind: "ServiceAccount", Name: "toolgate", Namespace: releaseNamespace}}, binding.Subjects)
+					}
+				}
+
+				assert.True(t, bound, "a RoleBinding in %s", role.Namespace)
+			}
+
+			assert.ElementsMatch(t, test.wantNamespaces, namespaces)
+
+			clusterRole := find[rbacv1.ClusterRole](t, manifests, "ClusterRole")
+			for _, rule := range clusterRole.Rules {
+				assert.NotContains(t, rule.Resources, "tokenexchanges", "no cluster-wide read")
+			}
+		})
+	}
+}
+
+func TestChartTokenExchangeAllowedTokenURLs(t *testing.T) {
+	configFile := func(t *testing.T, set []string) map[string]any {
+		t.Helper()
+
+		manifests, err := render(t, append(set, quickStartValues...))
+		require.NoError(t, err)
+
+		configMap := find[corev1.ConfigMap](t, manifests, "ConfigMap")
+
+		var file map[string]any
+		require.NoError(t, yaml.Unmarshal([]byte(configMap.Data["config.yaml"]), &file))
+
+		return file
+	}
+
+	t.Run("unset by default", func(t *testing.T) {
+		for _, candidate := range ofKind(renderQuickStart(t), "ConfigMap") {
+			assert.NotContains(t, string(candidate.raw), "tokenExchangeAllowedTokenURLs")
+		}
+	})
+
+	t.Run("goes in the configuration file", func(t *testing.T) {
+		file := configFile(t, []string{"config.tokenExchange.allowedTokenURLs={https://idp.example.com/application/o/token/}"})
+		assert.Equal(t, []any{"https://idp.example.com/application/o/token/"}, file["tokenExchangeAllowedTokenURLs"])
+	})
+
+	t.Run("http URL fails", func(t *testing.T) {
+		_, err := render(t, append([]string{"config.tokenExchange.allowedTokenURLs={http://idp.example.com/token}"}, quickStartValues...))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "config.tokenExchange.allowedTokenURLs")
+	})
 }
 
 func TestAdmissionPolicyAppliesToEveryWriteByTheGateway(t *testing.T) {
