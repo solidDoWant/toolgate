@@ -110,6 +110,26 @@ func (q *Queries) DeleteInstanceTemplateSecrets(ctx context.Context, instanceID 
 	return err
 }
 
+const firstExpiredInstanceExchange = `-- name: FirstExpiredInstanceExchange :one
+SELECT exchange FROM instance_exchanges
+WHERE instance_id = $1 AND expires_at <= $2::timestamptz
+ORDER BY exchange LIMIT 1
+`
+
+type FirstExpiredInstanceExchangeParams struct {
+	InstanceID string
+	Now        pgtype.Timestamptz
+}
+
+// The name of an exchange of the instance whose token in the Secret has
+// expired at now, or no row.
+func (q *Queries) FirstExpiredInstanceExchange(ctx context.Context, arg FirstExpiredInstanceExchangeParams) (string, error) {
+	row := q.db.QueryRow(ctx, firstExpiredInstanceExchange, arg.InstanceID, arg.Now)
+	var exchange string
+	err := row.Scan(&exchange)
+	return exchange, err
+}
+
 const insertInstanceExchange = `-- name: InsertInstanceExchange :exec
 INSERT INTO instance_exchanges (instance_id, exchange, refresh_after, wanted_since, claimed_at)
 VALUES (

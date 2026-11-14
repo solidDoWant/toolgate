@@ -72,6 +72,13 @@ WHERE instance_id = @instance_id AND exchange = @exchange
 SELECT instance_id, exchange, expires_at FROM instance_exchanges
 WHERE expires_at <= now();
 
+-- name: FirstExpiredInstanceExchange :one
+-- The name of an exchange of the instance whose token in the Secret has
+-- expired at now, or no row.
+SELECT exchange FROM instance_exchanges
+WHERE instance_id = @instance_id AND expires_at <= @now::timestamptz
+ORDER BY exchange LIMIT 1;
+
 -- name: ClaimInstanceExchanges :many
 -- Claims the due rows of the configured exchanges. Each exchange has its own
 -- claim timeout, so a row expires after the timeout of its own exchange. A row
