@@ -27,7 +27,7 @@ func MaxSeries(templates int) int { return BaseSeries + SeriesPerTemplate*templa
 // trust domains). Add a label here, with its fixed values, in the change
 // that adds the metric.
 var AllowedLabels = map[string][]string{
-	"scope":        {"per-session", "per-user", "shared"},
+	"scope":        {"per-session", "per-user", "shared", "per-template"},
 	"status":       {"pending", "starting", "ready", "failed", "stopping"},
 	"verified":     {"true", "false"},
 	"tool_search":  {"on", "off"},
@@ -45,7 +45,8 @@ var AllowedLabels = map[string][]string{
 	},
 	"method":   {"initialize", "tools/list", "tools/call", "subscriptions/listen", "other"},
 	"revision": {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28", "other"},
-	"state":    {"idle", "in_use", "max"},
+	"state":    {"idle", "in_use", "max", "deleting"},
+	"event":    {"created", "rebound", "lost", "deleted", "delete_failed", "drain_timeout", "limit_refused"},
 	"outcome": {
 		"forwarded", "refused", "approval", "upstream_error", "timeout", "start_failed",
 		"ready", "failed", "approved", "denied", "expired", "cancelled", "other",

@@ -94,6 +94,18 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 
 	metrics.Leader.Set(1)
 
+	for _, scope := range []string{"per-template", "per-user"} {
+		metrics.PersistentVolumeBytes.WithLabelValues(scope).Set(1)
+
+		for _, state := range []string{"in_use", "idle", "deleting"} {
+			metrics.PersistentVolumes.WithLabelValues(scope, state).Set(1)
+		}
+	}
+
+	for _, event := range runtime.VolumeEvents {
+		metrics.ObserveVolumeEvent(event)
+	}
+
 	exchangeMetrics := credentials.NewMetrics()
 	registry.MustRegister(exchangeMetrics.Collectors()...)
 
@@ -108,8 +120,8 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 	// Instances 30, stuck 1, sessions 4, calls 70, cache lookups 20, cache
 	// stores 5, call duration 8 buckets + 3, policy 12, starts 20, start duration 7 buckets + 3, waiting 1,
 	// health 10, repairs 30, embedding errors 4, embedding duration 2 ×
-	// (10 buckets + 3), pending 5, leader 1, token exchanges 8 × 2 × 3.
-	assert.Equal(t, 30+1+4+70+20+5+11+12+20+10+1+10+30+4+26+5+1+48, metricsbudget.Check(t, registry, templates))
+	// (10 buckets + 3), pending 5, leader 1, token exchanges 8 × 2 × 3, volumes 6 + 2 + 7.
+	assert.Equal(t, 30+1+4+70+20+5+11+12+20+10+1+10+30+4+26+5+1+48+6+2+7, metricsbudget.Check(t, registry, templates))
 }
 
 // A label outside the allowed sets fails the check.

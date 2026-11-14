@@ -22,8 +22,22 @@ Only the replica that holds the leader Lease sets these metrics. The other repli
 - `toolgate_approval_requests_pending`
 - `toolgate_embeddings_server_replicas_desired`
 - `toolgate_leader`
+- `toolgate_persistent_volumes`
+- `toolgate_persistent_volume_bytes`
 
 When the leader changes, the new leader sets the metrics within 30 seconds.
+
+## Persistent volumes
+
+`toolgate_persistent_volumes{scope, state}` is a gauge of the persistent volume rows. The label `scope` is `per-template` or `per-user`. The label `state` is `in_use` (an instance holds the volume), `idle` or `deleting`. It has 6 series.
+
+`toolgate_persistent_volume_bytes{scope}` is a gauge of the total size of the volumes, by `scope`. It has 2 series.
+
+`toolgate_persistent_volume_events_total{event}` counts volume events. The label `event` is `created`, `rebound`, `lost`, `deleted`, `delete_failed`, `drain_timeout` or `limit_refused`. Alert when a delete fails or an instance does not drain in time:
+
+```promql
+sum(increase(toolgate_persistent_volume_events_total{event=~"delete_failed|drain_timeout"}[1h])) > 0
+```
 
 ## Sessions and instances
 

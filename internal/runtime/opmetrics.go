@@ -85,3 +85,29 @@ func (m *Metrics) observeRepair(server, action string) {
 		m.Repairs.WithLabelValues(server, action).Inc()
 	}
 }
+
+// Events of the toolgate_persistent_volume_events_total metric.
+const (
+	VolumeEventCreated      = "created"
+	VolumeEventRebound      = "rebound"
+	VolumeEventLost         = "lost"
+	VolumeEventDeleted      = "deleted"
+	VolumeEventDeleteFailed = "delete_failed"
+	VolumeEventDrainTimeout = "drain_timeout"
+	VolumeEventLimitRefused = "limit_refused"
+)
+
+// VolumeEvents lists every value of the `event` label of
+// toolgate_persistent_volume_events_total.
+var VolumeEvents = []string{
+	VolumeEventCreated, VolumeEventRebound, VolumeEventLost, VolumeEventDeleted,
+	VolumeEventDeleteFailed, VolumeEventDrainTimeout, VolumeEventLimitRefused,
+}
+
+// ObserveVolumeEvent counts one persistent volume event. A nil Metrics does
+// nothing.
+func (m *Metrics) ObserveVolumeEvent(event string) {
+	if m != nil {
+		m.PersistentVolumeEvents.WithLabelValues(event).Inc()
+	}
+}

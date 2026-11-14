@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -24,6 +25,10 @@ const (
 	// countTool is read-only and returns how often it was called, so a test
 	// sees whether a call reached the server or was served from a cache.
 	countTool = "count"
+	// sessionIDTool returns the Mcp-Session-Id of the request's session.
+	sessionIDTool = "session_id"
+	// liveSessionsTool returns how many sessions the server holds.
+	liveSessionsTool = "live_sessions"
 )
 
 // maxSecretFileSize bounds each file the secrets tool reads.
@@ -126,6 +131,20 @@ func newServer(options options) (*mcp.Server, error) {
 					calls++
 
 					return nil, countResult{Calls: calls}, nil
+				})
+		case sessionIDTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns the ID of the request's session."},
+				func(_ context.Context, request *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+					options.Calls.add(name)
+
+					return textResult(request.Session.ID()), nil, nil
+				})
+		case liveSessionsTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns how many sessions the server holds."},
+				func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+					options.Calls.add(name)
+
+					return textResult(strconv.Itoa(countSessions(server))), nil, nil
 				})
 		default:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Echoes its arguments."},

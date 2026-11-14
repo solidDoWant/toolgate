@@ -108,6 +108,13 @@ type Metrics struct {
 	ApprovalsPending *prometheus.GaugeVec
 	// Leader is 1 while this replica holds the Lease.
 	Leader prometheus.Gauge
+
+	// PersistentVolumes counts volume rows by scope and state.
+	PersistentVolumes *prometheus.GaugeVec
+	// PersistentVolumeBytes is the sum of the rows' size_bytes by scope.
+	PersistentVolumeBytes *prometheus.GaugeVec
+	// PersistentVolumeEvents counts volume events (the Volume* constants).
+	PersistentVolumeEvents *prometheus.CounterVec
 }
 
 // Outcomes of a tool call (the `outcome` label of toolgate_tool_calls_total).
@@ -227,6 +234,18 @@ func NewMetrics() *Metrics {
 			Name: "toolgate_leader",
 			Help: "1 on the replica holding the leader Lease. Other replicas export no series.",
 		}),
+		PersistentVolumes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "toolgate_persistent_volumes",
+			Help: "Persistent volume rows, by scope and state (in_use, idle or deleting). Set by the replica holding the leader Lease.",
+		}, []string{"scope", "state"}),
+		PersistentVolumeBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "toolgate_persistent_volume_bytes",
+			Help: "Sum of the sizes of persistent volume rows, by scope. Set by the replica holding the leader Lease.",
+		}, []string{"scope"}),
+		PersistentVolumeEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_persistent_volume_events_total",
+			Help: "Persistent volume events, by event.",
+		}, []string{"event"}),
 	}
 }
 
@@ -236,7 +255,8 @@ func (m *Metrics) Collectors() []prometheus.Collector {
 		m.ResultCacheLookups, m.ResultCacheStores,
 		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs, m.TemplateSecretUpdates,
 		m.Searches, m.SearchHits, m.SearchResearches, m.SearchNoCalls,
-		m.ApprovalsPending, m.Leader}
+		m.ApprovalsPending, m.Leader,
+		m.PersistentVolumes, m.PersistentVolumeBytes, m.PersistentVolumeEvents}
 }
 
 // Step takes one instance one step towards stopped. It is a Step of the
