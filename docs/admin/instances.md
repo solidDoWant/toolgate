@@ -48,6 +48,8 @@ If an instance fails its health checks three times in a row and one of its objec
 
 toolgate deletes the namespace `tg-<instance id>` of the instance. Kubernetes then deletes all the objects in it. toolgate deletes only a namespace that has the label `toolgate.soliddowant.dev/instance` with the ID of the instance.
 
+If persistent volumes are on and the instance holds at least one volume, toolgate first drains the instance. It records a volume that has no recorded PV yet. It scales every Deployment and StatefulSet in the namespace to zero. It waits until no pod that mounts a held claim is running. Only then does it delete the namespace. The wait has a bound of 2 minutes, counted from the moment the instance began to stop. When the bound passes, toolgate writes a warning to its log, counts the event `drain_timeout` in `toolgate_persistent_volume_events_total` and deletes the namespace. The data stays safe, because Kubernetes keeps a claim until the pods that use it are gone. While the drain waits, the reason of the instance is `Waiting for pods to stop before the namespace is deleted.` Instances that hold no volume are not drained.
+
 An instance of a `namespace: shared` template runs in the shared namespace (see [The shared namespace](chart.md#the-shared-namespace)). toolgate does not delete the shared namespace. It deletes the objects in it that have the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/instance` with the ID of the instance. toolgate cannot read Secrets. Before it applies the objects of a shared instance, toolgate creates a ConfigMap named `tg-<instance id>` in the shared namespace. This ConfigMap is the anchor of the instance. Each object of the instance has an owner reference to the anchor. When toolgate deletes the anchor, the Kubernetes garbage collector deletes the other objects of the instance, Secrets included. The record of the instance can show `stopped` a short time before the garbage collector deletes the Secrets.
 
 Do not make a ConfigMap with a name that starts with `tg-` in the shared namespace. If the ConfigMap `tg-<instance id>` exists without the label of that instance, the instance fails.
@@ -98,7 +100,7 @@ The replica that holds the leader Lease compares Kubernetes with the database ev
 
 - If a namespace has the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/instance`, but no running instance has that ID, toolgate deletes the namespace.
 - If the namespace of a starting or ready instance is missing, toolgate starts the instance again from the current version of its template.
-- If an instance was stopping, toolgate deletes its namespace again.
+- If an instance was stopping, toolgate deletes its namespace again. The sweep skips the namespace of a stopping instance, so the drain is not cut short. Teardown deletes it.
 - In the shared namespace, toolgate deletes each object with the label `toolgate.soliddowant.dev/instance` when no running instance has that ID. The garbage collector then deletes the Secrets that the deleted anchor owns. toolgate never deletes the shared namespace.
 
 Do not put the label `toolgate.soliddowant.dev/instance` on namespaces that you make yourself. toolgate deletes them.

@@ -211,6 +211,9 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Deleter: reconciler,
 		Log:     logger,
 		Metrics: metrics,
+
+		Writer:         mgr.GetClient(),
+		VolumesEnabled: cfg.PersistentVolumesEnabled,
 	}
 
 	// The sweep deletes namespaces that belong to no live instance on every

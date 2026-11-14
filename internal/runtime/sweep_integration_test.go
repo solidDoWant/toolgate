@@ -258,7 +258,10 @@ func TestRestartRecovery(t *testing.T) {
 		_, err = fixture.queries.SetInstanceStopping(t.Context(), db.SetInstanceStoppingParams{ID: instance.ID, FromStatus: "ready"})
 		require.NoError(t, err)
 
+		// The sweep leaves the namespace to teardown, which deletes it in
+		// one pass and sees it gone in the next.
 		fixture.sweep(t, fixture.kube)
+		fixture.pass(t)
 		fixture.pass(t)
 
 		assert.False(t, fixture.namespaceExists(t, instance.Namespace))

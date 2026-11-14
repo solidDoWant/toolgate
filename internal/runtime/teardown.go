@@ -53,6 +53,11 @@ type Teardown struct {
 	Metrics *Metrics
 	// Now returns the current time. Nil means time.Now.
 	Now func() time.Time
+	// Writer patches PVs and scales controllers while an instance that
+	// holds volumes drains. Nil means no volume work.
+	Writer client.Client
+	// VolumesEnabled is true when persistent volumes are turned on.
+	VolumesEnabled bool
 
 	// stuck counts the stuck namespaces seen in the current pass.
 	stuck atomic.Int64
@@ -295,6 +300,8 @@ func (t *Teardown) Advance(ctx context.Context, instance db.Instance) (bool, err
 		}
 
 		instance.Status = statusStopping
+		// The drain bound counts from the stop that was just recorded.
+		instance.StoppingAt = pgtype.Timestamptz{Time: t.now(), Valid: true}
 	}
 
 	if instance.Status != statusStopping {
@@ -338,6 +345,11 @@ func (t *Teardown) Advance(ctx context.Context, instance db.Instance) (bool, err
 	}
 
 	if namespace.DeletionTimestamp == nil {
+		drained, err := t.drainVolumes(ctx, instance)
+		if err != nil || !drained {
+			return false, err
+		}
+
 		if err := t.Deleter.Delete(ctx, &namespace, client.Preconditions{UID: &namespace.UID}); err != nil && !apierrors.IsNotFound(err) {
 			return false, err
 		}
