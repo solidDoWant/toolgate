@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Changes
-
-- The gateway no longer opens an extra stream to an MCP server for the tool calls that it forwards. It did not read that stream, so each server now has one less open connection per session.
-
 ### Documentation
 
 - The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
