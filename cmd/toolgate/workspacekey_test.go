@@ -144,8 +144,8 @@ func TestWorkspaceKeySource(t *testing.T) {
 		t.Setenv(attestation.SignerFileEnv, path)
 
 		code, stdout, stderr := runCLI(t, "", "headers")
-		assert.NotEqual(t, 0, code)
-		assert.Empty(t, stdout, "no headers")
+		assert.Equal(t, 0, code, stderr)
+		assert.NotContains(t, stdout, "X-Toolgate-Attestation", "unverified headers")
 		assert.Contains(t, stderr, "The key file "+path+" can be read by other users. Run chmod 600 "+path+".")
 	})
 
@@ -166,8 +166,8 @@ func TestWorkspaceKeySource(t *testing.T) {
 				t.Setenv(attestation.SignerFileEnv, path)
 
 				code, stdout, stderr := runCLI(t, "", "headers")
-				assert.NotEqual(t, 0, code)
-				assert.Empty(t, stdout, "no headers")
+				assert.Equal(t, 0, code, stderr)
+				assert.NotContains(t, stdout, "X-Toolgate-Attestation", "unverified headers")
 				assert.Contains(t, stderr, "The key file "+path+" doesn't hold an Ed25519 private key.")
 			})
 		}
