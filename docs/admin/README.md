@@ -23,6 +23,7 @@ These pages tell you how to deploy toolgate, write its catalog and rules, and ke
 ## Write the catalog and rules
 
 - [Templates and rules](templates-and-rules.md): how to write `MCPServerTemplate` and `ToolgateRule` objects.
+- [Persistent volumes](persistent-volumes.md): how to let a server keep files between runs, with a Retain StorageClass, clean-up and a size limit.
 - [Health checks](templates-and-rules.md#health-checks): how to make toolgate check a running server and repair it.
 - [Settings profiles](settings-profiles.md): how to give Claude Code settings to your users.
 - [Telemetry](telemetry.md): how to send the OpenTelemetry data of Claude Code through the gateway, and how to read tokens and cost for each user.
