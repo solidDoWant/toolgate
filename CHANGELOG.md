@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Client
-
-- The client can attest with a registered workspace key: set `TOOLGATE_ATTESTATION_SIGNER_FILE`, or save the path with `toolgate configure --attestation-key-file PATH`. On each run, the client signs a short assertion with the key. See `docs/user/README.md`.
-
 ### Documentation
 
 - The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
