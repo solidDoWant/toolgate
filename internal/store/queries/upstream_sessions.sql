@@ -64,7 +64,7 @@ WHERE u.ended_at IS NULL AND (
 -- name: ListEndedUpstreamSessions :many
 -- At most 256 ended rows, oldest first, with whether the instance is live
 -- and whether it is remote (a remote instance has no namespace).
-SELECT u.id, u.instance_id, u.upstream_session_id,
+SELECT u.id, u.instance_id, u.upstream_session_id, u.initialize_result,
        COALESCE(i.desired = 'running' AND i.status NOT IN ('stopping', 'stopped'), false)::boolean AS instance_live,
        COALESCE(i.namespace = '', false)::boolean AS instance_remote
 FROM upstream_sessions u
