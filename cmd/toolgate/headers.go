@@ -73,7 +73,7 @@ func buildHeaders(ctx context.Context, stderr io.Writer) (map[string]string, err
 		return nil, err
 	}
 
-	values, err := credentialHeaders(ctx)
+	values, err := credentialHeaders(ctx, stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -91,15 +91,19 @@ func buildHeaders(ctx context.Context, stderr io.Writer) (map[string]string, err
 
 // credentialHeaders returns the Authorization and workspace headers shared
 // by `toolgate headers` and `toolgate otel-headers`.
-func credentialHeaders(ctx context.Context) (map[string]string, error) {
+func credentialHeaders(ctx context.Context, stderr io.Writer) (map[string]string, error) {
 	accessToken, err := bearerToken(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	// A broken attestation source must not cost the session its credentials:
+	// the gateway serves the request unverified.
 	attested, err := attestationSource().Token(ctx)
 	if err != nil {
-		return nil, err
+		_, _ = fmt.Fprintf(stderr, "toolgate: the attestation is skipped and the session is unverified: %v\n", err)
+
+		attested = ""
 	}
 
 	workingDir, err := os.Getwd()
@@ -159,7 +163,7 @@ func printOtelHeaders(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	values, err := credentialHeaders(context.Background())
+	values, err := credentialHeaders(context.Background(), stderr)
 	if errors.Is(err, headers.ErrSignInAgain) {
 		_, _ = fmt.Fprintln(stderr, headers.SignInAgainMessage)
 

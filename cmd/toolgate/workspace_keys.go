@@ -435,5 +435,43 @@ func revokeKey(ctx context.Context, env workspaceEnv, access gatewayAccess, name
 		_, _ = fmt.Fprintf(env.stdout, "Denied %d pending requests for `%s`.\n", result.DeniedRequests, terminalSafe(name))
 	}
 
+	return clearRevokedKeySetting(env, name)
+}
+
+// clearRevokedKeySetting removes the saved attestation key file from
+// config.json when it is the revoked key's default file, so the client goes on
+// unverified instead of reading a key the gateway no longer accepts.
+func clearRevokedKeySetting(env workspaceEnv, name string) error {
+	dir, err := env.configDirectory()
+	if err != nil {
+		return err
+	}
+
+	settings, err := login.LoadSettings(dir)
+	if errors.Is(err, login.ErrNotSignedIn) {
+		return nil
+	}
+
+	if err != nil {
+		return err
+	}
+
+	revokedPath, err := keyFilePath(env, name, "")
+	if err != nil {
+		return err
+	}
+
+	if settings.AttestationKeyFile == "" || settings.AttestationKeyFile != revokedPath {
+		return nil
+	}
+
+	settings.AttestationKeyFile = ""
+
+	if err := login.SaveSettings(dir, settings); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintln(env.stdout, "The revoked key was your attestation source. Cleared it in config.json: this client is now unverified.")
+
 	return nil
 }

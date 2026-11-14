@@ -68,6 +68,8 @@ func configure(args []string, stdout, stderr io.Writer) int {
 	flags.String("attestation-token-request", "", "directory for a TokenRequest token (as "+attestation.TokenRequestEnv+")")
 	flags.String("attestation-key-file", "", "path of a registered workspace key (as "+attestation.SignerFileEnv+")")
 
+	noAttestation := flags.Bool("no-attestation", false, "clear the saved attestation source")
+
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -98,7 +100,7 @@ func configure(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	keyFileGiven := false
+	keyFileGiven, attestationSet := false, false
 
 	flags.Visit(func(set *flag.Flag) {
 		value := strings.TrimSpace(set.Value.String())
@@ -109,14 +111,27 @@ func configure(args []string, stdout, stderr io.Writer) int {
 		case "token-command":
 			settings.TokenCommand = value
 		case "attestation-token-file":
+			attestationSet = attestationSet || value != ""
 			settings.AttestationTokenFile = value
 		case "attestation-token-request":
+			attestationSet = attestationSet || value != ""
 			settings.AttestationTokenRequest = value
 		case "attestation-key-file":
+			attestationSet = attestationSet || value != ""
 			settings.AttestationKeyFile = value
 			keyFileGiven = true
 		}
 	})
+
+	if *noAttestation {
+		if attestationSet {
+			_, _ = fmt.Fprintln(stderr, "toolgate configure: --no-attestation can't be combined with an attestation source")
+
+			return 2
+		}
+
+		settings.AttestationTokenFile, settings.AttestationTokenRequest, settings.AttestationKeyFile = "", "", ""
+	}
 
 	fingerprint := ""
 
