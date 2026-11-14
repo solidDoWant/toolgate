@@ -34,7 +34,7 @@ type SecretList struct {
 
 // SecretName is the request type of the operations that name one secret.
 type SecretName struct {
-	Name string `path:"name" pattern:"^[A-Za-z0-9._-]{1,128}$"`
+	Name string `path:"name" pattern:"^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$"`
 }
 
 // Operations describes the API's routes.
@@ -108,7 +108,7 @@ func (a *API) set(writer http.ResponseWriter, request *http.Request) {
 
 	name := request.PathValue("name")
 	if !ValidName(name) {
-		http.Error(writer, "The secret name is invalid. It must match ^[A-Za-z0-9._-]{1,128}$.", http.StatusBadRequest)
+		http.Error(writer, "The secret name is invalid. It must match ^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$.", http.StatusBadRequest)
 
 		return
 	}
