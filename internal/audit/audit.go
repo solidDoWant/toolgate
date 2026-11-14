@@ -36,7 +36,14 @@ const (
 	TypeBlockCreate     = "block.create"
 	TypeSecretSet       = "secret.set"
 	TypeSecretDelete    = "secret.delete"
+	// TypeVolumeCreate is the record of a new persistent volume's PV.
+	// Details: volume, scope, persistentVolume, sizeBytes, instance.
+	TypeVolumeCreate = "volume.create"
+	// TypeVolumeLost is a recorded PV that was missing at start. Details:
+	// volume, persistentVolume, instance.
+	TypeVolumeLost = "volume.lost"
 	// TypeVolumeDelete is the decision to delete a persistent volume.
+	// Details: volume, persistentVolume, reason, owner.
 	TypeVolumeDelete    = "volume.delete"
 	logMessage          = "audit"
 	redactedPlaceholder = "[REDACTED]"
