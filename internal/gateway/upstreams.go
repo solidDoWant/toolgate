@@ -597,10 +597,12 @@ func (u *upstreams) release(key copyKey, held *upstreamCopy) {
 
 // releaseWhere drops and releases every copy that match accepts, without
 // waiting for the calls in flight on them: they finish with whatever the
-// upstream answers. Releasing never ends an upstream session. It returns
+// upstream answers. Releasing never ends the upstream session of a stored
+// row. With endInstanceCopies, an instance's one copy is ended instead: it
+// belongs to no row, so nothing else ends its upstream session. It returns
 // once every matching copy is released; a copy that is still being made is
 // checked once it is made, in the background.
-func (u *upstreams) releaseWhere(match func(key copyKey, held *upstreamCopy) bool) {
+func (u *upstreams) releaseWhere(match func(key copyKey, held *upstreamCopy) bool, endInstanceCopies bool) {
 	u.mu.Lock()
 
 	entries := make(map[copyKey]*copyEntry, len(u.copies))
@@ -624,7 +626,11 @@ func (u *upstreams) releaseWhere(match func(key copyKey, held *upstreamCopy) boo
 		u.prune(key, entry)
 		u.mu.Unlock()
 
-		if held != nil {
+		switch {
+		case held == nil:
+		case endInstanceCopies && key.upstream == "":
+			held.End()
+		default:
 			held.Release()
 		}
 	}
@@ -646,18 +652,19 @@ func (u *upstreams) releaseWhere(match func(key copyKey, held *upstreamCopy) boo
 }
 
 // releaseInstance releases every copy of an instance that left ready and
-// forgets that it is sessionless.
+// forgets that it is sessionless. Its one copy, when it has no rows, is
+// ended.
 func (u *upstreams) releaseInstance(id string) {
 	u.mu.Lock()
 	delete(u.sessionless, id)
 	u.mu.Unlock()
 
-	u.releaseWhere(func(key copyKey, _ *upstreamCopy) bool { return key.instance == id })
+	u.releaseWhere(func(key copyKey, _ *upstreamCopy) bool { return key.instance == id }, true)
 }
 
 // releaseAll releases every copy, at shutdown.
 func (u *upstreams) releaseAll() {
-	u.releaseWhere(func(copyKey, *upstreamCopy) bool { return true })
+	u.releaseWhere(func(copyKey, *upstreamCopy) bool { return true }, false)
 }
 
 // releaseIdle releases every copy that served no call for copyIdleTimeout.
@@ -666,7 +673,7 @@ func (u *upstreams) releaseIdle() {
 
 	u.releaseWhere(func(_ copyKey, held *upstreamCopy) bool {
 		return held.inFlight.Load() == 0 && held.lastUsed.Load() <= cutoff
-	})
+	}, false)
 }
 
 // releaseSessionCopies releases this replica's copies of toolgate session
@@ -680,7 +687,7 @@ func (u *upstreams) releaseSessionCopies(sessionPk int64, live []db.ListLiveUpst
 
 	u.releaseWhere(func(key copyKey, held *upstreamCopy) bool {
 		return key.upstream != "" && held.sessionPk == sessionPk && !kept[key]
-	})
+	}, false)
 }
 
 // holdsSession reports whether this replica holds a copy of a row of
