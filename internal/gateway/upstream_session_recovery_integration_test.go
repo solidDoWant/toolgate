@@ -210,12 +210,14 @@ func TestIdleCopyIsReleasedWithoutDelete(t *testing.T) {
 	gateway.ReleaseIdleUpstreamCopies(handler)
 	assert.Equal(t, 0, gateway.HeldUpstreamCopies(handler), "a copy idle for 30 minutes is released")
 
-	assert.Empty(t, upstream.deletes(), "releasing a copy never ends the upstream session")
-
 	rows := liveRows(fixture.upstreamSessionRows(t))
 	require.Len(t, rows, 1, "the row stays")
 	assert.Equal(t, id, rows[0].upstream)
 
 	assert.Equal(t, id, callSessionID(t, client.session, "github"), "the next call adopts the row")
 	assert.Equal(t, 1, upstream.initializeCount())
+
+	// The released copy closed in the background; the call above was
+	// answered on the same upstream session, so the copy sent no DELETE.
+	assert.Empty(t, upstream.deletes(), "releasing a copy never ends the upstream session")
 }

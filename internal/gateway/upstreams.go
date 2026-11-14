@@ -601,7 +601,8 @@ func (u *upstreams) release(key copyKey, held *upstreamCopy) {
 // row. With endInstanceCopies, an instance's one copy is ended instead: it
 // belongs to no row, so nothing else ends its upstream session. It returns
 // once every matching copy is released; a copy that is still being made is
-// checked once it is made, in the background.
+// checked once it is made, in the background. The copies are closed in the
+// background too.
 func (u *upstreams) releaseWhere(match func(key copyKey, held *upstreamCopy) bool, endInstanceCopies bool) {
 	u.mu.Lock()
 
@@ -626,13 +627,19 @@ func (u *upstreams) releaseWhere(match func(key copyKey, held *upstreamCopy) boo
 		u.prune(key, entry)
 		u.mu.Unlock()
 
-		switch {
-		case held == nil:
-		case endInstanceCopies && key.upstream == "":
-			held.End()
-		default:
-			held.Release()
+		if held == nil {
+			return
 		}
+
+		// Closing waits for the copy's connection, which a call in flight
+		// can hold, so it runs off the caller's goroutine.
+		go func() {
+			if endInstanceCopies && key.upstream == "" {
+				held.End()
+			} else {
+				held.Release()
+			}
+		}()
 	}
 
 	for key, entry := range entries {
