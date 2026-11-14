@@ -107,6 +107,8 @@ func (b *oidcBrowser) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 			Subject:       strings.TrimSpace(request.PostForm.Get("subject")),
 			Email:         strings.TrimSpace(request.PostForm.Get("email")),
 			EmailVerified: request.PostForm.Get("email_verified") != "false",
+
+			PreferredUsername: strings.TrimSpace(request.PostForm.Get("preferred_username")),
 		}
 		if user.Subject == "" {
 			http.Error(writer, "subject is required", http.StatusBadRequest)

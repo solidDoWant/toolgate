@@ -68,6 +68,8 @@ func openApprovalLink(t *testing.T, browser *http.Client, link string, user test
 		"subject":        {user.Subject},
 		"email":          {user.Email},
 		"email_verified": {"true"},
+		// Without it the sign-in would replace the user and drop the claim.
+		"preferred_username": {user.PreferredUsername},
 	})
 	require.NoError(t, err)
 

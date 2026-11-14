@@ -253,6 +253,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.ui.adminGroup=toolgate-admins \
 	--set config.ui.publicURL="https://$TOOLGATE_E2E_UI_LISTEN" \
 	--set config.ui.approvalTimeout=1m \
+	--set config.workspaceKeys.enabled=true \
 	--set 'config.extraEnv[1].name=TOOLGATE_OTLP_INGEST' \
 	--set 'config.extraEnv[1].value=true' \
 	--set 'config.extraEnv[2].name=TOOLGATE_SECRETS_KEYSET_FILE' \

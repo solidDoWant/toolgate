@@ -44,10 +44,13 @@ type mcpFixture struct {
 	embedder *embeddings.Client
 
 	provider *testutil.OIDCProvider
-	pool     *pgxpool.Pool
-	catalog  *catalog.Catalog
-	rules    *policy.Rules
-	server   *httptest.Server
+	// authenticator guards every replica started after it is set; a test
+	// replaces it to model a restart with other settings.
+	authenticator *auth.Authenticator
+	pool          *pgxpool.Pool
+	catalog       *catalog.Catalog
+	rules         *policy.Rules
+	server        *httptest.Server
 	// upstreams maps a template name to the MCP URL of its instances.
 	upstreams *sync.Map
 	// replica starts another gateway replica on the same database.
@@ -90,7 +93,7 @@ func newMCPFixtureWithAuth(t *testing.T, authOptions *auth.Options, configure ..
 	rules := policy.NewRules()
 	upstreams := &sync.Map{}
 
-	fixture := &mcpFixture{provider: provider, pool: pool, catalog: servers, rules: rules, upstreams: upstreams}
+	fixture := &mcpFixture{provider: provider, authenticator: authenticator, pool: pool, catalog: servers, rules: rules, upstreams: upstreams}
 
 	// replica starts one gateway replica: its own PostgreSQL listener and
 	// MCP handler over the shared database, catalog and rules.
@@ -132,7 +135,7 @@ func newMCPFixtureWithAuth(t *testing.T, authOptions *auth.Options, configure ..
 
 		// Every request gets a span, as in the gateway, so audit events
 		// carry a trace ID.
-		traced := otelhttp.NewHandler(authenticator.Middleware(handler, true), "gateway",
+		traced := otelhttp.NewHandler(fixture.authenticator.Middleware(handler, true), "gateway",
 			otelhttp.WithTracerProvider(sdktrace.NewTracerProvider()))
 
 		server := httptest.NewServer(traced)
@@ -229,10 +232,17 @@ func (f *mcpFixture) connect(t *testing.T, client user) *mcp.ClientSession {
 func (f *mcpFixture) post(t *testing.T, client user, mcpSessionID string, message map[string]any) *http.Response {
 	t.Helper()
 
+	return f.postTo(t, f.server.URL, client, mcpSessionID, message)
+}
+
+// postTo is post to the replica at url.
+func (f *mcpFixture) postTo(t *testing.T, url string, client user, mcpSessionID string, message map[string]any) *http.Response {
+	t.Helper()
+
 	body, err := json.Marshal(message)
 	require.NoError(t, err)
 
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, f.server.URL, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, url, bytes.NewReader(body))
 	require.NoError(t, err)
 
 	request.Header = f.headers(t, client)
