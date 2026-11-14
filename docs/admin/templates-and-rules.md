@@ -89,6 +89,7 @@ The name of the template is the name of the server. It has 31 characters at most
 - `resources`: the Kubernetes objects that toolgate applies for each instance.
 - `healthCheck`: an optional HTTP check of a running instance. See [Health checks](#health-checks).
 - `remote`: makes the template a remote server, which toolgate does not start. See [Remote servers](#remote-servers).
+- `persistentVolumes`: volumes that outlive the instance. It needs the gateway setting `persistentVolumes.enabled`. See [Persistent volumes](#persistent-volumes).
 
 **Upgrade note.** `toolFilter` and the `name`, `description` and `inputDescriptions` fields take effect only after every gateway pod runs this version. During a rolling upgrade, an older pod ignores them: it lists hidden tools, forwards calls to them and does not rename tools. Each call still gets a recorded decision. To hide a tool as a security control, use `tools.<name>.blocked`. It works on both versions.
 
@@ -110,6 +111,45 @@ If you do not set `scope`, toolgate uses the broadest scope that the table allow
 You can set a narrower scope than the table gives. For example, set `per-user` to keep the files of each user apart on disk, or `per-session` to give each session its own copy. If you set a broader scope, the template is invalid. The reason in the `Valid` condition names the field and the variable, for example: `` `scope: shared`, but `remote.headers.Authorization` uses `${secret:…}`, which needs `per-user` or narrower``. The reason never shows a header value or a secret name.
 
 When a template is valid, the message of its `Valid` condition gives the scope that toolgate uses and the cause, for example ``Scope per-user: `remote.headers.Authorization` uses `${secret:…}`.`` The list of servers in Claude Code and on the Servers page show this scope.
+
+## Persistent volumes
+
+A persistent volume keeps its data after the instance stops. The next instance with the same template and scope uses the same data. The field needs the gateway setting `persistentVolumes.enabled`. Without it, a template that sets `persistentVolumes` is invalid.
+
+```yaml
+spec:
+  scope: per-user
+  persistentVolumes:
+    - name: cache
+      size: 1Gi
+      storageClassName: ssd
+```
+
+Each entry has these fields:
+
+- `name`: the name of the PersistentVolumeClaim. The pod spec uses it in `persistentVolumeClaim.claimName`. It has 63 characters at most and matches `^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`.
+- `size`: a Kubernetes quantity greater than 0, such as `1Gi`.
+- `storageClassName`: the storage class of the volume. It has 1 to 253 characters.
+- `scope`: `per-template` or `per-user`. It is optional.
+
+A template has 8 volumes at most. The volume scope must match the effective scope of the template:
+
+| Scope of the template | Scope of the volume |
+|---|---|
+| `shared` | `per-template` |
+| `per-user` | `per-user` |
+| `per-session` | none, the template cannot have volumes |
+
+If you leave out the scope of a volume, it takes the value in the table. If you set a different value, the template is invalid.
+
+The template is also invalid in these cases:
+
+- It sets `remote`.
+- It sets `namespace: shared`.
+- `resources` has a `Pod`. Use a `Deployment` or a `StatefulSet`.
+- `resources` has a PersistentVolumeClaim with the same name as a volume.
+
+toolgate does not check that a resource uses the claim.
 
 ## Health checks
 

@@ -277,6 +277,51 @@ spec:
                 x-kubernetes-validations:
                 - message: namespace must be one of per-instance, shared
                   rule: self in ['per-instance', 'shared']
+              persistentVolumes:
+                description: |-
+                  PersistentVolumes are volumes that outlive the instance. Each is a
+                  PersistentVolumeClaim named Name in the instance namespace.
+                items:
+                  description: PersistentVolume is a volume that outlives the instance
+                    that uses it.
+                  properties:
+                    name:
+                      description: Name is the PersistentVolumeClaim name that the
+                        pod spec uses.
+                      maxLength: 63
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                    scope:
+                      description: |-
+                        Scope says which instances share the volume: per-template or
+                        per-user. When it is unset, it takes the one the template's
+                        effective scope allows.
+                      type: string
+                      x-kubernetes-validations:
+                      - message: scope must be one of per-template, per-user
+                        rule: self in ['per-template', 'per-user']
+                    size:
+                      description: Size is the requested storage, a Kubernetes quantity
+                        such as 1Gi.
+                      type: string
+                      x-kubernetes-validations:
+                      - message: size must be a quantity greater than 0
+                        rule: isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))
+                    storageClassName:
+                      description: StorageClassName is the storage class of the volume.
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  - size
+                  - storageClassName
+                  type: object
+                maxItems: 8
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               remote:
                 description: |-
                   Remote makes the template a remote server: toolgate starts nothing
@@ -513,6 +558,14 @@ spec:
                 && !has(self.healthCheck))'
             - message: endpoint is required unless remote is set
               rule: has(self.remote) || has(self.endpoint)
+            - message: persistentVolumes cannot be set together with remote
+              rule: '!has(self.persistentVolumes) || !has(self.remote)'
+            - message: 'persistentVolumes needs namespace: per-instance'
+              rule: '!has(self.persistentVolumes) || !has(self.__namespace__) || self.__namespace__
+                != ''shared'''
+            - message: a per-session template cannot have persistentVolumes
+              rule: '!has(self.persistentVolumes) || !has(self.scope) || self.scope
+                != ''per-session'''
           status:
             description: |-
               Status is the status every toolgate resource has: toolgate reports

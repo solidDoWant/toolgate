@@ -29,6 +29,9 @@ type MCPServerTemplate struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.__namespace__) || self.__namespace__ != 'shared' || !has(self.scope) || self.scope == 'shared'",message="namespace: shared is allowed only with scope: shared"
 // +kubebuilder:validation:XValidation:rule="!has(self.remote) || (!has(self.endpoint) && !has(self.resources) && !has(self.healthCheck))",message="remote cannot be set together with endpoint, resources or healthCheck"
 // +kubebuilder:validation:XValidation:rule="has(self.remote) || has(self.endpoint)",message="endpoint is required unless remote is set"
+// +kubebuilder:validation:XValidation:rule="!has(self.persistentVolumes) || !has(self.remote)",message="persistentVolumes cannot be set together with remote"
+// +kubebuilder:validation:XValidation:rule="!has(self.persistentVolumes) || !has(self.__namespace__) || self.__namespace__ != 'shared'",message="persistentVolumes needs namespace: per-instance"
+// +kubebuilder:validation:XValidation:rule="!has(self.persistentVolumes) || !has(self.scope) || self.scope != 'per-session'",message="a per-session template cannot have persistentVolumes"
 type MCPServerTemplateSpec struct {
 	// Description is shown to users and the model in the catalog.
 	// +optional
@@ -117,6 +120,41 @@ type MCPServerTemplateSpec struct {
 	// excludes endpoint, resources and healthCheck.
 	// +optional
 	Remote *RemoteServer `json:"remote,omitempty"`
+
+	// PersistentVolumes are volumes that outlive the instance. Each is a
+	// PersistentVolumeClaim named Name in the instance namespace.
+	// +optional
+	// +kubebuilder:validation:MaxItems=8
+	// +listType=map
+	// +listMapKey=name
+	PersistentVolumes []PersistentVolume `json:"persistentVolumes,omitempty"`
+}
+
+// PersistentVolume is a volume that outlives the instance that uses it.
+type PersistentVolume struct {
+	// Name is the PersistentVolumeClaim name that the pod spec uses.
+	// +required
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Name string `json:"name"`
+
+	// Size is the requested storage, a Kubernetes quantity such as 1Gi.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="isQuantity(self) && quantity(self).isGreaterThan(quantity('0'))",message="size must be a quantity greater than 0"
+	Size string `json:"size"`
+
+	// StorageClassName is the storage class of the volume.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	StorageClassName string `json:"storageClassName"`
+
+	// Scope says which instances share the volume: per-template or
+	// per-user. When it is unset, it takes the one the template's
+	// effective scope allows.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self in ['per-template', 'per-user']",message="scope must be one of per-template, per-user"
+	Scope string `json:"scope,omitempty"`
 }
 
 // RemoteServer is an MCP server toolgate connects to but doesn't start.

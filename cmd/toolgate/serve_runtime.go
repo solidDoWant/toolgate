@@ -150,7 +150,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, err
 	}
 
-	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: exchangeNames(cfg.TokenExchanges), TemplateSecretsNamespace: cfg.TemplateSecretsNamespace}
+	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: exchangeNames(cfg.TokenExchanges), TemplateSecretsNamespace: cfg.TemplateSecretsNamespace, PersistentVolumes: cfg.PersistentVolumesEnabled}
 
 	if options.ruleLister != nil {
 		options.ruleLister.set(mgr.GetClient(), watched)
