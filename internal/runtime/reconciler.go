@@ -7,8 +7,10 @@ import (
 	"log/slog"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -54,6 +56,10 @@ type Reconciler struct {
 	Client client.Client
 	// Interval between full passes. Zero means DefaultPassInterval.
 	Interval time.Duration
+	// TemplateSecrets is the cache of the template secrets namespace. Each
+	// event on one of its Secrets triggers a pass. Nil when the feature is
+	// off.
+	TemplateSecrets cache.Cache
 }
 
 // passRequest is the work queue item for a full pass. There is only one, so
@@ -74,8 +80,16 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 		return fmt.Errorf("runtime reconciler: %w", err)
 	}
 
-	return builder.TypedControllerManagedBy[passRequest](mgr).
-		Named("runtime").
+	controller := builder.TypedControllerManagedBy[passRequest](mgr).Named("runtime")
+
+	if r.TemplateSecrets != nil {
+		controller = controller.WatchesRawSource(source.TypedKind(r.TemplateSecrets, &corev1.Secret{},
+			handler.TypedEnqueueRequestsFromMapFunc(func(context.Context, *corev1.Secret) []passRequest {
+				return []passRequest{{}}
+			})))
+	}
+
+	return controller.
 		WatchesRawSource(source.TypedChannel(notifications, handler.TypedFuncs[store.Event, passRequest]{
 			GenericFunc: func(_ context.Context, notification event.TypedGenericEvent[store.Event], queue workqueue.TypedRateLimitingInterface[passRequest]) {
 				if triggersPass(notification.Object) {

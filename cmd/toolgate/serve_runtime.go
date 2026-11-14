@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel/trace"
+	corev1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -284,6 +286,28 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		starter.TemplateSecretsNamespace = cfg.TemplateSecretsNamespace
 	}
 
+	updater := &runtime.TemplateSecretUpdater{
+		Queries: db.New(pool), Patcher: mgr.GetClient(), Metrics: metrics, Log: logger,
+		Namespace: cfg.TemplateSecretsNamespace,
+	}
+
+	// Only the leader watches the template secrets namespace, so other
+	// replicas never hold these values.
+	if cfg.TemplateSecretsNamespace != "" {
+		secretCache, err := newTemplateSecretCache(mgr, cfg.TemplateSecretsNamespace)
+		if err != nil {
+			return nil, err
+		}
+
+		watch := &runtime.TemplateSecretWatch{Cache: secretCache}
+		if err := mgr.Add(watch); err != nil {
+			return nil, fmt.Errorf("kubernetes manager: %w", err)
+		}
+
+		updater.Source, updater.Synced = secretCache, watch.Synced
+		reconciler.TemplateSecrets = secretCache
+	}
+
 	repairer := &runtime.Repairer{
 		Pool:        pool,
 		Replacer:    replacer,
@@ -327,7 +351,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
 	reconciler.Pass = runtime.AfterLoaded(options.catalog.Loaded(),
 		runtime.RowCleanup(queries, runtime.ResultCacheCleanup(options.resultCache, options.catalog.LastValidByUID, catalogCleaner.Pass(approvalExpirer.Pass(sweep.Pass(mcpSessionEnder.Pass(sessionEnder.Pass(teardown.Pass(queries,
-			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, repairer.Step, teardown.Step, starter.Step, monitor.Step))))))))))
+			runtime.FullPass(queries, logger, stops.Step, replacer.Step, replacer.ExpiryStep, replacer.UpdateStep, updater.Step, repairer.Step, teardown.Step, starter.Step, monitor.Step))))))))))
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
@@ -429,6 +453,29 @@ func addEmbeddingsScaler(mgr manager.Manager, cfg config.Config, clientset kuber
 	}
 
 	return nil
+}
+
+// newTemplateSecretCache returns a cache of the Secrets in namespace only,
+// without their managed fields.
+func newTemplateSecretCache(mgr manager.Manager, namespace string) (cache.Cache, error) {
+	secretCache, err := cache.New(mgr.GetConfig(), cache.Options{
+		Scheme:            mgr.GetScheme(),
+		DefaultNamespaces: map[string]cache.Config{namespace: {}},
+		ByObject: map[client.Object]cache.ByObject{&corev1.Secret{}: {
+			Transform: func(object any) (any, error) {
+				if accessor, err := apimeta.Accessor(object); err == nil {
+					accessor.SetManagedFields(nil)
+				}
+
+				return object, nil
+			},
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("template secrets cache: %w", err)
+	}
+
+	return secretCache, nil
 }
 
 // exchangeNames returns the names of the configured token exchanges.

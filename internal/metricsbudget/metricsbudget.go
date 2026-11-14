@@ -46,7 +46,7 @@ var AllowedLabels = map[string][]string{
 	"outcome": {
 		"forwarded", "refused", "approval", "upstream_error", "timeout", "start_failed",
 		"ready", "failed", "approved", "denied", "expired", "cancelled", "other",
-		"success", "error",
+		"updated", "missing", "success", "error",
 	},
 	"step":   {"access", "environment", "blocked", "rule", "temporary-block", "workspace-scope"},
 	"reason": {"denied", "refused", "error", "circuit_open"},

@@ -106,6 +106,8 @@ sum(toolgate_calls_waiting_for_start)
 sum by (server) (increase(toolgate_instance_repairs_total{action="gave_up"}[1h])) > 0
 ```
 
+`toolgate_template_secret_updates_total{outcome}` counts the updates of template secret copies in running instances. The label `outcome` is `updated` (a changed value was patched in), `missing` (the source Secret or key is gone, or the template secrets namespace changed, so the copy was kept) or `error` (the patch failed or the value was not valid text; the next pass tries again). Only the replica that holds the leader Lease counts. It counts each pass that sees a problem again, so `increase(...{outcome!="updated"}[15m]) > 0` means a problem is still present.
+
 ## Tool search embeddings
 
 `toolgate_embeddings_request_duration_seconds{operation}` is a histogram of the time of one request to the embeddings endpoint. The label `operation` is `query` for the embedding of a search query, and `document` for the embedding of tool descriptions when the gateway builds the search index. It records requests that reached the endpoint, failed ones too. A call that the open circuit skipped records nothing. The buckets run from 0.01 s to 10 s.

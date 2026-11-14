@@ -88,6 +88,9 @@ type Metrics struct {
 	HealthFailures *prometheus.CounterVec
 	// Repairs counts repairs by server and action.
 	Repairs *prometheus.CounterVec
+	// TemplateSecretUpdates counts the updates of template secret copies by
+	// outcome.
+	TemplateSecretUpdates *prometheus.CounterVec
 
 	// Searches, SearchHits, SearchResearches and SearchNoCalls count the
 	// outcomes of tool searches (see searchquality.go).
@@ -171,6 +174,10 @@ func NewMetrics() *Metrics {
 			Name: "toolgate_instance_repairs_total",
 			Help: "Repairs of unhealthy instances, by server and action.",
 		}, []string{"server", "action"}),
+		TemplateSecretUpdates: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_template_secret_updates_total",
+			Help: "Updates of template secret copies in running instances, by outcome. Counted by the replica holding the leader Lease.",
+		}, []string{"outcome"}),
 		Searches: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "toolgate_tool_search_total",
 			Help: "Tool searches, by whether search was degraded (keywords only) and the embedding model configured.",
@@ -201,7 +208,7 @@ func NewMetrics() *Metrics {
 // Collectors returns the metrics for registration.
 func (m *Metrics) Collectors() []prometheus.Collector {
 	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions, m.ToolCalls, m.ToolCallDuration,
-		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs,
+		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs, m.TemplateSecretUpdates,
 		m.Searches, m.SearchHits, m.SearchResearches, m.SearchNoCalls,
 		m.ApprovalsPending, m.Leader}
 }
