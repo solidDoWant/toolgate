@@ -78,7 +78,7 @@ func TestWorkspaceKeyApproval(t *testing.T) {
 
 		browser := env.insertSession(t, "key-stale", []string{"dev"})
 		env.freshSignIn(t, "key-stale")
-		env.ageSignIn(t, "key-stale", ui.StepUpMaxAge+30*time.Second)
+		env.ageSignIn(t, "key-stale", ui.DefaultStepUpMaxAge+30*time.Second)
 
 		response := post(t, browser, env.server.URL+ui.ApprovalPath(id)+"/approve", url.Values{ui.CSRFField: {csrfTokenOf("key-stale")}})
 		require.Equal(t, http.StatusSeeOther, response.StatusCode)

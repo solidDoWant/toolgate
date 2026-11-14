@@ -59,7 +59,7 @@ func TestScopeRequestApprovalPage(t *testing.T) {
 
 		browser := env.insertSession(t, "scope-stale", []string{"dev"})
 		env.freshSignIn(t, "scope-stale")
-		env.ageSignIn(t, "scope-stale", ui.StepUpMaxAge+30*time.Second)
+		env.ageSignIn(t, "scope-stale", ui.DefaultStepUpMaxAge+30*time.Second)
 
 		page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
 		assert.Contains(t, page, "be asked to sign in again.")

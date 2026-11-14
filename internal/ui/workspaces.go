@@ -73,12 +73,20 @@ type WorkspaceSource interface {
 }
 
 func (u *UI) registerWorkspaces() {
-	u.Handle("GET "+WorkspacesPath, User, http.HandlerFunc(u.workspacesPage))
+	u.route("GET "+WorkspacesPath, User, MaxFormBytes, workspacesSignIn, http.HandlerFunc(u.workspacesPage))
 	u.Handle("POST "+WorkspaceKeyRevokePath, User, http.HandlerFunc(u.revokeWorkspaceKey))
 
 	for _, action := range []string{gateway.WorkspaceDefaults, gateway.WorkspaceAllow, gateway.WorkspaceDeny, gateway.WorkspaceClear, workspaceServersAction} {
 		u.Handle("POST "+WorkspacesPath+"/"+action, User, u.workspaceChangeHandler(action))
 	}
+}
+
+// workspacesSignIn sends a browser without a UI session that opens the
+// Workspaces page with a pending change, which needs a fresh sign-in, straight
+// to a step-up sign-in, so the user signs in once. Without a pending change
+// it is a normal sign-in.
+func workspacesSignIn(request *http.Request) string {
+	return signInURL(request.URL.RequestURI(), request.URL.Query().Get("pending") != "")
 }
 
 // workspaceServersAction is the form that sets a workspace's servers to the
@@ -275,7 +283,7 @@ func (u *UI) pendingChangeOf(request *http.Request, session Session) *pendingCha
 		pending.Summary = "New choices for machines without their own choice."
 	}
 
-	if StepUpNeeded(session) {
+	if u.StepUpNeeded(session) {
 		pending.SignIn = StepUpURL(request.URL.RequestURI())
 	}
 
@@ -352,7 +360,7 @@ func (u *UI) workspaceChangeHandler(action string) http.Handler {
 // narrowing ones. It stops at the first error.
 func (u *UI) applyWorkspaceChanges(ctx context.Context, session Session, changes ...gateway.WorkspaceChange) error {
 	apply := u.options.Workspaces.ApplyNarrowing
-	if session.freshFor(StepUpMaxAge, time.Now()) {
+	if session.freshFor(u.StepUpMaxAge(), time.Now()) {
 		apply = u.options.Workspaces.Apply
 	}
 
@@ -647,7 +655,7 @@ func (u *UI) renderAccessRequest(writer http.ResponseWriter, request *http.Reque
 		data.Key = &view
 	}
 
-	if data.Message == "" && StepUpNeeded(session) {
+	if data.Message == "" && u.StepUpNeeded(session) {
 		data.StepUpURL = StepUpURL(ApprovalPath(accessRequest.ID))
 	}
 

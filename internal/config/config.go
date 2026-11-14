@@ -353,6 +353,17 @@ type Config struct {
 	// The chart sets it from `config.ui.approvalTimeout`.
 	ApprovalTimeout Duration `json:"approvalTimeout" env:"TOOLGATE_APPROVAL_TIMEOUT"`
 
+	// How long a fresh web UI sign-in counts as fresh for actions that need
+	// one: approving a call, creating a grant or widening a workspace's
+	// servers. A form page shows its form while the sign-in is at most this
+	// time less 1 minute old (and at least 1 minute), so there is time to
+	// submit it. A longer window means fewer sign-ins when you approve
+	// several things in a row, but a person at an unlocked browser can
+	// approve for longer without the password. Write it as a Go duration,
+	// such as `5m`. It must be from 1 minute to 1 hour. The chart sets it
+	// from `config.ui.stepUpMaxAge`.
+	StepUpMaxAge Duration `json:"stepUpMaxAge" env:"TOOLGATE_STEP_UP_MAX_AGE"`
+
 	// Whether the gateway stores audit payloads: the arguments of each tool
 	// call and approval request, and each tool result. A payload under 64 KiB
 	// (65,536 bytes) is stored in its audit row in PostgreSQL. A larger one
@@ -796,6 +807,7 @@ func Default() Config {
 		SessionIdleTimeout:              Duration(2 * time.Hour),
 		SessionResumeWindow:             Duration(24 * time.Hour),
 		ApprovalTimeout:                 Duration(10 * time.Minute),
+		StepUpMaxAge:                    Duration(5 * time.Minute),
 
 		PersistentVolumesUnusedRetention: Duration(720 * time.Hour),
 		PersistentVolumesLimitPerUser:    "10Gi",
@@ -1300,6 +1312,10 @@ func (c Config) Validate() []error {
 
 	if c.ApprovalTimeout < Duration(time.Minute) || c.ApprovalTimeout > Duration(time.Hour) {
 		problems = append(problems, errors.New("approvalTimeout: must be from 1m to 1h"))
+	}
+
+	if c.StepUpMaxAge < Duration(time.Minute) || c.StepUpMaxAge > Duration(time.Hour) {
+		problems = append(problems, errors.New("stepUpMaxAge: must be from 1m to 1h"))
 	}
 
 	problems = append(problems, c.validateToolSearchEmbeddings()...)

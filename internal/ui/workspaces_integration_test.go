@@ -149,7 +149,7 @@ func TestWorkspacesPage(t *testing.T) {
 	t.Run("a save that needs a sign-in comes back as a change to confirm", func(t *testing.T) {
 		browser := env.insertSession(t, "ws-keep", []string{"dev"})
 		env.freshSignIn(t, "ws-keep")
-		env.ageSignIn(t, "ws-keep", ui.StepUpMaxAge+30*time.Second)
+		env.ageSignIn(t, "ws-keep", ui.DefaultStepUpMaxAge+30*time.Second)
 
 		response := post(t, browser, env.server.URL+ui.WorkspacesPath+"/servers", url.Values{
 			ui.CSRFField: {csrfTokenOf("ws-keep")}, "workspace": {"coder/dave/keep"}, "server": {"optin-server"},
@@ -185,7 +185,7 @@ func TestWorkspacesPage(t *testing.T) {
 	t.Run("a kept change with a stale sign-in asks to sign in again", func(t *testing.T) {
 		browser := env.insertSession(t, "ws-keep-stale", []string{"dev"})
 		env.freshSignIn(t, "ws-keep-stale")
-		env.ageSignIn(t, "ws-keep-stale", ui.StepUpMaxAge+30*time.Second)
+		env.ageSignIn(t, "ws-keep-stale", ui.DefaultStepUpMaxAge+30*time.Second)
 
 		page := readBody(t, get(t, browser, env.server.URL+ui.WorkspacesPath+"?pending=servers&workspace=coder%2Fdave%2Fx&server=any-server"))
 		assert.Contains(t, page, "To make this change, sign in again.")
@@ -203,7 +203,7 @@ func TestWorkspacesPage(t *testing.T) {
 	t.Run("a widening POST without a fresh step-up is refused", func(t *testing.T) {
 		browser := env.insertSession(t, "ws-stale", []string{"dev"})
 		env.freshSignIn(t, "ws-stale")
-		env.ageSignIn(t, "ws-stale", ui.StepUpMaxAge+30*time.Second)
+		env.ageSignIn(t, "ws-stale", ui.DefaultStepUpMaxAge+30*time.Second)
 
 		response := post(t, browser, env.server.URL+ui.WorkspacesPath+"/allow", url.Values{
 			ui.CSRFField: {csrfTokenOf("ws-stale")}, "workspace": {workspaceName}, "server": {"optin-server"},
@@ -362,7 +362,7 @@ func TestChangeApprovalPage(t *testing.T) {
 
 		browser := env.insertSession(t, "change-stale", []string{"dev"})
 		env.freshSignIn(t, "change-stale")
-		env.ageSignIn(t, "change-stale", ui.StepUpMaxAge+30*time.Second)
+		env.ageSignIn(t, "change-stale", ui.DefaultStepUpMaxAge+30*time.Second)
 
 		page := readBody(t, get(t, browser, env.server.URL+ui.ApprovalPath(id)))
 		assert.Contains(t, page, "be asked to sign in again.")

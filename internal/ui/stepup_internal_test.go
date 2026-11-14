@@ -39,7 +39,7 @@ func TestCheckStepUpAuthTime(t *testing.T) {
 				check = require.NoError
 			}
 
-			check(t, checkStepUpAuthTime(test.authTime, test.started, now))
+			check(t, checkStepUpAuthTime(test.authTime, test.started, now, 5*time.Minute))
 		})
 	}
 }
@@ -53,11 +53,11 @@ func TestSessionFreshFor(t *testing.T) {
 		maxAge   time.Duration
 		want     bool
 	}{
-		{name: "form: exactly 4 minutes", authTime: now.Add(-4 * time.Minute), maxAge: StepUpFormMaxAge, want: true},
-		{name: "form: 4 minutes and 1 second", authTime: now.Add(-4*time.Minute - time.Second), maxAge: StepUpFormMaxAge, want: false},
-		{name: "submit: exactly 5 minutes", authTime: now.Add(-5 * time.Minute), maxAge: StepUpMaxAge, want: true},
-		{name: "submit: 5 minutes and 1 second", authTime: now.Add(-5*time.Minute - time.Second), maxAge: StepUpMaxAge, want: false},
-		{name: "unknown auth_time", authTime: time.Time{}, maxAge: StepUpMaxAge, want: false},
+		{name: "form: exactly 4 minutes", authTime: now.Add(-4 * time.Minute), maxAge: 4 * time.Minute, want: true},
+		{name: "form: 4 minutes and 1 second", authTime: now.Add(-4*time.Minute - time.Second), maxAge: 4 * time.Minute, want: false},
+		{name: "submit: exactly 5 minutes", authTime: now.Add(-5 * time.Minute), maxAge: 5 * time.Minute, want: true},
+		{name: "submit: 5 minutes and 1 second", authTime: now.Add(-5*time.Minute - time.Second), maxAge: 5 * time.Minute, want: false},
+		{name: "unknown auth_time", authTime: time.Time{}, maxAge: 5 * time.Minute, want: false},
 	}
 
 	for _, test := range tests {
@@ -83,7 +83,7 @@ func TestRequireStepUp(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ran := false
-			handler := RequireStepUp(
+			handler := (&UI{}).RequireStepUp(
 				func(*http.Request) string { return "/ui/grants/new?server=github" },
 				http.HandlerFunc(func(http.ResponseWriter, *http.Request) { ran = true }),
 			)
@@ -112,9 +112,63 @@ func TestRequireStepUp(t *testing.T) {
 }
 
 func TestStepUpNeeded(t *testing.T) {
-	assert.False(t, StepUpNeeded(Session{AuthTime: time.Now().Add(-3*time.Minute - 50*time.Second)}))
-	assert.True(t, StepUpNeeded(Session{AuthTime: time.Now().Add(-4*time.Minute - 10*time.Second)}))
-	assert.True(t, StepUpNeeded(Session{}))
+	webUI := &UI{}
+	assert.False(t, webUI.StepUpNeeded(Session{AuthTime: time.Now().Add(-3*time.Minute - 50*time.Second)}))
+	assert.True(t, webUI.StepUpNeeded(Session{AuthTime: time.Now().Add(-4*time.Minute - 10*time.Second)}))
+	assert.True(t, webUI.StepUpNeeded(Session{}))
+}
+
+// The step-up window comes from the options, and the form window is a minute
+// shorter, but never under a minute.
+func TestStepUpWindows(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured time.Duration
+		wantSubmit time.Duration
+		wantForm   time.Duration
+	}{
+		{name: "default", wantSubmit: 5 * time.Minute, wantForm: 4 * time.Minute},
+		{name: "30 minutes", configured: 30 * time.Minute, wantSubmit: 30 * time.Minute, wantForm: 29 * time.Minute},
+		{name: "1 hour", configured: time.Hour, wantSubmit: time.Hour, wantForm: 59 * time.Minute},
+		{name: "2 minutes", configured: 2 * time.Minute, wantSubmit: 2 * time.Minute, wantForm: time.Minute},
+		{name: "90 seconds", configured: 90 * time.Second, wantSubmit: 90 * time.Second, wantForm: time.Minute},
+		{name: "1 minute", configured: time.Minute, wantSubmit: time.Minute, wantForm: time.Minute},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			webUI := &UI{options: Options{StepUpMaxAge: test.configured}}
+			assert.Equal(t, test.wantSubmit, webUI.StepUpMaxAge())
+			assert.Equal(t, test.wantForm, webUI.StepUpFormMaxAge())
+		})
+	}
+}
+
+// With a 30-minute window, a sign-in 10 minutes old still shows the form and
+// lets it be submitted.
+func TestLongerStepUpWindowAcceptsAnOlderSignIn(t *testing.T) {
+	webUI := &UI{options: Options{StepUpMaxAge: 30 * time.Minute}}
+	session := Session{Principal: "alice", AuthTime: time.Now().Add(-10 * time.Minute)}
+
+	assert.False(t, webUI.StepUpNeeded(session))
+	assert.True(t, (&UI{}).StepUpNeeded(session), "the default window is shorter")
+
+	ran := false
+	handler := webUI.RequireStepUp(
+		func(*http.Request) string { return "/ui/grants/new" },
+		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { ran = true }),
+	)
+	request := httptest.NewRequestWithContext(context.WithValue(t.Context(), sessionKey{}, session), http.MethodPost, "/ui/grants", nil)
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+	assert.True(t, ran)
+}
+
+func TestCheckStepUpAuthTimeUsesTheWindow(t *testing.T) {
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	started := now.Add(-31 * time.Minute)
+
+	require.NoError(t, checkStepUpAuthTime(now.Add(-30*time.Minute), started, now, 30*time.Minute))
+	require.Error(t, checkStepUpAuthTime(now.Add(-30*time.Minute-time.Second), started, now, 30*time.Minute))
 }
 
 func TestWriteStepUpPrompt(t *testing.T) {

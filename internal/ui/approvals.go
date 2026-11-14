@@ -51,7 +51,7 @@ func ApprovalPath(id string) string {
 func (u *UI) registerApprovals() {
 	u.Handle("GET "+ApprovalsPath, User, http.HandlerFunc(u.approvalsList))
 	u.route("GET "+ApprovalsPath+"/{id}", User, MaxFormBytes, stepUpSignIn, http.HandlerFunc(u.approvalDetail))
-	u.Handle("POST "+ApprovalsPath+"/{id}/approve", User, RequireStepUp(
+	u.Handle("POST "+ApprovalsPath+"/{id}/approve", User, u.RequireStepUp(
 		func(request *http.Request) string { return ApprovalPath(request.PathValue("id")) },
 		http.HandlerFunc(u.approve)))
 	u.Handle("POST "+ApprovalsPath+"/{id}/deny", User, http.HandlerFunc(u.deny))
@@ -198,7 +198,7 @@ func (u *UI) renderApproval(writer http.ResponseWriter, request *http.Request, s
 
 	data.Who = u.namesFor(request.Context(), session.Principal, row.Approval.Principal).show(row.Approval.Principal)
 
-	if data.Message == "" && StepUpNeeded(session) {
+	if data.Message == "" && u.StepUpNeeded(session) {
 		data.StepUpURL = StepUpURL(ApprovalPath(row.Approval.ID))
 	}
 
