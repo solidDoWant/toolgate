@@ -57,6 +57,7 @@ docs/admin/
   template-secrets.md      How to give templates shared values from Secrets in one namespace.
   security-model.md        What toolgate protects against, and what claimed workspaces and sessions cannot.
   operations.md            Backups, upgrades, key rotation, instance limits, the audit log, uninstall.
+  tool-result-cache.md     Cache tool results: when it is safe, what it stores, the scope, the limits.
   tool-search.md           Run tool search: the embeddings endpoint, the chart model server, notes and limits.
   mcp-revisions.md         Which MCP revisions clients and upstream servers use, and how the gateway picks one.
 
