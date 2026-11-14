@@ -639,14 +639,18 @@ func TestStatelessRevisionUpstreamStoresNothing(t *testing.T) {
 	assert.Empty(t, fixture.upstreamSessionRows(t))
 }
 
+// invalidIDMarker contains non-hex letters, so it can't appear by chance in a
+// logged UUID the way a word such as "bad" can.
+const invalidIDMarker = "zqxbad"
+
 func TestInvalidUpstreamSessionIDFailsTheCall(t *testing.T) {
 	for name, test := range map[string]struct {
 		options sessionUpstreamOptions
 		deleted bool
 	}{
-		"an ID of 1025 bytes":              {options: sessionUpstreamOptions{sessionID: func() string { return "bad" + strings.Repeat("a", 1022) }}, deleted: true},
-		"an ID with a space":               {options: sessionUpstreamOptions{sessionID: func() string { return "bad id" }}, deleted: true},
-		"an ID with a byte above 0x7E":     {options: sessionUpstreamOptions{sessionID: func() string { return "bad-\u00e9-id" }}, deleted: true},
+		"an ID of 1025 bytes":              {options: sessionUpstreamOptions{sessionID: func() string { return invalidIDMarker + strings.Repeat("a", 1025-len(invalidIDMarker)) }}, deleted: true},
+		"an ID with a space":               {options: sessionUpstreamOptions{sessionID: func() string { return invalidIDMarker + " id" }}, deleted: true},
+		"an ID with a byte above 0x7E":     {options: sessionUpstreamOptions{sessionID: func() string { return invalidIDMarker + "-\u00e9-id" }}, deleted: true},
 		"an initialize result over 16 KiB": {options: sessionUpstreamOptions{name: strings.Repeat("n", 16<<10)}, deleted: true},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -665,7 +669,7 @@ func TestInvalidUpstreamSessionIDFailsTheCall(t *testing.T) {
 			assert.Equal(t, "Server `github` can't be reached. Try again, or call `toolgate_server_status` to see its status.", resultText(result))
 			assert.Empty(t, fixture.upstreamSessionRows(t))
 			assert.Contains(t, logs.String(), `"instance":"`+instanceID+`"`, "a warning names the instance")
-			assert.NotContains(t, logs.String(), "bad", "no log line has the upstream session ID")
+			assert.NotContains(t, logs.String(), invalidIDMarker, "no log line has the upstream session ID")
 
 			if test.deleted {
 				require.Eventually(t, func() bool { return len(upstream.deletes()) == 1 }, waitTimeout, 10*time.Millisecond,
