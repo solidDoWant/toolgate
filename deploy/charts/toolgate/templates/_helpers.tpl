@@ -93,6 +93,27 @@ one the chart creates.
 {{- end -}}
 
 {{/*
+Fails unless .value is a duration in hours, minutes and seconds, such as
+15m or 1h30m, from .min to .max seconds. .name is the value's path and
+.range says the bounds in words. Renders nothing.
+*/}}
+{{- define "toolgate.durationInRange" -}}
+{{- $value := toString .value -}}
+{{- if or (eq $value "") (not (regexMatch "^([0-9]+h)?([0-9]+m)?([0-9]+s)?$" $value)) -}}
+{{- fail (printf "%s %q must be a duration such as 15m or 1h30m, in hours (h), minutes (m) and seconds (s)" .name $value) -}}
+{{- end -}}
+{{- $seconds := 0 -}}
+{{- range $unit, $factor := dict "h" 3600 "m" 60 "s" 1 -}}
+{{- with regexFind (printf "[0-9]+%s" $unit) $value -}}
+{{- $seconds = add $seconds (mul (atoi (trimSuffix $unit .)) $factor) -}}
+{{- end -}}
+{{- end -}}
+{{- if or (lt (int $seconds) (int .min)) (gt (int $seconds) (int .max)) -}}
+{{- fail (printf "%s %q must be from %s" .name $value .range) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 "true" when the gateway scales the embeddings server to zero: the chart runs
 the server and embeddings.server.scaleToZero.enabled is set. Empty otherwise.
 Fails when the values can't work: an idle timeout outside 1m to 24h, or a
@@ -105,19 +126,7 @@ hand-set embeddings URL, which the gateway must never scale.
 {{- if .Values.config.toolSearchEmbeddings.url -}}
 {{- fail "embeddings.server.scaleToZero.enabled can't be used with config.toolSearchEmbeddings.url: toolgate scales only the embeddings server the chart runs, so leave the URL empty" -}}
 {{- end -}}
-{{- $timeout := toString $scale.idleTimeout -}}
-{{- if or (eq $timeout "") (not (regexMatch "^([0-9]+h)?([0-9]+m)?([0-9]+s)?$" $timeout)) -}}
-{{- fail (printf "embeddings.server.scaleToZero.idleTimeout %q must be a duration such as 15m or 1h30m, in hours (h), minutes (m) and seconds (s)" $timeout) -}}
-{{- end -}}
-{{- $seconds := 0 -}}
-{{- range $unit, $factor := dict "h" 3600 "m" 60 "s" 1 -}}
-{{- with regexFind (printf "[0-9]+%s" $unit) $timeout -}}
-{{- $seconds = add $seconds (mul (atoi (trimSuffix $unit .)) $factor) -}}
-{{- end -}}
-{{- end -}}
-{{- if or (lt (int $seconds) 60) (gt (int $seconds) 86400) -}}
-{{- fail (printf "embeddings.server.scaleToZero.idleTimeout %q must be from 1m to 24h" $timeout) -}}
-{{- end -}}
+{{- include "toolgate.durationInRange" (dict "name" "embeddings.server.scaleToZero.idleTimeout" "value" $scale.idleTimeout "min" 60 "max" 86400 "range" "1m to 24h") -}}
 true
 {{- end -}}
 {{- end -}}

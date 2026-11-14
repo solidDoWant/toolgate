@@ -239,3 +239,36 @@ func TestOwnerDetailsOnInstanceObjectsCanBeTurnedOff(t *testing.T) {
 		})
 	}
 }
+
+func TestStepUpMaxAgeMustBeFromOneMinuteToOneHour(t *testing.T) {
+	cases := []struct {
+		value        string
+		errAssertion require.ErrorAssertionFunc
+	}{
+		{value: "1m"},
+		{value: "30m"},
+		{value: "1h"},
+		{value: "59s", errAssertion: refusedAtTemplateTime("config.ui.stepUpMaxAge \"59s\" must be from 1m to 1h")},
+		{value: "1h1s", errAssertion: refusedAtTemplateTime("must be from 1m to 1h")},
+		{value: "30", errAssertion: refusedAtTemplateTime("must be a duration")},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.value, func(t *testing.T) {
+			if testCase.errAssertion == nil {
+				testCase.errAssertion = require.NoError
+			}
+
+			manifests, err := render(t, append([]string{"config.ui.stepUpMaxAge=" + testCase.value}, quickStartValues...))
+			testCase.errAssertion(t, err)
+
+			if err == nil {
+				assert.Equal(t, testCase.value, gatewayEnv(t, manifests)["TOOLGATE_STEP_UP_MAX_AGE"])
+			}
+		})
+	}
+}
+
+func TestStepUpMaxAgeDefaultsToFiveMinutes(t *testing.T) {
+	assert.Equal(t, "5m", gatewayEnv(t, renderQuickStart(t))["TOOLGATE_STEP_UP_MAX_AGE"])
+}

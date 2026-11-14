@@ -27,7 +27,7 @@ const stepUpFormPath = "/ui/stepup-form"
 func registerStepUpForm(webUI *ui.UI, submits *atomic.Int32) {
 	webUI.Handle("GET "+stepUpFormPath, ui.User, http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		session, _ := ui.SessionFrom(request.Context())
-		if ui.StepUpNeeded(session) {
+		if webUI.StepUpNeeded(session) {
 			ui.WriteStepUpPrompt(writer, request)
 
 			return
@@ -35,7 +35,7 @@ func registerStepUpForm(webUI *ui.UI, submits *atomic.Int32) {
 
 		_, _ = io.WriteString(writer, `<form method="post">the form</form>`)
 	}))
-	webUI.Handle("POST "+stepUpFormPath, ui.User, ui.RequireStepUp(
+	webUI.Handle("POST "+stepUpFormPath, ui.User, webUI.RequireStepUp(
 		func(*http.Request) string { return stepUpFormPath },
 		http.HandlerFunc(func(http.ResponseWriter, *http.Request) { submits.Add(1) }),
 	))

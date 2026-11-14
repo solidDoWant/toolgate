@@ -599,6 +599,7 @@ func registerUI(server *gateway.Server, cfg config.Config, servers ui.ServerSour
 		Pool:                server.Database(),
 		Rules:               rules,
 		ApprovalTimeout:     time.Duration(cfg.ApprovalTimeout),
+		StepUpMaxAge:        time.Duration(cfg.StepUpMaxAge),
 		SessionResumeWindow: testtime.Scale(time.Duration(cfg.SessionResumeWindow)),
 		AuditPayloads:       cfg.AuditPayloads,
 		AuditOutput:         stdout,

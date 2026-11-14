@@ -54,13 +54,17 @@ A failed sign-in writes an `auth.refuse` event to the audit log. The gateway wri
 
 ## Fresh sign-in
 
-Two actions in the UI give more access: creating a grant and approving a tool call. They need a fresh sign-in, which is a sign-in less than 5 minutes old. When the sign-in is older, the UI sends the user back to the IdP with `prompt=login` and `max_age=60`. The IdP then asks the user to sign in again.
+Some actions in the UI give more access: creating a grant, approving a tool call or an access request, and adding servers on `/ui/workspaces`. They need a fresh sign-in. A fresh sign-in is a sign-in that is at most `stepUpMaxAge` old. The default is 5 minutes. When the sign-in is older, the UI sends the user back to the IdP with `prompt=login` and `max_age=60`. The IdP then asks the user to sign in again.
+
+A page with one of these forms shows the form while the sign-in is at most `stepUpMaxAge` less 1 minute old, and at least 1 minute. The extra minute gives the user time to send the form. If the user opens such a page without a UI session, the gateway sends the browser straight to a fresh sign-in. Thus the user signs in only one time, even when the IdP still has a session.
+
+You set `stepUpMaxAge` with the chart value `config.ui.stepUpMaxAge`, from `1m` to `1h`. The gateway does not start with a value outside this range, and the chart refuses it. One fresh sign-in covers every approval in the window. A longer window means fewer sign-ins when a user approves several things in a row. But a person at an unlocked browser can then give more access without the password for a longer time.
 
 `max_age=60` tells the IdP to ask again when its own sign-in is more than 60 seconds old. The gateway does not send `max_age=0`, because some IdPs ignore the value 0. Authentik is an example. Authentik also obeys `prompt=login` only one time in each browser session. Thus, with Authentik, only `max_age` makes the user sign in again. You do not have to change a setting in Authentik for this.
 
 The IdP must put `auth_time` in the ID token. `auth_time` is the time when the user signed in. The gateway accepts a fresh sign-in only when `auth_time` meets all of these conditions:
 
-- It is at most 5 minutes old.
+- It is at most `stepUpMaxAge` old.
 - It is at most 60 seconds in the future.
 - It is not earlier than 60 seconds before the sign-in started.
 

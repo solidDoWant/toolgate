@@ -107,6 +107,11 @@ config:
     # -- How long a call that needs approval waits for a person, and how long
     # an approved request stays usable, as a Go duration from `1m` to `1h`.
     approvalTimeout: 10m
+    # -- How long a fresh sign-in lets a user approve calls, create grants
+    # and widen a workspace's servers before they must sign in again, as a
+    # Go duration from `1m` to `1h`. Longer means fewer sign-ins, but a
+    # person at an unlocked browser can approve for longer.
+    stepUpMaxAge: 5m
 
   # -- URL of the MCP endpoint as MCP clients on the internet reach it, such
   # as `https://mcp.example.com/mcp`. The gateway names it in its OAuth

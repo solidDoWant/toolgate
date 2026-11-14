@@ -111,6 +111,10 @@ settings from `config`.
 {{- with $config.ui.approvalTimeout }}
 {{- $env = append $env (dict "name" "TOOLGATE_APPROVAL_TIMEOUT" "value" .) }}
 {{- end }}
+{{- if hasKey $config.ui "stepUpMaxAge" }}
+{{- include "toolgate.durationInRange" (dict "name" "config.ui.stepUpMaxAge" "value" $config.ui.stepUpMaxAge "min" 60 "max" 3600 "range" "1m to 1h") }}
+{{- $env = append $env (dict "name" "TOOLGATE_STEP_UP_MAX_AGE" "value" (toString $config.ui.stepUpMaxAge)) }}
+{{- end }}
 {{- $ownerDetails := true -}}
 {{- if hasKey $config "instanceOwnerDetails" }}{{- $ownerDetails = $config.instanceOwnerDetails -}}{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_OMIT_OWNER_DETAILS" "value" (toString (not $ownerDetails))) -}}

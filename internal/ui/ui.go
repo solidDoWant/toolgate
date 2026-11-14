@@ -159,6 +159,9 @@ type Options struct {
 	// ApprovalTimeout is how long an approved call stays usable
 	// (`approvalTimeout`). Zero means DefaultApprovalTimeout.
 	ApprovalTimeout time.Duration
+	// StepUpMaxAge is `stepUpMaxAge`: how old a sign-in may be when a grant
+	// is created or a call approved. Zero means DefaultStepUpMaxAge.
+	StepUpMaxAge time.Duration
 	// SessionResumeWindow is `sessionResumeWindow`: how long an ended
 	// session can be resumed. Zero means DefaultSessionResumeWindow.
 	SessionResumeWindow time.Duration

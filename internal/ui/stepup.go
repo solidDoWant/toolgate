@@ -2,6 +2,7 @@ package ui
 
 import (
 	"errors"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -10,12 +11,14 @@ import (
 
 // Step-up bounds.
 const (
-	// StepUpMaxAge is how old a session's sign-in may be when a grant is
-	// created or a call approved.
-	StepUpMaxAge = 5 * time.Minute
-	// StepUpFormMaxAge is how old the sign-in may be for a form page to show
-	// its form. The extra minute up to StepUpMaxAge leaves time to submit.
-	StepUpFormMaxAge = 4 * time.Minute
+	// DefaultStepUpMaxAge is how old a session's sign-in may be when a grant
+	// is created or a call approved, when Options.StepUpMaxAge is zero.
+	DefaultStepUpMaxAge = 5 * time.Minute
+	// stepUpSubmitTime is how much shorter the form window is than the step-up
+	// window, so a form shown at the end of its window can still be submitted.
+	stepUpSubmitTime = time.Minute
+	// minStepUpFormMaxAge is the shortest form window.
+	minStepUpFormMaxAge = time.Minute
 	// StepUpClockSkew is the clock skew allowed both ways on a step-up's
 	// auth_time.
 	StepUpClockSkew = 60 * time.Second
@@ -32,17 +35,17 @@ const (
 )
 
 // checkStepUpAuthTime checks the auth_time of a step-up's ID token against
-// the time now and the time the sign-in started: at most StepUpMaxAge old,
-// at most StepUpClockSkew in the future, and no earlier than StepUpClockSkew
-// before the sign-in started. A zero authTime means the IdP left it out.
-func checkStepUpAuthTime(authTime, loginCreated, now time.Time) error {
+// the time now and the time the sign-in started: at most maxAge old, at most
+// StepUpClockSkew in the future, and no earlier than StepUpClockSkew before
+// the sign-in started. A zero authTime means the IdP left it out.
+func checkStepUpAuthTime(authTime, loginCreated, now time.Time, maxAge time.Duration) error {
 	switch {
 	case authTime.IsZero():
 		return errors.New("the ID token has no auth_time")
 	case authTime.After(now.Add(StepUpClockSkew)):
 		return errors.New("the ID token's auth_time is in the future")
-	case now.Sub(authTime) > StepUpMaxAge:
-		return errors.New("the ID token's auth_time is more than 5 minutes old")
+	case now.Sub(authTime) > maxAge:
+		return fmt.Errorf("the ID token's auth_time is more than %s old", maxAge)
 	case authTime.Before(loginCreated.Add(-StepUpClockSkew)):
 		return errors.New("the ID token's auth_time is before the sign-in started")
 	default:
@@ -56,11 +59,27 @@ func (s Session) freshFor(maxAge time.Duration, now time.Time) bool {
 	return !s.AuthTime.IsZero() && now.Sub(s.AuthTime) <= maxAge
 }
 
+// StepUpMaxAge is how old a session's sign-in may be when a grant is created
+// or a call approved: Options.StepUpMaxAge, or DefaultStepUpMaxAge.
+func (u *UI) StepUpMaxAge() time.Duration {
+	if u.options.StepUpMaxAge > 0 {
+		return u.options.StepUpMaxAge
+	}
+
+	return DefaultStepUpMaxAge
+}
+
+// StepUpFormMaxAge is how old the sign-in may be for a form page to show its
+// form: StepUpMaxAge less a minute to submit it, and at least a minute.
+func (u *UI) StepUpFormMaxAge() time.Duration {
+	return max(u.StepUpMaxAge()-stepUpSubmitTime, minStepUpFormMaxAge)
+}
+
 // StepUpNeeded reports whether a form page that needs a step-up must show
 // the "Sign in again to continue" button instead of its form: the session's
 // sign-in is older than StepUpFormMaxAge, or its time is unknown.
-func StepUpNeeded(session Session) bool {
-	return !session.freshFor(StepUpFormMaxAge, time.Now())
+func (u *UI) StepUpNeeded(session Session) bool {
+	return !session.freshFor(u.StepUpFormMaxAge(), time.Now())
 }
 
 // StepUpURL is the step-up sign-in that returns to returnTo.
@@ -94,10 +113,10 @@ func WriteStepUpPrompt(writer http.ResponseWriter, request *http.Request) {
 // next does not run: the request changes nothing and is redirected to a
 // step-up that returns to the form at formPath(request). Register the result
 // with Handle at the User or Admin level.
-func RequireStepUp(formPath func(*http.Request) string, next http.Handler) http.Handler {
+func (u *UI) RequireStepUp(formPath func(*http.Request) string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		session, ok := SessionFrom(request.Context())
-		if !ok || !session.freshFor(StepUpMaxAge, time.Now()) {
+		if !ok || !session.freshFor(u.StepUpMaxAge(), time.Now()) {
 			writer.Header().Set("Cache-Control", "no-store")
 			http.Redirect(writer, request, StepUpURL(formPath(request)), http.StatusSeeOther)
 

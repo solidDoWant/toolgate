@@ -73,6 +73,7 @@ logLevel: debug
 		SessionIdleTimeout:              config.Duration(2 * time.Hour),
 		SessionResumeWindow:             config.Duration(24 * time.Hour),
 		ApprovalTimeout:                 config.Duration(10 * time.Minute),
+		StepUpMaxAge:                    config.Duration(5 * time.Minute),
 		WorkspaceKeysPrefix:             "registered",
 		PublicURL:                       "https://toolgate.example",
 		OIDCUIClientID:                  "toolgate-ui",
@@ -299,6 +300,20 @@ approvalTimeout: 1h0m1s
 			wantProblems: []string{"approvalTimeout: must be from 1m to 1h"},
 		},
 		{
+			name: "step-up max age under 1 minute",
+			file: `
+stepUpMaxAge: 59s
+`,
+			wantProblems: []string{"stepUpMaxAge: must be from 1m to 1h"},
+		},
+		{
+			name: "step-up max age over 1 hour",
+			file: `
+stepUpMaxAge: 1h0m1s
+`,
+			wantProblems: []string{"stepUpMaxAge: must be from 1m to 1h"},
+		},
+		{
 			name: "invalid shared namespace",
 			file: `
 sharedNamespace: "Not_A_Namespace"
@@ -521,6 +536,24 @@ func TestApprovalTimeoutBounds(t *testing.T) {
 			parsed, err := time.ParseDuration(value)
 			require.NoError(t, err)
 			assert.Equal(t, config.Duration(parsed), cfg.ApprovalTimeout)
+		})
+	}
+}
+
+func TestStepUpMaxAgeBounds(t *testing.T) {
+	for _, value := range []string{"1m", "1h"} {
+		t.Run(value, func(t *testing.T) {
+			cfg, err := config.Load("", envFrom(map[string]string{
+				"TOOLGATE_DATABASE_URL":    validDatabaseURL,
+				"TOOLGATE_STEP_UP_MAX_AGE": value,
+				"TOOLGATE_OIDC_ISSUER_URL": "https://idp.example",
+				"TOOLGATE_OIDC_AUDIENCE":   "toolgate",
+			}))
+			require.NoError(t, err)
+
+			parsed, err := time.ParseDuration(value)
+			require.NoError(t, err)
+			assert.Equal(t, config.Duration(parsed), cfg.StepUpMaxAge)
 		})
 	}
 }

@@ -58,8 +58,8 @@ type GrantSource interface {
 
 func (u *UI) registerGrants() {
 	u.Handle("GET "+GrantsPath, User, http.HandlerFunc(u.grants))
-	u.Handle("GET "+NewGrantPath, User, http.HandlerFunc(u.newGrant))
-	u.Handle("POST "+GrantsPath, User, RequireStepUp(grantFormPath, http.HandlerFunc(u.createGrant)))
+	u.route("GET "+NewGrantPath, User, MaxFormBytes, stepUpSignIn, http.HandlerFunc(u.newGrant))
+	u.Handle("POST "+GrantsPath, User, u.RequireStepUp(grantFormPath, http.HandlerFunc(u.createGrant)))
 	u.Handle("POST "+GrantsPath+"/{id}/revoke", User, http.HandlerFunc(u.revokeGrant))
 }
 
@@ -184,7 +184,7 @@ type grantsPage struct {
 // the step-up prompt when the sign-in is too old to submit it.
 func (u *UI) newGrant(writer http.ResponseWriter, request *http.Request) {
 	session, _ := SessionFrom(request.Context())
-	if StepUpNeeded(session) {
+	if u.StepUpNeeded(session) {
 		WriteStepUpPrompt(writer, request)
 
 		return

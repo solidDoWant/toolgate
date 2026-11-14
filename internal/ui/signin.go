@@ -395,7 +395,7 @@ func (u *UI) completeStepUp(writer http.ResponseWriter, request *http.Request, l
 		return &signInFailure{reason: "the ID token has no auth_time", happened: missingAuthTimeHappened, todo: missingAuthTimeToDo}
 	}
 
-	if err := checkStepUpAuthTime(identity.authTime.Time, login.CreatedAt.Time, time.Now()); err != nil {
+	if err := checkStepUpAuthTime(identity.authTime.Time, login.CreatedAt.Time, time.Now(), u.StepUpMaxAge()); err != nil {
 		failed := failure("the step-up sign-in is not fresh", err)
 		if login.Restarted {
 			failed.happened, failed.todo = notFreshHappened, notFreshToDo
