@@ -146,6 +146,14 @@ sum by (code) (rate(toolgate_otlp_ingest_requests_total[5m]))
 sum(increase(toolgate_auth_refusals_dropped_total[1h]))
 ```
 
+## Token exchange
+
+`toolgate_token_exchanges_total{exchange, kind, outcome}` counts the token exchanges of this replica. A token exchange gets a new token for an instance from the token of the user (see [Token exchange](token-exchange.md)). The label `exchange` is the `name` of an entry in `tokenExchanges`. The label `kind` is `start` for the first token of an instance, and `refresh` for a later one. The label `outcome` is `success`, `refused` when the token endpoint answered with an OAuth error, and `error` for any other failure. The audit log holds the cause of each failure. With the limit of 8 exchanges, the metric adds at most 48 series.
+
+```promql
+sum by (exchange, outcome) (rate(toolgate_token_exchanges_total[5m]))
+```
+
 ## Audit
 
 `toolgate_audit_partition_errors_total` counts failed attempts to create the audit partitions. `toolgate_audit_payload_errors_total` counts payloads that the gateway could not store. `toolgate_audit_retention_refused_total` counts old audit rows that the gateway kept because S3 refused to delete their objects. See [Operations](operations.md).

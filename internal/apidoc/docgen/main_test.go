@@ -14,6 +14,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/sessionsapi"
 	"github.com/solidDoWant/toolgate/internal/settings"
+	"github.com/solidDoWant/toolgate/internal/volumesapi"
 	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
 
@@ -33,6 +34,7 @@ func TestOperationsAreExactlyTheRegisteredAPIRoutes(t *testing.T) {
 	(&sessionsapi.Handler{}).Register(mux, passThrough)
 	audittail.New(audittail.Options{}).Register(mux, passThrough)
 	(&workspacesapi.Handler{}).Register(mux, passThrough)
+	(&volumesapi.Handler{}).Register(mux, passThrough)
 
 	var routes []string
 

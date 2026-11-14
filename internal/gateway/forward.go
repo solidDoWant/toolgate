@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -21,7 +18,6 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
-	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -29,7 +25,6 @@ import (
 	"github.com/solidDoWant/toolgate/internal/testtime"
 	"github.com/solidDoWant/toolgate/internal/toolcatalog"
 	"github.com/solidDoWant/toolgate/internal/upstreamlimit"
-	"github.com/solidDoWant/toolgate/internal/version"
 )
 
 // MaxResultBytes is the largest tool result the gateway forwards, measured
@@ -66,124 +61,6 @@ func tracer(ctx context.Context) trace.Tracer {
 // UpstreamEndpoint returns the MCP URL of an instance started from template.
 type UpstreamEndpoint func(instance db.Instance, template *v1alpha1.MCPServerTemplate) string
 
-// upstreams keeps this replica's forwarding sessions, one per instance,
-// each created on first use.
-type upstreams struct {
-	endpoint   UpstreamEndpoint
-	httpClient *http.Client
-	// secrets returns a principal's secrets, which fill a remote server's
-	// headers. Nil means remote servers can't be reached.
-	secrets func(principal string) runtime.SecretSource
-
-	mu       sync.Mutex
-	sessions map[string]*upstreamSession
-}
-
-type upstreamSession struct {
-	mu      sync.Mutex
-	session *mcp.ClientSession
-	// remote holds the owner's headers of a remote server's session, and
-	// records whether the server refused them. It is nil otherwise.
-	remote *runtime.RemoteAuth
-}
-
-func newUpstreams(endpoint UpstreamEndpoint, httpClient *http.Client, secrets func(principal string) runtime.SecretSource) *upstreams {
-	return &upstreams{endpoint: endpoint, httpClient: httpClient, secrets: secrets, sessions: make(map[string]*upstreamSession)}
-}
-
-// errRemoteNotOwner refuses a forwarding session to a remote server's
-// instance for anyone but its owner: the session sends the owner's
-// credential.
-var errRemoteNotOwner = errors.New("a remote server's instance serves only its owner")
-
-// errNoSecretSource is the connect error of a remote server on a gateway
-// that can't read user secrets.
-var errNoSecretSource = errors.New("the gateway can't read user secrets")
-
-// session returns the forwarding session to instance, connecting it when
-// there is none. A remote server's session sends the headers filled in
-// from the secrets of the instance's owner, who must be caller; it is
-// returned with them.
-func (u *upstreams) session(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, caller runtime.Identity) (*mcp.ClientSession, *runtime.RemoteAuth, error) {
-	// An instance is keyed by its ID. A per-user or per-session remote
-	// server's instance belongs to one user: only that user's calls may use
-	// its headers. A shared one's headers hold nothing per-user, so it
-	// serves everyone.
-	if template.Spec.Remote != nil && instance.Scope != catalog.ScopeShared &&
-		(instance.OwnerPrincipal == "" || caller.PrincipalID != instance.OwnerPrincipal) {
-		return nil, nil, errRemoteNotOwner
-	}
-
-	u.mu.Lock()
-
-	entry, found := u.sessions[instance.ID]
-	if !found {
-		entry = &upstreamSession{}
-		u.sessions[instance.ID] = entry
-	}
-
-	u.mu.Unlock()
-
-	entry.mu.Lock()
-	defer entry.mu.Unlock()
-
-	if entry.session != nil {
-		return entry.session, entry.remote, nil
-	}
-
-	var remote *runtime.RemoteAuth
-
-	if template.Spec.Remote != nil {
-		// A shared remote server's headers use no secret, so it needs no
-		// secret source.
-		var source runtime.SecretSource
-
-		switch {
-		case u.secrets != nil:
-			source = u.secrets(instance.OwnerPrincipal)
-		case instance.Scope != catalog.ScopeShared:
-			return nil, nil, errNoSecretSource
-		}
-
-		// The headers are filled in at each connect, so a secret set
-		// again takes effect at the next connect.
-		header, _, err := runtime.RemoteHeaders(ctx, template, caller, source)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		remote = &runtime.RemoteAuth{Header: header}
-	}
-
-	// Replicas ignore list_changed on forwarding sessions: the reconciler
-	// keeps the tool list, so a forwarding connection opens no GET stream.
-	// Closing it ends the upstream session. The session speaks the row's
-	// MCP revision.
-	deleteOnClose := &atomic.Bool{}
-	deleteOnClose.Store(true)
-
-	connectCtx, cancel := upstreamConnectContext(ctx)
-	defer cancel()
-
-	session, _, err := runtime.ConnectUpstream(connectCtx, u.endpoint(instance, template), instance.McpRevision, runtime.UpstreamOptions{
-		Implementation: &mcp.Implementation{Name: "toolgate", Version: version.Get()},
-		HTTPClient:     u.httpClient,
-		Remote:         remote,
-		DeleteOnClose:  deleteOnClose,
-	})
-	if err != nil {
-		if remote != nil && remote.Refused() {
-			return nil, remote, fmt.Errorf("%w: %w", runtime.ErrCredentialRefused, err)
-		}
-
-		return nil, nil, err
-	}
-
-	entry.session, entry.remote = session, remote
-
-	return session, remote, nil
-}
-
 // upstreamConnectContext returns a context for connecting to an upstream
 // that keeps only ctx's cancellation, deadline and trace span. The go-sdk
 // keeps the protocol revision of the request being served in its context,
@@ -204,67 +81,6 @@ func upstreamConnectContext(ctx context.Context) (context.Context, context.Cance
 		stop()
 		cancel()
 		cancelDeadline()
-	}
-}
-
-// drop closes the forwarding session to an instance, so the next call
-// connects again.
-func (u *upstreams) drop(id string, session *mcp.ClientSession) {
-	u.mu.Lock()
-	entry, found := u.sessions[id]
-	u.mu.Unlock()
-
-	if !found {
-		return
-	}
-
-	entry.mu.Lock()
-	defer entry.mu.Unlock()
-
-	if entry.session == session {
-		entry.session, entry.remote = nil, nil
-
-		_ = session.Close()
-	}
-}
-
-// dropUnlessReady closes this replica's forwarding session to instance id
-// when the instance is no longer ready.
-func (m *metaTools) dropUnlessReady(id string) {
-	m.upstreams.mu.Lock()
-	entry, found := m.upstreams.sessions[id]
-	m.upstreams.mu.Unlock()
-
-	if !found {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), fanOutTimeout)
-	defer cancel()
-
-	instance, err := db.New(m.database).GetInstance(ctx, id)
-	if err == nil && instance.Status == statusReady {
-		return
-	}
-
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return
-	}
-
-	m.upstreams.mu.Lock()
-	delete(m.upstreams.sessions, id)
-	m.upstreams.mu.Unlock()
-
-	entry.mu.Lock()
-	session := entry.session
-	entry.session, entry.remote = nil, nil
-	entry.mu.Unlock()
-
-	// Close waits for the calls in flight on the session. They finish with
-	// whatever the upstream answers, and fan-out must not wait for
-	// them.
-	if session != nil {
-		go func() { _ = session.Close() }()
 	}
 }
 
@@ -608,7 +424,7 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 
 	ctx, budget := upstreamlimit.WithBudget(ctx, upstreamResponseBudget)
 
-	session, remote, err := m.upstreams.session(ctx, instance, template, remoteIdentity(current))
+	upstream, err := m.upstreams.acquire(ctx, m.database, instance, template, remoteIdentity(current), current.session.ID)
 	if err != nil {
 		span.SetStatus(codes.Error, "connect")
 
@@ -635,21 +451,30 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 		return errorResult(fmt.Sprintf("The result of `%s` is larger than 16 MiB, the limit, so the gateway didn't forward it.", ProxiedToolName(template.Name, tool))), "too-large"
 	}
 
-	result, err := session.CallTool(ctx, params)
+	// A copy that belongs to no stored row serves this one call, and then
+	// its upstream session ends.
+	if upstream.once {
+		defer upstream.End()
+	}
+
+	result, err := upstream.session.CallTool(ctx, params)
 	if err != nil {
 		span.SetStatus(codes.Error, "call")
 
-		// After a JSON-RPC error response the session still works; after
-		// anything else, connect again on the next call.
+		// After a JSON-RPC error response the copy still works; after
+		// anything else, the next call makes a new copy. The upstream
+		// session and its row stay.
 		var rpcErr *jsonrpc.Error
-		if !errors.As(err, &rpcErr) {
-			m.upstreams.drop(instance.ID, session)
+		if !errors.As(err, &rpcErr) && !upstream.once {
+			m.upstreams.release(upstream.key, upstream.upstreamCopy)
 		}
 
 		// A refused credential stays refused until the user sets the
-		// secret again, which the next connect reads.
-		if remote != nil && remote.Refused() {
-			m.upstreams.drop(instance.ID, session)
+		// secret again, which the next copy reads.
+		if upstream.remote != nil && upstream.remote.Refused() {
+			if !upstream.once {
+				m.upstreams.release(upstream.key, upstream.upstreamCopy)
+			}
 
 			return errorResult(runtime.CredentialRefusedReason(template)), "failed"
 		}

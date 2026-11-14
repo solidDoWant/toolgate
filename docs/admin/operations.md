@@ -28,6 +28,15 @@ During a rolling upgrade, the old pods and the new pods use the same database. A
 
 Rotate the key when a person who had the keyset leaves, or on a fixed schedule. [User secrets](user-secrets.md#rotate-the-key) gives the steps. The command `toolgate admin rewrap` encrypts every stored secret again with the new key.
 
+## List and delete persistent volumes
+
+A template's persistent volumes outlive the instances that use them. You list them and delete them with `toolgate admin volumes`. You must be signed in (`toolgate login`) as a user in the gateway's `adminGroup`. Without an `adminGroup`, the commands are refused for everyone. They call the gateway, so they need no gateway configuration file.
+
+- `toolgate admin volumes list` prints one row for each volume: ID, server, volume name, scope, owner, size, the instance that uses it, when it was last used, and the reason for a deletion. Add `--owner PRINCIPAL` to show only the volumes of one user. Add `--json` to print the rows as JSON. The command follows the gateway's pages, up to 50 pages of 200 rows.
+- `toolgate admin volumes delete ID...` marks each volume for deletion. It prints the result for each ID, and it exits with code 1 when any ID is unknown. It does not wait for the deletion.
+
+The commands only mark rows. The gateway leader deletes the PersistentVolume later. When an instance uses the volume, the volume is deleted after that instance stops. The API behind the commands is `GET /api/v1/admin/volumes` and `DELETE /api/v1/admin/volumes/{id}`. Each deletion is recorded as a `volume.delete` audit event with your principal.
+
 ## Limit the number of servers
 
 Two chart values limit the number of running instances:

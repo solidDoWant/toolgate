@@ -70,6 +70,8 @@ The name of the template is the name of the server. It has 31 characters at most
   - `per-session`: one instance for each Claude Code session.
   - `per-user`: one instance for each user, shared by the sessions of that user.
   - `shared`: one instance for all users.
+
+  Each Claude Code session that uses an instance gets its own MCP session on the server. The calls of one Claude Code session always use that one MCP session, on every gateway replica. So a `per-user` or `shared` instance holds one MCP session for each Claude Code session that uses it. A server that keeps a lot of state for each session, such as a browser, uses more memory than before.
 - `namespace`: `per-instance` (the default) or `shared`. See [Where instances run](#where-instances-run).
 - `updatePolicy`: when toolgate replaces instances that started from an older version of the template: `manual` (default), `immediate` or `whenIdle` with `idleFor`. See [Updating outdated instances](instances.md#updating-outdated-instances).
 - `idleStop`: how long a `per-user` or `shared` instance runs without calls before it stops. For a `shared` template, `0` means that the instance does not stop. [Instance stops and cleanup](instances.md) gives the full rules.

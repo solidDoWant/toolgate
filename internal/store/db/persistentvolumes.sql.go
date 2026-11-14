@@ -96,6 +96,35 @@ func (q *Queries) DeletePersistentVolume(ctx context.Context, id string) (int64,
 	return result.RowsAffected(), nil
 }
 
+const getPersistentVolume = `-- name: GetPersistentVolume :one
+SELECT id, template_ns, template_name, template_uid, volume_name, scope, scope_id, storage_class, size_bytes, pv_name, instance_id, created_at, last_used_at, delete_reason, delete_requested_at, reclaim_patched_at, problem FROM persistent_volumes WHERE id = $1
+`
+
+func (q *Queries) GetPersistentVolume(ctx context.Context, id string) (PersistentVolume, error) {
+	row := q.db.QueryRow(ctx, getPersistentVolume, id)
+	var i PersistentVolume
+	err := row.Scan(
+		&i.ID,
+		&i.TemplateNs,
+		&i.TemplateName,
+		&i.TemplateUid,
+		&i.VolumeName,
+		&i.Scope,
+		&i.ScopeID,
+		&i.StorageClass,
+		&i.SizeBytes,
+		&i.PvName,
+		&i.InstanceID,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.DeleteReason,
+		&i.DeleteRequestedAt,
+		&i.ReclaimPatchedAt,
+		&i.Problem,
+	)
+	return i, err
+}
+
 const insertPersistentVolume = `-- name: InsertPersistentVolume :execrows
 INSERT INTO persistent_volumes (id, template_ns, template_name, template_uid, volume_name, scope, scope_id, storage_class, size_bytes)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)

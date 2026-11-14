@@ -177,6 +177,12 @@ func endSessionInTx(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, id in
 		return false, fmt.Errorf("end session: %w", err)
 	}
 
+	// The session's upstream sessions end with it, so a session that resumes
+	// later gets new ones.
+	if _, err := queries.EndUpstreamSessionsOfSession(ctx, id); err != nil {
+		return false, fmt.Errorf("end upstream sessions: %w", err)
+	}
+
 	servers, err := enabledServerNames(ctx, queries, id)
 	if err != nil {
 		return false, err
