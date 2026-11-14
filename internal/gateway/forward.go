@@ -781,6 +781,14 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 				return nil
 			}
 
+			// A start renders the template, so an exchange in it needs a
+			// user's token.
+			if err := checkUserToken(current, template); err != nil {
+				refusal = &callRefusal{details: map[string]any{"reason": reasonNoUserToken}, message: err.Error()}
+
+				return nil
+			}
+
 			if err := m.checkInstanceLimits(ctx, queries, current, template); err != nil {
 				return err
 			}

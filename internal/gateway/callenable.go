@@ -14,6 +14,7 @@ import (
 // Refusal reasons of a call that enables its server.
 const (
 	reasonMissingSecret = "missing-secret"
+	reasonNoUserToken   = "no-user-token"
 	reasonLimit         = "limit"
 	reasonFirstCall     = "first-call"
 )
@@ -56,6 +57,10 @@ func (m *metaTools) enableForCall(ctx context.Context, request *mcp.CallToolRequ
 
 	if err := m.checkSecrets(ctx, current, template); err != nil {
 		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonMissingSecret}, err.Error())
+	}
+
+	if err := checkUserToken(current, template); err != nil {
+		return m.refuseCall(ctx, current, server, tool, map[string]any{"reason": reasonNoUserToken}, err.Error())
 	}
 
 	lazy, err := m.startsOnCall(ctx, template)

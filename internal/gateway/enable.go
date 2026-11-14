@@ -19,6 +19,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/audit"
+	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
@@ -104,8 +105,20 @@ func (m *metaTools) enableServer(ctx context.Context, request *mcp.CallToolReque
 		return nil, EnableResult{}, errors.New(decision.Reason)
 	}
 
-	// Step 2: every secret the template names must be set.
+	// Step 2: every secret the template names must be set, and a template
+	// that exchanges the user's token needs a user.
 	if err := m.checkSecrets(ctx, current, template); err != nil {
+		return nil, EnableResult{}, err
+	}
+
+	if err := checkUserToken(current, template); err != nil {
+		recorder := audit.NewRecorder(m.auditOutput, db.New(m.database))
+		if recordErr := recorder.Record(ctx, auditEvent(current, "server.enable", template.Name, map[string]any{
+			"decision": "refuse", "reason": reasonNoUserToken,
+		})); recordErr != nil {
+			return nil, EnableResult{}, recordErr
+		}
+
 		return nil, EnableResult{}, err
 	}
 
@@ -273,6 +286,17 @@ func (m *metaTools) checkSecrets(ctx context.Context, current requestContext, te
 	}
 
 	return nil
+}
+
+// checkUserToken refuses a template whose current generation exchanges the
+// caller's sign-in token when the caller isn't a user: service accounts and
+// SPIFFE workloads have no token to exchange.
+func checkUserToken(current requestContext, template *v1alpha1.MCPServerTemplate) error {
+	if current.identity.Kind == auth.KindUser || !catalog.UsesExchange(template) {
+		return nil
+	}
+
+	return fmt.Errorf("`%s` needs a token exchanged from your sign-in. Service accounts, SPIFFE workloads and pod sign-in have none, so they can't use it.", template.Name) //nolint:staticcheck // A sentence for the model.
 }
 
 // enableOptions are the parts of an enable that differ between an enable

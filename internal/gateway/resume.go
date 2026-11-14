@@ -51,6 +51,14 @@ func (m *metaTools) restoreServers(ctx context.Context, tx pgx.Tx, current reque
 			continue
 		}
 
+		if checkUserToken(current, template) != nil {
+			if err := m.removeServer(ctx, tx, current, template, map[string]any{"decision": "refuse", "reason": reasonNoUserToken}); err != nil {
+				return err
+			}
+
+			continue
+		}
+
 		err = m.restoreInTransaction(ctx, tx, current, template)
 
 		var limitErr *instanceLimitError
