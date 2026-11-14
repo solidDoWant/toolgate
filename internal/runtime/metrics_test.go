@@ -57,9 +57,13 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 
 		for _, outcome := range []string{
 			runtime.CallForwarded, runtime.CallRefused, runtime.CallApproval,
-			runtime.CallUpstreamError, runtime.CallTimeout, runtime.CallStartFailed,
+			runtime.CallUpstreamError, runtime.CallTimeout, runtime.CallStartFailed, runtime.CallCached,
 		} {
 			metrics.ObserveCall(server, outcome)
+		}
+
+		for _, result := range []string{runtime.CacheHit, runtime.CacheMiss} {
+			metrics.ObserveCacheLookup(server, result)
 		}
 
 		metrics.InstanceStarts.WithLabelValues(server, runtime.StartReady).Inc()
@@ -75,6 +79,10 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 		for _, reason := range []string{"denied", "refused"} {
 			metrics.ObservePolicyRefusal(step, reason)
 		}
+	}
+
+	for _, result := range []string{"stored", "entry_too_large", "template_full", "session_ended", runtime.CacheStoreFailed} {
+		metrics.ObserveCacheStore(result)
 	}
 
 	metrics.ObserveCallDuration(time.Second)
@@ -97,11 +105,11 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 		}
 	}
 
-	// Instances 30, stuck 1, sessions 4, calls 60, call duration 8 buckets
-	// + 3, policy 12, starts 20, start duration 7 buckets + 3, waiting 1,
+	// Instances 30, stuck 1, sessions 4, calls 70, cache lookups 20, cache
+	// stores 5, call duration 8 buckets + 3, policy 12, starts 20, start duration 7 buckets + 3, waiting 1,
 	// health 10, repairs 30, embedding errors 4, embedding duration 2 ×
 	// (10 buckets + 3), pending 5, leader 1, token exchanges 8 × 2 × 3.
-	assert.Equal(t, 30+1+4+60+11+12+20+10+1+10+30+4+26+5+1+48, metricsbudget.Check(t, registry, templates))
+	assert.Equal(t, 30+1+4+70+20+5+11+12+20+10+1+10+30+4+26+5+1+48, metricsbudget.Check(t, registry, templates))
 }
 
 // A label outside the allowed sets fails the check.

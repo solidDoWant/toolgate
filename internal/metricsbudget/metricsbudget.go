@@ -39,14 +39,17 @@ var AllowedLabels = map[string][]string{
 	"kind":         {"tool", "server", "scope", "change", "key", "user", "service_account", "spiffe", "connector", "other", "start", "refresh"},
 	// The configured token exchange names, at most 8.
 	"exchange": nil,
-	"result":   {"ok", "refused", "attested", "other"},
+	"result": {
+		"ok", "refused", "attested", "other",
+		"hit", "miss", "stored", "entry_too_large", "template_full", "session_ended", "failed",
+	},
 	"method":   {"initialize", "tools/list", "tools/call", "subscriptions/listen", "other"},
 	"revision": {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28", "other"},
 	"state":    {"idle", "in_use", "max"},
 	"outcome": {
 		"forwarded", "refused", "approval", "upstream_error", "timeout", "start_failed",
 		"ready", "failed", "approved", "denied", "expired", "cancelled", "other",
-		"updated", "missing", "success", "error",
+		"updated", "missing", "success", "error", "cached",
 	},
 	"step":   {"access", "environment", "blocked", "rule", "temporary-block", "workspace-scope"},
 	"reason": {"denied", "refused", "error", "circuit_open"},

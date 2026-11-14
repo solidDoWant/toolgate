@@ -29,6 +29,10 @@
 // returns the user of the token, so a test can check which key reached the
 // server.
 //
+// The count tool is marked readOnlyHint and returns how often it was
+// called, so a test sees whether a call reached the server. -count-ttl sets
+// its cache lifetime suggestion.
+//
 // Configuration, by flag or environment variable:
 //
 //	-listen      MCPSERVER_LISTEN       listen address (default :8080)
@@ -38,6 +42,7 @@
 //	-tools-file  MCPSERVER_TOOLS_FILE  file with the tool declarations
 //	-bearer-tokens MCPSERVER_BEARER_TOKENS  token=user pairs; /mcp answers 401 to any other bearer token
 //	-health      MCPSERVER_HEALTH       status /healthz answers at start (default 200)
+//	-count-ttl   MCPSERVER_COUNT_TTL    the count tool's `_meta["toolgate/cache"].ttl` suggestion
 package main
 
 import (
@@ -86,6 +91,7 @@ func run(args []string) error {
 	toolsFile := flags.String("tools-file", envOr("MCPSERVER_TOOLS_FILE", ""), "file with the tool declarations")
 	bearerTokens := flags.String("bearer-tokens", envOr("MCPSERVER_BEARER_TOKENS", ""), "token=user pairs; /mcp refuses other tokens")
 	health := flags.String("health", envOr("MCPSERVER_HEALTH", "200"), "status /healthz answers at start")
+	countTTL := flags.String("count-ttl", envOr("MCPSERVER_COUNT_TTL", ""), "the count tool's toolgate/cache ttl suggestion")
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -93,6 +99,7 @@ func run(args []string) error {
 
 	mux, err := newHandler(handlerConfig{
 		Mode: *mode, Tools: *tools, ToolsFile: *toolsFile, SecretsDir: *secretsDir, Health: *health, BearerTokens: *bearerTokens,
+		CountTTL: *countTTL,
 	})
 	if err != nil {
 		return err
@@ -192,6 +199,8 @@ type handlerConfig struct {
 	// is set, /mcp answers 401 unless the request carries one of the tokens
 	// as a bearer token.
 	BearerTokens string
+	// CountTTL is the count tool's cache lifetime suggestion.
+	CountTTL string
 }
 
 // newHandler returns the server's HTTP handler: /mcp, /calls, /tools,
@@ -235,7 +244,7 @@ func newHandler(config handlerConfig) (*http.ServeMux, error) {
 
 		server, set, err = newToolListServer(specs, calls, versions)
 	} else {
-		server, err = newServer(options{Tools: parseTools(config.Tools), SecretsDir: config.SecretsDir, Environ: os.Environ, Calls: calls, Users: users})
+		server, err = newServer(options{Tools: parseTools(config.Tools), SecretsDir: config.SecretsDir, Environ: os.Environ, Calls: calls, Users: users, CountTTL: config.CountTTL})
 	}
 
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -20,6 +21,9 @@ const (
 	secretsTool = "secrets"
 	// whoamiTool returns the user whose bearer token the request carried.
 	whoamiTool = "whoami"
+	// countTool is read-only and returns how often it was called, so a test
+	// sees whether a call reached the server or was served from a cache.
+	countTool = "count"
 )
 
 // maxSecretFileSize bounds each file the secrets tool reads.
@@ -40,6 +44,14 @@ type options struct {
 	ProtocolVersions []string
 	// Users maps a bearer token to its user, for the whoami tool.
 	Users map[string]string
+	// CountTTL, when set, is the count tool's cache lifetime suggestion,
+	// `_meta["toolgate/cache"].ttl` in its tool list entry.
+	CountTTL string
+}
+
+// countResult is the structured result of the count tool.
+type countResult struct {
+	Calls int `json:"calls"`
 }
 
 // echoResult is the structured result of an echo tool.
@@ -89,6 +101,31 @@ func newServer(options options) (*mcp.Server, error) {
 					}
 
 					return nil, map[string]string{"user": options.Users[token]}, nil
+				})
+		case countTool:
+			tool := &mcp.Tool{
+				Name: name, Description: "Returns how often it was called.",
+				Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+			}
+			if options.CountTTL != "" {
+				tool.Meta = mcp.Meta{"toolgate/cache": map[string]any{"ttl": options.CountTTL}}
+			}
+
+			var (
+				mu    sync.Mutex
+				calls int
+			)
+
+			mcp.AddTool(server, tool,
+				func(context.Context, *mcp.CallToolRequest, map[string]any) (*mcp.CallToolResult, countResult, error) {
+					options.Calls.add(name)
+
+					mu.Lock()
+					defer mu.Unlock()
+
+					calls++
+
+					return nil, countResult{Calls: calls}, nil
 				})
 		default:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Echoes its arguments."},

@@ -144,3 +144,29 @@ func TestParseTools(t *testing.T) {
 	assert.Equal(t, []string{"env", "secrets", "read_file"}, parseTools(" env, secrets,,read_file "))
 	assert.Empty(t, parseTools(""))
 }
+
+func TestCountToolIsReadOnlyAndCountsItsCalls(t *testing.T) {
+	session := connect(t, options{Tools: []string{"count"}, CountTTL: "1h"})
+
+	listed, err := session.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+	require.Len(t, listed.Tools, 1)
+	require.NotNil(t, listed.Tools[0].Annotations)
+	assert.True(t, listed.Tools[0].Annotations.ReadOnlyHint)
+	assert.Equal(t, map[string]any{"ttl": "1h"}, listed.Tools[0].Meta["toolgate/cache"])
+
+	for want := 1; want <= 2; want++ {
+		var result countResult
+		callTool(t, session, "count", map[string]any{}, &result)
+		assert.Equal(t, want, result.Calls)
+	}
+}
+
+func TestCountToolWithoutTTLHasNoSuggestion(t *testing.T) {
+	session := connect(t, options{Tools: []string{"count"}})
+
+	listed, err := session.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+	require.Len(t, listed.Tools, 1)
+	assert.NotContains(t, listed.Tools[0].Meta, "toolgate/cache")
+}

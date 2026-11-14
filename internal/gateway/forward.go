@@ -20,6 +20,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/resultcache"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -335,12 +336,46 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		stopBeat := m.keepInstanceBusy(ctx, instance)
-		result, outcome = m.forward(ctx, current, instance, template, tool, arguments)
+	}
 
-		stopBeat()
-		observationOf(ctx).forwarded(outcome)
+	cache := m.cacheStep(current, template, instance, tool, arguments)
+	cacheDetails := cache.details()
+
+	if !isBuiltin(template) {
+		hit, found := m.lookUpCached(ctx, cache, template.Name, tool)
+		if found {
+			cached, err := resultcache.HitResult(hit)
+			if err != nil {
+				m.logger.WarnContext(ctx, "cached tool result doesn't decode; forwarding the call", "server", template.Name, "tool", tool, "error", err)
+
+				found = false
+			} else {
+				result, outcome = cached, "ok"
+				cacheDetails["cache"] = "hit"
+				cacheDetails["cache_age_ms"] = hit.Age.Milliseconds()
+
+				observationOf(ctx).cached()
+			}
+		}
+
+		if !found {
+			if cache.use {
+				cacheDetails["cache"] = "miss"
+			}
+
+			stopBeat := m.keepInstanceBusy(ctx, instance)
+
+			var encoded []byte
+
+			result, outcome, encoded = m.forward(ctx, current, instance, template, tool, arguments)
+
+			stopBeat()
+			observationOf(ctx).forwarded(outcome)
+
+			if cache.use && outcome == "ok" {
+				m.storeCached(ctx, cache, template.Name, tool, encoded)
+			}
+		}
 	}
 
 	// Step 6. A result that can't be stored is still returned; the row
@@ -348,6 +383,10 @@ func (m *metaTools) forwardAndRecord(ctx context.Context, current requestContext
 	resultDetails := map[string]any{"outcome": outcome, "duration_ms": time.Since(started).Milliseconds()}
 	if instance.ID != "" {
 		resultDetails["instance"] = instance.ID
+	}
+
+	for name, value := range cacheDetails {
+		resultDetails[name] = value
 	}
 
 	resultEvent := callEvent(current, "tool.result", server, tool, withExposedDetail(ctx, resultDetails))
@@ -417,8 +456,8 @@ func (m *metaTools) decide(ctx context.Context, request policy.Request) policy.D
 
 // forward calls tool on the instance's upstream session. outcome is "ok",
 // "error" (the tool reported an error), "too-large" or "failed" (the
-// upstream call itself failed).
-func (m *metaTools) forward(ctx context.Context, current requestContext, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, string) {
+// upstream call itself failed). encoded is the JSON of an "ok" result.
+func (m *metaTools) forward(ctx context.Context, current requestContext, instance db.Instance, template *v1alpha1.MCPServerTemplate, tool string, arguments json.RawMessage) (*mcp.CallToolResult, string, []byte) {
 	ctx, span := tracer(ctx).Start(ctx, "toolgate.forward", trace.WithAttributes(
 		attribute.String("toolgate.server", template.Name), attribute.String("toolgate.tool", tool)))
 	defer span.End()
@@ -430,10 +469,10 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 		params.Arguments = arguments
 	}
 
-	tooLarge := func() (*mcp.CallToolResult, string) {
+	tooLarge := func() (*mcp.CallToolResult, string, []byte) {
 		span.SetStatus(codes.Error, "too large")
 
-		return errorResult(fmt.Sprintf("The result of `%s` is larger than 16 MiB, the limit, so the gateway didn't forward it.", ProxiedToolName(template.Name, tool))), "too-large"
+		return errorResult(fmt.Sprintf("The result of `%s` is larger than 16 MiB, the limit, so the gateway didn't forward it.", ProxiedToolName(template.Name, tool))), "too-large", nil
 	}
 
 	var (
@@ -456,12 +495,12 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 
 			switch {
 			case errors.As(err, &missing):
-				return errorResult(missing.Error()), "failed"
+				return errorResult(missing.Error()), "failed", nil
 			case errors.Is(err, runtime.ErrCredentialRefused):
-				return errorResult(runtime.CredentialRefusedReason(template)), "failed"
+				return errorResult(runtime.CredentialRefusedReason(template)), "failed", nil
 			}
 
-			return errorResult(fmt.Sprintf("Server `%s` can't be reached. Try again, or call `%s` to see its status.", template.Name, ToolServerStatus)), "failed"
+			return errorResult(fmt.Sprintf("Server `%s` can't be reached. Try again, or call `%s` to see its status.", template.Name, ToolServerStatus)), "failed", nil
 		}
 
 		if !notFound {
@@ -494,7 +533,7 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 				m.upstreams.release(upstream.key, upstream.upstreamCopy)
 			}
 
-			return errorResult(runtime.CredentialRefusedReason(template)), "failed"
+			return errorResult(runtime.CredentialRefusedReason(template)), "failed", nil
 		}
 
 		// The response was cut off at the budget.
@@ -502,7 +541,7 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 			return tooLarge()
 		}
 
-		return errorResult(fmt.Sprintf("Server `%s` returned an error: %v", template.Name, err)), "failed"
+		return errorResult(fmt.Sprintf("Server `%s` returned an error: %v", template.Name, err)), "failed", nil
 	}
 
 	encoded, err := json.Marshal(result)
@@ -511,10 +550,10 @@ func (m *metaTools) forward(ctx context.Context, current requestContext, instanc
 	}
 
 	if result.IsError {
-		return result, "error"
+		return result, "error", nil
 	}
 
-	return result, "ok"
+	return result, "ok", encoded
 }
 
 // forwardOnce sends one tools/call on the copy the pair's call is forwarded

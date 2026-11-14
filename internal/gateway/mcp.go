@@ -68,8 +68,7 @@ type MCPOptions struct {
 	// wake on them. Nil means no notifications: waits rely on the progress
 	// tick alone.
 	Subscribe func() (<-chan store.Event, func())
-	// ResultCache keeps cached tool results. The call path will use it; it
-	// can be nil.
+	// ResultCache keeps cached tool results. Nil means no call is cached.
 	ResultCache resultcache.Store
 	// InstanceLimitPerUser is the most live instances one user may have.
 	// Zero means 20.
@@ -355,6 +354,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		policy:       options.Policy,
 		auditOutput:  auditOutput,
 		payloads:     options.AuditPayloads,
+		resultCache:  options.ResultCache,
 		subscribe:    subscribe,
 		sessionTools: endpoint.sessionTools,
 
