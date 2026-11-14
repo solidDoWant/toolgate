@@ -347,6 +347,12 @@ func TestEnableServer(t *testing.T) {
 		events := fixture.auditEvents(t, "server.enable", "github")
 		require.Len(t, events, 1)
 		assert.Equal(t, "allow", events[0]["decision"])
+
+		starts := fixture.auditEvents(t, "instance.start", "github")
+		require.Len(t, starts, 1, "the enable starts one instance")
+		assert.Equal(t, instance.ID, starts[0]["instance"])
+		assert.Equal(t, "per-session", starts[0]["scope"])
+		assert.Equal(t, "toolgate-servers/github", starts[0]["template"])
 	})
 
 	t.Run("a namespace: shared template's instance is in the configured shared namespace", func(t *testing.T) {

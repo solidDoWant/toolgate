@@ -124,6 +124,11 @@ func TestReplace(t *testing.T) {
 			"SELECT principal FROM audit_events WHERE type = 'instance.stop' AND details->>'instance' = $1", old.ID).Scan(&principal))
 		assert.Equal(t, "replace-user", principal)
 
+		var starts int
+		require.NoError(t, fixture.pool.QueryRow(t.Context(),
+			"SELECT count(*) FROM audit_events WHERE type = 'instance.start' AND details->>'instance' = $1", replacement.ID).Scan(&starts))
+		assert.Equal(t, 1, starts, "the replacement's start is recorded")
+
 		// The next pass doesn't replace it again.
 		require.NoError(t, pass(t.Context()))
 

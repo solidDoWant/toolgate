@@ -195,6 +195,7 @@ func TestExpiredExchangeStopsEnabledInstance(t *testing.T) {
 	assert.Equal(t, "stopped", current.Desired, "a session that enables the server doesn't keep it")
 	assert.True(t, current.CredentialExpired)
 	assert.Contains(t, fixture.logs.String(), "its exchanged token `temporal` expired")
+	fixture.requireOneStopEvent(t, expired, "credential-expired")
 }
 
 func TestUnconfiguredExchangeStopsAtExpiry(t *testing.T) {

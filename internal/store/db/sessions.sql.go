@@ -48,6 +48,19 @@ func (q *Queries) CountLiveEnablers(ctx context.Context, arg CountLiveEnablersPa
 	return count, err
 }
 
+const countLiveSessionsOfScopeKey = `-- name: CountLiveSessionsOfScopeKey :one
+SELECT count(*) FROM sessions
+WHERE ended_at IS NULL AND 'session:' || principal || ':' || session_id = $1::text
+`
+
+// Counts the live sessions a per-session scope key names.
+func (q *Queries) CountLiveSessionsOfScopeKey(ctx context.Context, scopeKey string) (int64, error) {
+	row := q.db.QueryRow(ctx, countLiveSessionsOfScopeKey, scopeKey)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOpenSessionsByAttestation = `-- name: CountOpenSessionsByAttestation :many
 SELECT attestation, tool_search, count(*) AS total FROM sessions WHERE ended_at IS NULL GROUP BY attestation, tool_search
 `
