@@ -909,11 +909,52 @@ func TestChartTemplateSecretsRole(t *testing.T) {
 			corev1.EnvVar{Name: "TOOLGATE_TEMPLATE_SECRETS_NAMESPACE", Value: secretsNamespace})
 	})
 
+	t.Run("the release namespace with the opt-in", func(t *testing.T) {
+		manifests, err := render(t, append([]string{"config.templateSecretsNamespace=" + releaseNamespace, "config.templateSecrets.allowGatewayNamespace=true"}, quickStartValues...))
+		require.NoError(t, err)
+
+		var secretRoles []rbacv1.Role
+
+		for _, candidate := range manifests {
+			if candidate.Kind != "Role" {
+				continue
+			}
+
+			var role rbacv1.Role
+			require.NoError(t, yaml.UnmarshalStrict(candidate.raw, &role))
+
+			for _, rule := range role.Rules {
+				if readsSecrets(rule) {
+					secretRoles = append(secretRoles, role)
+				}
+			}
+		}
+
+		require.Len(t, secretRoles, 1)
+		assert.Equal(t, releaseNamespace, secretRoles[0].Namespace)
+		assert.Equal(t, []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"secrets"}, Verbs: []string{"get", "list", "watch"}}}, secretRoles[0].Rules)
+
+		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
+		env := deployment.Spec.Template.Spec.Containers[0].Env
+		assert.Contains(t, env, corev1.EnvVar{Name: "TOOLGATE_TEMPLATE_SECRETS_NAMESPACE", Value: releaseNamespace})
+		assert.Contains(t, env, corev1.EnvVar{Name: "TOOLGATE_TEMPLATE_SECRETS_ALLOW_GATEWAY_NAMESPACE", Value: "true"})
+	})
+
+	t.Run("the release namespace in the catalog namespaces with the opt-in", func(t *testing.T) {
+		_, err := render(t, append([]string{"config.templateSecretsNamespace=" + releaseNamespace, "config.templateSecrets.allowGatewayNamespace=true", "config.catalogNamespaces={" + releaseNamespace + ",catalog-a}"}, quickStartValues...))
+		require.NoError(t, err)
+	})
+
 	refused := []struct {
 		name    string
 		set     []string
 		message string
 	}{
+		{name: "instance prefix with the opt-in", set: []string{"config.templateSecretsNamespace=tg-secrets", "config.templateSecrets.allowGatewayNamespace=true"}, message: "must not start with tg-"},
+		{name: "the shared namespace with the opt-in", set: []string{"config.templateSecretsNamespace=shared", "config.sharedNamespace.name=shared", "config.templateSecrets.allowGatewayNamespace=true"}, message: "must not be config.sharedNamespace.name"},
+		{name: "kube-system with the opt-in", set: []string{"config.templateSecretsNamespace=kube-system", "config.templateSecrets.allowGatewayNamespace=true"}, message: "must not be kube-system"},
+		{name: "a catalog namespace with the opt-in", set: []string{"config.templateSecretsNamespace=catalog-b", "config.catalogNamespaces={catalog-a,catalog-b}", "config.templateSecrets.allowGatewayNamespace=true"}, message: "must not be one of config.catalogNamespaces"},
+		{name: "the release namespace in the catalog namespaces without the opt-in", set: []string{"config.templateSecretsNamespace=" + releaseNamespace, "config.catalogNamespaces={" + releaseNamespace + "}"}, message: "must not be the release namespace"},
 		{name: "not a DNS label", set: []string{"config.templateSecretsNamespace=Not_A_Namespace"}, message: "must be a namespace name"},
 		{name: "instance prefix", set: []string{"config.templateSecretsNamespace=tg-secrets"}, message: "must not start with tg-"},
 		{name: "the release namespace", set: []string{"config.templateSecretsNamespace=" + releaseNamespace}, message: "must not be the release namespace"},

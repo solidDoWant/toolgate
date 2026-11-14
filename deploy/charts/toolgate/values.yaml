@@ -131,6 +131,15 @@ config:
   # secrets page of the admin docs.
   templateSecretsNamespace: ""
 
+  templateSecrets:
+    # -- Lets `config.templateSecretsNamespace` be the release namespace.
+    # With this on, anyone who can write a template can read the gateway's
+    # own Secrets (keyset, database client certificates, OIDC client
+    # secrets). Only turn it on when template authors are already trusted
+    # with those. The other namespace rules still apply, except that the
+    # release namespace may also be in `config.catalogNamespaces`.
+    allowGatewayNamespace: false
+
   logging:
     # -- Lowest level of the JSON log lines: `debug`, `info`, `warn` or
     # `error`.

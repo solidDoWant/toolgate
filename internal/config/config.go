@@ -249,6 +249,17 @@ type Config struct {
 	// of `catalogNamespaces`. If it is empty, the feature is off.
 	TemplateSecretsNamespace string `json:"templateSecretsNamespace" env:"TOOLGATE_TEMPLATE_SECRETS_NAMESPACE"`
 
+	// Lets `templateSecretsNamespace` be the gateway's own namespace
+	// (`leaseNamespace`). The chart sets it from
+	// `config.templateSecrets.allowGatewayNamespace`. Every other rule for
+	// the namespace still applies, except that the gateway's own namespace
+	// may also be a catalog namespace. With this on, anyone who can write a
+	// template can read the gateway's own Secrets: its keyset, database
+	// client certificates and OIDC client secrets. Only turn it on when the
+	// template authors are already trusted with those. The default is
+	// false.
+	TemplateSecretsAllowGatewayNamespace bool `json:"templateSecretsAllowGatewayNamespace" env:"TOOLGATE_TEMPLATE_SECRETS_ALLOW_GATEWAY_NAMESPACE"`
+
 	// The maximum number of MCP server instances that run for one user at
 	// the same time. Per-session and per-user instances count for the user
 	// who started them. Shared instances do not count. When a user is at the
@@ -1595,7 +1606,7 @@ func (c *Config) validateTemplateSecretsNamespace() []error {
 		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not start with tg-, the prefix of instance namespaces", namespace))
 	}
 
-	if namespace == c.LeaseNamespace {
+	if namespace == c.LeaseNamespace && !c.TemplateSecretsAllowGatewayNamespace {
 		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not be leaseNamespace, which holds the gateway's own Secrets", namespace))
 	}
 
@@ -1607,7 +1618,10 @@ func (c *Config) validateTemplateSecretsNamespace() []error {
 		problems = append(problems, errors.New("templateSecretsNamespace: must not be kube-system"))
 	}
 
-	if slices.Contains(c.CatalogNamespaces, namespace) {
+	// With the opt-in, template authors already write in the gateway's own
+	// namespace, so it may also be a catalog namespace.
+	gatewayAllowed := c.TemplateSecretsAllowGatewayNamespace && namespace == c.LeaseNamespace
+	if slices.Contains(c.CatalogNamespaces, namespace) && !gatewayAllowed {
 		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not be one of catalogNamespaces, where template authors write", namespace))
 	}
 

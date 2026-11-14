@@ -293,6 +293,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// Renders read template secrets through the API, never the cache, so a
 	// render never uses an old value.
 	if cfg.TemplateSecretsNamespace != "" {
+		if cfg.TemplateSecretsAllowGatewayNamespace && cfg.TemplateSecretsNamespace == cfg.LeaseNamespace {
+			logger.Warn("template secrets are read from the gateway's own namespace: anyone who can write a template can read the gateway's own Secrets", "namespace", cfg.TemplateSecretsNamespace)
+		}
+
 		starter.TemplateSecrets = runtime.APITemplateSecrets{Reader: mgr.GetAPIReader(), Namespace: cfg.TemplateSecretsNamespace}
 		starter.TemplateSecretsNamespace = cfg.TemplateSecretsNamespace
 	}

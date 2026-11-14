@@ -91,7 +91,7 @@ A template can give an MCP server a token for the user, which the gateway gets w
 
 ## Template secrets
 
-If you set `config.templateSecretsNamespace`, the gateway can read the Secrets in that one namespace. Kubernetes RBAC limits it to that namespace. Anyone who can write a template in a catalog namespace can read every Secret there. [Template secrets](template-secrets.md) tells how to set it up and keep it safe.
+If you set `config.templateSecretsNamespace`, the gateway can read the Secrets in that one namespace. Kubernetes RBAC limits it to that namespace. Anyone who can write a template in a catalog namespace can read every Secret there. [Template secrets](template-secrets.md) tells how to set it up and keep it safe. If you set `config.templateSecrets.allowGatewayNamespace`, that namespace can be the gateway's own, and template authors can then read the gateway's own Secrets too.
 
 ## Connectors on the internet
 
