@@ -506,7 +506,13 @@ func ParseTemplateSecret(reference string) (name, key string, valid bool) {
 // UsesExchange reports whether any `${exchange:…}` variable appears in the
 // values of the template's resources.
 func UsesExchange(template *v1alpha1.MCPServerTemplate) bool {
-	found := false
+	return len(ExchangeNames(template)) > 0
+}
+
+// ExchangeNames returns the names that the `${exchange:…}` variables in the
+// values of the template's resources use, sorted and without repeats.
+func ExchangeNames(template *v1alpha1.MCPServerTemplate) []string {
+	var names []string
 
 	for _, raw := range template.Spec.Resources {
 		var object any
@@ -520,14 +526,16 @@ func UsesExchange(template *v1alpha1.MCPServerTemplate) bool {
 			}
 
 			for _, variable := range variables(text) {
-				if strings.HasPrefix(variable, exchangePrefix) {
-					found = true
+				if name, found := strings.CutPrefix(variable, exchangePrefix); found {
+					names = append(names, name)
 				}
 			}
 		})
 	}
 
-	return found
+	slices.Sort(names)
+
+	return slices.Compact(names)
 }
 
 // variables returns the names of the ${…} variables in text. `$${` is an

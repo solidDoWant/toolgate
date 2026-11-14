@@ -34,6 +34,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 	"github.com/solidDoWant/toolgate/internal/testtime"
@@ -121,6 +122,9 @@ type Starter struct {
 	// TemplateSecretsNamespace is recorded as the source namespace of each
 	// template secret value a render used.
 	TemplateSecretsNamespace string
+	// Deliveries holds the exchanged tokens delivered to the leader. Nil
+	// means none ever arrive.
+	Deliveries *credentials.DeliveredTokens
 	// ListTools reaches the instance over MCP.
 	ListTools ToolLister
 	// ToolListTimeout bounds each ListTools call. Zero means
@@ -189,6 +193,11 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return err
 	}
 
+	exchanges, proceed, err := s.prepareExchanges(ctx, instance, template, identity)
+	if err != nil || !proceed {
+		return err
+	}
+
 	// The render and apply spans are children of the enable request that
 	// inserted the row.
 	ctx = telemetry.DecodeContext(ctx, instance.TraceContext)
@@ -197,7 +206,7 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 
 	_, renderSpan := s.tracer().Start(ctx, "toolgate.render", spanAttributes)
 
-	result, err := s.render(ctx, instance, template, identity)
+	result, err := s.render(ctx, instance, template, identity, exchanges.renderTokens())
 	if err != nil {
 		renderSpan.SetStatus(codes.Error, "render")
 	}
@@ -226,9 +235,14 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return s.fail(ctx, instance, StatusPending, "The health check didn't render: "+err.Error())
 	}
 
-	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, healthCheck, result.ResolvedExpiresAt,
-		result.TemplateSecrets); err != nil {
+	changed, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, healthCheck, result.ResolvedExpiresAt,
+		result.TemplateSecrets, exchanges.rendered(result.Exchanges))
+	if err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
+	}
+
+	if changed {
+		s.forgetExchanges(instance, exchanges)
 	}
 
 	return nil
@@ -525,14 +539,17 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 
 // render renders the instance's objects with the identity it is rendered
 // for, reading template secrets from the API at this render.
-func (s *Starter) render(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, identity Identity) (*Result, error) {
+func (s *Starter) render(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, identity Identity,
+	exchangeTokens map[string]string,
+) (*Result, error) {
 	input := Input{
-		Template:  template,
-		Identity:  identity,
-		Instance:  Instance{ID: instance.ID, Namespace: instance.Namespace},
-		Secrets:   s.Secrets(identity.PrincipalID),
-		Resolvers: s.Resolvers,
-		Metadata:  s.metadata(instance, template, identity),
+		ExchangeTokens: exchangeTokens,
+		Template:       template,
+		Identity:       identity,
+		Instance:       Instance{ID: instance.ID, Namespace: instance.Namespace},
+		Secrets:        s.Secrets(identity.PrincipalID),
+		Resolvers:      s.Resolvers,
+		Metadata:       s.metadata(instance, template, identity),
 
 		TemplateSecrets: s.TemplateSecrets,
 	}

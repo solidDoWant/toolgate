@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -32,9 +33,18 @@ type StartStore interface {
 	// expiry of its resolved values (zero for none). healthCheck is the
 	// rendered custom health check as JSON, nil for none. templateSecrets
 	// are the sources of its template secret values, written in the same
-	// transaction.
+	// transaction. exchanges are the tokens the render used; the same
+	// write sets uses_exchange from them and records each one's targets
+	// and times on its instance_exchanges row.
 	MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time,
-		templateSecrets []TemplateSecretTarget) (bool, error)
+		templateSecrets []TemplateSecretTarget, exchanges []RenderedExchange) (bool, error)
+	// SyncExchanges makes a pending instance's instance_exchanges rows match
+	// the exchanges used by the generation it renders, and returns them. It
+	// inserts a waiting row for each used exchange that has none, deletes
+	// the rows of the others, and marks each row in unheld that isn't
+	// waiting yet as wanted now. It notifies `instance:<id>` in the same
+	// transaction when a row changed, so waiting requests claim.
+	SyncExchanges(ctx context.Context, id string, used, unheld []string) ([]db.InstanceExchange, error)
 	// MarkReady moves a starting instance to ready with its tool list and
 	// the MCP revision it speaks, and records instance.ready. The revision
 	// never changes while the row lives.
@@ -92,18 +102,127 @@ func (s PostgresStartStore) RecordSecretsUsed(ctx context.Context, id string, ve
 	return nil
 }
 
+// RenderedExchange is an exchanged token a render used: where it went and
+// its times. It never holds the token.
+type RenderedExchange struct {
+	Exchange  string
+	Targets   []ExchangeTarget
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+}
+
+// RefreshAfter is when a request must exchange a token again: half-way
+// between its issue and its expiry.
+func RefreshAfter(issuedAt, expiresAt time.Time) time.Time {
+	return issuedAt.Add(expiresAt.Sub(issuedAt) / 2)
+}
+
+// exchangeTarget is the stored form of one target in instance_exchanges.
+type exchangeTarget struct {
+	Secret string `json:"secret"`
+	Key    string `json:"key"`
+}
+
 // MarkStarting implements StartStore.
 func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time,
-	templateSecrets []TemplateSecretTarget,
+	templateSecrets []TemplateSecretTarget, exchanges []RenderedExchange,
 ) (bool, error) {
 	return s.changeWith(ctx, id, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceStarting(ctx, db.SetInstanceStartingParams{
-			ID: id, Generation: generation, HealthCheck: healthCheck,
+			ID: id, Generation: generation, HealthCheck: healthCheck, UsesExchange: len(exchanges) > 0,
 			ResolvedExpiresAt: pgtype.Timestamptz{Time: resolvedExpiresAt, Valid: !resolvedExpiresAt.IsZero()},
 		})
 	}, func(_ pgx.Tx, queries *db.Queries) error {
+		if err := writeRenderedExchanges(ctx, queries, id, exchanges); err != nil {
+			return err
+		}
+
 		return writeTemplateSecrets(ctx, queries, id, templateSecrets)
 	})
+}
+
+// writeRenderedExchanges records, for each token a render used, where it is
+// and its times. The row no longer waits and nobody holds its claim.
+func writeRenderedExchanges(ctx context.Context, queries *db.Queries, id string, exchanges []RenderedExchange) error {
+	for _, exchange := range exchanges {
+		targets := make([]exchangeTarget, 0, len(exchange.Targets))
+		for _, target := range exchange.Targets {
+			targets = append(targets, exchangeTarget{Secret: target.Secret, Key: target.Key})
+		}
+
+		encoded, err := json.Marshal(targets)
+		if err != nil {
+			return fmt.Errorf("record exchange %s of instance %s: %w", exchange.Exchange, id, err)
+		}
+
+		if err := queries.SetInstanceExchangeRendered(ctx, db.SetInstanceExchangeRenderedParams{
+			InstanceID: id, Exchange: exchange.Exchange, Targets: encoded,
+			IssuedAt:     pgtype.Timestamptz{Time: exchange.IssuedAt, Valid: true},
+			ExpiresAt:    pgtype.Timestamptz{Time: exchange.ExpiresAt, Valid: true},
+			RefreshAfter: pgtype.Timestamptz{Time: RefreshAfter(exchange.IssuedAt, exchange.ExpiresAt), Valid: true},
+		}); err != nil {
+			return fmt.Errorf("record exchange %s of instance %s: %w", exchange.Exchange, id, err)
+		}
+	}
+
+	return nil
+}
+
+// SyncExchanges implements StartStore.
+func (s PostgresStartStore) SyncExchanges(ctx context.Context, id string, used, unheld []string) ([]db.InstanceExchange, error) {
+	var rows []db.InstanceExchange
+
+	// A nil list would be SQL NULL, and NOT (exchange = ANY (NULL)) keeps
+	// every row.
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		queries := db.New(tx)
+
+		existing, err := queries.ListInstanceExchanges(ctx, id)
+		if err != nil {
+			return fmt.Errorf("list exchanges of instance %s: %w", id, err)
+		}
+
+		changed := false
+
+		for _, exchange := range used {
+			if slices.ContainsFunc(existing, func(row db.InstanceExchange) bool { return row.Exchange == exchange }) {
+				continue
+			}
+
+			if err := queries.InsertInstanceExchange(ctx, db.InsertInstanceExchangeParams{
+				InstanceID: id, Exchange: exchange, Wanted: true,
+			}); err != nil {
+				return fmt.Errorf("insert exchange %s of instance %s: %w", exchange, id, err)
+			}
+
+			changed = true
+		}
+
+		deleted, err := queries.DeleteInstanceExchangesNotIn(ctx, db.DeleteInstanceExchangesNotInParams{InstanceID: id, Keep: append([]string{}, used...)})
+		if err != nil {
+			return fmt.Errorf("delete exchanges of instance %s: %w", id, err)
+		}
+
+		wanted, err := queries.MarkInstanceExchangesWantedIn(ctx, db.MarkInstanceExchangesWantedInParams{InstanceID: id, Exchanges: unheld})
+		if err != nil {
+			return fmt.Errorf("mark exchanges of instance %s wanted: %w", id, err)
+		}
+
+		if changed || deleted > 0 || wanted > 0 {
+			if err := store.Notify(ctx, tx, store.KindInstance, id); err != nil {
+				return err
+			}
+		}
+
+		rows, err = queries.ListInstanceExchanges(ctx, id)
+		if err != nil {
+			return fmt.Errorf("list exchanges of instance %s: %w", id, err)
+		}
+
+		return nil
+	})
+
+	return rows, err
 }
 
 // writeTemplateSecrets replaces an instance's instance_template_secrets rows

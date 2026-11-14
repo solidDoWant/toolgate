@@ -42,7 +42,7 @@ func (f *mcpFixture) becomeReady(t *testing.T, store toolruntime.PostgresStartSt
 	instance, err := db.New(f.pool).GetInstance(t.Context(), id)
 	require.NoError(t, err)
 
-	changed, err := store.MarkStarting(t.Context(), id, instance.Generation, nil, time.Time{}, nil)
+	changed, err := store.MarkStarting(t.Context(), id, instance.Generation, nil, time.Time{}, nil, nil)
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -174,7 +174,7 @@ func TestToolCatalogLists(t *testing.T) {
 				results := startEnable(t, client.session, "github")
 				instance := fixture.awaitInstance(t, template, "user:alice")
 
-				changed, err := start.MarkStarting(t.Context(), instance.ID, test.generation, nil, time.Time{}, nil)
+				changed, err := start.MarkStarting(t.Context(), instance.ID, test.generation, nil, time.Time{}, nil, nil)
 				require.NoError(t, err)
 				require.True(t, changed)
 

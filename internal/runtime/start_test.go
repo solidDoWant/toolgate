@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -59,6 +61,13 @@ type memoryStore struct {
 	healthCheck []byte
 	// templateSecrets is what MarkStarting recorded.
 	templateSecrets []runtime.TemplateSecretTarget
+	// exchanges is what MarkStarting recorded of the tokens the render used.
+	exchanges []runtime.RenderedExchange
+	// exchangeRows are the instance_exchanges rows SyncExchanges keeps, by
+	// exchange name.
+	exchangeRows map[string]db.InstanceExchange
+	// exchangeNotifies counts SyncExchanges calls that changed a row.
+	exchangeNotifies int
 	// secretsRecorded says RecordSecretsUsed was called.
 	secretsRecorded bool
 	// unhealthy and unhealthyReason are what SetHealth recorded.
@@ -85,7 +94,7 @@ func (m *memoryStore) RecordSecretsUsed(context.Context, string, map[string]time
 }
 
 func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time,
-	templateSecrets []runtime.TemplateSecretTarget,
+	templateSecrets []runtime.TemplateSecretTarget, exchanges []runtime.RenderedExchange,
 ) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -95,10 +104,58 @@ func (m *memoryStore) MarkStarting(_ context.Context, _ string, generation int64
 	}
 
 	m.status, m.generation, m.resolvedExpiresAt, m.healthCheck = "starting", generation, resolvedExpiresAt, healthCheck
-	m.templateSecrets = templateSecrets
+	m.templateSecrets, m.exchanges = templateSecrets, exchanges
 	m.writes++
 
 	return true, nil
+}
+
+// SyncExchanges does what the SQL does, with "now" as the time of each
+// write.
+func (m *memoryStore) SyncExchanges(_ context.Context, id string, used, unheld []string) ([]db.InstanceExchange, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.exchangeRows == nil {
+		m.exchangeRows = map[string]db.InstanceExchange{}
+	}
+
+	now := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	changed := false
+
+	for _, name := range used {
+		if _, found := m.exchangeRows[name]; !found {
+			m.exchangeRows[name] = db.InstanceExchange{InstanceID: id, Exchange: name, RefreshAfter: now, WantedSince: now}
+			changed = true
+		}
+	}
+
+	for name := range m.exchangeRows {
+		if !slices.Contains(used, name) {
+			delete(m.exchangeRows, name)
+
+			changed = true
+		}
+	}
+
+	for _, name := range unheld {
+		if row := m.exchangeRows[name]; !row.WantedSince.Valid {
+			row.WantedSince, row.RefreshAfter = now, now
+			m.exchangeRows[name] = row
+			changed = true
+		}
+	}
+
+	if changed {
+		m.exchangeNotifies++
+	}
+
+	rows := make([]db.InstanceExchange, 0, len(m.exchangeRows))
+	for _, name := range slices.Sorted(maps.Keys(m.exchangeRows)) {
+		rows = append(rows, m.exchangeRows[name])
+	}
+
+	return rows, nil
 }
 
 func (m *memoryStore) MarkReady(_ context.Context, _ db.Instance, tools []byte, revision string) (bool, error) {

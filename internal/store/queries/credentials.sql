@@ -25,6 +25,21 @@ UPDATE instance_exchanges
 SET wanted_since = now(), refresh_after = now()
 WHERE instance_id = @instance_id AND wanted_since IS NULL AND issued_at IS NULL;
 
+-- name: MarkInstanceExchangesWantedIn :execrows
+-- Opens the listed rows that aren't waiting yet: the leader holds no token
+-- for them, so a request must exchange now.
+UPDATE instance_exchanges
+SET wanted_since = now(), refresh_after = now()
+WHERE instance_id = @instance_id AND exchange = ANY (@exchanges::text[]) AND wanted_since IS NULL;
+
+-- name: SetInstanceExchangeRendered :exec
+-- The pending to starting write of one row: the token in the Secret now,
+-- where it is, and when a request must exchange again.
+UPDATE instance_exchanges
+SET targets = @targets, issued_at = @issued_at, expires_at = @expires_at, refresh_after = @refresh_after,
+    wanted_since = NULL, claimed_at = NULL
+WHERE instance_id = @instance_id AND exchange = @exchange;
+
 -- name: ResetInstanceExchangesForRepending :exec
 -- The sweep's write: every row waits for a new token. closed keeps the rows
 -- shut until the volume steps are done.

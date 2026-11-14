@@ -43,7 +43,7 @@ func TestStartStoreLearnsTools(t *testing.T) {
 	queries, startStore := catalogPool(t)
 	insertInstance(t, queries, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "uid-1", 3)
 
-	changed, err := startStore.MarkStarting(t.Context(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 3, nil, time.Time{}, nil)
+	changed, err := startStore.MarkStarting(t.Context(), "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 3, nil, time.Time{}, nil, nil)
 	require.NoError(t, err)
 	require.True(t, changed)
 
@@ -85,7 +85,7 @@ func TestStartStoreLearnsNothingForDeclaredTools(t *testing.T) {
 	for id, uid := range map[string]string{"dddddddddddddddddddddddddddddddd": "uid-declared", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": "uid-learned"} {
 		insertInstance(t, queries, id, uid, 1)
 
-		changed, err := startStore.MarkStarting(t.Context(), id, 1, nil, time.Time{}, nil)
+		changed, err := startStore.MarkStarting(t.Context(), id, 1, nil, time.Time{}, nil, nil)
 		require.NoError(t, err)
 		require.True(t, changed)
 
@@ -114,7 +114,7 @@ func TestStartStoreToolCatalogSizeLimit(t *testing.T) {
 
 	insertInstance(t, queries, "cccccccccccccccccccccccccccccccc", "uid-big", 1)
 
-	changed, err := startStore.MarkStarting(t.Context(), "cccccccccccccccccccccccccccccccc", 1, nil, time.Time{}, nil)
+	changed, err := startStore.MarkStarting(t.Context(), "cccccccccccccccccccccccccccccccc", 1, nil, time.Time{}, nil, nil)
 	require.NoError(t, err)
 	require.True(t, changed)
 

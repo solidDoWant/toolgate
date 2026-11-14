@@ -360,6 +360,27 @@ func (q *Queries) MarkInstanceExchangesWanted(ctx context.Context, instanceID st
 	return result.RowsAffected(), nil
 }
 
+const markInstanceExchangesWantedIn = `-- name: MarkInstanceExchangesWantedIn :execrows
+UPDATE instance_exchanges
+SET wanted_since = now(), refresh_after = now()
+WHERE instance_id = $1 AND exchange = ANY ($2::text[]) AND wanted_since IS NULL
+`
+
+type MarkInstanceExchangesWantedInParams struct {
+	InstanceID string
+	Exchanges  []string
+}
+
+// Opens the listed rows that aren't waiting yet: the leader holds no token
+// for them, so a request must exchange now.
+func (q *Queries) MarkInstanceExchangesWantedIn(ctx context.Context, arg MarkInstanceExchangesWantedInParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markInstanceExchangesWantedIn, arg.InstanceID, arg.Exchanges)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const recordExchangeFailure = `-- name: RecordExchangeFailure :execrows
 UPDATE instance_exchanges
 SET last_error = $1, last_error_at = now(), claimed_at = NULL,
@@ -408,6 +429,36 @@ type ResetInstanceExchangesForRependingParams struct {
 // shut until the volume steps are done.
 func (q *Queries) ResetInstanceExchangesForRepending(ctx context.Context, arg ResetInstanceExchangesForRependingParams) error {
 	_, err := q.db.Exec(ctx, resetInstanceExchangesForRepending, arg.Closed, arg.InstanceID)
+	return err
+}
+
+const setInstanceExchangeRendered = `-- name: SetInstanceExchangeRendered :exec
+UPDATE instance_exchanges
+SET targets = $1, issued_at = $2, expires_at = $3, refresh_after = $4,
+    wanted_since = NULL, claimed_at = NULL
+WHERE instance_id = $5 AND exchange = $6
+`
+
+type SetInstanceExchangeRenderedParams struct {
+	Targets      []byte
+	IssuedAt     pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	RefreshAfter pgtype.Timestamptz
+	InstanceID   string
+	Exchange     string
+}
+
+// The pending to starting write of one row: the token in the Secret now,
+// where it is, and when a request must exchange again.
+func (q *Queries) SetInstanceExchangeRendered(ctx context.Context, arg SetInstanceExchangeRenderedParams) error {
+	_, err := q.db.Exec(ctx, setInstanceExchangeRendered,
+		arg.Targets,
+		arg.IssuedAt,
+		arg.ExpiresAt,
+		arg.RefreshAfter,
+		arg.InstanceID,
+		arg.Exchange,
+	)
 	return err
 }
 
