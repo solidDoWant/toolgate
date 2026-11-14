@@ -72,13 +72,7 @@ volumes:
         - serviceAccountToken: {audience: toolgate, expirationSeconds: 3600, path: token}
 ```
 
-For a KubeVirt virtual machine, a guest cannot get a projected token with its own audience. So the client asks for one. Mount the `serviceAccount` disk of the virtual machine and set `TOOLGATE_ATTESTATION_TOKEN_REQUEST` to the directory where the guest mounts it. Then:
-
-- Give the guest egress to the Kubernetes API server. Set `TOOLGATE_KUBE_API` if the URL is not `https://kubernetes.default.svc`.
-- Create one service account for each workspace. The template can create it.
-- Add a Role in the workspace namespace that allows `create` on `serviceaccounts/token` with `resourceNames` set to the service account of the workspace. Bind it to that service account.
-
-The API server binds a token only to a pod that runs as that service account. If several virtual machines share one service account, a guest can bind a token to the pod of another virtual machine. That pod names its own owner, so the guest gets nothing without the user token of that owner. One service account for each workspace removes the case.
+For a KubeVirt virtual machine, a guest cannot get a projected token with its own audience from the `serviceAccount` volume, which has no audience field. See [KubeVirt virtual machines](#kubevirt-virtual-machines) for the two setups. Use the `containerPath` setup if your KubeVirt allows it.
 
 ### Claude Code plugin helpers
 
@@ -103,11 +97,146 @@ toolgate configure \
   --attestation-token-file /var/run/secrets/toolgate/token
 ```
 
-Use `--attestation-token-request DIR` in place of `--attestation-token-file` for a KubeVirt guest. The command writes `config.json` in the toolgate configuration directory with mode 0600. It changes only the settings that you give. An empty value removes a setting. If a variable is set, the client uses the variable and not the file. The file holds a command line and paths, not a token.
+With the TokenRequest fallback for KubeVirt, use `--attestation-token-request DIR` in place of `--attestation-token-file`. The command writes `config.json` in the toolgate configuration directory with mode 0600. It changes only the settings that you give. An empty value removes a setting. If a variable is set, the client uses the variable and not the file. The file holds a command line and paths, not a token.
 
 ## KubeVirt virtual machines
 
 A token from a KubeVirt guest is bound to the `virt-launcher` pod of the virtual machine. KubeVirt copies the labels of the virtual machine template to that pod. So set the keys in `spec.template.metadata` of the `VirtualMachine`, not in its own `metadata`. The gateway does not read virtual machine objects.
+
+Pick one setup:
+
+- **Preferred: a `containerPath` volume.** It needs KubeVirt 1.8 or later with the feature gate `ContainerPathVolumes`, and a Kubernetes API server that serves `MutatingAdmissionPolicy` (`admissionregistration.k8s.io/v1`, stable and on by default since Kubernetes 1.36; on older versions, turn on the feature gate and the beta API). The guest needs no Role, no RoleBinding and no network path to the API server.
+- **Fallback: TokenRequest.** Use it for KubeVirt before 1.8, or when you cannot use the feature gate.
+
+### Preferred: a containerPath volume
+
+The idea: the `virt-launcher` pod gets a projected token with the audience `toolgate`. The `containerPath` volume shares the directory of that token with the guest over virtiofs (a file system that the host shares with the guest). The guest reads the file like a pod would.
+
+1. Turn on the feature gate in the `KubeVirt` resource:
+
+   ```yaml
+   spec:
+     configuration:
+       developerConfiguration:
+         featureGates: [ContainerPathVolumes]
+   ```
+
+2. Add the token to the `compute` container of each launcher pod with a MutatingAdmissionPolicy. Use a JSONPatch mutation. An `ApplyConfiguration` mutation cannot do this: `projected.sources` is an atomic list, so a merge replaces or conflicts with the whole list instead of adding to it. The policy below matches only launcher pods of one service account in the workspace namespace, and only when `compute` is the first container.
+
+   ```yaml
+   apiVersion: admissionregistration.k8s.io/v1
+   kind: MutatingAdmissionPolicy
+   metadata:
+     name: toolgate-attestation-token
+   spec:
+     failurePolicy: Fail
+     reinvocationPolicy: Never
+     matchConstraints:
+       resourceRules:
+         - apiGroups: [""]
+           apiVersions: [v1]
+           operations: [CREATE]
+           resources: [pods]
+     matchConditions:
+       - name: launcher-of-workspace
+         expression: >-
+           object.metadata.labels.exists(k, k == 'kubevirt.io' && object.metadata.labels[k] == 'virt-launcher') &&
+           object.spec.serviceAccountName == 'workspace' &&
+           object.spec.containers[0].name == 'compute'
+     mutations:
+       - patchType: JSONPatch
+         jsonPatch:
+           expression: >-
+             [
+               JSONPatch{
+                 op: "add", path: "/spec/volumes/-",
+                 value: Object.spec.volumes{
+                   name: "toolgate-attestation",
+                   projected: Object.spec.volumes.projected{
+                     sources: [Object.spec.volumes.projected.sources{
+                       serviceAccountToken: Object.spec.volumes.projected.sources.serviceAccountToken{
+                         audience: "toolgate", expirationSeconds: 3600, path: "token"
+                       }
+                     }]
+                   }
+                 }
+               },
+               JSONPatch{
+                 op: "add", path: "/spec/containers/0/volumeMounts/-",
+                 value: Object.spec.containers.volumeMounts{
+                   name: "toolgate-attestation", mountPath: "/var/run/toolgate-attestation", readOnly: true
+                 }
+               }
+             ]
+   ---
+   apiVersion: admissionregistration.k8s.io/v1
+   kind: MutatingAdmissionPolicyBinding
+   metadata:
+     name: toolgate-attestation-token
+   spec:
+     policyName: toolgate-attestation-token
+     matchResources:
+       namespaceSelector:
+         matchLabels:
+           kubernetes.io/metadata.name: coder
+   ```
+
+   Change `workspace` and `coder` to your service account and namespace. Because the token is a projected volume of the pod, the API server binds it to the launcher pod, like the pod token in the section above.
+
+3. Give the launcher pod its service account, and share the token directory with the guest. Edit the `VirtualMachine`:
+
+   ```yaml
+   spec:
+     template:
+       metadata:
+         labels:
+           com.coder.user.email: alice@example.com
+           com.coder.workspace.name: dev
+       spec:
+         domain:
+           devices:
+             filesystems:
+               - name: toolgate-attestation
+                 virtiofs: {}
+         volumes:
+           - name: workspace-identity
+             serviceAccount:
+               serviceAccountName: workspace
+           - name: toolgate-attestation
+             containerPath:
+               path: /var/run/toolgate-attestation
+   ```
+
+   The `serviceAccount` volume stays only so that the launcher pod runs as that service account. It cannot give the audience `toolgate`, because it has no audience field. The name of the `filesystems` entry must be the name of the `containerPath` volume. KubeVirt requires the path to exist in the `compute` container, under one of its volume mounts. The guest sees it read-only.
+
+4. In the guest, mount the share and save the path:
+
+   ```sh
+   mount -t virtiofs toolgate-attestation /mnt/toolgate-attestation
+   toolgate configure --attestation-token-request "" --attestation-token-file /mnt/toolgate-attestation/token
+   ```
+
+   The empty `--attestation-token-request` removes an older TokenRequest setting, because the client allows only one source.
+
+The token file should be readable only by the workspace user, with mode 0400. If the workspace user cannot read the file as it is mounted, map it in the guest image, for example with bindfs, to a path that the workspace user owns with mode 0400:
+
+```sh
+bindfs -u alice -p 0400 /mnt/toolgate-attestation /home/alice/.toolgate-attestation
+```
+
+Then use `/home/alice/.toolgate-attestation/token` as the token file. A guest that is not isolated from its workspace user, for example with a root user who can read the share, can read the token. This is the same trust as a pod token.
+
+KubeVirt creates the virtiofs share when the virtual machine starts, and it keeps the path read-only for the guest. If the virtual machine does not start and has the condition `Synchronized=False` with the reason `MissingVirtiofsContainers`, the path does not exist in the launcher pod. Check that the policy matched the pod, and that the feature gate is on.
+
+### Fallback: TokenRequest
+
+For KubeVirt before 1.8, the client asks the API server for a token. Mount the `serviceAccount` disk of the virtual machine and set `TOOLGATE_ATTESTATION_TOKEN_REQUEST` to the directory where the guest mounts it, or run `toolgate configure --attestation-token-request DIR`. Then:
+
+- Give the guest egress to the Kubernetes API server. Set `TOOLGATE_KUBE_API` if the URL is not `https://kubernetes.default.svc`.
+- Create one service account for each workspace. The template can create it.
+- Add a Role in the workspace namespace that allows `create` on `serviceaccounts/token` with `resourceNames` set to the service account of the workspace. Bind it to that service account.
+
+The API server binds a token only to a pod that runs as that service account. If several virtual machines share one service account, a guest can bind a token to the pod of another virtual machine. That pod names its own owner, so the guest gets nothing without the user token of that owner. One service account for each workspace removes the case. The `containerPath` setup has no such case, because the guest cannot ask for tokens.
 
 ## Registered workspace keys
 
