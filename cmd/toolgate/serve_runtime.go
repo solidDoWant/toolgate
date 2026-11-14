@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -277,6 +278,13 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 
 		GatewayVersion:   version.Get(),
 		OmitOwnerDetails: cfg.InstanceOmitOwnerDetails,
+
+		// Volume checks read StorageClasses, PVs and claims through the API,
+		// never the cache, so a check never acts on an old object.
+		APIReader:                mgr.GetAPIReader(),
+		Volumes:                  startStore,
+		PersistentVolumesEnabled: cfg.PersistentVolumesEnabled,
+		VolumeLimitPerUser:       volumeLimitPerUser(cfg.PersistentVolumesLimitPerUser),
 	}
 
 	// Renders read template secrets through the API, never the cache, so a
@@ -488,4 +496,15 @@ func exchangeNames(exchanges []config.TokenExchange) []string {
 	}
 
 	return names
+}
+
+// volumeLimitPerUser returns the per-user volume limit in bytes. The
+// configuration check refused a value that doesn't parse.
+func volumeLimitPerUser(limit string) int64 {
+	quantity, err := resource.ParseQuantity(limit)
+	if err != nil {
+		return 0
+	}
+
+	return quantity.Value()
 }
