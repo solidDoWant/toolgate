@@ -2,14 +2,14 @@
 
 ## Unreleased
 
+### Documentation
+
+- The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
+
 ### Registered workspace keys
 
 - A user can register a key pair for a machine outside the cluster, such as a laptop. Sessions from that machine then get a verified workspace, such as `registered/alice/dev`. Users run `toolgate workspace register NAME`, approve the key in the browser, and run `toolgate configure --attestation-key-file PATH`. They manage keys with `toolgate workspace keys list` and `toolgate workspace keys revoke`. See "Registered workspace keys" in `docs/admin/workspace-attestation.md`.
 - The feature is off by default. Turn it on with `config.workspaceKeys.enabled` only after every replica runs the new version. An old replica cannot approve a key request, and it sends a key assertion to TokenReview, where the attestation fails. The feature also needs the web UI, and user access tokens that live at most 5 minutes.
-
-### Storage
-
-- The database gets a new migration (`00017_instance_credentials`). It adds tables for the token exchange and template secret features and two columns to `instances`. It changes no behaviour yet. It runs by itself when the gateway starts.
 
 ## 0.4.11
 
