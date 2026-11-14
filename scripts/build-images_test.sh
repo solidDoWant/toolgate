@@ -119,13 +119,32 @@ exit 0
 EOF
 
 echo "== PUSH_ALL=true pushes an amd64 and arm64 index"
-port=$((20000 + RANDOM % 20000))
-crane registry serve --address "127.0.0.1:$port" >"$work/registry.log" 2>&1 &
-registry_pid=$!
-for _ in $(seq 1 100); do
-	if crane catalog "127.0.0.1:$port" >/dev/null 2>&1; then break; fi
-	sleep 0.1
+# Start the registry on a random port. A port that is taken makes the process
+# exit, so retry on a new port, and fail with the registry log if none works.
+registry_ready=false
+for attempt in 1 2 3 4 5; do
+	port=$((20000 + RANDOM % 20000))
+	crane registry serve --address "127.0.0.1:$port" >"$work/registry.log" 2>&1 &
+	registry_pid=$!
+	for _ in $(seq 1 100); do
+		if ! kill -0 "$registry_pid" 2>/dev/null; then break; fi
+		if crane catalog "127.0.0.1:$port" >/dev/null 2>&1; then
+			registry_ready=true
+			break
+		fi
+		sleep 0.1
+	done
+	if [[ "$registry_ready" == true ]]; then break; fi
+	kill "$registry_pid" 2>/dev/null || true
+	wait "$registry_pid" 2>/dev/null || true
+	registry_pid=""
+	echo "registry attempt $attempt on port $port did not start:" >&2
+	cat "$work/registry.log" >&2
 done
+if [[ "$registry_ready" != true ]]; then
+	fail "the local registry did not start after 5 attempts"
+	exit 1
+fi
 push_image="127.0.0.1:$port/toolgate"
 images+=("$push_image:$version")
 if ! PATH="$stub_dir:$PATH" PUSH_ALL=true VERSION="$version" IMAGE="$push_image" OUT_DIR="$work/push" \
