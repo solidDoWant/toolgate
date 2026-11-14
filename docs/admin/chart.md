@@ -109,6 +109,13 @@ The policy has two exceptions, because the gateway needs them to work:
 
 If you set `embeddings.server.scaleToZero.enabled`, the policy has a third exception: the `scale` of the Deployment `<release>-toolgate-embeddings` in the release namespace. The `scale` is a part of a Deployment that holds only the number of replicas. The gateway cannot change any other field of that Deployment, and it cannot scale any other Deployment. See [Scale the embeddings server to zero](#scale-the-embeddings-server-to-zero).
 
+If you set `config.persistentVolumes.enabled`, the policy has a fourth exception: PersistentVolumes (PVs). A PV is a cluster-scoped object that holds the data of a volume. Kubernetes RBAC cannot limit rights on PVs by label, so the policy does it. The gateway may change or delete a PV only if one of these is true:
+
+- The PV has the label `toolgate.soliddowant.dev/volume-id`. The gateway adds this label.
+- The PV is bound to a claim in a `tg-` namespace, its name is `pvc-` followed by the UID of that claim, and it has the annotation `pv.kubernetes.io/provisioned-by`. The gateway may then add the first label, and nothing else. So it cannot label a static or retained PV that Kubernetes bound to one of its claims.
+
+Also, the policy keeps the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/volume-id` on a PV that the gateway changes, and it does not let the gateway change the ID. It lets the gateway point a PV only at a claim in a `tg-` namespace. It lets the gateway delete a PV only after the gateway sets its reclaim policy to `Delete`.
+
 The policy refuses a write when it cannot evaluate its rules (`failurePolicy: Fail`).
 
 Pod Security admission is a part of Kubernetes. It checks each pod in a namespace against the level in the namespace's `pod-security.kubernetes.io/enforce` label. The level `restricted` refuses privileged pods, pods in the node's network or process namespaces, and `hostPath` volumes. Every namespace that the gateway can write in has this level. So the gateway cannot start a pod that gets access to the node. This also applies to pods that a Deployment or a StatefulSet creates.
@@ -255,3 +262,19 @@ kubectl delete namespace -l toolgate.soliddowant.dev/instance
 ```
 
 Instance namespaces always have this label. The shared namespace never has it.
+
+## Persistent volumes
+
+If you set `config.persistentVolumes.enabled` to `true`, templates can keep a volume after their instance stops.
+
+| Value | Meaning |
+|---|---|
+| `config.persistentVolumes.enabled` | Turn the feature on. The default is `false`. The chart then adds these rules to the gateway's ClusterRole: `get`, `patch` and `delete` on `persistentvolumes`, and `get` on `storageclasses`. It also adds the admission rules above. With the default, the gateway has no rights on PVs. |
+| `config.persistentVolumes.unusedRetention` | How long the gateway keeps a volume that no instance uses. The default is `720h`. `0` never deletes unused volumes. Otherwise use at least `1h`. |
+| `config.persistentVolumes.limitPerUser` | The most storage that one user's new volumes may hold in total, as a Kubernetes quantity such as `10Gi`. The default is `10Gi`. `0` means no limit. |
+
+Turn the feature on only after every gateway replica runs a version that knows it. An older replica does not know the setting. It starts a template that wants a volume with no volume.
+
+The volume provisioner must name each PV `pvc-` followed by the claim UID. This is the default of the CSI external provisioner and of the local-path provisioner. With another name, new volumes fail to start. Keep no `Available` PV in a StorageClass that persistent volumes use. Kubernetes can bind a new claim to it.
+
+The chart gives these values to the gateway in the settings `persistentVolumes.enabled`, `persistentVolumes.unusedRetention` and `persistentVolumes.limitPerUser`.

@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -159,5 +160,155 @@ func TestGatewayMayScaleOnlyTheEmbeddingsServer(t *testing.T) {
 		deployment, err := admin.AppsV1().Deployments(releaseNamespace).Get(ctx, otherDeployment, metav1.GetOptions{})
 		require.NoError(t, err)
 		assert.Equal(t, int32(1), *deployment.Spec.Replicas)
+	})
+}
+
+const (
+	volumeIDLabel   = "toolgate.soliddowant.dev/volume-id"
+	provisionedBy   = "pv.kubernetes.io/provisioned-by"
+	volumeClaimUID  = "0b7e1c52-6f43-4c1b-9d0a-1f2e3d4c5b6a"
+	instanceClaimNS = "tg-instance"
+)
+
+type volumeSpec struct {
+	name        string
+	labels      map[string]string
+	annotations map[string]string
+	claimNS     string
+	claimUID    string
+	reclaim     corev1.PersistentVolumeReclaimPolicy
+}
+
+func testVolume(spec volumeSpec) *corev1.PersistentVolume {
+	volume := &corev1.PersistentVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: spec.name, Labels: spec.labels, Annotations: spec.annotations},
+		Spec: corev1.PersistentVolumeSpec{
+			Capacity:                      corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+			AccessModes:                   []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			PersistentVolumeReclaimPolicy: spec.reclaim,
+			PersistentVolumeSource:        corev1.PersistentVolumeSource{HostPath: &corev1.HostPathVolumeSource{Path: "/tmp/" + spec.name}},
+		},
+	}
+	if spec.claimNS != "" {
+		volume.Spec.ClaimRef = &corev1.ObjectReference{Kind: "PersistentVolumeClaim", Namespace: spec.claimNS, Name: "data", UID: types.UID(spec.claimUID)}
+	}
+
+	return volume
+}
+
+func refusedByTheVolumeRules(t require.TestingT, err error, _ ...any) {
+	require.Error(t, err)
+	assert.True(t, apierrors.IsForbidden(err) || apierrors.IsInvalid(err), "refused, got %v", err)
+	assert.Contains(t, err.Error(), "toolgate's service account may")
+}
+
+func TestGatewayMayChangeOnlyItsOwnVolumes(t *testing.T) {
+	manifests := renderQuickStart(t, "--set", "config.persistentVolumes.enabled=true")
+	cluster := testutil.StartEnvtest(t)
+	ctx := t.Context()
+
+	admin, err := kubernetes.NewForConfig(cluster.Config)
+	require.NoError(t, err)
+
+	_, err = admin.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: releaseNamespace}}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	for _, item := range manifests {
+		if !chartAccessKinds[item.Kind] {
+			continue
+		}
+
+		object := &unstructured.Unstructured{}
+		require.NoError(t, yaml.Unmarshal(item.raw, &object.Object))
+		require.NoError(t, cluster.Client.Create(ctx, object), "create %s %s", item.Kind, item.Metadata.Name)
+	}
+
+	gatewayConfig := rest.CopyConfig(cluster.Config)
+	gatewayConfig.Impersonate = rest.ImpersonationConfig{
+		UserName: serviceAccount,
+		Groups:   []string{"system:serviceaccounts", "system:serviceaccounts:" + releaseNamespace, "system:authenticated"},
+	}
+	gateway, err := kubernetes.NewForConfig(gatewayConfig)
+	require.NoError(t, err)
+
+	// The API server loads a new policy in the background. Once a write in the
+	// release namespace is refused, the policy is in force.
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		configMap := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{GenerateName: "probe-", Namespace: releaseNamespace}}
+		_, err := gateway.CoreV1().ConfigMaps(releaseNamespace).Create(ctx, configMap, metav1.CreateOptions{})
+		refusedByThePolicy(collect, err)
+	}, 30*time.Second, 200*time.Millisecond, "the admission policy is in force")
+
+	create := func(t *testing.T, spec volumeSpec) {
+		t.Helper()
+
+		_, err := admin.CoreV1().PersistentVolumes().Create(ctx, testVolume(spec), metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	patch := func(name, body string) error {
+		_, err := gateway.CoreV1().PersistentVolumes().Patch(ctx, name, types.MergePatchType, []byte(body), metav1.PatchOptions{})
+
+		return err
+	}
+	label := func(name string) error {
+		return patch(name, `{"metadata":{"labels":{"app.kubernetes.io/managed-by":"toolgate","`+volumeIDLabel+`":"vol-1"}}}`)
+	}
+	remove := func(name string) error {
+		return gateway.CoreV1().PersistentVolumes().Delete(ctx, name, metav1.DeleteOptions{})
+	}
+	ownLabels := map[string]string{"app.kubernetes.io/managed-by": "toolgate", volumeIDLabel: "vol-1"}
+	provisioned := map[string]string{provisionedBy: "example.com/csi"}
+
+	t.Run("an unlabelled volume can't be patched", func(t *testing.T) {
+		create(t, volumeSpec{name: "unlabelled-patch", reclaim: corev1.PersistentVolumeReclaimRetain})
+		refusedByTheVolumeRules(t, label("unlabelled-patch"))
+	})
+
+	t.Run("an unlabelled volume can't be deleted", func(t *testing.T) {
+		create(t, volumeSpec{name: "unlabelled-delete", reclaim: corev1.PersistentVolumeReclaimDelete})
+		refusedByTheVolumeRules(t, remove("unlabelled-delete"))
+	})
+
+	t.Run("a volume bound in another namespace can't be labelled", func(t *testing.T) {
+		create(t, volumeSpec{name: "pvc-" + volumeClaimUID + "-x", annotations: provisioned, claimNS: "default", claimUID: volumeClaimUID})
+		refusedByTheVolumeRules(t, label("pvc-"+volumeClaimUID+"-x"))
+	})
+
+	t.Run("a labelled volume can't lose its ID", func(t *testing.T) {
+		create(t, volumeSpec{name: "keeps-id", labels: ownLabels, claimNS: instanceClaimNS, claimUID: volumeClaimUID})
+		refusedByTheVolumeRules(t, patch("keeps-id", `{"metadata":{"labels":{"`+volumeIDLabel+`":null}}}`))
+		refusedByTheVolumeRules(t, patch("keeps-id", `{"metadata":{"labels":{"`+volumeIDLabel+`":"vol-2"}}}`))
+	})
+
+	t.Run("a labelled volume can't point at a claim outside tg- namespaces", func(t *testing.T) {
+		create(t, volumeSpec{name: "keeps-claim", labels: ownLabels, claimNS: instanceClaimNS, claimUID: volumeClaimUID})
+		refusedByTheVolumeRules(t, patch("keeps-claim", `{"spec":{"claimRef":{"namespace":"default"}}}`))
+		require.NoError(t, patch("keeps-claim", `{"spec":{"claimRef":{"namespace":"tg-other"}}}`))
+	})
+
+	t.Run("a Retain volume can't be deleted", func(t *testing.T) {
+		create(t, volumeSpec{name: "retained", labels: ownLabels, reclaim: corev1.PersistentVolumeReclaimRetain})
+		refusedByTheVolumeRules(t, remove("retained"))
+
+		require.NoError(t, patch("retained", `{"spec":{"persistentVolumeReclaimPolicy":"Delete"}}`))
+		require.NoError(t, remove("retained"))
+	})
+
+	t.Run("a volume bound to an instance claim gets its first label when a provisioner made it", func(t *testing.T) {
+		name := "pvc-" + volumeClaimUID
+		create(t, volumeSpec{name: name, annotations: provisioned, claimNS: instanceClaimNS, claimUID: volumeClaimUID})
+		require.NoError(t, label(name))
+	})
+
+	t.Run("a volume whose name is not pvc- and the claim UID can't get its first label", func(t *testing.T) {
+		create(t, volumeSpec{name: "static-volume", annotations: provisioned, claimNS: instanceClaimNS, claimUID: volumeClaimUID})
+		refusedByTheVolumeRules(t, label("static-volume"))
+	})
+
+	t.Run("a volume with no provisioner annotation can't get its first label", func(t *testing.T) {
+		const uid = "5d1f0a77-2c3e-4b8a-8e6d-7a9b0c1d2e3f"
+
+		create(t, volumeSpec{name: "pvc-" + uid, claimNS: instanceClaimNS, claimUID: uid})
+		refusedByTheVolumeRules(t, label("pvc-"+uid))
 	})
 }

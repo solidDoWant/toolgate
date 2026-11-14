@@ -53,6 +53,23 @@ spec:
         variables.requestNamespace == "{{ .Release.Namespace }}" &&
         request.name == "{{ include "toolgate.embeddingsName" . }}"
     {{- end }}
+    {{- if include "toolgate.persistentVolumes" . }}
+    - name: isVolume
+      expression: request.kind.group == "" && request.kind.kind == "PersistentVolume" && variables.subResource == ""
+    # A PV the gateway labelled, or one that a provisioner made for a claim in
+    # an instance namespace and that the gateway has not labelled yet.
+    - name: isOwnVolume
+      expression: >-
+        variables.isVolume && (request.operation == "UPDATE" || request.operation == "DELETE") && (
+          (has(oldObject.metadata.labels) &&
+           oldObject.metadata.labels[?"toolgate.soliddowant.dev/volume-id"].orValue("") != "") ||
+          (request.operation == "UPDATE" && has(oldObject.spec.claimRef) &&
+           oldObject.spec.claimRef.namespace.startsWith("tg-") &&
+           has(oldObject.spec.claimRef.uid) &&
+           oldObject.metadata.name == "pvc-" + oldObject.spec.claimRef.uid &&
+           has(oldObject.metadata.annotations) &&
+           oldObject.metadata.annotations[?"pv.kubernetes.io/provisioned-by"].orValue("") != ""))
+    {{- end }}
     - name: inToolgateNamespace
       expression: >-
         namespaceObject != null && has(namespaceObject.metadata.labels) &&
@@ -64,12 +81,12 @@ spec:
         namespaceObject != null && has(namespaceObject.metadata.labels) &&
         namespaceObject.metadata.labels[?"pod-security.kubernetes.io/enforce"].orValue("") == "restricted"
   validations:
-    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inToolgateNamespace{{ if include "toolgate.embeddingsScaleToZero" . }} || variables.isEmbeddingsScale{{ end }}
+    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inToolgateNamespace{{ if include "toolgate.embeddingsScaleToZero" . }} || variables.isEmbeddingsScale{{ end }}{{ if include "toolgate.persistentVolumes" . }} || variables.isOwnVolume{{ end }}
       messageExpression: >-
         "toolgate's service account may write only in namespaces labelled toolgate.soliddowant.dev/writable=true, not in " +
         (variables.requestNamespace != "" ? variables.requestNamespace : "the cluster scope")
       reason: Forbidden
-    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inRestrictedNamespace{{ if include "toolgate.embeddingsScaleToZero" . }} || variables.isEmbeddingsScale{{ end }}
+    - expression: variables.isOwnLease || variables.isCatalogStatus || variables.isNamespace || variables.inRestrictedNamespace{{ if include "toolgate.embeddingsScaleToZero" . }} || variables.isEmbeddingsScale{{ end }}{{ if include "toolgate.persistentVolumes" . }} || variables.isOwnVolume{{ end }}
       messageExpression: >-
         "toolgate's service account may write only in namespaces labelled pod-security.kubernetes.io/enforce=restricted, not in " +
         (variables.requestNamespace != "" ? variables.requestNamespace : "the cluster scope")
@@ -96,6 +113,27 @@ spec:
         toolgate's service account may delete only namespaces labelled toolgate.soliddowant.dev/instance,
         so it can never delete the shared namespace
       reason: Forbidden
+    {{- if include "toolgate.persistentVolumes" . }}
+    # Keep the labels that tie a PV to its row, and point claims only at instance namespaces.
+    - expression: >-
+        !variables.isVolume || request.operation != "UPDATE" || (
+        has(object.metadata.labels) &&
+        object.metadata.labels[?"app.kubernetes.io/managed-by"].orValue("") == "toolgate" &&
+        object.metadata.labels[?"toolgate.soliddowant.dev/volume-id"].orValue("") != "" &&
+        (!has(oldObject.metadata.labels) ||
+         oldObject.metadata.labels[?"toolgate.soliddowant.dev/volume-id"].orValue("") == "" ||
+         object.metadata.labels["toolgate.soliddowant.dev/volume-id"] ==
+           oldObject.metadata.labels["toolgate.soliddowant.dev/volume-id"]) &&
+        (!has(object.spec.claimRef) || object.spec.claimRef.namespace.startsWith("tg-")))
+      message: toolgate's service account may change only PersistentVolumes it labelled, and may bind them only to claims in tg-* namespaces
+      reason: Forbidden
+    # Delete only after the reclaim policy is Delete, so that deleting frees the storage.
+    - expression: >-
+        !variables.isVolume || request.operation != "DELETE" ||
+        oldObject.spec.persistentVolumeReclaimPolicy == "Delete"
+      message: toolgate's service account may delete a PersistentVolume only after setting its reclaim policy to Delete
+      reason: Forbidden
+    {{- end }}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
