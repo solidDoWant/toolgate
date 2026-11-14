@@ -258,6 +258,16 @@ type UnverifiedServer struct {
 	AddedAt pgtype.Timestamptz
 }
 
+type UpstreamSession struct {
+	ID                int64
+	InstanceID        string
+	SessionPk         int64
+	UpstreamSessionID string
+	InitializeResult  []byte
+	CreatedAt         pgtype.Timestamptz
+	EndedAt           pgtype.Timestamptz
+}
+
 type UserScope struct {
 	ID                int64
 	Principal         string

@@ -210,6 +210,21 @@ rate(toolgate_db_pool_wait_seconds_total[5m])
 increase(toolgate_notify_reconnects_total[1h])
 ```
 
+`toolgate_upstream_session_events_total{event}` counts events of the MCP sessions that toolgate opens with servers, one for each user session and server. `event` is one of:
+
+- `initialize`: a gateway replica opened a new session with a server.
+- `adopt`: a replica reused a session that another replica opened, with no new request to the server.
+- `race_lost`: two replicas opened a session for the same user session and server at once. One session was kept and the other was closed.
+- `not_found`: a server answered that it no longer knows a session, for example after a restart. toolgate opens a new one.
+- `delete_sent`: the leader sent a request that ends a session on a server.
+- `delete_failed`: that request failed or timed out.
+
+The counter has no server or instance label.
+
+```promql
+sum by (event) (increase(toolgate_upstream_session_events_total[1h]))
+```
+
 `toolgate_leader` is 1 on the replica that holds the Lease. The other replicas export no series. Suggested alert: no leader.
 
 ```promql

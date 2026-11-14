@@ -38,6 +38,16 @@ const (
 	ResultAttested = "attested"
 )
 
+// Upstream session events.
+const (
+	UpstreamInitialize   = "initialize"
+	UpstreamAdopt        = "adopt"
+	UpstreamRaceLost     = "race_lost"
+	UpstreamNotFound     = "not_found"
+	UpstreamDeleteSent   = "delete_sent"
+	UpstreamDeleteFailed = "delete_failed"
+)
+
 // Other is the label value for anything outside a fixed set.
 const Other = "other"
 
@@ -53,7 +63,16 @@ var Methods = []string{"initialize", "tools/list", "tools/call", "subscriptions/
 // Revisions are the MCP protocol revisions that have their own label value.
 var Revisions = []string{"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28"}
 
+// UpstreamEvents is every upstream session event.
+var UpstreamEvents = []string{UpstreamInitialize, UpstreamAdopt, UpstreamRaceLost, UpstreamNotFound,
+	UpstreamDeleteSent, UpstreamDeleteFailed}
+
 var (
+	upstreamSessionEvents = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "toolgate_upstream_session_events_total",
+		Help: "Upstream MCP session events, by event.",
+	}, []string{"event"})
+
 	approvalRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "toolgate_approval_requests_total",
 		Help: "Approval and access requests that reached an outcome, by kind and outcome.",
@@ -77,7 +96,7 @@ var (
 
 // Collectors returns the counters for registration.
 func Collectors() []prometheus.Collector {
-	return []prometheus.Collector{approvalRequests, mcpRequests, authResults, notifyReconnects}
+	return []prometheus.Collector{approvalRequests, mcpRequests, authResults, notifyReconnects, upstreamSessionEvents}
 }
 
 // ApprovalOutcome counts n requests of kind that reached outcome.
@@ -99,6 +118,12 @@ func AuthResult(kind, result string) {
 	authResults.WithLabelValues(
 		fold(kind, []string{AuthUser, AuthServiceAccount, AuthSPIFFE, AuthConnector}),
 		fold(result, []string{ResultOK, ResultRefused, ResultAttested})).Inc()
+}
+
+// UpstreamSessionEvent counts one upstream session event. An event outside
+// UpstreamEvents counts as other.
+func UpstreamSessionEvent(event string) {
+	upstreamSessionEvents.WithLabelValues(fold(event, UpstreamEvents)).Inc()
 }
 
 // NotifyReconnect counts one reconnect of the LISTEN connection.
