@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/metricsbudget"
 	"github.com/solidDoWant/toolgate/internal/opsmetrics"
@@ -85,11 +86,22 @@ func TestMetricsStayInsideSeriesBudget(t *testing.T) {
 
 	metrics.Leader.Set(1)
 
+	exchangeMetrics := credentials.NewMetrics()
+	registry.MustRegister(exchangeMetrics.Collectors()...)
+
+	for index := range 8 {
+		for _, kind := range []string{credentials.KindStart, credentials.KindRefresh} {
+			for _, outcome := range []string{"success", "refused", "error"} {
+				exchangeMetrics.Exchanges.WithLabelValues(fmt.Sprintf("exchange-%d", index), kind, outcome).Inc()
+			}
+		}
+	}
+
 	// Instances 30, stuck 1, sessions 4, calls 60, call duration 8 buckets
 	// + 3, policy 12, starts 20, start duration 7 buckets + 3, waiting 1,
 	// health 10, repairs 30, embedding errors 4, embedding duration 2 ×
-	// (10 buckets + 3), pending 4, leader 1.
-	assert.Equal(t, 30+1+4+60+11+12+20+10+1+10+30+4+26+4+1, metricsbudget.Check(t, registry, templates))
+	// (10 buckets + 3), pending 4, leader 1, token exchanges 8 × 2 × 3.
+	assert.Equal(t, 30+1+4+60+11+12+20+10+1+10+30+4+26+4+1+48, metricsbudget.Check(t, registry, templates))
 }
 
 // A label outside the allowed sets fails the check.
