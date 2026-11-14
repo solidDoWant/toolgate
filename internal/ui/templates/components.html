@@ -20,7 +20,7 @@ Each row's cells carry data-label set to their column's heading. Below
 other cells are label and value pairs, and the row actions come last. No
 table scrolls sideways there. */}}
 {{define "table-start"}}<div class="mb-6 rounded-lg border border-border bg-surface {{if .Visible}}sm:overflow-visible{{else}}sm:overflow-x-auto{{end}}">
-<table id="{{.ID}}" class="data-table w-full border-collapse text-sm"{{with .Label}} aria-label="{{.}}"{{end}}>
+<table id="{{.ID}}" class="data-table{{if .Visible}} data-table-visible{{end}} w-full border-collapse text-sm"{{with .Label}} aria-label="{{.}}"{{end}}>
 <thead><tr>{{range .Columns}}<th scope="col">{{if .}}{{.}}{{else}}<span class="sr-only">Actions</span>{{end}}</th>{{end}}</tr></thead>
 <tbody>{{end}}
 {{define "table-end"}}</tbody>
