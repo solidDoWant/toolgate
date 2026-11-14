@@ -28,3 +28,22 @@ func (s *Starter) RenderIdentity(ctx context.Context, instance db.Instance) (Ide
 
 // OrderForApply is the order applyAll applies rendered objects in.
 var OrderForApply = orderForApply
+
+// Volume helpers and their results, for the volume tests.
+var (
+	CheckStorageClass   = checkStorageClass
+	CheckRecordedVolume = checkRecordedVolume
+	PreBind             = preBind
+	RecordVolume        = recordVolume
+)
+
+// The outcomes of a volume step.
+const (
+	VolumeGoOn = volumeGoOn
+	VolumeWait = volumeWait
+	VolumeFail = volumeFail
+	VolumeLost = volumeLost
+)
+
+// VolumeStep is the result of a volume check.
+type VolumeStep = volumeStep
