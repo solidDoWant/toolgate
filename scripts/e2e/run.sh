@@ -56,6 +56,11 @@
 #                                     resolver `test` points at it
 #       TOOLGATE_E2E_RESOLVER_CERT    its certificate, which the gateway trusts
 #       TOOLGATE_E2E_RESOLVER_KEY     its key
+#       TOOLGATE_E2E_TOKENEXCHANGE_LISTEN  address the test process serves
+#                                     the test token endpoint on over HTTPS,
+#                                     with the resolver's certificate; the
+#                                     chart's token exchange `test` points
+#                                     at it
 #       TOOLGATE_E2E_SPIFFE_LISTEN    address the test process serves the
 #                                     SPIFFE bundle endpoint of allowed.test
 #                                     on over HTTPS, with the resolver's
@@ -227,6 +232,11 @@ export TOOLGATE_E2E_RESOLVER_KEY="$work/resolver/key.pem"
 spiffe_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
 export TOOLGATE_E2E_SPIFFE_LISTEN="$host_address:$spiffe_port"
 
+# The test token endpoint for the token exchange `test` runs in the test
+# process too, with the resolver's certificate.
+tokenexchange_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
+export TOOLGATE_E2E_TOKENEXCHANGE_LISTEN="$host_address:$tokenexchange_port"
+
 log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 workload_namespace=toolgate-workloads
@@ -241,6 +251,8 @@ kubectl -n "$release_namespace" create secret generic toolgate-secrets-keyset \
 	--from-file=keyset.json="$work/keyset/keyset.json" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-resolver-ca \
 	--from-file=ca.pem="$TOOLGATE_E2E_RESOLVER_CERT" >&2
+kubectl -n "$release_namespace" create secret generic toolgate-exchange-client \
+	--from-literal=client-secret=e2e-exchange-client-secret >&2
 ./scripts/chart-deps.sh >&2
 helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set config.image.repository="$gateway_repository" \
@@ -266,9 +278,11 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set 'config.extraEnv[3].name=TOOLGATE_TEST_TIME_SCALE' \
 	--set-string "config.extraEnv[3].value=$TOOLGATE_TEST_TIME_SCALE" \
 	--set-json "config.resolvers=[{\"name\":\"test\",\"url\":\"https://$TOOLGATE_E2E_RESOLVER_LISTEN/resolve\",\"audience\":\"toolgate-resolver-test\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
+	--set-json "config.tokenExchanges=[{\"name\":\"test\",\"tokenURL\":\"https://$TOOLGATE_E2E_TOKENEXCHANGE_LISTEN/token\",\"clientID\":\"toolgate-e2e-exchange\",\"clientSecretFile\":\"/etc/toolgate/exchanges/test/client-secret\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json "config.workspaceAttestation={\"namespaces\":[\"$workload_namespace\"],\"match\":{\"by\":\"claim\",\"claim\":\"sub\",\"key\":\"username\"},\"workspaceID\":\"coder/{username}/{workspace}\",\"spiffeIDPattern\":\"spiffe://allowed.test/coder/{username}/{workspace}\"}" \
 	--set-json "config.spiffe.trustDomains=[{\"name\":\"allowed.test\",\"bundleEndpointURL\":\"https://$TOOLGATE_E2E_SPIFFE_LISTEN\",\"caFile\":\"/etc/toolgate/resolver-ca/ca.pem\"}]" \
 	--set-json 'resources.persistence.resolver-ca={"type":"secret","name":"toolgate-resolver-ca","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/resolver-ca","readOnly":true}]}}}' \
+	--set-json 'resources.persistence.exchange-client={"type":"secret","name":"toolgate-exchange-client","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/exchanges/test","readOnly":true}]}}}' \
 	--set-json 'resources.persistence.secrets-keyset={"type":"secret","name":"toolgate-secrets-keyset","advancedMounts":{"gateway":{"gateway":[{"path":"/etc/toolgate/secrets-keyset","readOnly":true}]}}}' \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--set embeddings.server.enabled=true \
