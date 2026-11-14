@@ -114,6 +114,18 @@
   .data-table th {
     @apply border-b border-border bg-code px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-muted uppercase;
   }
+  /* A table whose container shows overflow (so a row's confirmation can open
+     over it) can't scroll, so it must fit: headings wrap, and the header's
+     corners follow the container's rounded border. */
+  .data-table-visible th {
+    @apply whitespace-normal;
+  }
+  .data-table-visible th:first-child {
+    border-top-left-radius: calc(var(--radius-lg) - 1px);
+  }
+  .data-table-visible th:last-child {
+    border-top-right-radius: calc(var(--radius-lg) - 1px);
+  }
   .data-table td {
     @apply border-b border-border px-3 py-2 text-left align-top;
   }
