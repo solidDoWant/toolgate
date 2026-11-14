@@ -39,6 +39,10 @@ func (r *recorder) all() []auth.Refusal {
 	return append([]auth.Refusal(nil), r.refusals...)
 }
 
+// subjectTokenHeader is the response header the fixture's handler copies
+// the request's subject token into, when it has one.
+const subjectTokenHeader = "X-Test-Subject-Token"
+
 type fixture struct {
 	provider      *tgtestutil.OIDCProvider
 	recorder      *recorder
@@ -73,6 +77,11 @@ func newFixture(t *testing.T, options auth.Options, requireSession bool) fixture
 		}
 
 		writer.Header().Set("X-Test-Expiry", strconv.FormatInt(identity.Expiry.Unix(), 10))
+
+		if token, found := auth.SubjectTokenFrom(request.Context()); found {
+			writer.Header().Set(subjectTokenHeader, token.Reveal())
+		}
+
 		_ = json.NewEncoder(writer).Encode(identity)
 	})
 
