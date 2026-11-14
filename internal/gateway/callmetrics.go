@@ -71,6 +71,17 @@ func (o *callObservation) forwarded(outcome string) {
 	}
 }
 
+// cached records a call served from the tool result cache. It has no
+// duration: the duration measures the time to the upstream answer.
+func (o *callObservation) cached() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if o.outcome == "" {
+		o.outcome = runtime.CallCached
+	}
+}
+
 // observeCall counts a finished call. An error return is a call that failed
 // inside the gateway before an outcome was known; it counts as refused.
 func (m *metaTools) observeCall(observation *callObservation, err error) {

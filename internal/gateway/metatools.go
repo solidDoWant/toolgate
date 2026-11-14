@@ -22,6 +22,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/policy"
+	"github.com/solidDoWant/toolgate/internal/resultcache"
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
@@ -91,9 +92,11 @@ type metaTools struct {
 	blocks      blockCache
 	auditOutput io.Writer
 	// payloads stores call arguments and results; nil means off.
-	payloads  *audit.Payloads
-	subscribe func() (<-chan store.Event, func())
-	upstreams *upstreams
+	payloads *audit.Payloads
+	// resultCache keeps cached tool results; nil means no call is cached.
+	resultCache resultcache.Store
+	subscribe   func() (<-chan store.Event, func())
+	upstreams   *upstreams
 	// sessionTools returns the proxied tool set of an MCP session.
 	sessionTools func(mcpSessionID string) (*sessionTools, bool)
 	// instanceLimitPerUser and instanceLimit bound the live instances of one

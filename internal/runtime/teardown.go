@@ -74,6 +74,11 @@ type Metrics struct {
 	// ToolCallDuration is the time from receiving a forwarded call to the
 	// upstream answer.
 	ToolCallDuration prometheus.Histogram
+	// ResultCacheLookups counts tool result cache lookups by server and
+	// result (hit or miss).
+	ResultCacheLookups *prometheus.CounterVec
+	// ResultCacheStores counts tool result cache stores by result.
+	ResultCacheStores *prometheus.CounterVec
 	// PolicyRefusals counts policy refusals by step and reason.
 	PolicyRefusals *prometheus.CounterVec
 	// InstanceStarts counts finished starts by server and outcome.
@@ -120,6 +125,18 @@ const (
 	CallUpstreamError = "upstream_error"
 	CallTimeout       = "timeout"
 	CallStartFailed   = "start_failed"
+	// CallCached is a call served from the tool result cache.
+	CallCached = "cached"
+)
+
+// Results of a tool result cache lookup and store (the `result` label of
+// toolgate_tool_result_cache_lookups_total and
+// toolgate_tool_result_cache_stores_total). The other store results are the
+// resultcache.PutResult values.
+const (
+	CacheHit         = "hit"
+	CacheMiss        = "miss"
+	CacheStoreFailed = "failed"
 )
 
 // Outcomes of an instance start, and the actions of a repair.
@@ -156,6 +173,14 @@ func NewMetrics() *Metrics {
 			Help:    "Time from receiving a forwarded tool call to the upstream answer, including any wait for a starting instance.",
 			Buckets: []float64{0.05, 0.25, 1, 5, 15, 30, 60, 120},
 		}),
+		ResultCacheLookups: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_result_cache_lookups_total",
+			Help: "Tool result cache lookups, by server and result (hit or miss).",
+		}, []string{"server", "result"}),
+		ResultCacheStores: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "toolgate_tool_result_cache_stores_total",
+			Help: "Tool result cache stores, by result (stored, entry_too_large, template_full, session_ended or failed).",
+		}, []string{"result"}),
 		PolicyRefusals: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "toolgate_policy_refusals_total",
 			Help: "Policy refusals, by step and reason.",
@@ -227,6 +252,7 @@ func NewMetrics() *Metrics {
 // Collectors returns the metrics for registration.
 func (m *Metrics) Collectors() []prometheus.Collector {
 	return []prometheus.Collector{m.Instances, m.NamespacesStuck, m.Sessions, m.ToolCalls, m.ToolCallDuration,
+		m.ResultCacheLookups, m.ResultCacheStores,
 		m.PolicyRefusals, m.InstanceStarts, m.InstanceStartDuration, m.CallsWaiting, m.HealthFailures, m.Repairs, m.TemplateSecretUpdates,
 		m.Searches, m.SearchHits, m.SearchResearches, m.SearchNoCalls,
 		m.ApprovalsPending, m.Leader,

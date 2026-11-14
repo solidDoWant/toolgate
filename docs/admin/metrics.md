@@ -8,7 +8,7 @@ A metric label is either a fixed set of values or the name of a template that yo
 
 A series is one metric with one set of label values. A metrics backend uses memory for each series, so toolgate keeps the number small and stable.
 
-Each replica exports at most `300 + 10 × T` series, where `T` is the number of templates. A histogram counts as one series for each bucket, plus the `+Inf` bucket, the sum and the count. The embeddings request duration histogram has 10 buckets, so it adds 26 series (13 for each of its two operations). The metrics with a `server` label add up to 12 series for each template: 6 call outcomes, 2 start outcomes, 1 health failure series and 3 repair actions. A test in the toolgate source checks this limit, with 10 templates and every outcome and revision, and checks that every label value belongs to a fixed set. The test also counts every outcome of every kind of approval request.
+Each replica exports at most `300 + 10 × T` series, where `T` is the number of templates. A histogram counts as one series for each bucket, plus the `+Inf` bucket, the sum and the count. The embeddings request duration histogram has 10 buckets, so it adds 26 series (13 for each of its two operations). The metrics with a `server` label add up to 15 series for each template: 7 call outcomes, 2 cache lookup results, 2 start outcomes, 1 health failure series and 3 repair actions. The cache store metric adds 5 series in total. A test in the toolgate source checks this limit, with 10 templates and every outcome and revision, and checks that every label value belongs to a fixed set. The test also counts every outcome of every kind of approval request.
 
 The process and Go metrics add about 50 series. The Go metrics are the basic memory and garbage collector set, not the full runtime list.
 
@@ -77,6 +77,7 @@ max(toolgate_instance_namespaces_stuck) > 0
 - `upstream_error`: the call was allowed but the server failed to answer, or its result was too large.
 - `timeout`: the server did not become ready in time.
 - `start_failed`: the server failed to start.
+- `cached`: the gateway returned a result from the tool result cache. The call did not reach the server.
 
 A call to a server that the catalog does not list counts with `server="unknown"`.
 
@@ -84,10 +85,27 @@ A call to a server that the catalog does not list counts with `server="unknown"`
 sum by (server) (rate(toolgate_tool_calls_total{outcome="upstream_error"}[5m]))
 ```
 
-`toolgate_tool_call_duration_seconds` is a histogram of the time from the receipt of a forwarded call to the answer of the server. It includes any wait for a starting server. It has no `server` label. The buckets run from 0.05 s to 120 s.
+`toolgate_tool_call_duration_seconds` is a histogram of the time from the receipt of a forwarded call to the answer of the server. It includes any wait for a starting server. It does not count calls that the cache answered. It has no `server` label. The buckets run from 0.05 s to 120 s.
 
 ```promql
 histogram_quantile(0.95, sum by (le) (rate(toolgate_tool_call_duration_seconds_bucket[5m])))
+```
+
+`toolgate_tool_result_cache_lookups_total{server, result}` counts the reads of the tool result cache. The tool result cache keeps the results of read-only tools for the tools that a template configures. The label `result` is `hit` (the gateway returned the stored result) or `miss` (the gateway sent the call to the server). A failed read counts as `miss`. A call that does not use the cache does not count.
+
+`toolgate_tool_result_cache_stores_total{result}` counts the attempts to store a result in the cache. It has no `server` label. The label `result` is one of:
+
+- `stored`: the gateway stored the result.
+- `entry_too_large`: the result is larger than `toolResultCacheMaxEntryBytes`.
+- `template_full`: the entries of the template already use `toolResultCacheMaxTemplateBytes`. The gateway does not remove old entries to make space.
+- `session_ended`: the session ended before the store, so the gateway did not store a per-session result.
+- `failed`: the store failed. The call still returned its result, and the gateway log has the cause.
+
+If `template_full` increases, increase `toolResultCacheMaxTemplateBytes` or make the cache lifetime shorter.
+
+```promql
+sum by (server) (rate(toolgate_tool_result_cache_lookups_total{result="hit"}[5m]))
+  / sum by (server) (rate(toolgate_tool_result_cache_lookups_total[5m]))
 ```
 
 `toolgate_policy_refusals_total{step, reason}` counts the calls that policy refused. The label `step` is the policy step that refused: `access`, `environment`, `blocked`, `rule`, `temporary-block` or `workspace-scope`. The label `reason` is `denied` for a deny entry and `refused` for any other refusal. The audit log has the full text.

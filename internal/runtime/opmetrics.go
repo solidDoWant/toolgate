@@ -27,6 +27,20 @@ func (m *Metrics) ObserveCallDuration(duration time.Duration) {
 	}
 }
 
+// ObserveCacheLookup counts one tool result cache lookup.
+func (m *Metrics) ObserveCacheLookup(server, result string) {
+	if m != nil {
+		m.ResultCacheLookups.WithLabelValues(server, result).Inc()
+	}
+}
+
+// ObserveCacheStore counts one tool result cache store.
+func (m *Metrics) ObserveCacheStore(result string) {
+	if m != nil {
+		m.ResultCacheStores.WithLabelValues(result).Inc()
+	}
+}
+
 // ObservePolicyRefusal counts one policy refusal.
 func (m *Metrics) ObservePolicyRefusal(step, reason string) {
 	if m != nil {
