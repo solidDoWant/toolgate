@@ -552,7 +552,7 @@ func (e *mcpEndpoint) Shutdown() {
 	}
 	e.mu.Unlock()
 
-	if e.releaseUpstreams != nil {
-		e.releaseUpstreams()
+	if e.upstreams != nil {
+		e.upstreams.releaseAll()
 	}
 }

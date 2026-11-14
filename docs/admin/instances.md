@@ -109,6 +109,10 @@ A server can keep one MCP session (a connection with its own state) for each use
 
 The leader then sends one `DELETE` request for each ended session to a running instance or a remote server. It sends no `DELETE` to a stopped instance, because its pods are going away. For a remote server, it uses the headers of the instance's owner. If it cannot fill in the headers, for example because the secret is deleted, it sends nothing. The leader does not retry a failed `DELETE`. It counts each one in `toolgate_upstream_session_events_total` with the event `delete_sent` or `delete_failed`.
 
+If a server answers a call with HTTP 404 for its session, the server no longer knows that session, for example after a restart. toolgate then opens a new session and sends the call one more time. A second 404 fails the call. The state that the server kept for the old session is lost.
+
+Each replica keeps its own connection to each session that it uses. A replica closes a connection when it served no call for 30 minutes, when the user session ends, or when the user disables the server. Closing a connection does not end the session on the server.
+
 ## Instance limits
 
 Two chart values limit the number of instances. Only instances that are starting or ready count:

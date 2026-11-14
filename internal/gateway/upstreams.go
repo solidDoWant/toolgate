@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +21,13 @@ import (
 	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/version"
+)
+
+// copyIdleTimeout is how long a copy serves no call before this replica
+// releases it, and copyIdleCheck how often the replica looks for such copies.
+const (
+	copyIdleTimeout = 30 * time.Minute
+	copyIdleCheck   = time.Minute
 )
 
 // Limits of a stored upstream session.
@@ -54,8 +62,18 @@ type upstreamCopy struct {
 	// sessionPk is the toolgate session of the copy's row, or zero for an
 	// instance's one copy (a sessionless or 2026-07-28 server).
 	sessionPk int64
+	// inFlight counts the calls that hold the copy, and lastUsed is when the
+	// last of them finished, in Unix nanoseconds.
+	inFlight atomic.Int64
+	lastUsed atomic.Int64
 
 	closeOnce sync.Once
+}
+
+// done records that a call holding the copy finished at now.
+func (c *upstreamCopy) done(now time.Time) {
+	c.lastUsed.Store(now.UnixNano())
+	c.inFlight.Add(-1)
 }
 
 // Release closes the copy and leaves the upstream session alive.
@@ -90,8 +108,11 @@ type pairKey struct {
 }
 
 // copyEntry holds a copy while it is made, so concurrent forwards make one.
+// users, guarded by upstreams.mu, counts the forwards using the entry, so an
+// empty entry is removed only when no forward waits on it.
 type copyEntry struct {
-	key  copyKey
+	users int
+
 	mu   sync.Mutex
 	copy *upstreamCopy
 }
@@ -112,6 +133,9 @@ type upstreams struct {
 	// headers. Nil means remote servers can't be reached.
 	secrets func(principal string) runtime.SecretSource
 	logger  *slog.Logger
+	// clock is the clock idle copies are measured with; nil means
+	// time.Now.
+	clock atomic.Pointer[func() time.Time]
 
 	mu     sync.Mutex
 	copies map[copyKey]*copyEntry
@@ -130,11 +154,12 @@ func newUpstreams(endpoint UpstreamEndpoint, httpClient *http.Client, secrets fu
 
 // forwardingCopy is the copy a call is forwarded on. When once is set, the
 // copy belongs to no stored row: the call is forwarded on it and then it is
-// ended.
+// ended. row is the ID of the copy's stored row, or zero when it has none.
 type forwardingCopy struct {
 	*upstreamCopy
 
 	key  copyKey
+	row  int64
 	once bool
 }
 
@@ -239,8 +264,18 @@ func (u *upstreams) lockPair(pair pairKey) func() {
 	}
 }
 
-// copyFor returns the copy under key, making it with make when there is
-// none. Concurrent callers make one copy.
+// now reads the clock idle copies are measured with.
+func (u *upstreams) now() time.Time {
+	if clock := u.clock.Load(); clock != nil {
+		return (*clock)()
+	}
+
+	return time.Now()
+}
+
+// copyFor returns the copy under key, making it with build when there is
+// none, and counts the caller's call on it: the caller calls done when the
+// call finished. Concurrent callers make one copy.
 func (u *upstreams) copyFor(key copyKey, build func() (*upstreamCopy, error)) (*upstreamCopy, error) {
 	u.mu.Lock()
 
@@ -250,23 +285,46 @@ func (u *upstreams) copyFor(key copyKey, build func() (*upstreamCopy, error)) (*
 		u.copies[key] = entry
 	}
 
+	entry.users++
 	u.mu.Unlock()
+
+	defer func() {
+		u.mu.Lock()
+		entry.users--
+		u.prune(key, entry)
+		u.mu.Unlock()
+	}()
 
 	entry.mu.Lock()
 	defer entry.mu.Unlock()
 
-	if entry.copy != nil {
-		return entry.copy, nil
+	if entry.copy == nil {
+		held, err := build()
+		if err != nil {
+			return nil, err
+		}
+
+		held.lastUsed.Store(u.now().UnixNano())
+		entry.copy = held
 	}
 
-	held, err := build()
-	if err != nil {
-		return nil, err
+	entry.copy.inFlight.Add(1)
+
+	return entry.copy, nil
+}
+
+// prune removes the entry under key when it holds no copy and no forward
+// uses it. The caller holds u.mu.
+func (u *upstreams) prune(key copyKey, entry *copyEntry) {
+	if entry.users > 0 || u.copies[key] != entry || !entry.mu.TryLock() {
+		return
 	}
 
-	entry.copy = held
+	defer entry.mu.Unlock()
 
-	return held, nil
+	if entry.copy == nil {
+		delete(u.copies, key)
+	}
 }
 
 // adopt returns this replica's copy of a stored row, making it with no
@@ -289,7 +347,7 @@ func (u *upstreams) adopt(ctx context.Context, instance db.Instance, template *v
 		return held, nil
 	})
 
-	return forwardingCopy{upstreamCopy: held, key: key}, err
+	return forwardingCopy{upstreamCopy: held, key: key, row: row.ID}, err
 }
 
 // start sends initialize for a pair with no row and claims the pair.
@@ -346,7 +404,7 @@ func (u *upstreams) start(ctx context.Context, database *pgxpool.Pool, instance 
 			fresh.Release()
 		}
 
-		return forwardingCopy{upstreamCopy: held, key: key}, err
+		return forwardingCopy{upstreamCopy: held, key: key, row: claim.row}, err
 	case claim.winner != nil:
 		opsmetrics.UpstreamSessionEvent(opsmetrics.UpstreamRaceLost)
 		fresh.End()
@@ -356,6 +414,8 @@ func (u *upstreams) start(ctx context.Context, database *pgxpool.Pool, instance 
 
 	// The pair ended, or the winner's row did, while this call was in
 	// flight: forward this one call and end the session.
+	fresh.inFlight.Add(1)
+
 	return forwardingCopy{upstreamCopy: fresh, once: true}, nil
 }
 
@@ -387,10 +447,11 @@ func storableInitializeResult(id string, result *mcp.InitializeResult) ([]byte, 
 	return encoded, true
 }
 
-// pairClaim is the outcome of a claim: won, lost to winner, or neither when
-// the pair or the winner's row ended.
+// pairClaim is the outcome of a claim: won with the stored row, lost to
+// winner, or neither when the pair or the winner's row ended.
 type pairClaim struct {
 	won    bool
+	row    int64
 	winner *db.GetLiveUpstreamSessionRow
 }
 
@@ -423,11 +484,11 @@ func claimPair(ctx context.Context, database *pgxpool.Pool, instanceID string, s
 			return nil
 		}
 
-		_, err = queries.InsertUpstreamSession(ctx, db.InsertUpstreamSessionParams{
+		row, err := queries.InsertUpstreamSession(ctx, db.InsertUpstreamSessionParams{
 			InstanceID: instanceID, SessionPk: sessionPk, UpstreamSessionID: upstreamID, InitializeResult: result,
 		})
 		if err == nil {
-			claim.won = true
+			claim.won, claim.row = true, row
 
 			return nil
 		}
@@ -436,7 +497,7 @@ func claimPair(ctx context.Context, database *pgxpool.Pool, instanceID string, s
 			return fmt.Errorf("insert upstream session: %w", err)
 		}
 
-		row, err := queries.GetLiveUpstreamSession(ctx, db.GetLiveUpstreamSessionParams{InstanceID: instanceID, SessionPk: sessionPk})
+		winner, err := queries.GetLiveUpstreamSession(ctx, db.GetLiveUpstreamSessionParams{InstanceID: instanceID, SessionPk: sessionPk})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}
@@ -445,7 +506,7 @@ func claimPair(ctx context.Context, database *pgxpool.Pool, instanceID string, s
 			return fmt.Errorf("read upstream session: %w", err)
 		}
 
-		claim.winner = &row
+		claim.winner = &winner
 
 		return nil
 	})
@@ -525,52 +586,79 @@ func (u *upstreams) release(key copyKey, held *upstreamCopy) {
 			entry.copy = nil
 		}
 		entry.mu.Unlock()
+
+		u.mu.Lock()
+		u.prune(key, entry)
+		u.mu.Unlock()
 	}
 
 	held.Release()
 }
 
-// releaseWhere drops and releases every copy whose key matches, without
+// releaseWhere drops and releases every copy that match accepts, without
 // waiting for the calls in flight on them: they finish with whatever the
-// upstream answers.
-func (u *upstreams) releaseWhere(match func(copyKey) bool, end bool) {
+// upstream answers. Releasing never ends the upstream session of a stored
+// row. With endInstanceCopies, an instance's one copy is ended instead: it
+// belongs to no row, so nothing else ends its upstream session. It returns
+// once every matching copy is released; a copy that is still being made is
+// checked once it is made, in the background. The copies are closed in the
+// background too.
+func (u *upstreams) releaseWhere(match func(key copyKey, held *upstreamCopy) bool, endInstanceCopies bool) {
 	u.mu.Lock()
 
-	var released []*copyEntry
-
+	entries := make(map[copyKey]*copyEntry, len(u.copies))
 	for key, entry := range u.copies {
-		if match(key) {
-			delete(u.copies, key)
-			entry.key = key
-			released = append(released, entry)
-		}
+		entries[key] = entry
 	}
 
 	u.mu.Unlock()
 
-	for _, entry := range released {
-		go func() {
-			entry.mu.Lock()
-			held := entry.copy
+	releaseEntry := func(key copyKey, entry *copyEntry) {
+		held := entry.copy
+		if held != nil && match(key, held) {
 			entry.copy = nil
-			entry.mu.Unlock()
+		} else {
+			held = nil
+		}
 
-			if held == nil {
-				return
-			}
+		entry.mu.Unlock()
 
-			// An instance's one copy belongs to no stored row: nothing else
-			// ends its upstream session, so a stop ends it here.
-			if end && entry.key.upstream == "" {
+		u.mu.Lock()
+		u.prune(key, entry)
+		u.mu.Unlock()
+
+		if held == nil {
+			return
+		}
+
+		// Closing waits for the copy's connection, which a call in flight
+		// can hold, so it runs off the caller's goroutine.
+		go func() {
+			if endInstanceCopies && key.upstream == "" {
 				held.End()
 			} else {
 				held.Release()
 			}
 		}()
 	}
+
+	for key, entry := range entries {
+		// A copy that is being made holds its entry's lock for the
+		// connect; the check waits for it off this goroutine.
+		if !entry.mu.TryLock() {
+			go func() {
+				entry.mu.Lock()
+				releaseEntry(key, entry)
+			}()
+
+			continue
+		}
+
+		releaseEntry(key, entry)
+	}
 }
 
-// releaseInstance releases every copy of an instance that stopped and
+// releaseInstance releases every copy of an instance that left ready and
 // forgets that it is sessionless. Its one copy, when it has no rows, is
 // ended.
 func (u *upstreams) releaseInstance(id string) {
@@ -578,12 +666,67 @@ func (u *upstreams) releaseInstance(id string) {
 	delete(u.sessionless, id)
 	u.mu.Unlock()
 
-	u.releaseWhere(func(key copyKey) bool { return key.instance == id }, true)
+	u.releaseWhere(func(key copyKey, _ *upstreamCopy) bool { return key.instance == id }, true)
 }
 
 // releaseAll releases every copy, at shutdown.
 func (u *upstreams) releaseAll() {
-	u.releaseWhere(func(copyKey) bool { return true }, false)
+	u.releaseWhere(func(copyKey, *upstreamCopy) bool { return true }, false)
+}
+
+// releaseIdle releases every copy that served no call for copyIdleTimeout.
+func (u *upstreams) releaseIdle() {
+	cutoff := u.now().Add(-copyIdleTimeout).UnixNano()
+
+	u.releaseWhere(func(_ copyKey, held *upstreamCopy) bool {
+		return held.inFlight.Load() == 0 && held.lastUsed.Load() <= cutoff
+	}, false)
+}
+
+// releaseSessionCopies releases this replica's copies of toolgate session
+// sessionPk that match none of its live rows: their pair was disabled or the
+// session ended. An instance's one copy belongs to no session and stays.
+func (u *upstreams) releaseSessionCopies(sessionPk int64, live []db.ListLiveUpstreamSessionsOfSessionRow) {
+	kept := make(map[copyKey]bool, len(live))
+	for _, row := range live {
+		kept[copyKey{instance: row.InstanceID, upstream: row.UpstreamSessionID}] = true
+	}
+
+	u.releaseWhere(func(key copyKey, held *upstreamCopy) bool {
+		return key.upstream != "" && held.sessionPk == sessionPk && !kept[key]
+	}, false)
+}
+
+// holdsSession reports whether this replica holds a copy of a row of
+// toolgate session sessionPk.
+func (u *upstreams) holdsSession(sessionPk int64) bool {
+	u.mu.Lock()
+
+	entries := make([]*copyEntry, 0, len(u.copies))
+	for key, entry := range u.copies {
+		if key.upstream != "" {
+			entries = append(entries, entry)
+		}
+	}
+
+	u.mu.Unlock()
+
+	for _, entry := range entries {
+		// A copy still being made is counted: its session can't be read
+		// without waiting for the connect.
+		if !entry.mu.TryLock() {
+			return true
+		}
+
+		held := entry.copy != nil && entry.copy.sessionPk == sessionPk
+		entry.mu.Unlock()
+
+		if held {
+			return true
+		}
+	}
+
+	return false
 }
 
 // hasInstance reports whether this replica holds a copy of instance id.
@@ -620,4 +763,23 @@ func (m *metaTools) dropUnlessReady(id string) {
 	}
 
 	m.upstreams.releaseInstance(id)
+}
+
+// releaseEndedSessionCopies releases this replica's copies of toolgate
+// session id whose rows are no longer live, after a disable or the
+// session's end.
+func (m *metaTools) releaseEndedSessionCopies(id int64) {
+	if !m.upstreams.holdsSession(id) {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), fanOutTimeout)
+	defer cancel()
+
+	live, err := db.New(m.database).ListLiveUpstreamSessionsOfSession(ctx, id)
+	if err != nil {
+		return
+	}
+
+	m.upstreams.releaseSessionCopies(id, live)
 }
