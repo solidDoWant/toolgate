@@ -283,6 +283,19 @@ func TestSeparateMigrationCredential(t *testing.T) {
 	})
 
 	t.Run("helm upgrade runs the hook again before the new pods", func(t *testing.T) {
-		requireJobBeforePods(t, upgrade("--set-json", `config.extraEnv=[{"name":"TOOLGATE_E2E_ROLLOUT","value":"`+rand.String(6)+`"}]`))
+		// The list replaces config.extraEnv as a whole, so it keeps the
+		// harness's entries, some of which the gateway needs to start.
+		var harnessValues struct {
+			Config struct {
+				ExtraEnv []map[string]any `json:"extraEnv"`
+			} `json:"config"`
+		}
+
+		require.NoError(t, yaml.Unmarshal(harness, &harnessValues))
+
+		rollout, err := json.Marshal(append(harnessValues.Config.ExtraEnv, map[string]any{"name": "TOOLGATE_E2E_ROLLOUT", "value": rand.String(6)}))
+		require.NoError(t, err)
+
+		requireJobBeforePods(t, upgrade("--set-json", "config.extraEnv="+string(rollout)))
 	})
 }
