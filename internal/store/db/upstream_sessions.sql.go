@@ -150,7 +150,7 @@ func (q *Queries) InsertUpstreamSession(ctx context.Context, arg InsertUpstreamS
 }
 
 const listEndedUpstreamSessions = `-- name: ListEndedUpstreamSessions :many
-SELECT u.id, u.instance_id, u.upstream_session_id,
+SELECT u.id, u.instance_id, u.upstream_session_id, u.initialize_result,
        COALESCE(i.desired = 'running' AND i.status NOT IN ('stopping', 'stopped'), false)::boolean AS instance_live,
        COALESCE(i.namespace = '', false)::boolean AS instance_remote
 FROM upstream_sessions u
@@ -164,6 +164,7 @@ type ListEndedUpstreamSessionsRow struct {
 	ID                int64
 	InstanceID        string
 	UpstreamSessionID string
+	InitializeResult  []byte
 	InstanceLive      bool
 	InstanceRemote    bool
 }
@@ -183,6 +184,7 @@ func (q *Queries) ListEndedUpstreamSessions(ctx context.Context) ([]ListEndedUps
 			&i.ID,
 			&i.InstanceID,
 			&i.UpstreamSessionID,
+			&i.InitializeResult,
 			&i.InstanceLive,
 			&i.InstanceRemote,
 		); err != nil {
