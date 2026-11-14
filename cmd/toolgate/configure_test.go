@@ -188,3 +188,24 @@ func TestLoginKeepsTheConfiguredSettings(t *testing.T) {
 	assert.Equal(t, "echo user-token", settings.TokenCommand)
 	assert.Equal(t, "/run/attestation", settings.AttestationTokenRequest)
 }
+
+func TestConfigureNoAttestationClearsEverySource(t *testing.T) {
+	dir := pluginHelperEnvironment(t)
+
+	code, _, stderr := runCLI(t, "", "configure", "--gateway", "https://gateway.example.com", "--attestation-token-request", "/run/req")
+	require.Equal(t, 0, code, stderr)
+
+	code, _, stderr = runCLI(t, "", "configure", "--no-attestation")
+	require.Equal(t, 0, code, stderr)
+
+	settings, err := login.LoadSettings(dir)
+	require.NoError(t, err)
+	assert.Empty(t, settings.AttestationTokenRequest)
+	assert.Empty(t, settings.AttestationTokenFile)
+	assert.Empty(t, settings.AttestationKeyFile)
+	assert.Equal(t, "https://gateway.example.com", settings.Gateway)
+
+	code, _, stderr = runCLI(t, "", "configure", "--no-attestation", "--attestation-token-file", "/x")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, stderr, "--no-attestation")
+}

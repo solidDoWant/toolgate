@@ -14,10 +14,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/solidDoWant/toolgate/internal/client/login"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
@@ -265,6 +268,34 @@ func TestWorkspaceKeysRevoke(t *testing.T) {
 
 		require.Equal(t, 0, run.code, run.stderr)
 		assert.Equal(t, "Revoked key `dev`.\n", run.stdout)
+	})
+
+	t.Run("clears the configured key file of the revoked key", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "workspace-keys", "dev.pem")
+		require.NoError(t, login.SaveSettings(dir, login.Settings{Gateway: "https://g", AttestationKeyFile: path}))
+
+		run := runKeys(t, &keysGateway{delBody: `{"revoked":true,"deniedRequests":0}`}, dir, "x", "keys", "revoke", "dev")
+		require.Equal(t, 0, run.code, run.stderr)
+		assert.Contains(t, run.stdout, "Cleared it in config.json")
+
+		settings, err := login.LoadSettings(dir)
+		require.NoError(t, err)
+		assert.Empty(t, settings.AttestationKeyFile)
+		assert.Equal(t, "https://g", settings.Gateway)
+	})
+
+	t.Run("keeps another configured key file", func(t *testing.T) {
+		dir := t.TempDir()
+		other := filepath.Join(dir, "workspace-keys", "other.pem")
+		require.NoError(t, login.SaveSettings(dir, login.Settings{Gateway: "https://g", AttestationKeyFile: other}))
+
+		run := runKeys(t, &keysGateway{delBody: `{"revoked":true,"deniedRequests":0}`}, dir, "x", "keys", "revoke", "dev")
+		require.Equal(t, 0, run.code, run.stderr)
+
+		settings, err := login.LoadSettings(dir)
+		require.NoError(t, err)
+		assert.Equal(t, other, settings.AttestationKeyFile)
 	})
 
 	t.Run("a missing key exits 1", func(t *testing.T) {

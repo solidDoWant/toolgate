@@ -17,7 +17,7 @@ const usage = `Usage: toolgate <command>
 
 Commands:
   login     Sign in (login [--gateway URL])
-  configure Save client settings in config.json (configure [--gateway URL] [--token-command CMD] [--attestation-token-file PATH] [--attestation-token-request DIR])
+  configure Save client settings in config.json (configure [--gateway URL] [--token-command CMD] [--attestation-token-file PATH] [--attestation-token-request DIR] [--attestation-key-file PATH] [--no-attestation])
   headers   Print the request headers for Claude Code's headersHelper
   otel-headers  Print the request headers for Claude Code's otelHeadersHelper
   hook      Run a Claude Code hook (hook session-start, stop or session-end)

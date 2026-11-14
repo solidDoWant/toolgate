@@ -97,7 +97,7 @@ toolgate configure \
   --attestation-token-file /var/run/secrets/toolgate/token
 ```
 
-With the TokenRequest fallback for KubeVirt, use `--attestation-token-request DIR` in place of `--attestation-token-file`. Use `--attestation-key-file PATH` for a registered workspace key. The command loads the key, saves its absolute path and prints its fingerprint. Give only one of the three attestation flags. The command writes `config.json` in the toolgate configuration directory with mode 0600. It changes only the settings that you give. An empty value removes a setting. If a variable is set, the client uses the variable and not the file. The file holds a command line and paths, not a token.
+With the TokenRequest fallback for KubeVirt, use `--attestation-token-request DIR` in place of `--attestation-token-file`. Use `--attestation-key-file PATH` for a registered workspace key. The command loads the key, saves its absolute path and prints its fingerprint. Give only one of the three attestation flags. The command writes `config.json` in the toolgate configuration directory with mode 0600. It changes only the settings that you give. An empty value removes a setting. `--no-attestation` removes the saved attestation source. If a variable is set, the client uses the variable and not the file. The file holds a command line and paths, not a token.
 
 ## KubeVirt virtual machines
 

@@ -53,9 +53,11 @@ func signedInGateway(ctx context.Context) (gatewayAccess, error) {
 		return gatewayAccess{}, err
 	}
 
+	// These commands only call the API, which works without an attestation:
+	// a broken source leaves the request unverified instead of failing it.
 	access.attestation, err = attestationSource().Token(ctx)
 	if err != nil {
-		return gatewayAccess{}, err
+		access.attestation = ""
 	}
 
 	return access, nil

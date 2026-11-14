@@ -103,23 +103,74 @@ func TestAttestationTokenFileIsSentByEveryGatewayCommand(t *testing.T) {
 	assert.Contains(t, stdout, "workload-two")
 }
 
-func TestAttestationFailureSendsNothing(t *testing.T) {
+func TestAttestationFailureFallsBackToUnverified(t *testing.T) {
 	file, sents := setupAttestedClient(t)
 	require.NoError(t, os.Remove(file))
 
-	for _, command := range [][]string{{"headers"}, {"otel-headers"}, {"sessions"}, {"secret", "list"}, {"servers"}} {
-		code, stdout, stderr := runCLI(t, "", command...)
-		assert.Equal(t, 1, code, "%v", command)
-		assert.Empty(t, stdout, "%v", command)
-		assert.Contains(t, stderr, "attestation token file", "%v", command)
+	for _, command := range []string{"headers", "otel-headers"} {
+		code, stdout, stderr := runCLI(t, "", command)
+		require.Equal(t, 0, code, "%s: %s", command, stderr)
+
+		var values map[string]string
+		require.NoError(t, json.Unmarshal([]byte(stdout), &values))
+		assert.Equal(t, "Bearer user-token", values["Authorization"], command)
+		assert.NotContains(t, values, "X-Toolgate-Attestation", command)
+		assert.Equal(t, 1, strings.Count(stderr, "attestation token file"), "one warning: %q", stderr)
+		assert.Contains(t, stderr, file, command)
 	}
 
-	// The hook never fails the session, but sends no request either.
+	for _, command := range [][]string{{"sessions"}, {"secret", "list"}} {
+		code, _, stderr := runCLI(t, "", command...)
+		assert.Equal(t, 0, code, "%v: %s", command, stderr)
+	}
+
+	for _, sent := range sents() {
+		assert.Empty(t, sent, "requests go out unverified")
+	}
+
+	// The hook sends no settings request: it would change the session's attestation.
+	before := len(sents())
 	code, stdout, _ := runCLI(t, `{"session_id":"session-1"}`, "hook", "session-start")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "attestation failed")
+	assert.Len(t, sents(), before)
+}
 
-	assert.Empty(t, sents(), "no request reaches the gateway")
+func TestAttestationKeyFileProblemsFallBackToUnverified(t *testing.T) {
+	tests := map[string]func(t *testing.T, path string){
+		"missing": func(*testing.T, string) {},
+		"not a key": func(t *testing.T, path string) {
+			require.NoError(t, os.WriteFile(path, []byte("garbage"), 0o600))
+		},
+		"readable by others": func(t *testing.T, path string) {
+			_, err := loadOrCreateKey(path)
+			require.NoError(t, err)
+			require.NoError(t, os.Chmod(path, 0o644))
+		},
+		"unreadable": func(t *testing.T, path string) {
+			_, err := loadOrCreateKey(path)
+			require.NoError(t, err)
+			require.NoError(t, os.Chmod(path, 0o000))
+		},
+	}
+
+	for name, prepare := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _ = setupAttestedClient(t)
+			t.Setenv("TOOLGATE_ATTESTATION_TOKEN_FILE", "")
+
+			path := filepath.Join(t.TempDir(), "key.pem")
+			prepare(t, path)
+			t.Setenv("TOOLGATE_ATTESTATION_SIGNER_FILE", path)
+
+			code, stdout, stderr := runCLI(t, "", "headers")
+			require.Equal(t, 0, code, stderr)
+			assert.NotContains(t, stdout, "X-Toolgate-Attestation")
+			assert.Contains(t, stdout, "Bearer user-token")
+			assert.Equal(t, 1, strings.Count(stderr, "the attestation is skipped"), stderr)
+			assert.Contains(t, stderr, path)
+		})
+	}
 }
 
 func TestAttestationVariablesConflict(t *testing.T) {
@@ -164,8 +215,8 @@ func TestAttestationSPIFFESocketFetchesAnSVID(t *testing.T) {
 	failing, _ := startWorkloadAPI(t, true)
 	t.Setenv("TOOLGATE_ATTESTATION_SPIFFE_SOCKET", failing)
 
-	code, _, stderr = runCLI(t, "", "sessions")
-	assert.Equal(t, 1, code)
+	code, stdout, stderr := runCLI(t, "", "headers")
+	assert.Equal(t, 0, code)
 	assert.Contains(t, stderr, "attestation JWT-SVID")
-	assert.Len(t, sents(), 1, "nothing was sent")
+	assert.NotContains(t, stdout, "X-Toolgate-Attestation")
 }
