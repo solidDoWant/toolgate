@@ -82,7 +82,7 @@ func HeldMCPSessions(handler http.Handler) int {
 // ResolveSession runs the endpoint's session lookup for identity, as a
 // request that passed the MCP session binding check does.
 func ResolveSession(ctx context.Context, handler http.Handler, identity auth.Identity) (db.Session, error) {
-	return handler.(*mcpEndpoint).sessions.resolve(ctx, identity, false)
+	return handler.(*mcpEndpoint).sessions.resolve(ctx, identity, false, false)
 }
 
 // HeldUpstreamCopies returns how many copies of upstream sessions the MCP

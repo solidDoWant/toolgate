@@ -467,7 +467,22 @@ func TestServerStatus(t *testing.T) {
 }
 
 func TestSessions(t *testing.T) {
-	t.Run("a different workspace on a live session gets 400", func(t *testing.T) {
+	t.Run("a different workspace on a live session gets 400 on a request that starts no MCP session", func(t *testing.T) {
+		fixture := newMCPFixture(t)
+
+		first := alice()
+		first.workspace = "repo-a"
+		fixture.connect(t, first)
+
+		second := alice()
+		second.workspace = "repo-b"
+		response := fixture.post(t, second, "", listToolsMessage())
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+		assert.Equal(t, "claimed/repo-a", fixture.sessionRow(t, "alice", "session-1").Workspace)
+	})
+
+	t.Run("a new MCP session in a different claimed workspace moves the session there", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
 		first := alice()
@@ -477,9 +492,9 @@ func TestSessions(t *testing.T) {
 		second := alice()
 		second.workspace = "repo-b"
 		response := fixture.post(t, second, "", initializeMessage())
-		assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+		assert.Equal(t, http.StatusOK, response.StatusCode)
 
-		assert.Equal(t, "claimed/repo-a", fixture.sessionRow(t, "alice", "session-1").Workspace)
+		assert.Equal(t, "claimed/repo-b", fixture.sessionRow(t, "alice", "session-1").Workspace)
 	})
 
 	t.Run("one session ID used by two principals gives separate sessions", func(t *testing.T) {

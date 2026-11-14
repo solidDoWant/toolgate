@@ -634,9 +634,14 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 	searchMode := searchModeOf(request, e.toolSearch)
 
-	session, err := e.sessions.resolve(request.Context(), identity, searchMode)
+	// Only an initialize that starts a new MCP session may move the session
+	// to another workspace, so nothing changes workspace partway through an
+	// MCP session.
+	newMCPSession := !stateless && mcpSessionID == "" && mcprequest.MethodOf(request, body) == initializeMethod
+
+	session, err := e.sessions.resolve(request.Context(), identity, searchMode, newMCPSession)
 	if errors.Is(err, errWorkspaceChanged) {
-		http.Error(writer, "This session started in a different workspace. Start a new Claude Code session to use another workspace. A new attestation key applies to new sessions only.", http.StatusBadRequest)
+		http.Error(writer, "This session started in a different workspace. It moves to the new workspace when the client reconnects (in Claude Code, reconnect the toolgate server with /mcp).", http.StatusBadRequest)
 
 		return
 	}

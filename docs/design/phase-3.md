@@ -703,7 +703,7 @@ workspaceAttestation:
 
 **Caching.** The pod facts (the key values) are cached with the TokenReview result, keyed by the token's SHA-256, until the token's expiry, capped at 1 h (phase 1). The comparison with the user token runs on every request, because the user token differs per request.
 
-**MCP session binding.** Phase 1 binds an MCP session to (principal, `X-Toolgate-Session`, `X-Toolgate-Workspace` as sent). It now binds to the identity's final workspace and attestation instead of the header as sent. A change gets 404 and the client re-initializes. Then phase 1 row 22 refuses a different workspace on the same toolgate session with 400.
+**MCP session binding.** Phase 1 binds an MCP session to (principal, `X-Toolgate-Session`, `X-Toolgate-Workspace` as sent). It now binds to the identity's final workspace and attestation instead of the header as sent. A change gets 404 and the client re-initializes. That new `initialize` moves the toolgate session to the new workspace: the old session ends with `session.end` (reason `workspace-changed`) and starts again under the same session ID with nothing carried over (phase 1 row 22, `docs/design/workspace-keys.md` §9). Any other request from the new workspace without an MCP session gets 400. So the workspace never changes partway through an MCP session.
 
 **What attested users get.** They are `attested`, so `attested` and `opt-in` environments pass without a grant (`SPEC.md` §6), and rules with `attestation: attested` match them. Their principal, groups, secrets, per-user instances and grants are the user's own, because the principal is the user's `sub`. The reconciler renders with the session snapshot as today, so `${workspace.id}` is `coder/alice/dev`.
 

@@ -332,4 +332,4 @@ If the Kubernetes API server does not answer, or answers with a 5xx status, the 
 
 The gateway keeps the pod labels for a token until the token expires, at most 1 hour. So a label change takes effect when the workload gets a new token.
 
-An MCP session stays bound to its workspace and attestation. If a client starts sending the attestation, or stops sending it, the session gets 404 and then 400. The user then starts a new Claude Code session.
+An MCP session stays bound to its workspace and attestation. If a client starts sending the attestation, or stops sending it, the MCP session gets 404. When the client reconnects (in Claude Code, `/mcp`), it starts a new MCP session. The gateway then ends the old toolgate session with `session.end` (reason `workspace-changed`) and starts it again in the new workspace with `session.start` (`previousWorkspace` in the details). Servers enabled, session additions and approvals of the old session do not apply to the new one.

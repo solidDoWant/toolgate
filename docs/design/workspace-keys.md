@@ -414,7 +414,16 @@ The verifier reads the row on every request that carries an assertion. It keeps 
 
 **Policy.** Nothing changes. `VerifiedWorkspace` returns the workspace, because the identity is `Kind == user` and `attested`. Workspace lists, defaults, session additions and scope entries apply as for any verified workspace. `attested` and `opt-in` environments pass without a grant. Rules match the workspace and `attestation: attested`.
 
-**MCP session binding.** It does not change. Phase 3 §10 binds an MCP session to the identity's final workspace and attestation. A new assertion on each helper run, with a new `jti`, gives the same workspace and attestation, so the binding holds. A request whose attestation fails, or that uses a key with another name, has another workspace or attestation. It gets 404, and then 400 on the same toolgate session, exactly as with the pod and SPIFFE sources. A request that passed authentication before a revocation finishes. That includes a call that waits for an approval, which re-decides policy but does not authenticate again.
+**MCP session binding.** It does not change. Phase 3 §10 binds an MCP session to the identity's final workspace and attestation. A new assertion on each helper run, with a new `jti`, gives the same workspace and attestation, so the binding holds. A request whose attestation fails, or that uses a key with another name, has another workspace or attestation. It gets 404, exactly as with the pod and SPIFFE sources. A request that passed authentication before a revocation finishes. That includes a call that waits for an approval, which re-decides policy but does not authenticate again.
+
+**Moving to another workspace.** A client starts a new MCP session (`initialize`) under a toolgate session ID whose live session has another workspace, for example after `/mcp` reconnects Claude Code once a key is approved, or after a revoke. The gateway then, in one transaction holding the session's row lock:
+
+1. ends the old session with `session.end`, reason `workspace-changed`. As at every end, its session additions, allow entries, pending requests, upstream sessions and MCP sessions end, and its per-session instances stop;
+2. starts it again under the same session ID in the new workspace, with an empty enabled set, and writes `session.start` with `previousWorkspace` in the details.
+
+Nothing of the old session applies to the new one. Its session deny entries stay, as at every end, because they only narrow. Every other request whose workspace differs from its live session's keeps the old answer: a request on an existing MCP session gets 404, and one without an MCP session that is not an `initialize`, or a stateless request, gets 400. So nothing changes workspace partway through an MCP session. The rule is the same in both directions (unverified to attested and back) and for every attestation source.
+
+This grants nothing that a new session ID would not. A new `initialize` already needs valid user credentials, and a verified workspace also needs a valid attestation for it. The binding still stops one toolgate session from mixing two workspaces, because the old session's servers, additions and approvals end before the new workspace applies.
 
 **Resume.** Phase 3 §11 resumes an ended session only from the same workspace and attestation. A replaced key keeps the workspace, so a session resumes after a replacement. After a plain revocation the session comes back unverified, so its set is cleared.
 
@@ -514,6 +523,7 @@ Each row is one state change combined with the work in flight at that time. Each
 | WK22 | `last_used_at` write fails | the request | Logged at warning level. The request stays attested. | `TestWorkspaceKeyVerdicts/touch failure keeps the attestation` (unit) |
 | WK23 | Rolling upgrade from 0.4.11 | key requests and assertions | Turn `workspaceKeys` on only after every replica runs the new version, and the admin docs and the CHANGELOG say so. An old replica with `workspaceAttestation` on sends a key assertion to TokenReview, which gives `attestation token invalid`. An old replica does not approve a `key` request: its approve path runs `ApproveChangeRequest`, which rolls back for a kind other than `change`. | `TestWorkspaceKeysUpgrade/change approval rolls back a key request` (integration: it calls `ApproveChangeRequest` on a `key` request, as a 0.4.11 replica does) |
 | WK24 | Ended key rows deleted after 7 days | assertions of that key | `attestation key unknown` instead of `attestation key revoked`. Still unverified. | `TestWorkspaceKeyCleanup` (integration) |
+| WK25 | Approve, or revoke | a running Claude Code session that reconnects (`/mcp`) | The new `initialize` moves the toolgate session to the new workspace (section 9): `session.end` with `workspace-changed`, then `session.start` with `previousWorkspace`. Enabled servers, session additions and session approvals do not carry over. The old MCP session gets 404, and a request in the old workspace without an MCP session gets 400. | `TestNewMCPSessionMovesToTheNewWorkspace` (integration) |
 
 ## 14. Threat model
 
