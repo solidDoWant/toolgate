@@ -547,9 +547,12 @@ func (e *mcpEndpoint) trackStream(held *mcpSession, cancel context.CancelFunc) f
 // sessions stay live: another replica adopts them.
 func (e *mcpEndpoint) Shutdown() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	for _, stream := range e.streams {
 		stream.cancel()
+	}
+	e.mu.Unlock()
+
+	if e.releaseUpstreams != nil {
+		e.releaseUpstreams()
 	}
 }
