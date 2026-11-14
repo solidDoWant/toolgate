@@ -49,9 +49,10 @@ SELECT * FROM instances WHERE status <> 'stopped' ORDER BY id;
 -- name: SetInstanceStarting :execrows
 -- Records the generation the objects were rendered and applied with, and the
 -- earliest expiresAt of the resolver values the render used (null for none). Also records the rendered
--- health check the instance keeps (null without one).
+-- health check the instance keeps (null without one), and whether the
+-- rendered generation uses an exchanged token.
 UPDATE instances
-SET status = 'starting', generation = @generation, resolved_expires_at = sqlc.narg(resolved_expires_at), health_check = sqlc.narg(health_check), updated_at = now()
+SET status = 'starting', generation = @generation, uses_exchange = @uses_exchange, resolved_expires_at = sqlc.narg(resolved_expires_at), health_check = sqlc.narg(health_check), updated_at = now()
 WHERE id = @id AND status = 'pending';
 
 -- name: SetInstanceReady :execrows

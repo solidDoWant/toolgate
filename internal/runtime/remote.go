@@ -258,7 +258,7 @@ func (s *Starter) startRemote(ctx context.Context, instance db.Instance, templat
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
 	}
 
-	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, nil, time.Time{}, nil); err != nil {
+	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, nil, time.Time{}, nil, nil); err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
 	}
 

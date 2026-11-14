@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"k8s.io/client-go/util/workqueue"
@@ -37,6 +38,16 @@ type Reconciler struct {
 	// Subscribe returns the PostgreSQL notifications and a function that
 	// ends the subscription (store.Listener.Subscribe).
 	Subscribe func() (<-chan store.Event, func())
+	// SubscribeDeliveries returns the payloads of the credentials channel
+	// and a function that ends the subscription
+	// (store.Listener.SubscribeCredentials). Nil means no tokens are
+	// delivered.
+	SubscribeDeliveries func() (<-chan []byte, func())
+	// Receive keeps a delivered token and reports whether it did
+	// (DeliveryReceiver.Receive). A kept token starts a pass.
+	Receive func(ctx context.Context, payload []byte) (bool, error)
+	// Logger logs a delivery that couldn't be checked. Nil discards.
+	Logger *slog.Logger
 	// Fence is checked before every Kubernetes delete.
 	Fence Fence
 	// Client deletes Kubernetes objects.
@@ -77,10 +88,20 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 
 // feed subscribes to the notifications and passes them to the controller,
 // starting with a Missed event: on gaining the Lease, everything counts as
-// changed.
+// changed. It also receives the delivered tokens, which only the leader
+// takes, and starts a pass for each one it keeps.
 func (r *Reconciler) feed(ctx context.Context, notifications chan<- event.TypedGenericEvent[store.Event]) error {
 	events, unsubscribe := r.Subscribe()
 	defer unsubscribe()
+
+	var deliveries <-chan []byte
+
+	if r.SubscribeDeliveries != nil && r.Receive != nil {
+		subscribed, unsubscribeDeliveries := r.SubscribeDeliveries()
+		defer unsubscribeDeliveries()
+
+		deliveries = subscribed
+	}
 
 	next := store.Event{Missed: true}
 
@@ -91,12 +112,36 @@ func (r *Reconciler) feed(ctx context.Context, notifications chan<- event.TypedG
 		case notifications <- event.TypedGenericEvent[store.Event]{Object: next}:
 		}
 
-		select {
-		case <-ctx.Done():
-			return nil
-		case next = <-events:
+		received := false
+		for !received {
+			select {
+			case <-ctx.Done():
+				return nil
+			case next = <-events:
+				received = true
+			case payload := <-deliveries:
+				received = r.receive(ctx, payload)
+				next = store.Event{Kind: store.KindInstance}
+			}
 		}
 	}
+}
+
+// receive hands one delivery to Receive and reports whether it was kept.
+func (r *Reconciler) receive(ctx context.Context, payload []byte) bool {
+	kept, err := r.Receive(ctx, payload)
+	if err != nil {
+		logger := r.Logger
+		if logger == nil {
+			logger = slog.New(slog.DiscardHandler)
+		}
+
+		logger.WarnContext(ctx, "dropped a token delivery that couldn't be checked", slog.String("error", err.Error()))
+
+		return false
+	}
+
+	return kept
 }
 
 func triggersPass(event store.Event) bool {

@@ -25,6 +25,11 @@ const Channel = "toolgate_events"
 // replica listens on it too.
 const RepliesChannel = "toolgate_mcp_replies"
 
+// CredentialsChannel carries exchanged tokens, encrypted, from the replica
+// that ran an exchange to the leader. Every replica listens on it; only the
+// leader acts on what arrives.
+const CredentialsChannel = "toolgate_credentials"
+
 // MaxReplyBytes bounds a payload on RepliesChannel. PostgreSQL refuses a
 // notification of 8000 bytes or more.
 const MaxReplyBytes = 7 << 10
@@ -100,8 +105,10 @@ type Listener struct {
 
 	mu          sync.Mutex
 	subscribers map[*subscriber]struct{}
-	replies     map[chan []byte]struct{}
-	listening   chan struct{}
+	// payloads holds the subscribers of each channel whose payloads are
+	// passed on as they are.
+	payloads  map[string]map[chan []byte]struct{}
+	listening chan struct{}
 }
 
 type subscriber struct {
@@ -117,8 +124,11 @@ func NewListener(pool *pgxpool.Pool, logger *slog.Logger) *Listener {
 		pool:        pool,
 		logger:      logger,
 		subscribers: make(map[*subscriber]struct{}),
-		replies:     make(map[chan []byte]struct{}),
-		listening:   make(chan struct{}),
+		payloads: map[string]map[chan []byte]struct{}{
+			RepliesChannel:     {},
+			CredentialsChannel: {},
+		},
+		listening: make(chan struct{}),
 	}
 }
 
@@ -148,18 +158,30 @@ func (l *Listener) Subscribe() (<-chan Event, func()) {
 // finds the buffer full is dropped: a lost answer leaves its call waiting
 // until the call's own wait ends.
 func (l *Listener) SubscribeReplies() (<-chan []byte, func()) {
-	replies := make(chan []byte, subscriberBuffer)
+	return l.subscribePayloads(RepliesChannel)
+}
+
+// SubscribeCredentials returns a channel of the payloads that arrive on
+// CredentialsChannel and a function that ends the subscription. A payload
+// that finds the buffer full is dropped: nothing retries a lost delivery,
+// and a later request exchanges again.
+func (l *Listener) SubscribeCredentials() (<-chan []byte, func()) {
+	return l.subscribePayloads(CredentialsChannel)
+}
+
+func (l *Listener) subscribePayloads(channel string) (<-chan []byte, func()) {
+	payloads := make(chan []byte, subscriberBuffer)
 
 	l.mu.Lock()
-	l.replies[replies] = struct{}{}
+	l.payloads[channel][payloads] = struct{}{}
 	l.mu.Unlock()
 
 	var once sync.Once
 
-	return replies, func() {
+	return payloads, func() {
 		once.Do(func() {
 			l.mu.Lock()
-			delete(l.replies, replies)
+			delete(l.payloads[channel], payloads)
 			l.mu.Unlock()
 		})
 	}
@@ -216,7 +238,7 @@ func (l *Listener) listen(ctx context.Context, reconnected bool, onListening fun
 	raw := conn.Hijack()
 	defer func() { _ = raw.Close(context.WithoutCancel(ctx)) }()
 
-	for _, channel := range []string{Channel, RepliesChannel} {
+	for _, channel := range []string{Channel, RepliesChannel, CredentialsChannel} {
 		if _, err := raw.Exec(ctx, "LISTEN "+pgx.Identifier{channel}.Sanitize()); err != nil {
 			return fmt.Errorf("listen on %s: %w", channel, err)
 		}
@@ -234,8 +256,8 @@ func (l *Listener) listen(ctx context.Context, reconnected bool, onListening fun
 			return fmt.Errorf("wait for notification: %w", err)
 		}
 
-		if notification.Channel == RepliesChannel {
-			l.broadcastReply([]byte(notification.Payload))
+		if notification.Channel != Channel {
+			l.broadcastPayload(notification.Channel, []byte(notification.Payload))
 
 			continue
 		}
@@ -260,13 +282,13 @@ func (l *Listener) broadcast(event Event) {
 	}
 }
 
-func (l *Listener) broadcastReply(payload []byte) {
+func (l *Listener) broadcastPayload(channel string, payload []byte) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	for replies := range l.replies {
+	for subscriber := range l.payloads[channel] {
 		select {
-		case replies <- payload:
+		case subscriber <- payload:
 		default:
 		}
 	}

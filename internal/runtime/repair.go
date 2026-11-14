@@ -308,7 +308,7 @@ func (r *Repairer) render(ctx context.Context, instance db.Instance, template *v
 		return nil, err
 	}
 
-	result, err := r.Starter.render(ctx, instance, template, identity)
+	result, err := r.Starter.render(ctx, instance, template, identity, nil)
 	if err != nil {
 		return nil, fmt.Errorf("reapply instance %s: render: %w", instance.ID, err)
 	}

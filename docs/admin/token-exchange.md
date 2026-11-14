@@ -58,6 +58,12 @@ env:
 
 The user must pass the policy bindings of the target application. If the user does not, Authentik refuses the exchange with `invalid_grant`, and the instance does not start.
 
+## Start
+
+An instance that uses `${exchange:…}` starts only when the leader replica holds an exchanged token for each exchange in the template. The request of the user sends the token to the leader. If no token arrives within the `startTimeout` of the template, the instance fails with this reason: "No exchanged token for `temporal` arrived within 5m0s. Enable `<server>` again to retry." If an exchange fails, the instance fails with the reason of the exchange.
+
+Only a signed-in user has a token to exchange. If the session that starts the instance belongs to a service account or a SPIFFE workload, the instance fails at once.
+
 ## Lifetime
 
 The `access_token_validity` of the target provider sets the lifetime of the token. Use `minutes=10` to `minutes=30`. A shorter value stops idle instances sooner. With less than `minutes=4`, less than 2 minutes remain between the refresh and the expiry, which is close to the delay of the kubelet. With less than 2 minutes, every exchange fails.

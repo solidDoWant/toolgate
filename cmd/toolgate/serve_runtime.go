@@ -29,9 +29,11 @@ import (
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/catalog"
 	"github.com/solidDoWant/toolgate/internal/config"
+	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/runtime"
+	"github.com/solidDoWant/toolgate/internal/secrets"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/testtime"
@@ -136,6 +138,24 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		Subscribe: listener.Subscribe,
 		Fence:     lease,
 		Client:    mgr.GetClient(),
+		Logger:    logger,
+	}
+
+	// Every replica listens on the credentials channel; only the leader's
+	// reconciler subscribes and takes the delivered tokens.
+	deliveries := &credentials.DeliveredTokens{}
+
+	if len(cfg.TokenExchanges) > 0 {
+		cipher, err := secrets.LoadKeyset(cfg.SecretsKeysetFile)
+		if err != nil {
+			return nil, err
+		}
+
+		receiver := &runtime.DeliveryReceiver{
+			Cipher: cipher, Store: runtime.PostgresDeliveryStore{Pool: pool}, Tokens: deliveries, Logger: logger,
+		}
+		reconciler.SubscribeDeliveries = listener.SubscribeCredentials
+		reconciler.Receive = receiver.Receive
 	}
 
 	resolverConfigs := make([]runtime.ResolverConfig, 0, len(cfg.Resolvers))
@@ -247,6 +267,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		GatewayPodLabels: cfg.PodLabels(),
 		TracerProvider:   options.tracerProvider,
 		Logger:           logger,
+		Deliveries:       deliveries,
 
 		GatewayVersion:   version.Get(),
 		OmitOwnerDetails: cfg.InstanceOmitOwnerDetails,

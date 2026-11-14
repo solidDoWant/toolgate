@@ -759,12 +759,13 @@ func (q *Queries) SetInstanceSecretsUsed(ctx context.Context, arg SetInstanceSec
 
 const setInstanceStarting = `-- name: SetInstanceStarting :execrows
 UPDATE instances
-SET status = 'starting', generation = $1, resolved_expires_at = $2, health_check = $3, updated_at = now()
-WHERE id = $4 AND status = 'pending'
+SET status = 'starting', generation = $1, uses_exchange = $2, resolved_expires_at = $3, health_check = $4, updated_at = now()
+WHERE id = $5 AND status = 'pending'
 `
 
 type SetInstanceStartingParams struct {
 	Generation        int64
+	UsesExchange      bool
 	ResolvedExpiresAt pgtype.Timestamptz
 	HealthCheck       []byte
 	ID                string
@@ -772,10 +773,12 @@ type SetInstanceStartingParams struct {
 
 // Records the generation the objects were rendered and applied with, and the
 // earliest expiresAt of the resolver values the render used (null for none). Also records the rendered
-// health check the instance keeps (null without one).
+// health check the instance keeps (null without one), and whether the
+// rendered generation uses an exchanged token.
 func (q *Queries) SetInstanceStarting(ctx context.Context, arg SetInstanceStartingParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setInstanceStarting,
 		arg.Generation,
+		arg.UsesExchange,
 		arg.ResolvedExpiresAt,
 		arg.HealthCheck,
 		arg.ID,
