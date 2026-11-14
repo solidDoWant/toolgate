@@ -109,6 +109,33 @@ type Instance struct {
 	UnhealthyReason    string
 	Repairs            []pgtype.Timestamptz
 	McpRevision        string
+	UsesExchange       bool
+	CredentialExpired  bool
+}
+
+type InstanceExchange struct {
+	InstanceID   string
+	Exchange     string
+	Targets      []byte
+	IssuedAt     pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+	RefreshAfter pgtype.Timestamptz
+	WantedSince  pgtype.Timestamptz
+	ClaimedAt    pgtype.Timestamptz
+	LastError    pgtype.Text
+	LastErrorAt  pgtype.Timestamptz
+}
+
+type InstanceTemplateSecret struct {
+	InstanceID      string
+	TargetSecret    string
+	TargetKey       string
+	TargetField     string
+	SourceNamespace string
+	SourceName      string
+	SourceKey       string
+	SourceVersion   string
+	LastError       pgtype.Text
 }
 
 type McpSession struct {
