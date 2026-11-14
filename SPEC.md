@@ -286,6 +286,7 @@ In globs, `*` matches any run of characters, including `/`. A template that does
 - `rule.change`, `secret.set`, `secret.delete`;
 - `grant.*`, `approval.*`, `block.*`;
 - `instance.health` and `instance.reapply`, with no payload.
+- `credential.exchange`, one for each token exchange: the instance, the exchange, `start` or `refresh`, the outcome, and the error code of a failure. It never holds a token.
 
 Every event carries principal, workspace, session, attestation, server, tool, trace ID and request ID. Tool arguments and results are not logged to stdout. They are stored only when `audit.payloads` is on. Results are also stored in the tool-result cache, for tools whose template turns it on, until the entry expires (`docs/design/tool-result-cache.md`). Payloads over 64 KiB go to S3 (with object lock when the bucket supports it), referenced from the row. Rows are kept for `audit.retention` (default 90 days) and deleted in batches. Secrets and tokens are never logged.
 

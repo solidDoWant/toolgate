@@ -36,10 +36,10 @@ SELECT * FROM instances WHERE id = @id;
 -- name: InsertInstance :one
 INSERT INTO instances (
     id, template_ns, template_name, template_uid, generation, scope, scope_key,
-    owner_principal, render_session, namespace, trace_context, attempt_started_at
+    owner_principal, render_session, namespace, trace_context, attempt_started_at, uses_exchange
 ) VALUES (
     @id, @template_ns, @template_name, @template_uid, @generation, @scope, @scope_key,
-    @owner_principal, @render_session, @namespace, @trace_context, now()
+    @owner_principal, @render_session, @namespace, @trace_context, now(), @uses_exchange
 )
 RETURNING *;
 

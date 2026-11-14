@@ -145,6 +145,12 @@ func NewExchanger(entry config.TokenExchange, metrics *Metrics, logger *slog.Log
 	}, nil
 }
 
+// Name is the configured name of the exchange.
+func (e *Exchanger) Name() string { return e.entry.Name }
+
+// Timeout bounds one exchange.
+func (e *Exchanger) Timeout() time.Duration { return e.entry.ExchangeTimeout() }
+
 func (e *Exchanger) now() time.Time {
 	if e.Now != nil {
 		return e.Now()

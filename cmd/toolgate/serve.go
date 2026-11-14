@@ -15,6 +15,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+
+	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/resultcache"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -243,6 +246,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	resultCache := resultcache.NewPostgres(server.Database(), cfg.ToolResultCacheMaxEntryBytes, int64(cfg.ToolResultCacheMaxTemplateBytes))
 
+	exchangers, credentialsCipher, err := tokenExchangers(cfg, server.RegisterMetrics, logger)
+	if err != nil {
+		logger.Error("gateway failed to start", "error", err)
+
+		return 1
+	}
+
 	mcpHandler := gateway.NewMCPHandler(gateway.MCPOptions{
 		ResultCache:   resultCache,
 		Metrics:       metrics,
@@ -269,6 +279,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 		ToolSearchSessionStarted: embeddingsDemand,
 		Secrets:                  runtime.BrokerSecrets(userSecrets(broker)),
+		TokenExchanges:           exchangers,
+		CredentialsCipher:        credentialsCipher,
 	})
 	server.Handle(gateway.MCPPath, authenticator.Middleware(mcpHandler, true))
 	// The GET streams end when shutdown starts, so their clients reconnect
@@ -706,4 +718,37 @@ func spiffeOptions(cfg config.Config, logger *slog.Logger) *auth.SPIFFEOptions {
 	}
 
 	return &auth.SPIFFEOptions{TrustDomains: domains, Logger: logger}
+}
+
+// tokenExchangers returns the exchanger of each configured token exchange
+// and the cipher that seals their tokens for the leader. With no exchange
+// configured it returns neither.
+func tokenExchangers(cfg config.Config, registerMetrics func(...prometheus.Collector) error, logger *slog.Logger,
+) ([]*credentials.Exchanger, *secrets.Cipher, error) {
+	if len(cfg.TokenExchanges) == 0 {
+		return nil, nil, nil
+	}
+
+	cipher, err := secrets.LoadKeyset(cfg.SecretsKeysetFile)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	metrics := credentials.NewMetrics()
+	if err := registerMetrics(metrics.Collectors()...); err != nil {
+		return nil, nil, err
+	}
+
+	exchangers := make([]*credentials.Exchanger, 0, len(cfg.TokenExchanges))
+
+	for _, entry := range cfg.TokenExchanges {
+		exchanger, err := credentials.NewExchanger(entry, metrics, logger)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		exchangers = append(exchangers, exchanger)
+	}
+
+	return exchangers, cipher, nil
 }

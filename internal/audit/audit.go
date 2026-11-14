@@ -37,9 +37,12 @@ const (
 	TypeSecretSet       = "secret.set"
 	TypeSecretDelete    = "secret.delete"
 	// TypeVolumeDelete is the decision to delete a persistent volume.
-	TypeVolumeDelete    = "volume.delete"
-	logMessage          = "audit"
-	redactedPlaceholder = "[REDACTED]"
+	TypeVolumeDelete = "volume.delete"
+	// TypeCredentialExchange is one token exchange a replica ran for an
+	// instance, successful or not.
+	TypeCredentialExchange = "credential.exchange"
+	logMessage             = "audit"
+	redactedPlaceholder    = "[REDACTED]"
 )
 
 // Event is one audited action. Fields that don't apply to the action stay
