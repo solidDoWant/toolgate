@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
-	"strings"
+	"maps"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/policy"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -50,6 +52,9 @@ type StopDecider struct {
 	// Templates must hold every watched template before the first pass.
 	Templates Templates
 	Log       *slog.Logger
+	// AuditOutput receives the instance.stop events as JSON lines. Nil
+	// discards them; the rows are still written.
+	AuditOutput io.Writer
 	// Now returns the current time, used for idle stops. Nil means
 	// time.Now.
 	Now func() time.Time
@@ -75,8 +80,8 @@ func (d *StopDecider) Decide(ctx context.Context, instance db.Instance) (db.Inst
 		return instance, nil
 	}
 
-	reason, err := d.stopReason(ctx, db.New(d.Pool), instance)
-	if err != nil || reason == "" {
+	cause, err := d.stopReason(ctx, db.New(d.Pool), instance)
+	if err != nil || cause.Code == "" {
 		return instance, err
 	}
 
@@ -105,17 +110,21 @@ func (d *StopDecider) Decide(ctx context.Context, instance db.Instance) (db.Inst
 		return current, nil
 	}
 
-	reason, err = d.stopReason(ctx, queries, current)
-	if err != nil || reason == "" {
+	cause, err = d.stopReason(ctx, queries, current)
+	if err != nil || cause.Code == "" {
 		return current, err
 	}
 
-	changed, err := setDesiredStopped(ctx, queries, current.ID, reason)
+	changed, err := setDesiredStopped(ctx, queries, current.ID, cause)
 	if err != nil {
 		return current, fmt.Errorf("stop instance %s: %w", current.ID, err)
 	}
 
 	if changed == 1 {
+		if err := recordInstanceStop(ctx, queries, d.AuditOutput, current, cause.Code, nil); err != nil {
+			return current, fmt.Errorf("stop instance %s: %w", current.ID, err)
+		}
+
 		if err := store.Notify(ctx, tx, store.KindInstance, current.ID); err != nil {
 			return current, err
 		}
@@ -126,48 +135,103 @@ func (d *StopDecider) Decide(ctx context.Context, instance db.Instance) (db.Inst
 	}
 
 	d.Log.InfoContext(ctx, "stopping instance", slog.String("instance", current.ID),
-		slog.String("template", current.TemplateNs+"/"+current.TemplateName), slog.String("why", reason))
+		slog.String("template", current.TemplateNs+"/"+current.TemplateName), slog.String("why", cause.Why), slog.String("reason", cause.Code))
 
 	current.Desired = desiredStopped
 
 	return current, nil
 }
 
-// exchangeExpiredReasonPrefix starts the stop reason of an instance whose
-// exchanged token expired. Its stop write also marks the row.
-const exchangeExpiredReasonPrefix = "its exchanged token "
+// The reasons an instance stops, as written to its instance.stop event. The
+// replacement reasons (restart, resolver-expiry, health-check and
+// template-update) are in replace.go.
+const (
+	StopReasonTemplateDeleted      = "template-deleted"
+	StopReasonTemplateScopeChanged = "template-scope-changed"
+	StopReasonAccessLost           = "access-lost"
+	StopReasonCredentialExpired    = "credential-expired"
+	StopReasonSessionEnded         = "session-ended"
+	StopReasonDisabled             = "disabled"
+	StopReasonIdle                 = "idle"
+)
 
-// setDesiredStopped writes desired = stopped for the stop reason, marking
-// the row credential_expired when an exchanged token expired.
-func setDesiredStopped(ctx context.Context, queries *db.Queries, id, reason string) (int64, error) {
-	if strings.HasPrefix(reason, exchangeExpiredReasonPrefix) {
+// stopCause is why an instance stops: the fixed code for the audit event and
+// a sentence for the log.
+type stopCause struct {
+	Code string
+	Why  string
+}
+
+// setDesiredStopped writes desired = stopped for the cause, marking the row
+// credential_expired when an exchanged token expired.
+func setDesiredStopped(ctx context.Context, queries *db.Queries, id string, cause stopCause) (int64, error) {
+	if cause.Code == StopReasonCredentialExpired {
 		return queries.SetInstanceDesiredStoppedExpired(ctx, id)
 	}
 
 	return queries.SetInstanceDesiredStopped(ctx, id)
 }
 
+// RecordInstanceStart writes the instance.start event for a new instance
+// row, in the transaction that inserts it, so it comes before any
+// instance.ready or instance.fail of the instance.
+func RecordInstanceStart(ctx context.Context, queries *db.Queries, output io.Writer, instance db.Instance) error {
+	if output == nil {
+		output = io.Discard
+	}
+
+	return audit.NewRecorder(output, queries).Record(ctx, audit.Event{
+		Type:   audit.TypeInstanceStart,
+		Server: instance.TemplateName,
+		Details: map[string]any{
+			"instance": instance.ID,
+			"template": instance.TemplateNs + "/" + instance.TemplateName,
+			"scope":    instance.Scope,
+			"owner":    instance.OwnerPrincipal,
+		},
+	})
+}
+
+// recordInstanceStop writes the instance.stop event in the caller's
+// transaction. extra adds fields to the details.
+func recordInstanceStop(ctx context.Context, queries *db.Queries, output io.Writer, instance db.Instance,
+	reason string, extra map[string]any,
+) error {
+	if output == nil {
+		output = io.Discard
+	}
+
+	details := map[string]any{"reason": reason, "instance": instance.ID, "owner": instance.OwnerPrincipal}
+	maps.Copy(details, extra)
+
+	return audit.NewRecorder(output, queries).Record(ctx, audit.Event{
+		Type:    audit.TypeInstanceStop,
+		Server:  instance.TemplateName,
+		Details: details,
+	})
+}
+
 // stopReason returns why the instance must stop, or "" if it keeps running.
-func (d *StopDecider) stopReason(ctx context.Context, queries *db.Queries, instance db.Instance) (string, error) {
+func (d *StopDecider) stopReason(ctx context.Context, queries *db.Queries, instance db.Instance) (stopCause, error) {
 	template, found := d.Templates.Running(types.NamespacedName{Namespace: instance.TemplateNs, Name: instance.TemplateName})
 
 	switch {
 	case !found:
-		return "the template was deleted", nil
+		return stopCause{StopReasonTemplateDeleted, "the template was deleted"}, nil
 	case string(template.UID) != instance.TemplateUid:
-		return "the template was deleted and created again", nil
+		return stopCause{StopReasonTemplateDeleted, "the template was deleted and created again"}, nil
 	case template.Spec.Scope != instance.Scope:
-		return "the template's scope changed", nil
+		return stopCause{StopReasonTemplateScopeChanged, "the template's scope changed"}, nil
 	}
 
 	if instance.OwnerPrincipal != "" {
 		allowed, err := ownerHasAccess(ctx, queries, instance.OwnerPrincipal, template.Spec.Access)
 		if err != nil {
-			return "", err
+			return stopCause{}, err
 		}
 
 		if !allowed {
-			return "the owner no longer has access to the template", nil
+			return stopCause{StopReasonAccessLost, "the owner no longer has access to the template"}, nil
 		}
 	}
 
@@ -175,11 +239,11 @@ func (d *StopDecider) stopReason(ctx context.Context, queries *db.Queries, insta
 		InstanceID: instance.ID, Now: pgtype.Timestamptz{Time: d.now(), Valid: true},
 	})
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return "", fmt.Errorf("read exchanged tokens of instance %s: %w", instance.ID, err)
+		return stopCause{}, fmt.Errorf("read exchanged tokens of instance %s: %w", instance.ID, err)
 	}
 
 	if err == nil {
-		return exchangeExpiredReasonPrefix + "`" + expired + "` expired", nil
+		return stopCause{StopReasonCredentialExpired, "its exchanged token `" + expired + "` expired"}, nil
 	}
 
 	enablers, err := queries.CountLiveEnablers(ctx, db.CountLiveEnablersParams{
@@ -187,15 +251,15 @@ func (d *StopDecider) stopReason(ctx context.Context, queries *db.Queries, insta
 		Scope: instance.Scope, OwnerPrincipal: instance.OwnerPrincipal, ScopeKey: instance.ScopeKey,
 	})
 	if err != nil {
-		return "", fmt.Errorf("count sessions enabling instance %s: %w", instance.ID, err)
+		return stopCause{}, fmt.Errorf("count sessions enabling instance %s: %w", instance.ID, err)
 	}
 
 	if enablers > 0 {
-		return "", nil
+		return stopCause{}, nil
 	}
 
 	if instance.Scope == scopePerSession {
-		return "its session no longer has it enabled", nil
+		return d.perSessionCause(ctx, queries, instance)
 	}
 
 	var idleStop time.Duration
@@ -204,7 +268,7 @@ func (d *StopDecider) stopReason(ctx context.Context, queries *db.Queries, insta
 	}
 
 	if instance.Scope == scopeShared && idleStop == 0 {
-		return "", nil
+		return stopCause{}, nil
 	}
 
 	lastUsed := instance.LastUsedAt
@@ -213,10 +277,25 @@ func (d *StopDecider) stopReason(ctx context.Context, queries *db.Queries, insta
 	}
 
 	if lastUsed.Valid && d.now().Sub(lastUsed.Time) > idleStop {
-		return "no session has it enabled and it is idle", nil
+		return stopCause{StopReasonIdle, "no session has it enabled and it is idle"}, nil
 	}
 
-	return "", nil
+	return stopCause{}, nil
+}
+
+// perSessionCause tells an ended session from a server its live session
+// disabled, for a per-session instance no session enables any more.
+func (d *StopDecider) perSessionCause(ctx context.Context, queries *db.Queries, instance db.Instance) (stopCause, error) {
+	live, err := queries.CountLiveSessionsOfScopeKey(ctx, instance.ScopeKey)
+	if err != nil {
+		return stopCause{}, fmt.Errorf("read the session of instance %s: %w", instance.ID, err)
+	}
+
+	if live > 0 {
+		return stopCause{StopReasonDisabled, "its session disabled it"}, nil
+	}
+
+	return stopCause{StopReasonSessionEnded, "its session ended"}, nil
 }
 
 // ownerHasAccess judges access from the principal's most recently seen

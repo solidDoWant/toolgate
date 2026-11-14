@@ -21,6 +21,28 @@ A request for an ended session within that time resumes it. If the request has t
 
 An invalid template does not stop its instances. They continue on the last valid generation.
 
+## Audit events for starts and stops
+
+Every new instance writes an `instance.start` audit event, before its `instance.ready` or `instance.fail` event. It has the instance, template, scope and owner. A replacement instance writes one too.
+
+Every stop writes an `instance.stop` audit event in the same database change that sets the instance to stop. Its `reason` is one of these:
+
+| Reason | Meaning |
+| --- | --- |
+| `idle` | No session has the server enabled, and it had no calls for `idleStop`. |
+| `session-ended` | The session of a `per-session` instance ended. |
+| `disabled` | The live session of a `per-session` instance disabled the server. |
+| `access-lost` | The `access` of the template no longer includes the owner. |
+| `credential-expired` | An exchanged token of the instance expired. |
+| `template-deleted` | The template was deleted, or deleted and created again. |
+| `template-scope-changed` | The `scope` of the template changed. |
+| `restart` | An admin or owner asked for a restart. |
+| `template-update` | The template changed and the instance was replaced. |
+| `health-check` | The instance was replaced after failed health checks. |
+| `resolver-expiry` | The instance was replaced because a resolver value was about to expire. |
+
+An instance that fails writes `instance.fail`, not `instance.stop`.
+
 ## Updating outdated instances
 
 An instance that started from an older version of its template is outdated. By default, an outdated instance keeps running. It is replaced only when a user or admin restarts it in the web UI, or when it stops. The template field `updatePolicy` changes this:

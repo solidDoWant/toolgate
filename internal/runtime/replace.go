@@ -178,18 +178,22 @@ func (r *Replacer) replace(ctx context.Context, instance db.Instance, reason, us
 			return nil
 		}
 
-		stopReason, err := r.Stops.stopReason(ctx, queries, current)
+		cause, err := r.Stops.stopReason(ctx, queries, current)
 		if err != nil {
 			return err
 		}
 
-		if _, err := setDesiredStopped(ctx, queries, current.ID, stopReason); err != nil {
+		if _, err := setDesiredStopped(ctx, queries, current.ID, cause); err != nil {
 			return err
 		}
 
-		if stopReason != "" {
+		if cause.Code != "" {
+			if err := recordInstanceStop(ctx, queries, r.AuditOutput, current, cause.Code, nil); err != nil {
+				return err
+			}
+
 			r.Log.InfoContext(ctx, "stopping instance instead of replacing it", slog.String("instance", current.ID),
-				slog.String("template", current.TemplateNs+"/"+current.TemplateName), slog.String("why", stopReason))
+				slog.String("template", current.TemplateNs+"/"+current.TemplateName), slog.String("why", cause.Why))
 
 			return store.Notify(ctx, tx, store.KindInstance, current.ID)
 		}
@@ -221,6 +225,10 @@ func (r *Replacer) replace(ctx context.Context, instance db.Instance, reason, us
 			},
 		})
 		if err != nil {
+			return err
+		}
+
+		if err := RecordInstanceStart(ctx, queries, output, replacement); err != nil {
 			return err
 		}
 

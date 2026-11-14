@@ -287,6 +287,20 @@ func (f *stopFixture) requireTornDown(t *testing.T, instance db.Instance) {
 	require.Equal(t, "stopped", f.get(t, instance.ID).Status)
 }
 
+// requireOneStopEvent checks that the instance has exactly one instance.stop
+// event, with the reason.
+func (f *stopFixture) requireOneStopEvent(t *testing.T, instance db.Instance, reason string) {
+	t.Helper()
+
+	rows, err := f.pool.Query(t.Context(),
+		"SELECT details->>'reason' FROM audit_events WHERE type = 'instance.stop' AND details->>'instance' = $1", instance.ID)
+	require.NoError(t, err)
+
+	reasons, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	require.NoError(t, err)
+	require.Equal(t, []string{reason}, reasons)
+}
+
 func TestStopDecisions(t *testing.T) {
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
@@ -303,6 +317,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.catalog.Delete(types.NamespacedName{Namespace: templateNamespace, Name: template.Name})
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+		fixture.requireOneStopEvent(t, instance, "template-deleted")
 	})
 
 	t.Run("a template deleted and created again stops the old instance", func(t *testing.T) {
@@ -316,6 +331,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.catalog.Set(recreated, nil)
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+		fixture.requireOneStopEvent(t, instance, "template-deleted")
 	})
 
 	t.Run("a scope change stops the instance and keeps the session's enable", func(t *testing.T) {
@@ -333,6 +349,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.catalog.Set(rescoped, nil)
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+		fixture.requireOneStopEvent(t, instance, "template-scope-changed")
 
 		enabled, err := fixture.queries.ListSessionServers(t.Context(), session.ID)
 		require.NoError(t, err)
@@ -352,6 +369,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.session(t, "access-user", "s2", "")
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+		fixture.requireOneStopEvent(t, instance, "access-lost")
 	})
 
 	t.Run("an attested user's snapshot is judged as a user whatever its principal looks like", func(t *testing.T) {
@@ -368,6 +386,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.pass(t)
 		fixture.requireRunning(t, kept)
 		fixture.requireTornDown(t, stopped)
+		fixture.requireOneStopEvent(t, stopped, "access-lost")
 	})
 
 	t.Run("a per-session instance stops once its session has ended, and the enabled rows stay", func(t *testing.T) {
@@ -388,10 +407,21 @@ func TestStopDecisions(t *testing.T) {
 		require.NoError(t, err)
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+		fixture.requireOneStopEvent(t, instance, "session-ended")
 
 		enabled, err := fixture.queries.ListSessionServers(t.Context(), session.ID)
 		require.NoError(t, err)
 		require.Len(t, enabled, 1, "ending a session keeps its enabled rows")
+	})
+
+	t.Run("a per-session instance stops as disabled while its session lives on", func(t *testing.T) {
+		template := fixture.template("per-session-disabled", "per-session", 0, everyone)
+		fixture.session(t, "disable-user", "s1", "", "staff")
+		instance := fixture.instance(t, template, "session:disable-user:s1", "disable-user", "ready")
+
+		fixture.pass(t)
+		fixture.requireTornDown(t, instance)
+		fixture.requireOneStopEvent(t, instance, "disabled")
 	})
 
 	t.Run("a per-user instance stops once no session of its owner enables it and it is idle", func(t *testing.T) {
@@ -419,6 +449,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.setNow(lastUsed.Add(10*time.Minute + time.Second))
 		fixture.pass(t)
 		fixture.requireTornDown(t, instance)
+		fixture.requireOneStopEvent(t, instance, "idle")
 	})
 
 	t.Run("a shared instance stops when idle unless idleStop is 0", func(t *testing.T) {
@@ -436,6 +467,7 @@ func TestStopDecisions(t *testing.T) {
 		fixture.pass(t)
 		fixture.requireRunning(t, keeps)
 		fixture.requireTornDown(t, stops)
+		fixture.requireOneStopEvent(t, stops, "idle")
 	})
 
 	t.Run("a stop re-checks under the lock and sees an enable that committed first", func(t *testing.T) {

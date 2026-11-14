@@ -144,3 +144,8 @@ RETURNING ss.template_name;
 -- name: CountOpenSessionsByAttestation :many
 -- Counts sessions that have not ended, by attestation and tool search mode, for the open-session gauge.
 SELECT attestation, tool_search, count(*) AS total FROM sessions WHERE ended_at IS NULL GROUP BY attestation, tool_search;
+
+-- name: CountLiveSessionsOfScopeKey :one
+-- Counts the live sessions a per-session scope key names.
+SELECT count(*) FROM sessions
+WHERE ended_at IS NULL AND 'session:' || principal || ':' || session_id = @scope_key::text;

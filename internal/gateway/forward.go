@@ -900,7 +900,7 @@ func (m *metaTools) startForCall(ctx context.Context, current requestContext, te
 				return err
 			}
 
-			instance, err = insertInstance(ctx, queries, current, template, key, m.sharedNamespace)
+			instance, err = m.insertInstance(ctx, queries, current, template, key)
 			if err != nil {
 				return err
 			}

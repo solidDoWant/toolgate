@@ -249,7 +249,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 
 	approvalExpirer := &runtime.ApprovalExpirer{Pool: pool, AuditOutput: options.auditOutput}
 
-	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger}
+	stops := &runtime.StopDecider{Pool: pool, Templates: options.catalog, Log: logger, AuditOutput: options.auditOutput}
 	replacer := &runtime.Replacer{Pool: pool, Stops: stops, AuditOutput: options.auditOutput, Log: logger, Metrics: metrics}
 
 	startStore := runtime.PostgresStartStore{

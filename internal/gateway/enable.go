@@ -437,7 +437,7 @@ func (m *metaTools) liveOrNewInstance(ctx context.Context, queries *db.Queries, 
 			return db.Instance{}, err
 		}
 
-		instance, err = insertInstance(ctx, queries, current, template, key, m.sharedNamespace)
+		instance, err = m.insertInstance(ctx, queries, current, template, key)
 		if err != nil {
 			return db.Instance{}, err
 		}
@@ -513,7 +513,7 @@ func (m *metaTools) retryInstance(ctx context.Context, queries *db.Queries, curr
 		return db.Instance{}, err
 	}
 
-	return insertInstance(ctx, queries, current, template, key, m.sharedNamespace)
+	return m.insertInstance(ctx, queries, current, template, key)
 }
 
 var errTooManyServers = fmt.Errorf("This session already has %d servers enabled. Disable one with `%s` first.", MaxEnabledServers, ToolDisableServer) //nolint:staticcheck // A sentence for the model.
@@ -569,7 +569,9 @@ func (m *metaTools) checkInstanceLimits(ctx context.Context, queries *db.Queries
 	return nil
 }
 
-func insertInstance(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate, key, sharedNamespace string) (db.Instance, error) {
+func (m *metaTools) insertInstance(ctx context.Context, queries *db.Queries, current requestContext, template *v1alpha1.MCPServerTemplate, key string) (db.Instance, error) {
+	sharedNamespace := m.sharedNamespace
+
 	generated, err := uuid.NewV7()
 	if err != nil {
 		return db.Instance{}, fmt.Errorf("instance ID: %w", err)
@@ -614,6 +616,10 @@ func insertInstance(ctx context.Context, queries *db.Queries, current requestCon
 	}
 
 	if err := insertExchangeRows(ctx, queries, template, instance.ID); err != nil {
+		return db.Instance{}, err
+	}
+
+	if err := runtime.RecordInstanceStart(ctx, queries, m.auditOutput, instance); err != nil {
 		return db.Instance{}, err
 	}
 
