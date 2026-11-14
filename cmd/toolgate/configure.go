@@ -159,7 +159,7 @@ func configure(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if fingerprint != "" {
-		_, _ = fmt.Fprintf(stdout, "Saved the settings in %s. The key's fingerprint is %s. New Claude Code sessions use it. A running session moves to the key's workspace when it reconnects (/mcp).\n", dir, fingerprint)
+		_, _ = fmt.Fprintf(stdout, "Saved the settings in %s. The key's fingerprint is %s. Claude Code uses it when it next connects: run /mcp to reconnect a running session, or start a new one.\n", dir, fingerprint)
 
 		return 0
 	}

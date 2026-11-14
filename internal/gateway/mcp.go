@@ -641,7 +641,7 @@ func (e *mcpEndpoint) ServeHTTP(writer http.ResponseWriter, request *http.Reques
 
 	session, err := e.sessions.resolve(request.Context(), identity, searchMode, newMCPSession)
 	if errors.Is(err, errWorkspaceChanged) {
-		http.Error(writer, "This session started in a different workspace. It moves to the new workspace when the client reconnects (in Claude Code, reconnect the toolgate server with /mcp).", http.StatusBadRequest)
+		http.Error(writer, "This MCP session started in a different workspace. Reconnect (`/mcp` in Claude Code) to continue in the new workspace.", http.StatusBadRequest)
 
 		return
 	}

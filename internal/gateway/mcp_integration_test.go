@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -478,6 +479,9 @@ func TestSessions(t *testing.T) {
 		second.workspace = "repo-b"
 		response := fixture.post(t, second, "", listToolsMessage())
 		assert.Equal(t, http.StatusBadRequest, response.StatusCode)
+		body, err := io.ReadAll(response.Body)
+		require.NoError(t, err)
+		assert.Equal(t, "This MCP session started in a different workspace. Reconnect (`/mcp` in Claude Code) to continue in the new workspace.\n", string(body))
 
 		assert.Equal(t, "claimed/repo-a", fixture.sessionRow(t, "alice", "session-1").Workspace)
 	})

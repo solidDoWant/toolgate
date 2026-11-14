@@ -27,7 +27,7 @@ func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, path, settings.AttestationKeyFile)
 		assert.Contains(t, run.stdout, "The key is now in use")
-		assert.Contains(t, run.stdout, "A running session moves to the key's workspace when it reconnects")
+		assert.Contains(t, run.stdout, "Claude Code uses it when it next connects: run /mcp to reconnect a running session, or start a new one.")
 
 		code, stdout, stderr := runCLI(t, "", "headers")
 		require.Equal(t, 0, code, stderr)
