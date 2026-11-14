@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.4.13
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release moves token exchanges from a chart value into a new `TokenExchange` resource. It also adds an opt-in for the template secrets namespace and fixes workspace keys and the audit log. This release has one breaking change, so read the upgrade notes before you upgrade.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.13`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.13`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+- Breaking change: if you set the chart value `config.tokenExchanges`, move each exchange to a `TokenExchange` resource before you upgrade. The chart no longer has this value, and it refuses to render when you set it. The reason: catalog authors can now define exchanges in Git next to their templates, and the gateway picks them up without a restart. To migrate each old entry: ([#758](https://github.com/solidDoWant/toolgate/pull/758), [#759](https://github.com/solidDoWant/toolgate/pull/759))
+  1. Create a `TokenExchange` with the same name in the catalog namespace of the templates that use it. Copy `tokenURL`, `clientID`, `audience`, `scope`, `requestedTokenType` and `timeout`.
+  2. Put the client secret in a Secret in `config.templateSecretsNamespace`, and point `clientSecretRef` at it.
+  3. If the entry had a `caFile`, set the chart value `config.tokenExchange.caFile` to it. One file now applies to every exchange.
+  4. Make sure that each `tokenURL` is on the new chart value `config.tokenExchange.allowedTokenURLs`. If you do not set this list, it holds the token endpoints of the OIDC issuers that users sign in with.
+  5. Remove `config.tokenExchanges` from your values. Then upgrade.
+- If you install the CRDs yourself (`config.crds.enabled: false`), install the new `TokenExchange` CRD before you upgrade. With the default, `helm upgrade` installs it. ([#758](https://github.com/solidDoWant/toolgate/pull/758))
+- Do not set `config.templateSecretsNamespace` to the namespace of the gateway unless you trust every template author. The new chart value `config.templateSecrets.allowGatewayNamespace` (default `false`) allows it. When it is on, anyone who can write a template can read the Secrets of the gateway, for example its keyset, its database client certificates and its OIDC client secrets. ([#747](https://github.com/solidDoWant/toolgate/pull/747))
+- If you use workspace keys, user access tokens no longer need a lifetime of 5 minutes or less. You can make them longer again. ([#757](https://github.com/solidDoWant/toolgate/pull/757))
+
+### Token exchange and template secrets
+
+- Token exchanges are now `TokenExchange` custom resources in the catalog namespaces. A template that uses `${exchange:NAME}` gets the `TokenExchange` with that name in its own namespace. The gateway sends a user's token only to a `tokenURL` on the allow-list `config.tokenExchange.allowedTokenURLs`, which only the chart sets. Each resource gets a `Valid` condition that gives the reason when it is not valid. A template that uses an exchange is valid only when its `TokenExchange` is valid. See `docs/admin/token-exchange.md`. ([#758](https://github.com/solidDoWant/toolgate/pull/758), [#759](https://github.com/solidDoWant/toolgate/pull/759))
+- The template secrets namespace can now be the namespace of the gateway, with the opt-in `config.templateSecrets.allowGatewayNamespace`. Read the upgrade notes for the risk. See `docs/admin/template-secrets.md`. ([#747](https://github.com/solidDoWant/toolgate/pull/747))
+
+### Signing in
+
+- Workspace keys: when a valid key sends an expired assertion, the gateway now answers with 401. The client then signs a new assertion, and the session keeps its verified workspace. Before, the gateway served the call without a verified workspace. The `auth.refuse` audit event for this case now has `outcome: challenged`. ([#757](https://github.com/solidDoWant/toolgate/pull/757))
+
+### Audit log
+
+- The gateway now writes `instance.start` for every instance that starts, and `instance.stop` for every stop. Each `instance.stop` event has a `reason`: `idle`, `session-ended`, `disabled`, `access-lost`, `credential-expired`, `template-deleted`, `template-scope-changed`, `restart`, `template-update`, `health-check` or `resolver-expiry`. Before, some starts and stops had no event. ([#751](https://github.com/solidDoWant/toolgate/pull/751))
+
+### Documentation
+
+- The tool result cache example in the admin docs now uses the correct API group. ([#750](https://github.com/solidDoWant/toolgate/pull/750))
+
+### Known issues
+
+- None.
+
 ## 0.4.12
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This release adds five features that admins turn on: volumes that stay after an instance stops, OAuth token exchange for servers, admin Secrets for templates, a cache for tool results, and workspace keys for machines outside the cluster. Each Claude Code session now also gets its own MCP session on a shared server. This release has one breaking change, so read the upgrade notes before you upgrade.
