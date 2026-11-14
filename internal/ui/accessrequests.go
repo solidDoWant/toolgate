@@ -88,6 +88,13 @@ func describeAccessRequest(request db.AccessRequest) string {
 		}
 
 		return summary
+	case "key":
+		var change gateway.KeyChange
+		if json.Unmarshal(request.Change, &change) != nil {
+			return "Register workspace key"
+		}
+
+		return fmt.Sprintf("Register workspace key %s (%s)", change.Name, shortFingerprint(change.KeyID))
 	default:
 		var change gateway.WorkspaceChange
 		if json.Unmarshal(request.Change, &change) != nil {

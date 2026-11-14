@@ -15,6 +15,7 @@ import (
 	"github.com/chromedp/cdproto/emulation"
 	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -42,6 +43,14 @@ func seedScreenshotSecrets(t *testing.T, env *uiEnv) {
 
 	_, err = env.pool.Exec(t.Context(), `UPDATE user_secrets SET created_at = now() - interval '9 days', updated_at = now() - interval '3 days' WHERE name = 'mail-archiver-token'`)
 	require.NoError(t, err)
+}
+
+// seedScreenshotKeys gives dave one active workspace key.
+func seedScreenshotKeys(t *testing.T, env *uiEnv) {
+	t.Helper()
+
+	env.workspaces.SetWorkspaceKeys(true, "")
+	env.activateKeyOf(t, "dave", "laptop")
 }
 
 // seedScreenshotData fills the gateway with a little of everything the
@@ -110,6 +119,7 @@ func seedScreenshotData(t *testing.T, env *uiEnv) (int64, int64) {
 	require.NoError(t, err)
 
 	seedScreenshotSecrets(t, env)
+	seedScreenshotKeys(t, env)
 
 	expires := metav1.NewTime(now.Add(30 * 24 * time.Hour))
 	env.rules.rules = []v1alpha1.ToolgateRule{
@@ -145,6 +155,14 @@ func TestUIScreenshots(t *testing.T) {
 		server: "github", tool: "delete_repo", eventType: "tool.decision", details: `{"decision":"refuse","rule":"no-deletes"}`,
 	})
 	requestID := env.insertServerRequest(t, "dave", openSession, "paperless")
+	keyRequestID := env.requestKey(t, "build-box")
+	_, err := env.pool.Exec(t.Context(), `UPDATE access_requests SET workspace = 'coder/main/laptop', verified = true WHERE id = $1`, keyRequestID)
+	require.NoError(t, err)
+
+	decidedKeyRequestID := env.requestKey(t, "old-laptop")
+	require.NoError(t, pgx.BeginFunc(t.Context(), env.pool, func(tx pgx.Tx) error {
+		return env.workspaces.DenyAccessRequest(t.Context(), tx, daveIdentity(), decidedKeyRequestID)
+	}))
 
 	pages := []struct {
 		name, path string
@@ -183,6 +201,16 @@ func TestUIScreenshots(t *testing.T) {
 				require.NoError(t, env.workspaces.Apply(t.Context(), daveIdentity(), change, gateway.ViaUI))
 			}
 		}},
+		{name: "workspace-keys-revoke-confirm", path: "/ui/workspaces", prepare: chromedp.Click(chromedp.CSS(`#workspace-keys summary`))},
+		{name: "workspace-keys-empty", path: "/ui/workspaces", cookie: "empty-session"},
+		{name: "workspace-keys-off", path: "/ui/workspaces", setup: func() func() {
+			env.workspaces.SetWorkspaceKeys(false, "")
+
+			return func() { env.workspaces.SetWorkspaceKeys(true, "") }
+		}},
+		{name: "key-request", path: "/ui/approvals/" + keyRequestID, cookie: "fresh-session"},
+		{name: "key-request-step-up", path: "/ui/approvals/" + keyRequestID, cookie: "stale-session"},
+		{name: "key-request-decided", path: "/ui/approvals/" + decidedKeyRequestID, cookie: "fresh-session"},
 		{name: "secrets", path: "/ui/secrets", before: func() { seedScreenshotSecrets(t, env) }},
 		{name: "secrets-delete-confirm", path: "/ui/secrets", prepare: chromedp.Click(chromedp.CSS(`#secrets tbody tr:first-child summary`))},
 		{name: "secrets-empty", path: "/ui/secrets", before: func() {

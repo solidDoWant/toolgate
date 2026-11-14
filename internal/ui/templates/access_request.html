@@ -1,5 +1,5 @@
 {{define "heading"}}<p class="m-0 mb-2 text-sm"><a href="/ui/approvals">All approvals</a></p>
-{{with .Data}}{{template "detail-header-start" (dict "Title" "Access request" "Summary" "A request to change which servers a session or workspace may use.")}}
+{{with .Data}}{{if .Key}}{{template "detail-header-start" (dict "Title" (printf "Register workspace key %s" .Key.Name) "Summary" "A request to let a machine prove where its sessions run.")}}{{else}}{{template "detail-header-start" (dict "Title" "Access request" "Summary" "A request to change which servers a session or workspace may use.")}}{{end}}
 {{if not .Message}}{{if .StepUpURL}}<div class="flex flex-col items-start gap-1 self-start"><a class="btn btn-primary" href="{{.StepUpURL}}">{{if eq .Kind "server"}}Allow for this session{{else}}Approve{{end}}</a>
 <p class="m-0 text-xs text-muted">You'll be asked to sign in again.</p></div>
 {{else if eq .Kind "server"}}<form method="post" action="/ui/approvals/{{.ID}}/approve" class="m-0 self-start">
@@ -34,6 +34,14 @@
 {{template "fact-start" "Requested"}}{{template "reltime" (since .CreatedAt)}}{{template "fact-end"}}
 {{template "fact-start" "Expires"}}{{template "reltime" (until .ExpiresAt)}}{{template "fact-end"}}
 </dl>
+{{with .Key}}<dl id="key-request" class="mb-6 flex flex-wrap gap-x-8 gap-y-3 rounded-lg border border-border bg-surface p-4">
+{{template "fact-start" "Workspace it gives"}}<span class="font-mono">{{.KeyWorkspace}}</span>{{template "fact-end"}}
+{{template "fact-start" "Fingerprint"}}<span id="key-fingerprint" class="font-mono break-all">{{.Fingerprint}}</span>{{template "fact-end"}}
+{{template "fact-start" "Replaces"}}{{with .Replaces}}It replaces the key with fingerprint <span class="font-mono break-all">{{.Fingerprint}}</span>, registered {{.RegisteredAt.UTC.Format "2006-01-02"}}.{{else}}No key has this name yet.{{end}}{{template "fact-end"}}
+{{template "fact-start" "Asked from"}}{{if .AskedFrom.ID}}{{template "ws" .AskedFrom}}{{else}}no workspace{{end}}, {{if .Verified}}verified{{else}}unverified{{end}}{{template "fact-end"}}
+</dl>
+<p id="key-warning" class="mb-6 text-sm">Approve only if you ran <code>toolgate workspace register {{.Name}}</code> yourself and it printed the same fingerprint. A process that holds this key and your sign-in gets your verified sessions.</p>
+{{end}}
 {{with .Change}}<h2 class="m-0 mb-2 text-base font-semibold">Change</h2>
 {{if .Defaults}}{{template "table-start" (dict "ID" "change" "Label" "Change" "Columns" (list "Default" "Before" "After"))}}
 <tr><td data-label="Default">Sessions in a verified workspace without a list</td><td data-label="Before">{{.BeforeVerified}}</td><td data-label="After">{{.AfterVerified}}</td></tr>

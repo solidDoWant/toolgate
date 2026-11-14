@@ -48,6 +48,7 @@ var auditCategories = []struct {
 		"access.request", "access.approve", "access.deny", "access.expire", "approval.request", "approval.approve",
 		"approval.deny", "approval.expire", "grant.create", "grant.revoke", "block.create", "rule.change",
 		"workspace.change", "workspace.defaults", "session.addition",
+		"workspace.key.register", "workspace.key.approve", "workspace.key.replace", "workspace.key.revoke",
 	}},
 	{"signins", "Sign-ins", []string{"session.start", "session.resume", "session.end", "session.forget", "auth.refuse"}},
 	{"servers", "Server lifecycle", []string{
@@ -181,6 +182,14 @@ func summarize(event auditEvent) auditSummary {
 		return auditSummary{"Access request expired", "", kindSuffix(details), outcomeDenied}
 	case "workspace.change":
 		return auditSummary{"Changed the servers a workspace may use", "", "", outcomeOK}
+	case "workspace.key.register":
+		return auditSummary{"Asked to register workspace key ", detailString(details, "name"), "", outcomePending}
+	case "workspace.key.approve":
+		return auditSummary{"Registered workspace key ", detailString(details, "name"), "", outcomeApproved}
+	case "workspace.key.replace":
+		return auditSummary{"Replaced workspace key ", detailString(details, "name"), "", outcomeOK}
+	case "workspace.key.revoke":
+		return auditSummary{"Revoked workspace key ", detailString(details, "name"), "", outcomeOK}
 	case "workspace.defaults":
 		return auditSummary{"Changed the servers allowed for unverified sessions", "", "", outcomeOK}
 	case "grant.create":
@@ -249,6 +258,8 @@ var auditTypeLabels = map[string]string{
 	"approval.approve": "Approval granted", "approval.deny": "Approval denied", "approval.expire": "Approval expired",
 	"grant.create": "Grant created", "grant.revoke": "Grant revoked", "block.create": "Block created",
 	"rule.change": "Rules changed", "workspace.change": "Workspace servers changed",
+	"workspace.key.register": "Workspace key requested", "workspace.key.approve": "Workspace key registered",
+	"workspace.key.replace": "Workspace key replaced", "workspace.key.revoke": "Workspace key revoked",
 	"workspace.defaults": "Unverified defaults changed", "session.addition": "Server allowed for unverified sessions",
 	"session.start": "Session started", "session.resume": "Session resumed", "session.end": "Session ended",
 	"session.forget": "Session forgotten", "auth.refuse": "Sign-in refused",
