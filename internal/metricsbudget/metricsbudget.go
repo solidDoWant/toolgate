@@ -36,7 +36,7 @@ var AllowedLabels = map[string][]string{
 	"trust_domain": nil,
 	"server":       nil,
 	"version":      nil,
-	"kind":         {"tool", "server", "scope", "change", "user", "service_account", "spiffe", "connector", "other", "start", "refresh"},
+	"kind":         {"tool", "server", "scope", "change", "key", "user", "service_account", "spiffe", "connector", "other", "start", "refresh"},
 	// The configured token exchange names, at most 8.
 	"exchange": nil,
 	"result":   {"ok", "refused", "attested", "other"},

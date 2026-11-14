@@ -292,6 +292,131 @@ paths:
                 type: string
           description: Internal Server Error
       summary: Get the merged Claude Code settings that match the caller
+  /api/v1/workspace-keys:
+    get:
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiWorkspaceKeyList'
+          description: OK
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Forbidden
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: List the caller's active workspace keys and pending key requests
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorkspacesapiKeyRegistration'
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiKeyActive'
+          description: OK
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiKeyRequested'
+          description: Accepted
+        "400":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Bad Request
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Forbidden
+        "409":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Conflict
+        "413":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Request Entity Too Large
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: Register a workspace key; it becomes a key access request that the
+        user approves in the web UI
+  /api/v1/workspace-keys/{name}:
+    delete:
+      parameters:
+      - in: path
+        name: name
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacesapiKeyRevoked'
+          description: OK
+        "401":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Unauthorized
+        "403":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Forbidden
+        "404":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Not Found
+        "500":
+          content:
+            text/plain:
+              schema:
+                type: string
+          description: Internal Server Error
+      summary: Revoke the caller's workspace key and deny its pending key requests
   /api/v1/workspaces:
     get:
       responses:
@@ -599,6 +724,51 @@ components:
           - all
           type: string
       type: object
+    WorkspacesapiKeyActive:
+      properties:
+        fingerprint:
+          type: string
+        name:
+          type: string
+        status:
+          enum:
+          - active
+          type: string
+        workspace:
+          type: string
+      type: object
+    WorkspacesapiKeyRegistration:
+      properties:
+        name:
+          pattern: ^[A-Za-z0-9._-]{1,63}$
+          type: string
+        publicKey:
+          type: string
+      type: object
+    WorkspacesapiKeyRequested:
+      properties:
+        fingerprint:
+          type: string
+        name:
+          type: string
+        replaces:
+          type:
+          - "null"
+          - string
+        request:
+          type: string
+        url:
+          type: string
+        workspace:
+          type: string
+      type: object
+    WorkspacesapiKeyRevoked:
+      properties:
+        deniedRequests:
+          type: integer
+        revoked:
+          type: boolean
+      type: object
     WorkspacesapiList:
       properties:
         current:
@@ -656,4 +826,46 @@ components:
           type: string
         workspace:
           type: string
+      type: object
+    WorkspacesapiWorkspaceKey:
+      properties:
+        approvedAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        fingerprint:
+          type: string
+        lastUsedAt:
+          format: date-time
+          type:
+          - "null"
+          - string
+        name:
+          type: string
+        registeredAt:
+          format: date-time
+          type: string
+        request:
+          type:
+          - "null"
+          - string
+        status:
+          enum:
+          - active
+          - pending
+          type: string
+        workspace:
+          type: string
+      type: object
+    WorkspacesapiWorkspaceKeyList:
+      properties:
+        enabled:
+          type: boolean
+        keys:
+          items:
+            $ref: '#/components/schemas/WorkspacesapiWorkspaceKey'
+          type:
+          - array
+          - "null"
       type: object

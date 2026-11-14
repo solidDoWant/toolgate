@@ -54,6 +54,9 @@ type WorkspaceSource interface {
 	// ApproveScopeRequest approves a pending scope request and applies its
 	// allow in tx.
 	ApproveScopeRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error
+	// ApproveKeyRequest approves a pending key request and makes its key
+	// active in tx.
+	ApproveKeyRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error
 	// PreviewScopeRequest returns a scope request's target and its state
 	// before and after the approval.
 	PreviewScopeRequest(ctx context.Context, principal string, request db.AccessRequest) (gateway.ScopePreview, error)
@@ -713,6 +716,12 @@ func (u *UI) approveAccessRequest(writer http.ResponseWriter, request *http.Requ
 
 	if accessRequest.Kind == "scope" {
 		u.decideAccessRequest(writer, request, accessRequest, opsmetrics.OutcomeApproved, u.options.Workspaces.ApproveScopeRequest)
+
+		return
+	}
+
+	if accessRequest.Kind == "key" {
+		u.decideAccessRequest(writer, request, accessRequest, opsmetrics.OutcomeApproved, u.options.Workspaces.ApproveKeyRequest)
 
 		return
 	}

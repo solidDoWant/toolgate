@@ -171,6 +171,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	ruleView := &ruleLister{}
 
 	workspaces := gateway.NewWorkspaces(server.Database(), templates, stdout, time.Duration(cfg.ApprovalTimeout))
+	workspaces.SetWorkspaceKeys(cfg.WorkspaceKeys, cfg.WorkspaceKeysPrefix)
 
 	(&sessionsapi.Handler{
 		Queries:     db.New(server.Database()),
@@ -225,6 +226,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	(&workspacesapi.Handler{
 		Workspaces:  workspaces,
+		Keys:        workspaces,
 		Enabled:     cfg.UIEnabled(),
 		ApprovalURL: approvalURL,
 		Log:         logger,
