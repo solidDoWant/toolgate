@@ -103,6 +103,8 @@ settings from `config`.
 {{- $env = append $env (dict "name" "TOOLGATE_INSTANCE_LIMIT" "value" (toString (int $config.limits.instances))) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_SESSION_IDLE_TIMEOUT" "value" $config.sessionIdleTimeout) -}}
 {{- $env = append $env (dict "name" "TOOLGATE_SESSION_RESUME_WINDOW" "value" $config.sessionResumeWindow) -}}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_RESULT_CACHE_MAX_ENTRY_BYTES" "value" (toString (int64 $config.toolResultCacheMaxEntryBytes))) -}}
+{{- $env = append $env (dict "name" "TOOLGATE_TOOL_RESULT_CACHE_MAX_TEMPLATE_BYTES" "value" (toString (int64 $config.toolResultCacheMaxTemplateBytes))) -}}
 {{- with $config.ui.approvalTimeout }}
 {{- $env = append $env (dict "name" "TOOLGATE_APPROVAL_TIMEOUT" "value" .) }}
 {{- end }}

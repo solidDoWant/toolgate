@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/solidDoWant/toolgate/api/v1alpha1"
+	"github.com/solidDoWant/toolgate/internal/resultcache"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -61,6 +63,30 @@ func AfterLoaded(loaded <-chan struct{}, pass func(ctx context.Context) error) f
 func RowCleanup(queries *db.Queries, pass func(ctx context.Context) error) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		if err := store.DeleteStaleRows(ctx, queries); err != nil {
+			return errors.Join(err, pass(ctx))
+		}
+
+		return pass(ctx)
+	}
+}
+
+// ResultCacheCleanup wraps a full pass so that it first cleans the tool
+// result cache: expired entries, entries of deleted templates and old
+// generations, and entries of ended sessions. templates gives the last valid
+// generation of every template UID; wrap it in AfterLoaded, so a partial
+// catalog never deletes the entries of a template that exists. A failed
+// clean-up doesn't keep the pass from running; the errors of both are
+// returned, so the pass is retried.
+func ResultCacheCleanup(cache resultcache.Store, templates func() map[string]*v1alpha1.MCPServerTemplate, pass func(ctx context.Context) error) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		valid := templates()
+		current := make(map[string]int64, len(valid))
+
+		for uid, template := range valid {
+			current[uid] = template.Generation
+		}
+
+		if err := cache.Cleanup(ctx, current); err != nil {
 			return errors.Join(err, pass(ctx))
 		}
 

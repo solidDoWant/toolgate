@@ -15,6 +15,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/resultcache"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -241,6 +242,10 @@ func (s *sessionStore) clearEndedState(ctx context.Context, tx pgx.Tx, ended db.
 
 	if err := queries.DeleteSessionFoundTools(ctx, ended.ID); err != nil {
 		return fmt.Errorf("delete found tools: %w", err)
+	}
+
+	if err := resultcache.DeleteSessionEntries(ctx, tx, ended.ID); err != nil {
+		return err
 	}
 
 	expired, err := queries.ExpireSessionServerRequests(ctx, sessionPK)

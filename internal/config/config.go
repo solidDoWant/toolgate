@@ -262,6 +262,19 @@ type Config struct {
 	// sets it from `config.limits.instances`.
 	InstanceLimit int `json:"instanceLimit" env:"TOOLGATE_INSTANCE_LIMIT"`
 
+	// The largest tool result, in bytes, that the tool result cache stores.
+	// A larger result is returned to the caller and not cached. It must be
+	// from 1024 to 16777216. The chart sets it from
+	// `config.toolResultCacheMaxEntryBytes`.
+	ToolResultCacheMaxEntryBytes int `json:"toolResultCacheMaxEntryBytes" env:"TOOLGATE_TOOL_RESULT_CACHE_MAX_ENTRY_BYTES"`
+
+	// The most bytes of unexpired cached results that one template may hold.
+	// At the limit, new results of that template are not cached until
+	// entries expire. Nothing is evicted. It must be from 1048576 to
+	// 1073741824, and at least `toolResultCacheMaxEntryBytes`. The chart sets
+	// it from `config.toolResultCacheMaxTemplateBytes`.
+	ToolResultCacheMaxTemplateBytes int `json:"toolResultCacheMaxTemplateBytes" env:"TOOLGATE_TOOL_RESULT_CACHE_MAX_TEMPLATE_BYTES"`
+
 	// How long a session can go without requests before the gateway ends
 	// it. An ended session keeps its list of enabled servers for
 	// `sessionResumeWindow`, but its per-session MCP servers stop. A later
@@ -746,9 +759,12 @@ func Default() Config {
 		OIDCUIScopes:           []string{"openid", "email", "profile"},
 		InstanceLimitPerUser:   20,
 		InstanceLimit:          200,
-		SessionIdleTimeout:     Duration(2 * time.Hour),
-		SessionResumeWindow:    Duration(24 * time.Hour),
-		ApprovalTimeout:        Duration(10 * time.Minute),
+
+		ToolResultCacheMaxEntryBytes:    1 << 20,
+		ToolResultCacheMaxTemplateBytes: 64 << 20,
+		SessionIdleTimeout:              Duration(2 * time.Hour),
+		SessionResumeWindow:             Duration(24 * time.Hour),
+		ApprovalTimeout:                 Duration(10 * time.Minute),
 
 		WorkspaceKeysPrefix: "registered",
 
@@ -1234,6 +1250,8 @@ func (c Config) Validate() []error {
 		problems = append(problems, errors.New("instanceLimitPerUser: must be at least 1"))
 	}
 
+	problems = append(problems, c.validateToolResultCacheLimits()...)
+
 	if c.InstanceLimit < 1 {
 		problems = append(problems, errors.New("instanceLimit: must be at least 1"))
 	}
@@ -1552,6 +1570,23 @@ func (c *Config) validateTemplateSecretsNamespace() []error {
 
 	if slices.Contains(c.CatalogNamespaces, namespace) {
 		problems = append(problems, fmt.Errorf("templateSecretsNamespace: %q must not be one of catalogNamespaces, where template authors write", namespace))
+	}
+
+	return problems
+}
+
+// validateToolResultCacheLimits checks the two tool result cache size limits.
+func (c Config) validateToolResultCacheLimits() []error {
+	var problems []error
+
+	if c.ToolResultCacheMaxEntryBytes < 1024 || c.ToolResultCacheMaxEntryBytes > 16<<20 {
+		problems = append(problems, errors.New("toolResultCacheMaxEntryBytes: must be from 1024 to 16777216"))
+	}
+
+	if c.ToolResultCacheMaxTemplateBytes < 1<<20 || c.ToolResultCacheMaxTemplateBytes > 1<<30 {
+		problems = append(problems, errors.New("toolResultCacheMaxTemplateBytes: must be from 1048576 to 1073741824"))
+	} else if c.ToolResultCacheMaxTemplateBytes < c.ToolResultCacheMaxEntryBytes {
+		problems = append(problems, errors.New("toolResultCacheMaxTemplateBytes: must be at least toolResultCacheMaxEntryBytes"))
 	}
 
 	return problems
