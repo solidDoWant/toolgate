@@ -18,6 +18,7 @@ var crdFiles = map[string]string{
 	"MCPServerTemplate": "toolgate.soliddowant.dev_mcpservertemplates.yaml",
 	"ToolgateRule":      "toolgate.soliddowant.dev_toolgaterules.yaml",
 	"SettingsProfile":   "toolgate.soliddowant.dev_settingsprofiles.yaml",
+	"TokenExchange":     "toolgate.soliddowant.dev_tokenexchanges.yaml",
 }
 
 // field walks nested maps by key and fails the test when one is missing.

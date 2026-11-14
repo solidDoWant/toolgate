@@ -84,6 +84,31 @@ config:
 - The admin mounts the client secret and the `caFile` with `resources.persistence` and `advancedMounts.gateway.gateway`, as for resolvers.
 - Settings are read at start. A changed list takes effect after a restart of the gateway.
 
+### The TokenExchange resource and the allow-list
+
+Exchanges move from the chart value to a namespaced custom resource, `TokenExchange` (`api/v1alpha1`), in the catalog namespaces. Its spec has the fields above, with two changes: `clientSecretRef` (`name`, `key`) replaces `clientSecretFile` and reads a Secret in the template secrets namespace, and there is no `caFile`, because a resource author must not choose trust roots.
+
+The resource decides where the gateway sends a user's token, so a chart-only allow-list limits `tokenURL`:
+
+- `tokenExchangeAllowedTokenURLs` (chart value `config.tokenExchange.allowedTokenURLs`), at most 16 `https://` URLs.
+- Empty means the token endpoint, from discovery, of every user OIDC issuer: `oidcIssuerURL` and each `oidcAdditionalIssuers` item. Service-account, SPIFFE and pod sign-in issuers are not included. An endpoint is discovered once and kept. A failed discovery is retried at the next check, and an issuer that is down doesn't block exchanges whose URL is another issuer's endpoint.
+- A list that isn't empty replaces the default.
+- Comparison is exact after the scheme and host are lowercased. No prefix match.
+
+The chart grants get, list and watch on `tokenexchanges`, and update and patch on `tokenexchanges/status`, through a Role in each catalog namespace. The ClusterRole doesn't name them.
+
+A leader-only reconciler (`internal/tokenexchange`) writes the `Valid` condition. Every event queues the whole namespace, because the per-namespace cap makes one resource's validity depend on the others. It checks every namespace again each minute, so a client Secret created or emptied later shows in the status. It reads the Secret through the API, never a cache. The first failing check gives the reason:
+
+| Order | Reason | Rule |
+|---|---|---|
+| 1 | `BadFields` | `tokenURL` not `https://` with a host, empty `clientID`, empty `clientSecretRef.name` or `key`, or `timeout` not in (0, 60s]. |
+| 2 | `TooMany` | Past the first 16 resources of the namespace in name order. |
+| 3 | `NoKeyset` | The gateway has no `secretsKeysetFile`. The gateway still starts. |
+| 4 | `URLNotAllowed` | `tokenURL` is not on the allow-list. |
+| 5 | `SecretMissing` | No template secrets namespace, no Secret, no key, or a value that is empty after trailing white space is trimmed. The message names the Secret and key, never the value. |
+
+Condition reasons are CamelCase because the Kubernetes API refuses a reason with `-`.
+
 ### Template syntax, scope and validation
 
 `${exchange:NAME}`, where `NAME` is the `name` of an entry. It follows the rules of §2.

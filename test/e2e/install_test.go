@@ -28,6 +28,7 @@ func TestChartInstall(t *testing.T) {
 			"mcpservertemplates.toolgate.soliddowant.dev",
 			"toolgaterules.toolgate.soliddowant.dev",
 			"settingsprofiles.toolgate.soliddowant.dev",
+			"tokenexchanges.toolgate.soliddowant.dev",
 		} {
 			_, err := extensions.ApiextensionsV1().CustomResourceDefinitions().Get(t.Context(), name, metav1.GetOptions{})
 			assert.NoError(t, err, name)

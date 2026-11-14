@@ -208,6 +208,14 @@ resolver gets its own projected service-account token with its audience.
 {{- end }}
 {{- $_ := set $file "tokenExchanges" . }}
 {{- end }}
+{{- with ($config.tokenExchange).allowedTokenURLs }}
+{{- range $allowed := . }}
+{{- if not (hasPrefix "https://" (toString $allowed)) }}
+{{- fail (printf "config.tokenExchange.allowedTokenURLs: %q must start with https://" (toString $allowed)) }}
+{{- end }}
+{{- end }}
+{{- $_ := set $file "tokenExchangeAllowedTokenURLs" . }}
+{{- end }}
 {{- with $config.oidc.additionalIssuers }}
 {{- range $issuer := . }}
 {{- if not $issuer.issuerURL }}

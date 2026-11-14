@@ -485,6 +485,16 @@ type Config struct {
 	// `config.tokenExchanges`. See [Token exchange](token-exchange.md).
 	TokenExchanges []TokenExchange `json:"tokenExchanges"`
 
+	// The token endpoints that `TokenExchange` resources may send a user's
+	// access token to. Set it in the YAML file only, with at most 16
+	// `https://` URLs. A `TokenExchange` whose `tokenURL` isn't on the list
+	// is invalid. URLs are compared exactly, after the scheme and host are
+	// put in lower case, never by prefix. Empty means the token endpoint of
+	// `oidcIssuerURL` and of each `oidcAdditionalIssuers` item, read from
+	// their discovery documents. A list that isn't empty replaces that
+	// default. The chart sets it from `config.tokenExchange.allowedTokenURLs`.
+	TokenExchangeAllowedTokenURLs []string `json:"tokenExchangeAllowedTokenURLs"`
+
 	// The SPIFFE trust domains whose JWT-SVIDs may sign in. Set it in the
 	// YAML file only. Each item has a `name` (the trust domain, such as
 	// `coder.example.com`), exactly one of `bundleEndpointURL` (a SPIFFE
@@ -1302,6 +1312,7 @@ func (c Config) Validate() []error {
 	problems = append(problems, c.validateUI()...)
 	problems = append(problems, c.validateResolvers()...)
 	problems = append(problems, c.validateTokenExchanges()...)
+	problems = append(problems, c.validateAllowedTokenURLs()...)
 	problems = append(problems, c.validateSPIFFETrustDomains()...)
 	problems = append(problems, c.validateWorkspaceAttestation()...)
 	problems = append(problems, c.validateWorkspaceKeys()...)
@@ -1528,7 +1539,38 @@ const (
 	DefaultTokenExchangeTimeout = Duration(10 * time.Second)
 	MaxTokenExchangeTimeout     = Duration(60 * time.Second)
 	MaxTokenExchanges           = 8
+	// MaxAllowedTokenURLs bounds tokenExchangeAllowedTokenURLs.
+	MaxAllowedTokenURLs = 16
+	// maxURLLength bounds each tokenExchangeAllowedTokenURLs item.
+	maxURLLength = 2048
 )
+
+// UserIssuerURLs returns the issuer URL of every OIDC issuer users sign in
+// with: oidcIssuerURL, then each oidcAdditionalIssuers item.
+func (c Config) UserIssuerURLs() []string {
+	issuers := []string{c.OIDCIssuerURL}
+	for _, issuer := range c.OIDCAdditionalIssuers {
+		issuers = append(issuers, issuer.IssuerURL)
+	}
+
+	return issuers
+}
+
+func (c Config) validateAllowedTokenURLs() []error {
+	var problems []error
+
+	if len(c.TokenExchangeAllowedTokenURLs) > MaxAllowedTokenURLs {
+		problems = append(problems, fmt.Errorf("tokenExchangeAllowedTokenURLs: at most %d items, got %d", MaxAllowedTokenURLs, len(c.TokenExchangeAllowedTokenURLs)))
+	}
+
+	for index, allowed := range c.TokenExchangeAllowedTokenURLs {
+		if len(allowed) > maxURLLength || !isHTTPSURL(allowed) {
+			problems = append(problems, fmt.Errorf("tokenExchangeAllowedTokenURLs[%d]: must be an https:// URL of at most %d characters", index, maxURLLength))
+		}
+	}
+
+	return problems
+}
 
 // ExchangeTimeout returns the exchange's timeout, or the default when it is
 // not set.

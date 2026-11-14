@@ -170,3 +170,38 @@ subjects:
     name: {{ include "toolgate.serviceAccountName" $ }}
     namespace: {{ $.Release.Namespace }}
 {{- end }}
+{{- range (default (list .Release.Namespace) .Values.config.catalogNamespaces) }}
+---
+# Token exchanges decide where the gateway sends a user's token, so the
+# gateway reads them in the catalog namespaces only, not cluster-wide.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "toolgate.fullname" $ }}-token-exchanges
+  namespace: {{ . }}
+  labels:
+    {{- include "toolgate.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["toolgate.soliddowant.dev"]
+    resources: ["tokenexchanges"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["toolgate.soliddowant.dev"]
+    resources: ["tokenexchanges/status"]
+    verbs: ["update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "toolgate.fullname" $ }}-token-exchanges
+  namespace: {{ . }}
+  labels:
+    {{- include "toolgate.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "toolgate.fullname" $ }}-token-exchanges
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "toolgate.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}

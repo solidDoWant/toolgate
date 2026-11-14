@@ -42,6 +42,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 	"github.com/solidDoWant/toolgate/internal/testtime"
+	"github.com/solidDoWant/toolgate/internal/tokenexchange"
 	"github.com/solidDoWant/toolgate/internal/version"
 )
 
@@ -128,6 +129,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		&v1alpha1.MCPServerTemplate{}: {Namespaces: catalog.CacheNamespaces(watched)},
 		&v1alpha1.ToolgateRule{}:      {Namespaces: catalog.CacheNamespaces(watched)},
 		&v1alpha1.SettingsProfile{}:   {Namespaces: catalog.CacheNamespaces(watched)},
+		&v1alpha1.TokenExchange{}:     {Namespaces: catalog.CacheNamespaces(watched)},
 	}}
 
 	if skipControllerNameValidation {
@@ -188,6 +190,10 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	}
 
 	if err := setupCatalog(mgr, options.catalog, options.rules, watched, validator, logger); err != nil {
+		return nil, err
+	}
+
+	if err := setupTokenExchanges(mgr, cfg, watched, logger); err != nil {
 		return nil, err
 	}
 
@@ -430,6 +436,30 @@ func setupCatalog(mgr manager.Manager, templates *catalog.Catalog, rules *policy
 	}
 
 	if err := mgr.Add(&catalog.Loader{Reader: mgr.GetCache(), Catalog: templates, Namespaces: watched}); err != nil {
+		return fmt.Errorf("kubernetes manager: %w", err)
+	}
+
+	return nil
+}
+
+// setupTokenExchanges registers the reconciler that writes the Valid
+// condition of TokenExchange resources. It runs on the leader only.
+func setupTokenExchanges(mgr manager.Manager, cfg config.Config, watched []string, logger *slog.Logger) error {
+	var allowList tokenexchange.AllowList = &tokenexchange.DiscoveredAllowList{Issuers: cfg.UserIssuerURLs()}
+	if len(cfg.TokenExchangeAllowedTokenURLs) > 0 {
+		allowList = tokenexchange.StaticAllowList(cfg.TokenExchangeAllowedTokenURLs)
+	}
+
+	checker := tokenexchange.Checker{AllowList: allowList, HasKeyset: cfg.SecretsKeysetFile != ""}
+
+	// Client secrets are read through the API, never a cache, so the
+	// status never reflects an old value, and only the leader reads them.
+	if cfg.TemplateSecretsNamespace != "" {
+		checker.Secrets = runtime.APITemplateSecrets{Reader: mgr.GetAPIReader(), Namespace: cfg.TemplateSecretsNamespace}
+	}
+
+	reconciler := &tokenexchange.Reconciler{Client: mgr.GetClient(), Checker: checker, Log: logger, Namespaces: watched}
+	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("kubernetes manager: %w", err)
 	}
 
