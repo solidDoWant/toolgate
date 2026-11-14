@@ -521,6 +521,19 @@ func TestWorkspaceKeyRevocation(t *testing.T) {
 		assert.Zero(t, api.activeKeys(t, "rev-off"))
 	})
 
+	t.Run("revoke from the Workspaces page", func(t *testing.T) {
+		api.activateKey(t, "rev-ui", "dev", newPublicKey(t))
+		pending := api.requestKey(t, keyUser("rev-ui"), "dev", newPublicKey(t))
+
+		revocation, err := api.workspaces.RevokeKey(t.Context(), keyIdentity("rev-ui"), "dev", gateway.ViaUI)
+		require.NoError(t, err)
+		assert.Equal(t, gateway.KeyRevocation{Revoked: true, DeniedRequests: 1}, revocation)
+		assert.Zero(t, api.activeKeys(t, "rev-ui"))
+		assert.Equal(t, "denied", api.requestStatusOf(t, pending.Request))
+		assert.Equal(t, 1, api.count(t, `SELECT count(*) FROM audit_events
+			WHERE principal = 'rev-ui' AND type = $1 AND details->>'via' = 'ui'`, gateway.TypeWorkspaceKeyRevoke))
+	})
+
 	t.Run("list shows active keys and pending requests by name and status", func(t *testing.T) {
 		api.activateKey(t, "rev-list", "b", newPublicKey(t))
 		pendingB := api.requestKey(t, keyUser("rev-list"), "b", newPublicKey(t))

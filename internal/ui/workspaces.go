@@ -57,6 +57,14 @@ type WorkspaceSource interface {
 	// ApproveKeyRequest approves a pending key request and makes its key
 	// active in tx.
 	ApproveKeyRequest(ctx context.Context, tx pgx.Tx, identity auth.Identity, id string) error
+	// WorkspaceKeys lists identity's active keys and pending key requests.
+	WorkspaceKeys(ctx context.Context, identity auth.Identity) (gateway.WorkspaceKeyList, error)
+	// RevokeKey revokes identity's key named name and denies its pending
+	// key requests for the name.
+	RevokeKey(ctx context.Context, identity auth.Identity, name, via string) (gateway.KeyRevocation, error)
+	// KeyWorkspace is the workspace a key gives, with the prefix
+	// configured now.
+	KeyWorkspace(username, name string) string
 	// PreviewScopeRequest returns a scope request's target and its state
 	// before and after the approval.
 	PreviewScopeRequest(ctx context.Context, principal string, request db.AccessRequest) (gateway.ScopePreview, error)
@@ -66,6 +74,7 @@ type WorkspaceSource interface {
 
 func (u *UI) registerWorkspaces() {
 	u.Handle("GET "+WorkspacesPath, User, http.HandlerFunc(u.workspacesPage))
+	u.Handle("POST "+WorkspaceKeyRevokePath, User, http.HandlerFunc(u.revokeWorkspaceKey))
 
 	for _, action := range []string{gateway.WorkspaceDefaults, gateway.WorkspaceAllow, gateway.WorkspaceDeny, gateway.WorkspaceClear, workspaceServersAction} {
 		u.Handle("POST "+WorkspacesPath+"/"+action, User, u.workspaceChangeHandler(action))
@@ -116,6 +125,8 @@ type workspacesPage struct {
 	Descriptions map[string]string
 	Pending      *pendingChange
 	Error        string
+	// Keys is the Workspace keys card.
+	Keys keysCard
 }
 
 // pendingFields are the form fields kept across a step-up sign-in.
@@ -214,6 +225,16 @@ func (u *UI) renderWorkspaces(writer http.ResponseWriter, request *http.Request,
 			data.Cards = append(data.Cards, workspaceCard{Workspace: labelWorkspace(workspace), Choices: serverChoices(accessible, nil, descriptions)})
 		}
 	}
+
+	list, err := u.options.Workspaces.WorkspaceKeys(ctx, sessionIdentity(session))
+	if err != nil {
+		u.logger.ErrorContext(ctx, "cannot read workspace keys for the web UI", "error", err)
+		http.Error(writer, "The gateway can't read your workspace keys. Try again later.", http.StatusInternalServerError)
+
+		return
+	}
+
+	data.Keys = newKeysCard(list)
 
 	u.renderStatus(writer, request, status, "workspaces", "Workspaces", data)
 }
@@ -504,6 +525,8 @@ type accessRequestPage struct {
 	Change    *changePreview
 	// Scope is the preview of a scope request.
 	Scope *gateway.ScopePreview
+	// Key is the view of a key request.
+	Key *keyRequestView
 }
 
 // servedAccessRequest serves the request at /ui/approvals/{id} with serve
@@ -610,6 +633,18 @@ func (u *UI) renderAccessRequest(writer http.ResponseWriter, request *http.Reque
 		// that asked is shown on its own.
 		data.Session = ""
 		data.Scope = &preview
+	}
+
+	if accessRequest.Kind == "key" {
+		view, err := u.keyRequestView(ctx, accessRequest)
+		if err != nil {
+			u.logger.ErrorContext(ctx, "cannot read a key request", "request", accessRequest.ID, "error", err)
+			http.Error(writer, "The gateway can't read this request. Try again later.", http.StatusInternalServerError)
+
+			return
+		}
+
+		data.Key = &view
 	}
 
 	if data.Message == "" && StepUpNeeded(session) {

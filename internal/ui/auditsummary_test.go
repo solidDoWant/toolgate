@@ -32,6 +32,10 @@ func TestSummarizeReadsEachEventType(t *testing.T) {
 			"Signed in (attested, Coder workspace toolgate-auto)", "ok"},
 		{"unverified allow", auditEvent{Type: "session.addition", Server: "kubesearch"},
 			"Allowed `kubesearch` for unverified sessions (approved)", "approved"},
+		{"key register", auditEvent{Type: "workspace.key.register", Details: `{"name":"dev"}`}, "Asked to register workspace key `dev`", "pending"},
+		{"key approve", auditEvent{Type: "workspace.key.approve", Details: `{"name":"dev"}`}, "Registered workspace key `dev`", "approved"},
+		{"key replace", auditEvent{Type: "workspace.key.replace", Details: `{"name":"dev"}`}, "Replaced workspace key `dev`", "ok"},
+		{"key revoke", auditEvent{Type: "workspace.key.revoke", Details: `{"name":"dev"}`}, "Revoked workspace key `dev`", "ok"},
 		{"unknown type", auditEvent{Type: "future.thing"}, "Event future.thing", ""},
 	}
 

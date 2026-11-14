@@ -142,6 +142,12 @@ func (w *Workspaces) keyWorkspace(username, name string) string {
 	return prefix + "/" + username + "/" + name
 }
 
+// KeyWorkspace is the workspace ID a key of username named name gives, with
+// the prefix configured now.
+func (w *Workspaces) KeyWorkspace(username, name string) string {
+	return w.keyWorkspace(username, name)
+}
+
 // KeyFingerprint is the fingerprint people compare for a key ID.
 func KeyFingerprint(keyID string) string { return "SHA256:" + keyID }
 
