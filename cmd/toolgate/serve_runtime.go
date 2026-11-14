@@ -152,7 +152,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, err
 	}
 
-	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names()}
+	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: exchangeNames(cfg.TokenExchanges), TemplateSecretsNamespace: cfg.TemplateSecretsNamespace}
 
 	if options.ruleLister != nil {
 		options.ruleLister.set(mgr.GetClient(), watched)
@@ -306,6 +306,19 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
 
+	// The upstream session sweep runs on its own goroutine, on the Lease
+	// holder only, so a slow upstream never delays the reconciler's pass.
+	upstreamSweeper := &runtime.UpstreamSessionSweeper{
+		Pool:       pool,
+		Template:   options.catalog.Running,
+		RemoteAuth: starter.RemoteAuth,
+		Subscribe:  options.listener.Subscribe,
+		Log:        logger,
+	}
+	if err := mgr.Add(manager.RunnableFunc(upstreamSweeper.Run)); err != nil {
+		return nil, fmt.Errorf("kubernetes manager: %w", err)
+	}
+
 	// Judging instances against a partial catalog would stop instances whose
 	// template exists, so the first pass waits until every watched template
 	// has been read.
@@ -438,4 +451,14 @@ func newTemplateSecretCache(mgr manager.Manager, namespace string) (cache.Cache,
 	}
 
 	return secretCache, nil
+}
+
+// exchangeNames returns the names of the configured token exchanges.
+func exchangeNames(exchanges []config.TokenExchange) []string {
+	names := make([]string, 0, len(exchanges))
+	for _, exchange := range exchanges {
+		names = append(names, exchange.Name)
+	}
+
+	return names
 }

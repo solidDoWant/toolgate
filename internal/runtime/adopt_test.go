@@ -24,6 +24,8 @@ type seenRequest struct {
 	httpMethod string
 	rpcMethod  string
 	sessionID  string
+	// authorization is the request's Authorization header.
+	authorization string
 }
 
 // recordingUpstream is a go-sdk server with one tool behind a handler that
@@ -49,7 +51,7 @@ func newRecordingUpstream(t *testing.T) *recordingUpstream {
 	upstream := &recordingUpstream{}
 
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen := seenRequest{httpMethod: r.Method, sessionID: r.Header.Get("Mcp-Session-Id")}
+		seen := seenRequest{httpMethod: r.Method, sessionID: r.Header.Get("Mcp-Session-Id"), authorization: r.Header.Get("Authorization")}
 
 		if r.Method == http.MethodPost {
 			raw, err := io.ReadAll(r.Body)
