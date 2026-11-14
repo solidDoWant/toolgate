@@ -142,7 +142,7 @@ func TestTeardownStopsARemoteInstanceWithoutKubernetes(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, nil, time.Time{})
+	_, err = startStore.MarkStarting(t.Context(), instanceID, 1, nil, time.Time{}, nil)
 	require.NoError(t, err)
 	_, err = startStore.MarkFailed(t.Context(), instanceID, "starting", "refused")
 	require.NoError(t, err)

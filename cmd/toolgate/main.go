@@ -25,7 +25,7 @@ Commands:
   secret    Manage your secrets (secret set NAME | list | delete NAME)
   sessions  List your open sessions and their enabled servers
   servers   List the servers you can use
-  workspace Manage which servers each workspace can use (workspace list | allow | deny | clear | defaults)
+  workspace Manage which servers each workspace can use (workspace list | allow | deny | clear | defaults | register | keys)
   serve     Run the gateway (serve --config FILE)
   migrate   Apply the database migrations (migrate [--config FILE])
   admin     Admin commands (admin rewrap --config FILE)

@@ -30,8 +30,11 @@ type StartStore interface {
 	// MarkStarting moves a pending instance to starting and records the
 	// template generation its objects were applied with and the earliest
 	// expiry of its resolved values (zero for none). healthCheck is the
-	// rendered custom health check as JSON, nil for none.
-	MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time) (bool, error)
+	// rendered custom health check as JSON, nil for none. templateSecrets
+	// are the sources of its template secret values, written in the same
+	// transaction.
+	MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time,
+		templateSecrets []TemplateSecretTarget) (bool, error)
 	// MarkReady moves a starting instance to ready with its tool list and
 	// the MCP revision it speaks, and records instance.ready. The revision
 	// never changes while the row lives.
@@ -90,13 +93,37 @@ func (s PostgresStartStore) RecordSecretsUsed(ctx context.Context, id string, ve
 }
 
 // MarkStarting implements StartStore.
-func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time) (bool, error) {
-	return s.change(ctx, id, func(queries *db.Queries) (int64, error) {
+func (s PostgresStartStore) MarkStarting(ctx context.Context, id string, generation int64, healthCheck []byte, resolvedExpiresAt time.Time,
+	templateSecrets []TemplateSecretTarget,
+) (bool, error) {
+	return s.changeWith(ctx, id, func(queries *db.Queries) (int64, error) {
 		return queries.SetInstanceStarting(ctx, db.SetInstanceStartingParams{
 			ID: id, Generation: generation, HealthCheck: healthCheck,
 			ResolvedExpiresAt: pgtype.Timestamptz{Time: resolvedExpiresAt, Valid: !resolvedExpiresAt.IsZero()},
 		})
+	}, func(_ pgx.Tx, queries *db.Queries) error {
+		return writeTemplateSecrets(ctx, queries, id, templateSecrets)
 	})
+}
+
+// writeTemplateSecrets replaces an instance's instance_template_secrets rows
+// with the sources of its latest render. The rows never hold a value.
+func writeTemplateSecrets(ctx context.Context, queries *db.Queries, id string, targets []TemplateSecretTarget) error {
+	if err := queries.DeleteInstanceTemplateSecrets(ctx, id); err != nil {
+		return fmt.Errorf("record template secrets of instance %s: %w", id, err)
+	}
+
+	for _, target := range targets {
+		if err := queries.InsertInstanceTemplateSecret(ctx, db.InsertInstanceTemplateSecretParams{
+			InstanceID: id, TargetSecret: target.TargetSecret, TargetKey: target.TargetKey, TargetField: target.TargetField,
+			SourceNamespace: target.SourceNamespace, SourceName: target.SourceName, SourceKey: target.SourceKey,
+			SourceVersion: target.SourceVersion,
+		}); err != nil {
+			return fmt.Errorf("record template secrets of instance %s: %w", id, err)
+		}
+	}
+
+	return nil
 }
 
 // MarkReady implements StartStore. It writes instance.ready, with no

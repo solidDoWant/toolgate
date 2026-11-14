@@ -160,3 +160,29 @@ func TestDecide(t *testing.T) {
 		})
 	}
 }
+
+func secretSpec(scope, namespace, value string) v1alpha1.MCPServerTemplateSpec {
+	raw := `{"apiVersion":"v1","kind":"Secret","metadata":{"name":"s"},"stringData":{"token":"` + value + `"}}`
+
+	return v1alpha1.MCPServerTemplateSpec{
+		Scope:     scope,
+		Namespace: namespace,
+		Endpoint:  v1alpha1.Endpoint{Service: "mcp", Port: 8080},
+		Resources: []runtime.RawExtension{{Raw: []byte(raw)}},
+	}
+}
+
+func TestExchangeNarrowsAndTemplateSecretDoesNot(t *testing.T) {
+	assert.Equal(t, templatescope.PerUser, templatescope.ForVariable("exchange:temporal"))
+	assert.Equal(t, templatescope.Shared, templatescope.ForVariable("templateSecret:keys/api-key"))
+	assert.Equal(t, "${exchange:…}", templatescope.Display("exchange:temporal"))
+	assert.Equal(t, "${templateSecret:…}", templatescope.Display("templateSecret:keys/api-key"))
+
+	decision := templatescope.Decide(secretSpec("shared", "shared", "${exchange:temporal}"))
+	assert.Contains(t, decision.Problem, "uses `${exchange:…}`, which needs `per-user` or narrower")
+
+	assert.Empty(t, templatescope.Decide(secretSpec("shared", "shared", "${templateSecret:keys/api-key}")).Problem)
+	assert.Empty(t, templatescope.Decide(secretSpec("per-user", "", "${exchange:temporal}")).Problem)
+	assert.Equal(t, templatescope.PerUser, templatescope.Effective(secretSpec("", "", "${exchange:temporal}")))
+	assert.Equal(t, templatescope.Shared, templatescope.Effective(secretSpec("", "", "${templateSecret:keys/api-key}")))
+}

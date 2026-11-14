@@ -120,10 +120,13 @@ type TemplateSecretTarget struct {
 	TargetSecret string
 	TargetKey    string
 	// TargetField is "data" or "stringData".
-	TargetField   string
-	SourceName    string
-	SourceKey     string
-	SourceVersion string
+	TargetField string
+	// SourceNamespace is the template secrets namespace the value was read
+	// from. The start path sets it; Render leaves it empty.
+	SourceNamespace string
+	SourceName      string
+	SourceKey       string
+	SourceVersion   string
 }
 
 // Result is a rendered instance.
@@ -567,7 +570,7 @@ func (r *renderer) templateSecret(variable, name string, path []string) (string,
 	value, valid := credentialValue(field, bytes)
 	if !valid {
 		return "", fail("could not be read", fmt.Errorf(
-			"the value of key %s in Secret %s isn't UTF-8 text; use it under data", sourceKey, sourceName))
+			"the value of key `%s` in Secret `%s` isn't UTF-8 text; use it under `data`", sourceKey, sourceName))
 	}
 
 	r.templateSecrets = append(r.templateSecrets, TemplateSecretTarget{

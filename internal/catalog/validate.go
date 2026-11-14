@@ -16,6 +16,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/templatescope"
@@ -64,6 +65,13 @@ type Validator struct {
 	// Resolvers are the names of the configured resolvers. A template that
 	// names any other resolver is invalid.
 	Resolvers []string
+	// Exchanges are the names of the configured token exchanges. A template
+	// that names any other exchange is invalid.
+	Exchanges []string
+	// TemplateSecretsNamespace is the gateway's template secrets namespace.
+	// When it is empty, every template that uses `${templateSecret:…}` is
+	// invalid.
+	TemplateSecretsNamespace string
 	// PersistentVolumes is the gateway setting persistentVolumes.enabled.
 	// When it is false, a template with persistentVolumes is invalid.
 	PersistentVolumes bool
@@ -298,6 +306,10 @@ func (v Validator) validateResource(index int, raw []byte) []string {
 			if name, found := strings.CutPrefix(variable, "resolver:"); found && !slices.Contains(v.Resolvers, name) {
 				variableProblems = append(variableProblems, fmt.Sprintf("%s: resolver `%s` isn't configured", location, name))
 			}
+
+			if inSecretData {
+				variableProblems = append(variableProblems, v.credentialVariableProblems(location, text, variable)...)
+			}
 		}
 	})
 
@@ -428,7 +440,94 @@ func isSecretDataValue(path []string) bool {
 }
 
 func isSecretVariable(variable string) bool {
-	return strings.HasPrefix(variable, "secret:") || strings.HasPrefix(variable, "resolver:")
+	return strings.HasPrefix(variable, "secret:") || strings.HasPrefix(variable, "resolver:") ||
+		strings.HasPrefix(variable, exchangePrefix) || strings.HasPrefix(variable, templateSecretPrefix)
+}
+
+const (
+	exchangePrefix       = "exchange:"
+	templateSecretPrefix = "templateSecret:"
+)
+
+// secretKeyPattern is the pattern of a key in a Secret's data.
+var secretKeyPattern = regexp.MustCompile(`^[-._a-zA-Z0-9]{1,253}$`)
+
+// credentialVariableProblems checks one `${exchange:…}` or
+// `${templateSecret:…}` variable in a Secret value: it must be the whole
+// value, and it must name something the gateway has. It never reads a Secret.
+func (v Validator) credentialVariableProblems(location, text, variable string) []string {
+	var problems []string
+
+	argument, isExchange := strings.CutPrefix(variable, exchangePrefix)
+
+	if !isExchange {
+		if _, isTemplateSecret := strings.CutPrefix(variable, templateSecretPrefix); !isTemplateSecret {
+			return nil
+		}
+	}
+
+	if text != "${"+variable+"}" {
+		problems = append(problems, fmt.Sprintf("%s: ${%s} must be the whole value, with no other text", location, variable))
+	}
+
+	if isExchange {
+		if !slices.Contains(v.Exchanges, argument) {
+			problems = append(problems, fmt.Sprintf("%s: token exchange `%s` isn't configured", location, argument))
+		}
+
+		return problems
+	}
+
+	reference := strings.TrimPrefix(variable, templateSecretPrefix)
+
+	if v.TemplateSecretsNamespace == "" {
+		problems = append(problems, location+": ${templateSecret:…} needs a template secrets namespace, and the gateway has none (`config.templateSecretsNamespace`)")
+	}
+
+	if _, _, valid := ParseTemplateSecret(reference); !valid {
+		problems = append(problems, location+": ${templateSecret:…} must be NAME/KEY, with a Secret name and a key")
+	}
+
+	return problems
+}
+
+// ParseTemplateSecret splits the argument of `${templateSecret:NAME/KEY}` at
+// the first `/`. valid is false when NAME is not a DNS-1123 subdomain or KEY
+// is not a valid Secret key.
+func ParseTemplateSecret(reference string) (name, key string, valid bool) {
+	name, key, found := strings.Cut(reference, "/")
+	if !found || len(validation.IsDNS1123Subdomain(name)) > 0 || !secretKeyPattern.MatchString(key) {
+		return name, key, false
+	}
+
+	return name, key, true
+}
+
+// UsesExchange reports whether any `${exchange:…}` variable appears in the
+// values of the template's resources.
+func UsesExchange(template *v1alpha1.MCPServerTemplate) bool {
+	found := false
+
+	for _, raw := range template.Spec.Resources {
+		var object any
+		if err := json.Unmarshal(raw.Raw, &object); err != nil {
+			continue
+		}
+
+		walkStrings(object, nil, func(_ []string, text string, isKey bool) {
+			if isKey {
+				return
+			}
+
+			for _, variable := range variables(text) {
+				if strings.HasPrefix(variable, exchangePrefix) {
+					found = true
+				}
+			}
+		})
+	}
+
+	return found
 }
 
 // variables returns the names of the ${…} variables in text. `$${` is an

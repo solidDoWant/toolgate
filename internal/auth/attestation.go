@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"regexp"
 	"slices"
 	"strings"
@@ -337,26 +336,16 @@ func newAttestationVerifier(options AttestationOptions, spiffe *spiffeVerifier) 
 }
 
 // errAttestationUnavailable means the check couldn't run: TokenReview or the
-// pod GET failed with a transport error or a 5xx.
+// pod GET failed with a transport error or a 5xx, or the workspace key
+// store failed.
 var errAttestationUnavailable = errors.New("attestation check unavailable")
 
-// attest verifies the request's attestation header, if any, and binds it to
-// the user. It returns the attested identity; the user's identity with a
-// refusal for a failed verdict; or errAttestationUnavailable.
-func (v *attestationVerifier) attest(ctx context.Context, request *http.Request, identity Identity,
+// attest verifies a workload token from the attestation header and binds
+// it to the user. It returns the attested identity; the user's identity
+// with a refusal for a failed verdict; or errAttestationUnavailable.
+func (v *attestationVerifier) attest(ctx context.Context, token string, identity Identity,
 	claims map[string]json.RawMessage,
 ) (Identity, *Refusal, error) {
-	values := request.Header.Values(AttestationHeader)
-
-	switch {
-	case len(values) == 0 || (len(values) == 1 && values[0] == ""):
-		return identity, nil, nil
-	case len(values) > 1 || len(values[0]) > MaxAttestationBytes:
-		return identity, &Refusal{Reason: reasonAttestationHeader}, nil
-	}
-
-	token := values[0]
-
 	facts, reason, err := v.facts(ctx, token)
 	if err != nil {
 		return identity, nil, err

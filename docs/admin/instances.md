@@ -103,6 +103,12 @@ The replica that holds the leader Lease compares Kubernetes with the database ev
 
 Do not put the label `toolgate.soliddowant.dev/instance` on namespaces that you make yourself. toolgate deletes them.
 
+## Upstream sessions
+
+A server can keep one MCP session (a connection with its own state) for each user session. The leader ends these sessions every 30 seconds, and after each change in the database. It ends a session when its instance is not running, its user session ended, or the user session no longer has the server enabled.
+
+The leader then sends one `DELETE` request for each ended session to a running instance or a remote server. It sends no `DELETE` to a stopped instance, because its pods are going away. For a remote server, it uses the headers of the instance's owner. If it cannot fill in the headers, for example because the secret is deleted, it sends nothing. The leader does not retry a failed `DELETE`. It counts each one in `toolgate_upstream_session_events_total` with the event `delete_sent` or `delete_failed`.
+
 ## Instance limits
 
 Two chart values limit the number of instances. Only instances that are starting or ready count:
