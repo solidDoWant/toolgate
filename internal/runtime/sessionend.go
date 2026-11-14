@@ -142,6 +142,24 @@ func EndSession(ctx context.Context, pool *pgxpool.Pool, auditOutput io.Writer, 
 	return nil
 }
 
+// EndLiveSessionInTx is EndSession inside the caller's transaction tx, which
+// must hold the session's row lock or take it here. ended is false when the
+// session had already ended; then nothing is done.
+func EndLiveSessionInTx(ctx context.Context, tx pgx.Tx, auditOutput io.Writer, id int64, reason string) (ended bool, err error) {
+	if auditOutput == nil {
+		auditOutput = io.Discard
+	}
+
+	ended, err = endSessionInTx(ctx, tx, auditOutput, id, reason, func(queries *db.Queries) (db.Session, error) {
+		return queries.EndLiveSession(ctx, id)
+	})
+	if err != nil {
+		return false, fmt.Errorf("end session %d: %w", id, err)
+	}
+
+	return ended, nil
+}
+
 // endSession is the end transaction. update sets ended_at and returns the
 // row, or pgx.ErrNoRows when the session must not end; then nothing else is
 // done and ended is false.

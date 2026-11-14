@@ -119,7 +119,7 @@ func TestAttestedMCPSessionBinding(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, fixture.post(t, otherSession, mcpSessionID, ping).StatusCode, "another session")
 	})
 
-	t.Run("a session started without an attestation that later sends one gets 404, then 400", func(t *testing.T) {
+	t.Run("a session started without an attestation that later sends one gets 404, then 400 until it starts a new MCP session", func(t *testing.T) {
 		client := alice()
 		client.session = "unattested"
 
@@ -133,7 +133,7 @@ func TestAttestedMCPSessionBinding(t *testing.T) {
 		listTools := map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"}
 		assert.Equal(t, http.StatusNotFound, fixture.post(t, client, mcpSessionID, listTools).StatusCode)
 
-		assert.Equal(t, http.StatusBadRequest, fixture.post(t, client, "", initializeMessage()).StatusCode)
+		assert.Equal(t, http.StatusBadRequest, fixture.post(t, client, "", listTools).StatusCode)
 		assert.Equal(t, "claimed/default", fixture.sessionRow(t, "alice", "unattested").Workspace)
 	})
 }

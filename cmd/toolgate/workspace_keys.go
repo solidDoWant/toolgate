@@ -331,7 +331,7 @@ func useApprovedKey(env workspaceEnv, path string, replaces *string, use useMode
 
 	switch {
 	case current == path:
-		_, _ = fmt.Fprintln(env.stdout, "This key file is already your attestation source. New Claude Code sessions use it. A running session keeps its workspace until it ends.")
+		_, _ = fmt.Fprintln(env.stdout, "This key file is already your attestation source. New Claude Code sessions use it. A running session moves to the key's workspace when it reconnects (/mcp).")
 
 		return nil
 	case current != "" && use != useReplace && !replacesConfiguredKey(current, replaces):
@@ -347,7 +347,7 @@ func useApprovedKey(env workspaceEnv, path string, replaces *string, use useMode
 	}
 
 	_, _ = fmt.Fprintf(env.stdout, "The key is now in use: saved it in config.json in %s. "+
-		"New Claude Code sessions use it. A running session keeps its workspace until it ends.\n", terminalSafe(dir))
+		"New Claude Code sessions use it. A running session moves to the key's workspace when it reconnects (/mcp).\n", terminalSafe(dir))
 
 	return nil
 }

@@ -219,7 +219,7 @@ func TestConfigureAttestationKeyFile(t *testing.T) {
 
 		code, stdout, stderr := runCLI(t, "", "configure", "--token-command", "echo user-token", "--attestation-key-file", filepath.Base(path))
 		require.Equal(t, 0, code, stderr)
-		assert.Equal(t, "Saved the settings in "+dir+". The key's fingerprint is SHA256:"+expectedKeyID(public)+". New Claude Code sessions use it; a running session keeps its workspace until it ends.\n", stdout)
+		assert.Equal(t, "Saved the settings in "+dir+". The key's fingerprint is SHA256:"+expectedKeyID(public)+". New Claude Code sessions use it. A running session moves to the key's workspace when it reconnects (/mcp).\n", stdout)
 
 		settings, err := login.LoadSettings(dir)
 		require.NoError(t, err)

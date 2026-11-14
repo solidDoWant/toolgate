@@ -16,6 +16,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/resultcache"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -25,8 +26,12 @@ import (
 const lastSeenInterval = time.Minute
 
 // errWorkspaceChanged means a request named a different workspace than its
-// live session started with.
-var errWorkspaceChanged = errors.New("this session started in a different workspace; start a new session to use another one")
+// live session started with, and starts no new MCP session.
+var errWorkspaceChanged = errors.New("this session started in a different workspace; it moves to the new workspace when the client starts a new MCP session")
+
+// reasonWorkspaceChanged is the session.end reason of a session that a new
+// MCP session moved to another workspace.
+const reasonWorkspaceChanged = "workspace-changed"
 
 // errSessionEnded means a request named a session tied to an MCP session
 // (auth.MCPSessionPrefix) that has ended. Such a session ends with its MCP
@@ -56,10 +61,12 @@ type sessionStore struct {
 
 // resolve returns the live session row for identity, creating it or
 // restarting it when it ended. A live session whose stored workspace differs
-// from the request's gets errWorkspaceChanged. An ended session tied to an
-// MCP session gets errSessionEnded: a request that raced the end of its MCP
-// session must not resume it.
-func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, searchMode bool) (db.Session, error) {
+// from the request's moves to the request's workspace when newMCPSession is
+// true (an initialize that starts a new MCP session), and otherwise gets
+// errWorkspaceChanged. So nothing changes workspace partway through an MCP
+// session. An ended session tied to an MCP session gets errSessionEnded: a
+// request that raced the end of its MCP session must not resume it.
+func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, searchMode, newMCPSession bool) (db.Session, error) {
 	queries := db.New(s.pool)
 
 	session, err := queries.GetSession(ctx, db.GetSessionParams{Principal: identity.Principal, SessionID: identity.Session})
@@ -97,7 +104,16 @@ func (s *sessionStore) resolve(ctx context.Context, identity auth.Identity, sear
 	}
 
 	if session.Workspace != identity.Workspace {
-		return db.Session{}, errWorkspaceChanged
+		if !newMCPSession {
+			return db.Session{}, errWorkspaceChanged
+		}
+
+		session, err = s.rebind(ctx, session.ID, identity)
+		if err != nil {
+			return db.Session{}, err
+		}
+
+		s.startedToolSearch(ctx, searchMode)
 	}
 
 	return s.refresh(ctx, session, identity, searchMode)
@@ -235,6 +251,69 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 		}
 
 		return s.restore(ctx, tx, requestContext{identity: identity, session: session}, kept)
+	})
+
+	return session, err
+}
+
+// rebind moves the live session id to the request's workspace, in one
+// transaction holding the row lock. It ends the session as any end does
+// (session.end with reason workspace-changed: its session additions, allow
+// entries, pending requests, upstream sessions and MCP sessions end), then
+// restarts the row under the same session ID in the new workspace with an
+// empty enabled set, and writes session.start with previousWorkspace. Nothing
+// of the old session carries over except its deny entries, which only
+// narrow. A new MCP session already needs valid user credentials, and a
+// verified workspace a valid attestation, so this grants nothing that a new
+// session ID wouldn't.
+func (s *sessionStore) rebind(ctx context.Context, id int64, identity auth.Identity) (session db.Session, err error) {
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		queries := db.New(tx)
+
+		locked, err := queries.LockSession(ctx, id)
+		if err != nil {
+			return fmt.Errorf("lock session: %w", err)
+		}
+
+		if !locked.EndedAt.Valid && locked.Workspace == identity.Workspace {
+			// Another request moved it first.
+			session = locked
+
+			return nil
+		}
+
+		if _, err := runtime.EndLiveSessionInTx(ctx, tx, s.auditOutput, id, reasonWorkspaceChanged); err != nil {
+			return err
+		}
+
+		session, err = queries.RestartSession(ctx, db.RestartSessionParams{
+			ID:          id,
+			Workspace:   identity.Workspace,
+			Attestation: identity.Attestation,
+			Kind:        identity.Kind,
+		})
+		if err != nil {
+			return fmt.Errorf("restart session: %w", err)
+		}
+
+		// A session that ended while this request was on its way may have
+		// been ended by a 0.3 leader, which leaves its allow entries.
+		if err := s.clearEndedState(ctx, tx, locked); err != nil {
+			return err
+		}
+
+		if err := queries.DeleteSessionServers(ctx, id); err != nil {
+			return fmt.Errorf("delete enabled servers: %w", err)
+		}
+
+		return audit.NewRecorder(s.auditOutput, queries).Record(ctx, audit.Event{
+			Type:        "session.start",
+			Principal:   identity.Principal,
+			Workspace:   identity.Workspace,
+			Session:     identity.Session,
+			Attestation: identity.Attestation,
+			Details:     map[string]any{"previousWorkspace": locked.Workspace},
+		})
 	})
 
 	return session, err
