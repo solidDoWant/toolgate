@@ -39,6 +39,9 @@ Commands:
   clear [--workspace ID]                 Delete a workspace's list
   defaults [--verified none|all] [--unverified none|all|list]
                                          Show or set the defaults
+  register NAME [--key-file PATH]        Register a workspace key and wait for its approval
+  keys list                              Show your workspace keys
+  keys revoke NAME                       Revoke a workspace key
 `
 
 const messageNoWorkspace = "This machine has no verified workspace. Pass --workspace."
@@ -52,6 +55,9 @@ type workspaceEnv struct {
 
 	// now returns the current time.
 	now func() time.Time
+
+	// configDir returns the configuration directory. Nil means the user's.
+	configDir func() (string, error)
 }
 
 func realWorkspaceEnv(stdout, stderr io.Writer) workspaceEnv {
@@ -98,6 +104,8 @@ func runWorkspace(ctx context.Context, env workspaceEnv, args []string, withAcce
 
 	switch command {
 	case "list", "allow", "deny", "clear", "defaults":
+	case "register", "keys":
+		return runWorkspaceKeys(ctx, env, command, rest, withAccess)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(env.stdout, workspaceUsage)
 
@@ -395,7 +403,13 @@ func postChange(ctx context.Context, env workspaceEnv, access gatewayAccess, cha
 
 	_, _ = fmt.Fprintf(env.stdout, "Approve this change at %s. Waiting… (Ctrl-C stops waiting; the request stays open until it expires.)\n", requested.URL)
 
-	return awaitDecision(ctx, env, access, requested.Request)
+	if err := awaitDecision(ctx, env, access, requested.Request); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintln(env.stdout, "Approved. The change is applied.")
+
+	return nil
 }
 
 // awaitDecision polls the access request until it is decided or expired. It
@@ -413,8 +427,6 @@ func awaitDecision(ctx context.Context, env workspaceEnv, access gatewayAccess, 
 
 		switch status {
 		case "approved":
-			_, _ = fmt.Fprintln(env.stdout, "Approved. The change is applied.")
-
 			return nil
 		case "denied":
 			return errors.New("the change was denied")
