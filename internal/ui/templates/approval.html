@@ -1,7 +1,6 @@
 {{define "heading"}}<p class="m-0 mb-2 text-sm"><a href="/ui/approvals">All approvals</a></p>
 {{with .Data}}{{template "detail-header-start" (dict "Title" "Approval" "Summary" "A tool call waits for your decision.")}}
-{{if not .Message}}{{if .StepUpURL}}<div class="flex flex-col items-start gap-1 self-start"><a class="btn btn-primary" href="{{.StepUpURL}}">Approve</a>
-<p class="m-0 text-xs text-muted">You'll be asked to sign in again.</p></div>
+{{if not .Message}}{{if .StepUpURL}}<a class="btn btn-primary self-start" href="{{.StepUpURL}}">Approve</a>
 {{else}}<form method="post" action="/ui/approvals/{{.Approval.ID}}/approve" class="m-0 self-start">
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <button type="submit" class="btn btn-primary">Approve</button>
@@ -10,7 +9,8 @@
 <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
 <button type="submit" class="btn border-danger bg-transparent text-danger hover:bg-bad">Deny</button>
 </form>
-{{end}}{{template "detail-header-end"}}{{end}}{{end}}
+{{if .StepUpURL}}<p class="m-0 basis-full text-xs text-muted">You'll be asked to sign in again.</p>
+{{end}}{{end}}{{template "detail-header-end"}}{{end}}{{end}}
 {{define "content"}}
 {{with .Data}}
 {{if .Message}}<p class="flash status" role="status">{{.Message}}</p>
