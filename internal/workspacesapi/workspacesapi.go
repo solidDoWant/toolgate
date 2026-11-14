@@ -1,5 +1,6 @@
 // Package workspacesapi serves the workspace API: `GET /api/v1/workspaces`,
-// `POST /api/v1/workspaces/changes` and `GET /api/v1/access-requests/{id}`.
+// `POST /api/v1/workspaces/changes`, `GET /api/v1/access-requests/{id}` and
+// the workspace key routes under `/api/v1/workspace-keys`.
 package workspacesapi
 
 import (
@@ -231,6 +232,8 @@ type Service interface {
 // request context.
 type Handler struct {
 	Workspaces Service
+	// Keys serves the workspace key routes; nil leaves them out.
+	Keys KeyService
 	// Enabled is false when the gateway has no web UI: the workspace routes
 	// answer 409.
 	Enabled bool
@@ -249,6 +252,7 @@ func (h *Handler) Register(mux Mux, authenticate func(http.Handler) http.Handler
 	mux.Handle("GET "+WorkspacesPath, authenticate(http.HandlerFunc(h.list)))
 	mux.Handle("POST "+ChangesPath, authenticate(http.HandlerFunc(h.change)))
 	mux.Handle("GET "+AccessRequestsPath+"{id}", authenticate(http.HandlerFunc(h.accessRequest)))
+	h.registerKeyRoutes(mux, authenticate)
 }
 
 func (h *Handler) list(writer http.ResponseWriter, request *http.Request) {

@@ -158,13 +158,13 @@ The counters `toolgate_tool_search_total`, `toolgate_tool_search_hits_total` (ex
 
 ## Approvals
 
-`toolgate_approval_requests_total{kind, outcome}` counts approval and access requests that reached an outcome. The label `kind` is `tool` (a tool call that needs approval), `server` (a request to enable a server), `scope` or `change`. The label `outcome` is `approved`, `denied`, `expired` or `cancelled`. A request is `cancelled` when its session ended before anyone decided.
+`toolgate_approval_requests_total{kind, outcome}` counts approval and access requests that reached an outcome. The label `kind` is `tool` (a tool call that needs approval), `server` (a request to enable a server), `scope`, `change` or `key` (a request to register a workspace key). The label `outcome` is `approved`, `denied`, `expired` or `cancelled`. A request is `cancelled` when its session ended before anyone decided.
 
 ```promql
 sum by (kind) (increase(toolgate_approval_requests_total{outcome="expired"}[1h]))
 ```
 
-`toolgate_approval_requests_pending{kind}` is a gauge of the requests that wait for a decision and have not expired. All four kinds are always present on the leader.
+`toolgate_approval_requests_pending{kind}` is a gauge of the requests that wait for a decision and have not expired. All five kinds are always present on the leader.
 
 ```promql
 max(sum by (kind) (toolgate_approval_requests_pending)) > 20

@@ -16,6 +16,7 @@ const (
 	KindServer = "server"
 	KindScope  = "scope"
 	KindChange = "change"
+	KindKey    = "key"
 )
 
 // Approval request outcomes.
@@ -52,7 +53,7 @@ const (
 const Other = "other"
 
 // Kinds is every approval request kind.
-var Kinds = []string{KindTool, KindServer, KindScope, KindChange}
+var Kinds = []string{KindTool, KindServer, KindScope, KindChange, KindKey}
 
 // Outcomes is every approval request outcome.
 var Outcomes = []string{OutcomeApproved, OutcomeDenied, OutcomeExpired, OutcomeCancelled}

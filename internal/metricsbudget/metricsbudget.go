@@ -36,7 +36,7 @@ var AllowedLabels = map[string][]string{
 	"trust_domain": nil,
 	"server":       nil,
 	"version":      nil,
-	"kind":         {"tool", "server", "scope", "change", "user", "service_account", "spiffe", "connector", "other"},
+	"kind":         {"tool", "server", "scope", "change", "key", "user", "service_account", "spiffe", "connector", "other"},
 	"result":       {"ok", "refused", "attested", "other"},
 	"method":       {"initialize", "tools/list", "tools/call", "subscriptions/listen", "other"},
 	"revision":     {"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25", "2026-07-28", "other"},

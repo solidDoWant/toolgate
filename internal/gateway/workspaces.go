@@ -183,6 +183,10 @@ type Workspaces struct {
 	catalog         *catalog.Catalog
 	auditOutput     io.Writer
 	approvalTimeout time.Duration
+	// workspaceKeys and workspaceKeysPrefix are the gateway settings of the
+	// same names (SetWorkspaceKeys).
+	workspaceKeys       bool
+	workspaceKeysPrefix string
 }
 
 // NewWorkspaces returns the workspaces service. Audit events go to

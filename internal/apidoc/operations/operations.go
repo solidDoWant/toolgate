@@ -19,6 +19,7 @@ func All() []apidoc.Operation {
 	operations = append(operations, sessionsapi.Operations...)
 	operations = append(operations, audittail.Operations...)
 	operations = append(operations, workspacesapi.Operations...)
+	operations = append(operations, workspacesapi.KeyOperations...)
 
 	return operations
 }
