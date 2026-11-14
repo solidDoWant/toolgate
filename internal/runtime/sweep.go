@@ -81,10 +81,15 @@ func (s *Sweep) Run(ctx context.Context) error {
 	}
 
 	live := make(map[string]db.Instance, len(instances))
+	stopping := map[string]string{}
 
 	for _, instance := range instances {
 		if isLive(instance) {
 			live[instance.ID] = instance
+		}
+
+		if instance.Status == statusStopping {
+			stopping[instance.ID] = instance.Namespace
 		}
 	}
 
@@ -104,6 +109,12 @@ func (s *Sweep) Run(ctx context.Context) error {
 		if instance, found := live[id]; found && instance.Namespace == namespace.Name {
 			present[id] = true
 
+			continue
+		}
+
+		// Teardown deletes the namespace of a stopping instance after it has
+		// drained the pods that mount the instance's volumes.
+		if stoppingNamespace, found := stopping[id]; found && stoppingNamespace == namespace.Name {
 			continue
 		}
 
