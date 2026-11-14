@@ -754,7 +754,7 @@ func Default() Config {
 
 		PersistentVolumesUnusedRetention: Duration(720 * time.Hour),
 		PersistentVolumesLimitPerUser:    "10Gi",
-		WorkspaceKeysPrefix: "registered",
+		WorkspaceKeysPrefix:              "registered",
 
 		ToolSearchEmbeddingsTimeout: Duration(2 * time.Second),
 
