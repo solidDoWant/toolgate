@@ -49,6 +49,7 @@ docs/admin/
   chart.md                 What the chart installs, and why its permissions are safe.
   chart-values.md          The chart values reference (generated).
   user-secrets.md          How user secrets are encrypted, and how to rotate the key.
+  token-exchange.md        How to give an MCP server a token for the user with an OAuth token exchange.
   settings-profiles.md     How to give Claude Code settings to users with SettingsProfile objects.
   instances.md             When instances stop, how they are removed, and their metrics.
   metrics.md               Every metric the gateway exports, the series budget, example queries.

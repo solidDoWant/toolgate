@@ -79,6 +79,10 @@ Users set their secrets with `toolgate secret set`. The gateway encrypts each va
 
 A person who can read Secrets in the instance namespaces can read the values of running instances. Give this permission only to people who must have it.
 
+## Exchanged tokens
+
+A template can give an MCP server a token for the user, which the gateway gets with a token exchange. The gateway uses only the token of a request that the user sent. The new token is no broader than the target provider gives that user. [Token exchange](token-exchange.md) has the full threat model.
+
 ## Template secrets
 
 If you set `config.templateSecretsNamespace`, the gateway can read the Secrets in that one namespace. Kubernetes RBAC limits it to that namespace. Anyone who can write a template in a catalog namespace can read every Secret there. [Template secrets](template-secrets.md) tells how to set it up and keep it safe.
