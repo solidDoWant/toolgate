@@ -113,7 +113,12 @@ func instanceIDs(t require.TestingT, admin *kubernetes.Clientset, template strin
 // exchangedToken calls the secrets tool of the server as session and returns
 // the token its pod reads.
 func exchangedToken(t require.TestingT, session *gatewaySession, server string) string {
-	response, err := session.session.CallTool(context.Background(), &mcp.CallToolParams{Name: server + "__secrets"})
+	// One attempt is bounded, so a call that never answers fails the
+	// attempt and the caller's wait tries again.
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	response, err := session.session.CallTool(ctx, &mcp.CallToolParams{Name: server + "__secrets"})
 	require.NoError(t, err)
 	require.False(t, response.IsError, "%v", response.Content)
 
