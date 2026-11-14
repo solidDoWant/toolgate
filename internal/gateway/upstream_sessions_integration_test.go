@@ -3,7 +3,9 @@
 package gateway_test
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +37,52 @@ type sessionUpstream struct {
 	holdInitialize chan struct{}
 	// initializing receives once each time an initialize arrives.
 	initializing chan struct{}
+	// forgotten holds the session IDs the server answers 404 for, as after a
+	// restart, and forgetCalls makes it answer 404 to every tools/call
+	// that carries a session ID.
+	forgotten   map[string]bool
+	forgetCalls bool
+	// notFoundBody is the body of each 404; empty means plain text.
+	notFoundBody string
+}
+
+// forget makes the server answer 404 to every later request of the
+// upstream session id.
+func (u *sessionUpstream) forget(id string) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+
+	u.forgotten[id] = true
+}
+
+// lostSession reports whether the server answers request with 404 for its
+// session.
+func (u *sessionUpstream) lostSession(request *http.Request) bool {
+	id := request.Header.Get("Mcp-Session-Id")
+	if id == "" {
+		return false
+	}
+
+	u.mu.Lock()
+	forgotten, forgetCalls := u.forgotten[id], u.forgetCalls
+	u.mu.Unlock()
+
+	if forgotten {
+		return true
+	}
+
+	if !forgetCalls || request.Method != http.MethodPost {
+		return false
+	}
+
+	body, err := io.ReadAll(request.Body)
+	if err != nil {
+		return false
+	}
+
+	request.Body = io.NopCloser(bytes.NewReader(body))
+
+	return bytes.Contains(body, []byte(`"tools/call"`))
 }
 
 func (u *sessionUpstream) initializeCount() int {
@@ -72,7 +120,7 @@ type sessionUpstreamOptions struct {
 func (f *mcpFixture) startSessionUpstream(t *testing.T, server string, options sessionUpstreamOptions) *sessionUpstream {
 	t.Helper()
 
-	upstream := &sessionUpstream{initializing: make(chan struct{}, 16)}
+	upstream := &sessionUpstream{initializing: make(chan struct{}, 16), forgotten: make(map[string]bool)}
 	if options.hold {
 		upstream.holdInitialize = make(chan struct{})
 	}
@@ -126,6 +174,24 @@ func (f *mcpFixture) startSessionUpstream(t *testing.T, server string, options s
 			upstream.mu.Lock()
 			upstream.deleted = append(upstream.deleted, request.Header.Get("Mcp-Session-Id"))
 			upstream.mu.Unlock()
+		}
+
+		if upstream.lostSession(request) {
+			upstream.mu.Lock()
+			body := upstream.notFoundBody
+			upstream.mu.Unlock()
+
+			if body == "" {
+				http.Error(writer, "session not found", http.StatusNotFound)
+
+				return
+			}
+
+			writer.Header().Set("Content-Type", "application/json")
+			writer.WriteHeader(http.StatusNotFound)
+			_, _ = writer.Write([]byte(body))
+
+			return
 		}
 
 		handler.ServeHTTP(writer, request)

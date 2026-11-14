@@ -84,3 +84,42 @@ func HeldMCPSessions(handler http.Handler) int {
 func ResolveSession(ctx context.Context, handler http.Handler, identity auth.Identity) (db.Session, error) {
 	return handler.(*mcpEndpoint).sessions.resolve(ctx, identity, false)
 }
+
+// HeldUpstreamCopies returns how many copies of upstream sessions the MCP
+// handler's replica holds.
+func HeldUpstreamCopies(handler http.Handler) int {
+	upstreams := handler.(*mcpEndpoint).upstreams
+
+	upstreams.mu.Lock()
+
+	entries := make([]*copyEntry, 0, len(upstreams.copies))
+	for _, entry := range upstreams.copies {
+		entries = append(entries, entry)
+	}
+
+	upstreams.mu.Unlock()
+
+	held := 0
+
+	for _, entry := range entries {
+		entry.mu.Lock()
+		if entry.copy != nil {
+			held++
+		}
+		entry.mu.Unlock()
+	}
+
+	return held
+}
+
+// SetUpstreamClock sets the clock the MCP handler's replica measures idle
+// upstream copies with.
+func SetUpstreamClock(handler http.Handler, now func() time.Time) {
+	handler.(*mcpEndpoint).upstreams.clock.Store(&now)
+}
+
+// ReleaseIdleUpstreamCopies runs the replica's check for idle upstream
+// copies, as its once-a-minute ticker does.
+func ReleaseIdleUpstreamCopies(handler http.Handler) {
+	handler.(*mcpEndpoint).upstreams.releaseIdle()
+}
