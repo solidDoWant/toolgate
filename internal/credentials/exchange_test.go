@@ -114,6 +114,7 @@ func TestExchangeSendsTokenExchangeGrant(t *testing.T) {
 		require.NoError(t, request.ParseForm())
 		form = request.PostForm
 		user, password, basic = request.BasicAuth()
+
 		answerJSON(writer, http.StatusOK, map[string]any{
 			"access_token":      "exchanged",
 			"token_type":        "Bearer",
@@ -404,6 +405,7 @@ func TestExchangeErrorsNameCodeOnly(t *testing.T) {
 			}
 
 			_, err = exchanger.Exchange(t.Context(), auth.SubjectToken(testSubjectToken), credentials.KindRefresh)
+
 			if test.timeout != 0 {
 				close(release)
 			}
@@ -437,6 +439,7 @@ func TestClientSecretReadForEachExchange(t *testing.T) {
 
 	_, entry := tokenEndpoint(t, func(writer http.ResponseWriter, request *http.Request) {
 		_, password, _ = request.BasicAuth()
+
 		answerJSON(writer, http.StatusOK, map[string]any{"access_token": "exchanged", "expires_in": 3600})
 	})
 	exchanger, _ := newExchanger(t, entry, time.Now())
