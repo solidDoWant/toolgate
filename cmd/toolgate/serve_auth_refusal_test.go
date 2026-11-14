@@ -41,6 +41,16 @@ func TestRefusalRecorderWritesTheTrustDomain(t *testing.T) {
 			},
 		},
 		{
+			name: "challenged attestation",
+			refusal: auth.Refusal{
+				Principal: "alice-sub", Reason: "attestation assertion expired", Outcome: auth.OutcomeChallenged, RemoteAddress: "192.0.2.1",
+			},
+			wantDetails: map[string]any{
+				"reason": "attestation assertion expired", "outcome": "challenged",
+				"issuer": "", "audience": []any{}, "remoteAddress": "192.0.2.1",
+			},
+		},
+		{
 			name:    "other refusal",
 			refusal: auth.Refusal{Reason: "invalid token", Issuer: "https://idp.example", RemoteAddress: "192.0.2.1"},
 			wantDetails: map[string]any{

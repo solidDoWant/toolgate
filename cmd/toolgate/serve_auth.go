@@ -130,6 +130,10 @@ func (r refusalRecorder) RecordAuthRefusal(ctx context.Context, refusal auth.Ref
 		event.Details["trustDomain"] = refusal.TrustDomain
 	}
 
+	if refusal.Outcome != "" {
+		event.Details["outcome"] = refusal.Outcome
+	}
+
 	err := r.recorder.Record(ctx, event)
 	if err != nil {
 		r.logger.WarnContext(ctx, "cannot write the auth.refuse audit event", "error", err)

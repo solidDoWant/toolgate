@@ -178,7 +178,9 @@ func TestWorkspaceKeyVerdicts(t *testing.T) {
 		// wantReason is the reason of the one recorded auth.refuse; empty
 		// expects none.
 		wantReason string
-		wantTouch  bool
+		// wantOutcome is the outcome of that auth.refuse.
+		wantOutcome string
+		wantTouch   bool
 		// wantNoLookup expects the key store to be left alone.
 		wantNoLookup bool
 	}{
@@ -254,12 +256,86 @@ func TestWorkspaceKeyVerdicts(t *testing.T) {
 			wantReason: "attestation assertion signature invalid",
 		},
 		{
-			name: "expired assertion",
+			name: "expired assertion of an approved key is challenged",
 			assertion: func(t *testing.T, _ *fakeAPIServer) string {
 				return key.sign(t, validAssertion(now.Add(-331*time.Second)))
 			},
+			store:       withRow(activeRow()),
+			wantStatus:  http.StatusUnauthorized,
+			wantReason:  "attestation assertion expired",
+			wantOutcome: auth.OutcomeChallenged,
+		},
+		{
+			name: "expired assertion of an unknown key is unverified",
+			assertion: func(t *testing.T, _ *fakeAPIServer) string {
+				return key.sign(t, validAssertion(now.Add(-331*time.Second)))
+			},
+			wantReason: "attestation key unknown",
+		},
+		{
+			name: "expired assertion of a revoked key is unverified",
+			assertion: func(t *testing.T, _ *fakeAPIServer) string {
+				return key.sign(t, validAssertion(now.Add(-331*time.Second)))
+			},
+			store: func(store *fakeKeyStore) {
+				row := activeRow()
+				row.Status = "revoked"
+				store.rows[key.id] = row
+			},
+			wantReason: "attestation key revoked",
+		},
+		{
+			name: "expired assertion with a bad signature is unverified",
+			assertion: func(t *testing.T, _ *fakeAPIServer) string {
+				return signAssertion(t, jose.SigningKey{Algorithm: jose.EdDSA, Key: other.private}, key.id, validAssertion(now.Add(-331*time.Second)))
+			},
 			store:      withRow(activeRow()),
-			wantReason: "attestation assertion expired",
+			wantReason: "attestation assertion signature invalid",
+		},
+		{
+			name: "expired assertion of another user's key is unverified",
+			assertion: func(t *testing.T, _ *fakeAPIServer) string {
+				return key.sign(t, validAssertion(now.Add(-331*time.Second)))
+			},
+			store: func(store *fakeKeyStore) {
+				row := activeRow()
+				row.Principal = "bob-sub"
+				store.rows[key.id] = row
+			},
+			wantReason: "attestation key owner mismatch",
+		},
+		{
+			name: "expired assertion with the wrong audience is unverified",
+			assertion: func(t *testing.T, _ *fakeAPIServer) string {
+				claims := validAssertion(now.Add(-331 * time.Second))
+				claims.Audience = jwt.Audience{"other"}
+
+				return key.sign(t, claims)
+			},
+			store:      withRow(activeRow()),
+			wantReason: "attestation assertion audience wrong",
+		},
+		{
+			name: "expired assertion with a lifetime over five minutes is unverified",
+			assertion: func(t *testing.T, _ *fakeAPIServer) string {
+				claims := validAssertion(now.Add(-400 * time.Second))
+				claims.Expiry = jwt.NewNumericDate(now.Add(-99 * time.Second))
+
+				return key.sign(t, claims)
+			},
+			store:      withRow(activeRow()),
+			wantReason: "attestation assertion lifetime too long",
+		},
+		{
+			name: "expired assertion while workspace keys are off is unverified",
+			assertion: func(t *testing.T, _ *fakeAPIServer) string {
+				return key.sign(t, validAssertion(now.Add(-331*time.Second)))
+			},
+			store:          withRow(activeRow()),
+			podAttestation: true,
+			keysOff:        true,
+			wantReason:     "attestation workspace keys off",
+			wantNoLookup:   true,
 		},
 		{
 			name: "expired assertion within the leeway attests",
@@ -490,8 +566,10 @@ func TestWorkspaceKeyVerdicts(t *testing.T) {
 
 			f := newFixture(t, options, false)
 
+			assertion := test.assertion(t, server)
+
 			response := f.do(t, f.provider.MintAccessToken(t, aliceClaims), map[string]string{
-				auth.AttestationHeader: test.assertion(t, server),
+				auth.AttestationHeader: assertion,
 				auth.WorkspaceHeader:   "elsewhere",
 			})
 
@@ -505,6 +583,30 @@ func TestWorkspaceKeyVerdicts(t *testing.T) {
 			if wantStatus == http.StatusServiceUnavailable {
 				assert.Equal(t, "1", response.Header().Get("Retry-After"))
 				assert.Empty(t, f.recorder.all(), "an unavailable store writes no auth.refuse")
+
+				return
+			}
+
+			if wantStatus == http.StatusUnauthorized {
+				assert.Equal(t, "Bearer", response.Header().Get("WWW-Authenticate"))
+				assert.Empty(t, store.touched)
+
+				// Sending the same assertion again is challenged again,
+				// so only a new assertion ends the 401s.
+				again := f.do(t, f.provider.MintAccessToken(t, aliceClaims), map[string]string{
+					auth.AttestationHeader: assertion,
+					auth.WorkspaceHeader:   "elsewhere",
+				})
+				assert.Equal(t, http.StatusUnauthorized, again.Code)
+
+				refusals := f.recorder.all()
+				require.Len(t, refusals, 2)
+
+				for _, refusal := range refusals {
+					assert.Equal(t, auth.Refusal{
+						Principal: "alice-sub", Reason: test.wantReason, Outcome: test.wantOutcome, RemoteAddress: "192.0.2.10",
+					}, refusal)
+				}
 
 				return
 			}
@@ -527,7 +629,7 @@ func TestWorkspaceKeyVerdicts(t *testing.T) {
 			} else {
 				require.Len(t, refusals, 1)
 				assert.Equal(t, auth.Refusal{
-					Principal: "alice-sub", Reason: test.wantReason, RemoteAddress: "192.0.2.10",
+					Principal: "alice-sub", Reason: test.wantReason, Outcome: test.wantOutcome, RemoteAddress: "192.0.2.10",
 				}, refusals[0], "a key refusal names no issuer, audience or trust domain")
 			}
 

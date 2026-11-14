@@ -406,8 +406,6 @@ The key file must be a PKCS#8 PEM file with an Ed25519 key, at most 16 KiB. On L
 
 To see your keys, run `toolgate workspace keys list`. It prints the columns `NAME`, `WORKSPACE`, `FINGERPRINT`, `STATUS` (`active` or `pending`), `REGISTERED` and `LAST USED`. To remove a key, run `toolgate workspace keys revoke NAME`. The sessions that use it lose their verified workspace on their next request. Revoking also denies the pending requests for that name. You can also do both on the Workspaces page, in the "Workspace keys" card. The card shows each key with its fingerprint, when it was registered and when it was last used. A key that waits for approval links to its approval page. The Revoke button asks you to confirm and needs no new sign-in. You can have 20 active keys.
 
-If registration prints a warning that your access tokens live longer than 5 minutes, ask your admin to make them 5 minutes or shorter. Otherwise your sessions lose their verified workspace after 5 minutes.
-
 **What the key does.** The key protects against a stolen user token, not against code running in the workspace. Someone who steals your token cannot make a verified session with it: a key that they register does nothing until you approve it in the browser. Someone who steals only the key file gets nothing, because the key works only with your token. But any program that runs on the machine as you can read the key file and your sign-in, and it gets your verified sessions. Approve a key only when you registered it yourself.
 
 ## Settings from your admin

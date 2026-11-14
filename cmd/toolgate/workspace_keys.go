@@ -21,19 +21,12 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/go-jose/go-jose/v4"
-	"github.com/go-jose/go-jose/v4/jwt"
-
 	"github.com/solidDoWant/toolgate/internal/client/atomicfile"
 	"github.com/solidDoWant/toolgate/internal/client/attestation"
 )
 
 const (
 	workspaceKeysPath = "/api/v1/workspace-keys"
-
-	// workspaceKeyTokenLifetimeLimit is the longest access-token lifetime that
-	// keeps a key-attested session verified.
-	workspaceKeyTokenLifetimeLimit = 330 * time.Second
 )
 
 var keyNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,63}$`)
@@ -229,8 +222,6 @@ func registerKey(ctx context.Context, env workspaceEnv, access gatewayAccess, na
 		return err
 	}
 
-	warnLongLivedToken(env.stderr, access.accessToken)
-
 	public, ok := private.Public().(ed25519.PublicKey)
 	if !ok {
 		return errors.New("the key is not an Ed25519 key")
@@ -277,36 +268,6 @@ func registerKey(ctx context.Context, env workspaceEnv, access gatewayAccess, na
 		"To use it, run: toolgate configure --attestation-key-file %s\n", terminalSafe(name), terminalSafe(result.Workspace), terminalSafe(path))
 
 	return nil
-}
-
-// warnLongLivedToken warns when the user token lives longer than a
-// key-attested session can use. A token that is not a JWT, or has no iat or
-// exp, gives no warning.
-func warnLongLivedToken(stderr io.Writer, token string) {
-	parsed, err := jwt.ParseSigned(token, []jose.SignatureAlgorithm{
-		jose.EdDSA, jose.RS256, jose.RS384, jose.RS512, jose.ES256, jose.ES384, jose.ES512, jose.PS256, jose.PS384, jose.PS512, jose.HS256, jose.HS384, jose.HS512,
-	})
-	if err != nil {
-		return
-	}
-
-	var claims jwt.Claims
-	if err := parsed.UnsafeClaimsWithoutVerification(&claims); err != nil {
-		return
-	}
-
-	if claims.IssuedAt == nil || claims.Expiry == nil {
-		return
-	}
-
-	lifetime := claims.Expiry.Time().Sub(claims.IssuedAt.Time())
-	if lifetime <= workspaceKeyTokenLifetimeLimit {
-		return
-	}
-
-	_, _ = fmt.Fprintf(stderr, "Warning: your access tokens live %d minutes. A session that uses a workspace key loses its verified "+
-		"workspace after 5 minutes, unless access tokens live at most 5 minutes. Ask your admin to make the access-token "+
-		"lifetime 5 minutes or less.\n", int(lifetime.Round(time.Minute)/time.Minute))
 }
 
 func listKeys(ctx context.Context, env workspaceEnv, access gatewayAccess) error {
