@@ -255,6 +255,9 @@ type mcpEndpoint struct {
 	bindings map[string]*mcpSession
 	// adopting holds the copies being built from their rows.
 	adopting map[string]*adoption
+	// releaseUpstreams releases this replica's copies of upstream sessions
+	// at Shutdown.
+	releaseUpstreams func()
 	// streams holds the open GET streams, for Shutdown and closeCopy.
 	streams    map[uint64]openStream
 	nextStream uint64
@@ -333,7 +336,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 
 	tools := &metaTools{
 		metrics:      options.Metrics,
-		upstreams:    newUpstreams(upstreamEndpoint, upstreamlimit.NewClient(upstreamHTTPClient, upstreamResponseBudget), options.Secrets),
+		upstreams:    newUpstreams(upstreamEndpoint, upstreamlimit.NewClient(upstreamHTTPClient, upstreamResponseBudget), options.Secrets, logger),
 		database:     options.Database,
 		catalog:      options.Catalog,
 		policy:       options.Policy,
@@ -358,6 +361,7 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 	}
 
 	endpoint.callTool = tools.callTool
+	endpoint.releaseUpstreams = tools.upstreams.releaseAll
 	endpoint.describeTools = func(ctx context.Context, target *sessionTools, identity auth.Identity) {
 		target.mu.Lock()
 		described := target.findDescription != ""
