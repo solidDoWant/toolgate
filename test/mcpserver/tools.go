@@ -192,12 +192,17 @@ func textResult(text string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
 
-// countSessions returns how many sessions the server holds.
+// countSessions returns how many initialized sessions the server holds. A
+// client that probes with a discovery request first makes the SDK open a
+// session that never initializes and closes later; counting it would make
+// the result depend on when that cleanup runs.
 func countSessions(server *mcp.Server) int {
 	count := 0
 
-	for range server.Sessions() {
-		count++
+	for session := range server.Sessions() {
+		if session.InitializeParams() != nil {
+			count++
+		}
 	}
 
 	return count
