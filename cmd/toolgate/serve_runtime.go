@@ -252,6 +252,13 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		OmitOwnerDetails: cfg.InstanceOmitOwnerDetails,
 	}
 
+	// Renders read template secrets through the API, never the cache, so a
+	// render never uses an old value.
+	if cfg.TemplateSecretsNamespace != "" {
+		starter.TemplateSecrets = runtime.APITemplateSecrets{Reader: mgr.GetAPIReader(), Namespace: cfg.TemplateSecretsNamespace}
+		starter.TemplateSecretsNamespace = cfg.TemplateSecretsNamespace
+	}
+
 	repairer := &runtime.Repairer{
 		Pool:        pool,
 		Replacer:    replacer,

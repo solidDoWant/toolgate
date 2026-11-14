@@ -101,6 +101,15 @@ func (q *Queries) DeleteInstanceExchangesNotIn(ctx context.Context, arg DeleteIn
 	return result.RowsAffected(), nil
 }
 
+const deleteInstanceTemplateSecrets = `-- name: DeleteInstanceTemplateSecrets :exec
+DELETE FROM instance_template_secrets WHERE instance_id = $1
+`
+
+func (q *Queries) DeleteInstanceTemplateSecrets(ctx context.Context, instanceID string) error {
+	_, err := q.db.Exec(ctx, deleteInstanceTemplateSecrets, instanceID)
+	return err
+}
+
 const insertInstanceExchange = `-- name: InsertInstanceExchange :exec
 INSERT INTO instance_exchanges (instance_id, exchange, refresh_after, wanted_since, claimed_at)
 VALUES (

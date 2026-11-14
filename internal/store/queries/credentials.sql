@@ -81,6 +81,9 @@ SET target_field = excluded.target_field, source_namespace = excluded.source_nam
     source_name = excluded.source_name, source_key = excluded.source_key,
     source_version = excluded.source_version, last_error = NULL;
 
+-- name: DeleteInstanceTemplateSecrets :exec
+DELETE FROM instance_template_secrets WHERE instance_id = @instance_id;
+
 -- name: ListInstanceTemplateSecrets :many
 SELECT * FROM instance_template_secrets WHERE instance_id = @instance_id
 ORDER BY target_secret, target_key;

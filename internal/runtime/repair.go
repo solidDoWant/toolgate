@@ -282,7 +282,20 @@ func (r *Repairer) apply(ctx context.Context, instance db.Instance, template *v1
 	spanAttributes := trace.WithAttributes(attribute.String("toolgate.server", template.Name),
 		attribute.String("toolgate.instance", instance.ID))
 
-	if _, err := r.Starter.applyAll(ctx, instance, template, result, spanAttributes); err != nil {
+	applied, err := r.Starter.applyAll(ctx, instance, template, result, spanAttributes)
+	if err != nil {
+		return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
+	}
+
+	if !applied {
+		return nil
+	}
+
+	// The render read the current template secret values, so the rows
+	// record the versions now in the instance's Secrets.
+	if err := pgx.BeginFunc(ctx, r.Pool, func(tx pgx.Tx) error {
+		return writeTemplateSecrets(ctx, db.New(tx), instance.ID, result.TemplateSecrets)
+	}); err != nil {
 		return fmt.Errorf("reapply instance %s: %w", instance.ID, err)
 	}
 
@@ -295,14 +308,7 @@ func (r *Repairer) render(ctx context.Context, instance db.Instance, template *v
 		return nil, err
 	}
 
-	result, err := Render(ctx, Input{
-		Template:  template,
-		Identity:  identity,
-		Instance:  Instance{ID: instance.ID, Namespace: instance.Namespace},
-		Secrets:   r.Starter.Secrets(identity.PrincipalID),
-		Resolvers: r.Starter.Resolvers,
-		Metadata:  r.Starter.metadata(instance, template, identity),
-	})
+	result, err := r.Starter.render(ctx, instance, template, identity)
 	if err != nil {
 		return nil, fmt.Errorf("reapply instance %s: render: %w", instance.ID, err)
 	}

@@ -72,7 +72,7 @@ func TestConcurrentReadyWritesRebuildSearchRows(t *testing.T) {
 		for index, id := range []string{first, second} {
 			generation := int64(index + 1)
 			insertInstance(t, queries, id, "uid-1", generation)
-			changed, err := startStore.MarkStarting(t.Context(), id, generation, nil, time.Time{})
+			changed, err := startStore.MarkStarting(t.Context(), id, generation, nil, time.Time{}, nil)
 			require.NoError(t, err)
 			require.True(t, changed)
 		}

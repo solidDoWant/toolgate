@@ -115,6 +115,12 @@ type Starter struct {
 	Secrets func(principal string) SecretSource
 	// Resolvers calls the configured resolvers. Nil means none.
 	Resolvers ResolverCaller
+	// TemplateSecrets reads ${templateSecret:…} values from
+	// TemplateSecretsNamespace at each render. Nil means the feature is off.
+	TemplateSecrets TemplateSecretSource
+	// TemplateSecretsNamespace is recorded as the source namespace of each
+	// template secret value a render used.
+	TemplateSecretsNamespace string
 	// ListTools reaches the instance over MCP.
 	ListTools ToolLister
 	// ToolListTimeout bounds each ListTools call. Zero means
@@ -191,14 +197,7 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 
 	_, renderSpan := s.tracer().Start(ctx, "toolgate.render", spanAttributes)
 
-	result, err := Render(ctx, Input{
-		Template:  template,
-		Identity:  identity,
-		Instance:  Instance{ID: instance.ID, Namespace: instance.Namespace},
-		Secrets:   s.Secrets(identity.PrincipalID),
-		Resolvers: s.Resolvers,
-		Metadata:  s.metadata(instance, template, identity),
-	})
+	result, err := s.render(ctx, instance, template, identity)
 	if err != nil {
 		renderSpan.SetStatus(codes.Error, "render")
 	}
@@ -227,7 +226,8 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return s.fail(ctx, instance, StatusPending, "The health check didn't render: "+err.Error())
 	}
 
-	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, healthCheck, result.ResolvedExpiresAt); err != nil {
+	if _, err := s.Store.MarkStarting(ctx, instance.ID, template.Generation, healthCheck, result.ResolvedExpiresAt,
+		result.TemplateSecrets); err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
 	}
 
@@ -521,6 +521,32 @@ func (s *Starter) prepareNamespace(ctx context.Context, instance db.Instance, te
 	}
 
 	return true, nil
+}
+
+// render renders the instance's objects with the identity it is rendered
+// for, reading template secrets from the API at this render.
+func (s *Starter) render(ctx context.Context, instance db.Instance, template *v1alpha1.MCPServerTemplate, identity Identity) (*Result, error) {
+	input := Input{
+		Template:  template,
+		Identity:  identity,
+		Instance:  Instance{ID: instance.ID, Namespace: instance.Namespace},
+		Secrets:   s.Secrets(identity.PrincipalID),
+		Resolvers: s.Resolvers,
+		Metadata:  s.metadata(instance, template, identity),
+
+		TemplateSecrets: s.TemplateSecrets,
+	}
+
+	result, err := Render(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	for index := range result.TemplateSecrets {
+		result.TemplateSecrets[index].SourceNamespace = s.TemplateSecretsNamespace
+	}
+
+	return result, nil
 }
 
 // applyAll prepares the instance's own namespace, if it has one, and applies
