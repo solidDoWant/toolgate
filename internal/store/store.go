@@ -5,6 +5,7 @@ package store
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -34,16 +35,33 @@ func Open(ctx context.Context, connString string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// reloadTLS replaces the TLS settings of connConfig, a per-connection copy
-// of the pool's configuration, with ones parsed from connString now.
+// reloadTLS refreshes the server-verification settings of connConfig, a
+// per-connection copy of the pool's configuration, from connString as it is
+// now. The client certificate is not copied: pgx loads sslcert and sslkey
+// itself for every handshake, and replacing the whole TLS config would drop
+// that.
 func reloadTLS(connConfig *pgx.ConnConfig, connString string) error {
 	fresh, err := pgconn.ParseConfig(connString)
 	if err != nil {
 		return fmt.Errorf("reload PostgreSQL TLS files: %w", err)
 	}
 
-	connConfig.TLSConfig = fresh.TLSConfig
-	connConfig.Fallbacks = fresh.Fallbacks
+	copyServerVerification(connConfig.TLSConfig, fresh.TLSConfig)
+
+	if len(connConfig.Fallbacks) == len(fresh.Fallbacks) {
+		for i := range fresh.Fallbacks {
+			copyServerVerification(connConfig.Fallbacks[i].TLSConfig, fresh.Fallbacks[i].TLSConfig)
+		}
+	}
 
 	return nil
+}
+
+func copyServerVerification(dst, src *tls.Config) {
+	if dst == nil || src == nil {
+		return
+	}
+
+	dst.RootCAs = src.RootCAs
+	dst.VerifyPeerCertificate = src.VerifyPeerCertificate
 }
