@@ -40,6 +40,16 @@ rules:
   - apiGroups: ["toolgate.soliddowant.dev"]
     resources: ["mcpservertemplates/status", "toolgaterules/status", "settingsprofiles/status"]
     verbs: ["update", "patch"]
+  {{- if include "toolgate.persistentVolumes" . }}
+  # Volumes that outlive an instance. The admission policy lets the gateway
+  # change only the volumes it labelled.
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "patch", "delete"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get"]
+  {{- end }}
   {{- with .Values.rbac.extraRules }}
   # The admin's extra rules (`rbac.extraRules`).
   {{- toYaml . | nindent 2 }}

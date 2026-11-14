@@ -122,6 +122,19 @@ true
 {{- end -}}
 {{- end -}}
 
+{{/*
+"true" when the gateway keeps volumes after an instance stops
+(config.persistentVolumes.enabled). Empty otherwise. When it is true, the
+ClusterRole gets the PersistentVolume and StorageClass rules, and the
+admission policy lets the gateway change the volumes it labelled.
+*/}}
+{{- define "toolgate.persistentVolumes" -}}
+{{- $volumes := .Values.config.persistentVolumes | default dict -}}
+{{- if $volumes.enabled -}}
+true
+{{- end -}}
+{{- end -}}
+
 {{/* The name of the embeddings server's Deployment. */}}
 {{- define "toolgate.embeddingsName" -}}
 {{- printf "%s-embeddings" (include "toolgate.fullname" .) -}}

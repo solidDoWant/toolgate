@@ -202,6 +202,20 @@ config:
   # cluster objects. The owner's subject is annotated either way.
   instanceOwnerDetails: true
 
+  # Volumes that outlive an instance. See `docs/admin/persistent-volumes.md`.
+  persistentVolumes:
+    # -- Let templates keep a volume (a PersistentVolume) after their
+    # instance stops. Adds the PersistentVolume and StorageClass rights to the
+    # gateway's ClusterRole, and the matching admission rules. Turn it on only
+    # after every gateway replica runs a version that knows this setting.
+    enabled: false
+    # -- How long a volume that no instance uses is kept, as a Go duration.
+    # `0` never deletes unused volumes. Otherwise at least `1h`.
+    unusedRetention: 720h
+    # -- The most storage one user's volumes may hold in total, as a Kubernetes
+    # quantity such as `10Gi`. `0` means no limit. Applies to new volumes only.
+    limitPerUser: 10Gi
+
   # -- Turn on tool search mode for sessions whose client sends no
   # `X-Toolgate-Tool-Search` header. A client can still turn it on or off
   # with that header. It only changes which tools a session lists.

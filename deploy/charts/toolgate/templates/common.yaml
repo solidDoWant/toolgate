@@ -128,6 +128,11 @@ settings from `config`.
 {{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_DEPLOYMENT" "value" (include "toolgate.embeddingsName" .)) }}
 {{- $env = append $env (dict "name" "TOOLGATE_TOOL_SEARCH_EMBEDDINGS_SCALE_TO_ZERO_IDLE_TIMEOUT" "value" (toString .Values.embeddings.server.scaleToZero.idleTimeout)) }}
 {{- end }}
+{{- with .Values.config.persistentVolumes }}
+{{- $env = append $env (dict "name" "TOOLGATE_PERSISTENT_VOLUMES_ENABLED" "value" (toString (default false .enabled))) }}
+{{- $env = append $env (dict "name" "TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION" "value" (toString .unusedRetention)) }}
+{{- $env = append $env (dict "name" "TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER" "value" (toString .limitPerUser)) }}
+{{- end }}
 {{- $env = append $env (dict "name" "TOOLGATE_LOG_LEVEL" "value" $config.logging.level) -}}
 {{- with $config.otlpEndpoint }}
 {{- $env = append $env (dict "name" "TOOLGATE_OTLP_ENDPOINT" "value" .) }}

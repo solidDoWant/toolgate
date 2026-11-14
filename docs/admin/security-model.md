@@ -67,6 +67,12 @@ Each `per-session` or `per-user` instance runs in its own namespace. The namespa
 
 The gateway can write only the kinds of objects that a template can contain, and only in namespaces with toolgate's label and the Pod Security level `restricted`. An admission policy enforces this, so a gateway that an attacker controls cannot do more. For example, it cannot start a privileged pod. [The chart page](chart.md) tells more about these permissions.
 
+### Persistent volumes
+
+If you turn on `config.persistentVolumes.enabled`, the gateway gets rights on PersistentVolumes (PVs) and StorageClasses. The admission policy limits them. The gateway can change or delete only a PV that it labelled. It can label a PV for the first time only if the PV is bound to a claim in a `tg-` namespace and a provisioner made it for that claim. It can delete a PV only after it sets the reclaim policy to `Delete`. So a gateway that an attacker controls cannot touch the PVs of other workloads. [The chart page](chart.md#persistent-volumes) has the rules.
+
+An MCP server can write to its volume anything that it receives, including its own tokens. Before, that disk went away when the instance stopped. With a persistent volume, it stays until the gateway deletes the volume. toolgate itself never writes a secret to a volume.
+
 ## Tool lists cross users
 
 toolgate remembers the tool list of each template generation. It learns the list from the last instance of that generation that became ready. A user whose instance does not run yet sees this list. So a list learned from the instance of Alice can show to Bob until the instance of Bob is ready.
