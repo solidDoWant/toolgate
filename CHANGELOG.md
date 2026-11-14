@@ -1,15 +1,68 @@
 # Changelog
 
-## Unreleased
+## 0.4.12
 
-### Documentation
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This release adds five features that admins turn on: volumes that stay after an instance stops, OAuth token exchange for servers, admin Secrets for templates, a cache for tool results, and workspace keys for machines outside the cluster. Each Claude Code session now also gets its own MCP session on a shared server. This release has one breaking change, so read the upgrade notes before you upgrade.
 
-- The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
+To install toolgate:
 
-### Registered workspace keys
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.12`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.12`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
 
-- A user can register a key pair for a machine outside the cluster, such as a laptop. Sessions from that machine then get a verified workspace, such as `registered/alice/dev`. Users run `toolgate workspace register NAME`, approve the key in the browser, and run `toolgate configure --attestation-key-file PATH`. They manage keys with `toolgate workspace keys list` and `toolgate workspace keys revoke`. See "Registered workspace keys" in `docs/admin/workspace-attestation.md`.
-- The feature is off by default. Turn it on with `config.workspaceKeys.enabled` only after every replica runs the new version. An old replica cannot approve a key request, and it sends a key assertion to TokenReview, where the attestation fails. The feature also needs the web UI, and user access tokens that live at most 5 minutes.
+### Upgrade notes for admins
+
+- Breaking change: rename each secret whose name starts with `-` before you upgrade. A secret name can no longer start with `-`. After the upgrade, you cannot read, replace or delete such a secret. The name pattern is now `^[A-Za-z0-9._][A-Za-z0-9._-]{0,127}$`. The CLI, the API and the web UI all refuse other names. The reason: `toolgate secret set --help` stored a secret named `--help`. ([#617](https://github.com/solidDoWant/toolgate/pull/617))
+- Turn on `config.persistentVolumes.enabled` and `config.workspaceKeys.enabled` only after every gateway replica runs 0.4.12. An older leader starts a template with persistent volumes with no volume, and deletes its namespace without waiting for its pods. An older replica cannot approve a key request. Both features are off by default. ([#725](https://github.com/solidDoWant/toolgate/pull/725), [#692](https://github.com/solidDoWant/toolgate/pull/692), [#710](https://github.com/solidDoWant/toolgate/pull/710))
+- The gateway adds new database tables when it starts. You do not have to do anything. ([#692](https://github.com/solidDoWant/toolgate/pull/692), [#694](https://github.com/solidDoWant/toolgate/pull/694), [#698](https://github.com/solidDoWant/toolgate/pull/698), [#689](https://github.com/solidDoWant/toolgate/pull/689))
+
+### Persistent volumes
+
+- A template can now keep a volume after its instance stops, with the new field `persistentVolumes`. The next instance with the same template and scope gets the same data. The volumes need a StorageClass with `reclaimPolicy: Retain`. Turn the feature on with the chart value `config.persistentVolumes.enabled`. It adds the PersistentVolume and StorageClass rights to the gateway and the matching admission rules. See `docs/admin/persistent-volumes.md`. ([#697](https://github.com/solidDoWant/toolgate/pull/697), [#721](https://github.com/solidDoWant/toolgate/pull/721), [#722](https://github.com/solidDoWant/toolgate/pull/722), [#734](https://github.com/solidDoWant/toolgate/pull/734), [#725](https://github.com/solidDoWant/toolgate/pull/725))
+- If another instance still holds a volume, a new instance waits for it. If a new volume of a user would go over `persistentVolumes.limitPerUser` (default `10Gi`), the start fails. ([#734](https://github.com/solidDoWant/toolgate/pull/734))
+- When an instance with volumes stops, the gateway waits up to 2 minutes for its pods to stop before it deletes the namespace. ([#732](https://github.com/solidDoWant/toolgate/pull/732))
+- The leader deletes the volumes of deleted templates, and volumes that no instance used for `persistentVolumes.unusedRetention` (default `720h`). ([#742](https://github.com/solidDoWant/toolgate/pull/742))
+- If a health check applies an instance again, it also creates the volume claims again, bound to the same volumes. ([#731](https://github.com/solidDoWant/toolgate/pull/731))
+- Admins list and delete volumes with `toolgate admin volumes list` and `toolgate admin volumes delete`, or with the admin volumes API. ([#713](https://github.com/solidDoWant/toolgate/pull/713))
+
+### Token exchange and template secrets
+
+- A template can now give its server a token for the signed-in user, with `${exchange:NAME}` in a Secret value. The gateway exchanges the user's token at an OAuth token endpoint (RFC 8693) when the instance starts. List the exchanges in the new chart value `config.tokenExchanges`. The gateway needs `secretsKeysetFile` for them. Each exchange writes a `credential.exchange` audit event. See `docs/admin/token-exchange.md`. ([#696](https://github.com/solidDoWant/toolgate/pull/696), [#702](https://github.com/solidDoWant/toolgate/pull/702), [#701](https://github.com/solidDoWant/toolgate/pull/701), [#717](https://github.com/solidDoWant/toolgate/pull/717), [#719](https://github.com/solidDoWant/toolgate/pull/719), [#726](https://github.com/solidDoWant/toolgate/pull/726))
+- While the user calls the server, the gateway gets a new token at half of the token's lifetime and changes it in the running instance without a restart. If the token expires, the instance stops, and the next call starts a new one. A result from the tool result cache also keeps the token current. ([#723](https://github.com/solidDoWant/toolgate/pull/723), [#730](https://github.com/solidDoWant/toolgate/pull/730), [#738](https://github.com/solidDoWant/toolgate/pull/738))
+- A template that uses `${exchange:…}` refuses service accounts, SPIFFE workloads and pod sign-in with the reason `no-user-token`, because they have no user token to exchange. ([#718](https://github.com/solidDoWant/toolgate/pull/718))
+- A template can now read an admin's Secret with `${templateSecret:NAME/KEY}`. The Secret lives in one namespace that you name with the new chart value `config.templateSecretsNamespace`. The chart lets the gateway read Secrets in that namespace only. If the gateway cannot read the value, the start fails with a reason that names the Secret and the key. When you change the Secret, running instances get the new value without a restart. See `docs/admin/template-secrets.md`. ([#691](https://github.com/solidDoWant/toolgate/pull/691), [#709](https://github.com/solidDoWant/toolgate/pull/709), [#716](https://github.com/solidDoWant/toolgate/pull/716))
+- The template's `Valid` condition reports a wrong name, form or scope in `${exchange:…}` and `${templateSecret:…}`. ([#714](https://github.com/solidDoWant/toolgate/pull/714))
+- If both features are in one template, the gateway applies the Secrets of an instance before its other objects. A template with both `persistentVolumes` and `${exchange:…}` waits for its volumes first, and both waits share one `startTimeout`. ([#695](https://github.com/solidDoWant/toolgate/pull/695), [#740](https://github.com/solidDoWant/toolgate/pull/740))
+
+### Tool result cache
+
+- A template can now cache the results of a tool with `tools.<name>.cache`. A cached result comes back with `_meta["toolgate/cache"].age`, and the audit log records it in `tool.result`. The new chart values `config.toolResultCacheMaxEntryBytes` and `config.toolResultCacheMaxTemplateBytes` limit the size. See `docs/admin/tool-result-cache.md`. ([#703](https://github.com/solidDoWant/toolgate/pull/703), [#707](https://github.com/solidDoWant/toolgate/pull/707), [#729](https://github.com/solidDoWant/toolgate/pull/729), [#706](https://github.com/solidDoWant/toolgate/pull/706))
+
+### Servers and sessions
+
+- Each Claude Code session now gets its own MCP session on a shared or per-user server. It keeps that session on every gateway replica. ([#715](https://github.com/solidDoWant/toolgate/pull/715))
+- If a server forgets a session (HTTP 404), the gateway opens a new one and tries the call once more. The leader ends the MCP sessions of stopped instances, ended sessions and disabled servers. ([#720](https://github.com/solidDoWant/toolgate/pull/720), [#711](https://github.com/solidDoWant/toolgate/pull/711), [#690](https://github.com/solidDoWant/toolgate/pull/690))
+- The gateway opens one less connection to each server per session. ([#690](https://github.com/solidDoWant/toolgate/pull/690))
+- A template can now replace its instances when the template changes, with the new field `spec.updatePolicy`: `manual` (the default), `immediate`, or `whenIdle` with `idleFor`. A running call keeps an instance busy. ([#618](https://github.com/solidDoWant/toolgate/pull/618))
+- If someone deletes an object of an instance and the server stops answering, the gateway now applies the objects again. Before, the instance failed. ([#618](https://github.com/solidDoWant/toolgate/pull/618))
+
+### Signing in and workspaces
+
+- A user can now register a key pair for a machine outside the cluster, such as a laptop. Sessions from that machine then get a verified workspace, such as `registered/alice/dev`. Users run `toolgate workspace register NAME`, approve the key in the web UI, and run `toolgate configure --attestation-key-file PATH`. They list and revoke keys with `toolgate workspace keys list` and `toolgate workspace keys revoke`, or on the Workspaces page of the web UI. Turn it on with `config.workspaceKeys.enabled`. It needs the web UI. See "Registered workspace keys" in `docs/admin/workspace-attestation.md`. ([#687](https://github.com/solidDoWant/toolgate/pull/687), [#692](https://github.com/solidDoWant/toolgate/pull/692), [#693](https://github.com/solidDoWant/toolgate/pull/693), [#699](https://github.com/solidDoWant/toolgate/pull/699), [#708](https://github.com/solidDoWant/toolgate/pull/708), [#710](https://github.com/solidDoWant/toolgate/pull/710), [#712](https://github.com/solidDoWant/toolgate/pull/712), [#724](https://github.com/solidDoWant/toolgate/pull/724))
+- For KubeVirt, the workspace attestation docs now use a `containerPath` volume (KubeVirt 1.8 and later) with a MutatingAdmissionPolicy. It needs no Role and no access to the API server. The TokenRequest setup stays for older KubeVirt. ([#700](https://github.com/solidDoWant/toolgate/pull/700))
+
+### Telemetry
+
+- New metrics: `toolgate_tool_result_cache_lookups_total`, `toolgate_tool_result_cache_stores_total`, `toolgate_token_exchanges_total`, `toolgate_template_secret_updates_total`, `toolgate_upstream_session_events_total`, the persistent volume metrics, and the `cached` outcome of `toolgate_tool_calls_total`. See `docs/admin/metrics.md`. ([#689](https://github.com/solidDoWant/toolgate/pull/689), [#716](https://github.com/solidDoWant/toolgate/pull/716), [#717](https://github.com/solidDoWant/toolgate/pull/717), [#722](https://github.com/solidDoWant/toolgate/pull/722), [#729](https://github.com/solidDoWant/toolgate/pull/729), [#742](https://github.com/solidDoWant/toolgate/pull/742))
+
+### Fixes
+
+- If a user asks for the same access change again, toolgate now uses the request that waits for approval. Before, each call made a new request. When an approval makes other requests of the user unnecessary, toolgate approves them too and records an `access.approve` event. ([#622](https://github.com/solidDoWant/toolgate/pull/622))
+- `toolgate secret set --help` and `toolgate secret delete --help` (also `-h` and `help`) now print the usage. Before, they stored or deleted a secret named `--help`. `toolgate secret set` now refuses an empty value from standard input that is not a terminal. ([#617](https://github.com/solidDoWant/toolgate/pull/617))
+- If no session file appears, `toolgate headers` now sends the sign-in headers without a session. `claude mcp list` then shows the gateway as connected. ([#616](https://github.com/solidDoWant/toolgate/pull/616))
+- The Workspace keys table of the web UI now stays inside its border on wide screens. ([#735](https://github.com/solidDoWant/toolgate/pull/735))
+- The image is built with a Go release that fixes GO-2026-6859 (a crash of the HTTP/1 server in `net/http`). ([#625](https://github.com/solidDoWant/toolgate/pull/625))
+
+Internal: design documents for this release, end-to-end tests for each new feature, dependency updates, CI and agent instruction changes.
 
 ## 0.4.11
 
