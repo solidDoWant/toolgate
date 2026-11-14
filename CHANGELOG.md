@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.4.14
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes the fresh sign-in of the web UI and lets admins set how long a fresh sign-in lasts. It also fixes two layout problems in the web UI, and `toolgate workspace register` now uses the key after it is approved.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.14`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.14`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+- You can now set how long a fresh sign-in lasts with the new chart value `config.ui.stepUpMaxAge`. A fresh sign-in is a recent sign-in that the web UI asks for before a user creates a grant, approves a tool call or an access request, or adds servers on `/ui/workspaces`. The default is `5m`, the same as before, so you do not have to change anything. The value must be from `1m` to `1h`. The chart refuses other values, and the gateway does not start with them. One fresh sign-in covers every approval in the window. A longer window means fewer sign-ins when a user approves several things in a row. But a person at an unlocked browser can then give more access without the password for a longer time. See `docs/admin/web-ui.md`. ([#772](https://github.com/solidDoWant/toolgate/pull/772))
+
+### Signing in
+
+- A user who opens the grant form or the Workspaces page with a pending change, and who has no web UI session, now signs in one time. Before, the IdP signed the user in from its own session, and then the UI asked for a second, fresh sign-in. Approval links already worked this way. ([#772](https://github.com/solidDoWant/toolgate/pull/772))
+
+### Claude Code plugin and CLI
+
+- `toolgate workspace register` now starts to use the workspace key after an admin approves it. Use `--use` to replace another attestation source in `config.json`. Use `--no-use` to keep `config.json` as it is. ([#771](https://github.com/solidDoWant/toolgate/pull/771))
+
+### Fixes
+
+- On an approval page that asks for a fresh sign-in, the Approve and Deny buttons now stay next to each other. ([#769](https://github.com/solidDoWant/toolgate/pull/769))
+- The copy button next to an ID or a fingerprint no longer makes the page move. ([#767](https://github.com/solidDoWant/toolgate/pull/767))
+
+Internal work: a fix for a flaky gateway test, and dependency updates (pgx, the Nix install action). ([#762](https://github.com/solidDoWant/toolgate/pull/762), [#763](https://github.com/solidDoWant/toolgate/pull/763), [#764](https://github.com/solidDoWant/toolgate/pull/764))
+
+### Known issues
+
+- None.
+
 ## 0.4.13
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release moves token exchanges from a chart value into a new `TokenExchange` resource. It also adds an opt-in for the template secrets namespace and fixes workspace keys and the audit log. This release has one breaking change, so read the upgrade notes before you upgrade.
