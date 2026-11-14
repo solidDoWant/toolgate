@@ -150,7 +150,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, err
 	}
 
-	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names()}
+	validator := catalog.Validator{SharedNamespace: cfg.SharedNamespace, Resolvers: resolvers.Names(), Exchanges: exchangeNames(cfg.TokenExchanges), TemplateSecretsNamespace: cfg.TemplateSecretsNamespace}
 
 	if options.ruleLister != nil {
 		options.ruleLister.set(mgr.GetClient(), watched)
@@ -384,4 +384,14 @@ func addEmbeddingsScaler(mgr manager.Manager, cfg config.Config, clientset kuber
 	}
 
 	return nil
+}
+
+// exchangeNames returns the names of the configured token exchanges.
+func exchangeNames(exchanges []config.TokenExchange) []string {
+	names := make([]string, 0, len(exchanges))
+	for _, exchange := range exchanges {
+		names = append(names, exchange.Name)
+	}
+
+	return names
 }
