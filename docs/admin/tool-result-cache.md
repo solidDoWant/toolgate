@@ -47,7 +47,7 @@ Cache keys use only the verified identity. The session ID that a client claims n
 This template caches the search of a distributor API. The quota is 1000 calls a day, and parts data changes slowly.
 
 ```yaml
-apiVersion: toolgate.dev/v1alpha1
+apiVersion: toolgate.soliddowant.dev/v1alpha1
 kind: MCPServerTemplate
 metadata:
   name: parts
