@@ -2,8 +2,6 @@
 
 ## Unreleased
 
-- New setting `tokenExchanges` (chart value `config.tokenExchanges`) lists OAuth token exchanges for templates. The gateway checks the settings and needs `secretsKeysetFile` with them. See `docs/admin/token-exchange.md`.
-
 ### Documentation
 
 - The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
