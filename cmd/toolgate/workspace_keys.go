@@ -23,6 +23,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/client/atomicfile"
 	"github.com/solidDoWant/toolgate/internal/client/attestation"
+	"github.com/solidDoWant/toolgate/internal/client/login"
 )
 
 const (
@@ -71,7 +72,7 @@ func runWorkspaceKeys(ctx context.Context, env workspaceEnv, command string, arg
 
 	switch command {
 	case "register":
-		name, keyFile, ok := parseRegisterArgs(args, env.stderr)
+		name, keyFile, use, ok := parseRegisterArgs(args, env.stderr)
 		if !ok {
 			return 2
 		}
@@ -83,7 +84,7 @@ func runWorkspaceKeys(ctx context.Context, env workspaceEnv, command string, arg
 			return 1
 		}
 
-		run = func(access gatewayAccess) error { return registerKey(ctx, env, access, name, path) }
+		run = func(access gatewayAccess) error { return registerKey(ctx, env, access, name, path, use) }
 	default:
 		sub, rest := "", args
 
@@ -126,17 +127,20 @@ func runWorkspaceKeys(ctx context.Context, env workspaceEnv, command string, arg
 	return 0
 }
 
-func parseRegisterArgs(args []string, stderr io.Writer) (string, string, bool) {
+func parseRegisterArgs(args []string, stderr io.Writer) (string, string, useMode, bool) {
 	flags := flag.NewFlagSet("toolgate workspace register", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
 	keyFile := flags.String("key-file", "", "`PATH` of the private key (default: workspace-keys/NAME.pem in the configuration directory)")
 
+	forceUse := flags.Bool("use", false, "replace another configured attestation source with this key once it is approved")
+	noUse := flags.Bool("no-use", false, "never change config.json")
+
 	var positional []string
 
 	for {
 		if err := flags.Parse(args); err != nil {
-			return "", "", false
+			return "", "", useAuto, false
 		}
 
 		if flags.NArg() == 0 {
@@ -147,19 +151,34 @@ func parseRegisterArgs(args []string, stderr io.Writer) (string, string, bool) {
 		args = flags.Args()[1:]
 	}
 
+	if *forceUse && *noUse {
+		_, _ = fmt.Fprintln(stderr, "toolgate workspace register: use only one of --use and --no-use")
+
+		return "", "", useAuto, false
+	}
+
 	if len(positional) != 1 {
 		_, _ = fmt.Fprintln(stderr, "toolgate workspace register: give the name of one key")
 
-		return "", "", false
+		return "", "", useAuto, false
 	}
 
 	if !keyNamePattern.MatchString(positional[0]) {
 		_, _ = fmt.Fprintln(stderr, "toolgate workspace register: a key name has 1 to 63 letters, digits, `.`, `_` or `-`.")
 
-		return "", "", false
+		return "", "", useAuto, false
 	}
 
-	return positional[0], *keyFile, true
+	mode := useAuto
+
+	switch {
+	case *forceUse:
+		mode = useReplace
+	case *noUse:
+		mode = useNever
+	}
+
+	return positional[0], *keyFile, mode, true
 }
 
 func keyFilePath(env workspaceEnv, name, keyFile string) (string, error) {
@@ -216,7 +235,7 @@ func loadOrCreateKey(path string) (ed25519.PrivateKey, error) {
 	return private, nil
 }
 
-func registerKey(ctx context.Context, env workspaceEnv, access gatewayAccess, name, path string) error {
+func registerKey(ctx context.Context, env workspaceEnv, access gatewayAccess, name, path string, use useMode) error {
 	private, err := loadOrCreateKey(path)
 	if err != nil {
 		return err
@@ -261,13 +280,103 @@ func registerKey(ctx context.Context, env workspaceEnv, access gatewayAccess, na
 		"Waiting… (Ctrl-C stops waiting; the request stays open until it expires.)\n", terminalSafe(result.URL))
 
 	if err := awaitDecision(ctx, env, access, result.Request); err != nil {
+		if use != useNever && !errors.Is(err, errRequestDenied) {
+			_, _ = fmt.Fprintf(env.stdout, "config.json is unchanged. After the request is approved, run: toolgate configure --attestation-key-file %s\n",
+				terminalSafe(path))
+		}
+
 		return err
 	}
 
-	_, _ = fmt.Fprintf(env.stdout, "Key `%s` is active. Sessions that use it run in workspace `%s`. "+
-		"To use it, run: toolgate configure --attestation-key-file %s\n", terminalSafe(name), terminalSafe(result.Workspace), terminalSafe(path))
+	_, _ = fmt.Fprintf(env.stdout, "Key `%s` is active. Sessions that use it run in workspace `%s`.\n", terminalSafe(name), terminalSafe(result.Workspace))
+
+	return useApprovedKey(env, path, result.Replaces, use)
+}
+
+// useMode says what register does with config.json after the approval.
+type useMode int
+
+const (
+	// useAuto saves the key when no other attestation source is configured.
+	useAuto useMode = iota
+	// useReplace saves the key and replaces any other source.
+	useReplace
+	// useNever leaves config.json alone.
+	useNever
+)
+
+// useApprovedKey saves the approved key as the attestation source in
+// config.json when the mode and the saved settings allow it, and otherwise
+// tells the user what stays in use and how to switch.
+func useApprovedKey(env workspaceEnv, path string, replaces *string, use useMode) error {
+	switchCommand := "toolgate configure --attestation-key-file " + terminalSafe(path)
+
+	if use == useNever {
+		_, _ = fmt.Fprintf(env.stdout, "config.json is unchanged. To use the key, run: %s\n", switchCommand)
+
+		return nil
+	}
+
+	dir, err := env.configDirectory()
+	if err != nil {
+		return err
+	}
+
+	settings, err := login.LoadSettings(dir)
+	if err != nil && !errors.Is(err, login.ErrNotSignedIn) {
+		return err
+	}
+
+	current, description := configuredSource(settings)
+
+	switch {
+	case current == path:
+		_, _ = fmt.Fprintln(env.stdout, "This key file is already your attestation source. A running Claude Code session picks it up when it reconnects.")
+
+		return nil
+	case current != "" && use != useReplace && !replacesConfiguredKey(current, replaces):
+		_, _ = fmt.Fprintf(env.stdout, "%s stays in use. To switch to this key, run: %s\n", description, switchCommand)
+
+		return nil
+	}
+
+	settings.AttestationTokenFile, settings.AttestationTokenRequest, settings.AttestationKeyFile = "", "", path
+
+	if err := login.SaveSettings(dir, settings); err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(env.stdout, "The key is now in use: saved it in config.json in %s. "+
+		"A running Claude Code session picks it up when it reconnects.\n", terminalSafe(dir))
 
 	return nil
+}
+
+// configuredSource returns the saved attestation source's value and a
+// sentence fragment that names it. The value is empty when there is none.
+func configuredSource(settings login.Settings) (string, string) {
+	switch {
+	case settings.AttestationKeyFile != "":
+		return settings.AttestationKeyFile, "The key file " + terminalSafe(settings.AttestationKeyFile)
+	case settings.AttestationTokenFile != "":
+		return settings.AttestationTokenFile, "The token file " + terminalSafe(settings.AttestationTokenFile)
+	case settings.AttestationTokenRequest != "":
+		return settings.AttestationTokenRequest, "The TokenRequest token in " + terminalSafe(settings.AttestationTokenRequest)
+	}
+
+	return "", ""
+}
+
+// replacesConfiguredKey reports whether the saved key file holds the key
+// that the approved request replaced.
+func replacesConfiguredKey(configuredPath string, replaces *string) bool {
+	if replaces == nil {
+		return false
+	}
+
+	_, fingerprint, err := checkKeyFile(configuredPath)
+
+	return err == nil && fingerprint == *replaces
 }
 
 func listKeys(ctx context.Context, env workspaceEnv, access gatewayAccess) error {

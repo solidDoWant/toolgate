@@ -39,7 +39,8 @@ Commands:
   clear [--workspace ID]                 Delete a workspace's list
   defaults [--verified none|all] [--unverified none|all|list]
                                          Show or set the defaults
-  register NAME [--key-file PATH]        Register a workspace key and wait for its approval
+  register NAME [--key-file PATH] [--use|--no-use]
+                                         Register a workspace key, wait for its approval and use it
   keys list                              Show your workspace keys
   keys revoke NAME                       Revoke a workspace key
 `
@@ -414,6 +415,9 @@ func postChange(ctx context.Context, env workspaceEnv, access gatewayAccess, cha
 
 // awaitDecision polls the access request until it is decided or expired. It
 // returns nil only when the request was approved.
+// errRequestDenied is the error awaitDecision returns for a denied request.
+var errRequestDenied = errors.New("the change was denied")
+
 func awaitDecision(ctx context.Context, env workspaceEnv, access gatewayAccess, id string) error {
 	for {
 		status, expiresAt, err := readAccessRequest(ctx, access, id)
@@ -429,7 +433,7 @@ func awaitDecision(ctx context.Context, env workspaceEnv, access gatewayAccess, 
 		case "approved":
 			return nil
 		case "denied":
-			return errors.New("the change was denied")
+			return errRequestDenied
 		case "expired":
 			return errors.New("the request expired before anyone approved it")
 		}
