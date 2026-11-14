@@ -135,6 +135,23 @@ func seedScreenshotData(t *testing.T, env *uiEnv) (int64, int64) {
 	return openSession, emptySession
 }
 
+// clickCopyButton clicks the first copy button on the page, and waits for the
+// button to report that the copy finished.
+var clickCopyButton = chromedp.Func(func(ctx context.Context, target *chromedp.Target) error {
+	_, err := chromedp.Run(ctx, chromedp.Evaluate[any](`Object.defineProperty(navigator, "clipboard", {value: {writeText: function () { return Promise.resolve(); }}, configurable: true})`))
+	if err != nil {
+		return err
+	}
+
+	if _, err := chromedp.Run(ctx, chromedp.Click(chromedp.CSS(`main button[data-copy-text]`))); err != nil {
+		return err
+	}
+
+	_, err = chromedp.Run(ctx, chromedp.Poll[chromedp.Void](`document.querySelector("main button[data-copy-text]").title === "Copied"`))
+
+	return err
+})
+
 // TestUIScreenshots renders every web UI page with seeded data, in the
 // light and dark themes, on a desktop and a phone, into PNGs for a person
 // to review. It checks nothing else.
@@ -222,6 +239,8 @@ func TestUIScreenshots(t *testing.T) {
 		{name: "setup", path: "/ui/setup"},
 		{name: "approvals", path: "/ui/approvals"},
 		{name: "approval", path: "/ui/approvals/" + approvalID(1), cookie: "fresh-session"},
+		{name: "approval-copy-clicked", path: "/ui/approvals/" + approvalID(1), cookie: "fresh-session", prepare: clickCopyButton},
+		{name: "workspaces-copy-clicked", path: "/ui/workspaces", prepare: clickCopyButton},
 		{name: "approval-step-up", path: "/ui/approvals/" + approvalID(1), cookie: "stale-session"},
 		{name: "access-request", path: "/ui/approvals/" + requestID, cookie: "fresh-session"},
 		{name: "access-request-step-up", path: "/ui/approvals/" + requestID, cookie: "stale-session"},
