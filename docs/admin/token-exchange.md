@@ -64,6 +64,8 @@ The user must pass the policy bindings of the target application. If the user do
 
 An instance that uses `${exchange:…}` starts only when the leader replica holds an exchanged token for each exchange in the template. The request of the user sends the token to the leader. If no token arrives within the `startTimeout` of the template, the instance fails with this reason: "No exchanged token for `temporal` arrived within 5m0s. Enable `<server>` again to retry." If an exchange fails, the instance fails with the reason of the exchange.
 
+If the template also has `persistentVolumes`, the exchange runs only after toolgate has the volumes. The volume wait counts toward the same `startTimeout`. See [Start order with volumes and token exchange](instances.md#start-order-with-volumes-and-token-exchange).
+
 The request that starts the instance runs the exchange. Each exchange writes a `credential.exchange` audit event, with the instance, the name of the exchange, `start` or `refresh`, and `success` or `failure`. A failure also has the error code, for example `invalid_grant`. The event never holds a token. The web UI shows it as "Credential exchanged".
 
 If a token does not get to the leader, for example because the leader changed, another request of the user that waits for the instance runs the exchange again. This happens after the `timeout` of the exchange plus 30 seconds.
