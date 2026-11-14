@@ -70,6 +70,7 @@ logLevel: debug
 		SessionIdleTimeout:          config.Duration(2 * time.Hour),
 		SessionResumeWindow:         config.Duration(24 * time.Hour),
 		ApprovalTimeout:             config.Duration(10 * time.Minute),
+		WorkspaceKeysPrefix:         "registered",
 		PublicURL:                   "https://toolgate.example",
 		OIDCUIClientID:              "toolgate-ui",
 		OIDCUIScopes:                []string{"openid", "email", "profile"},
