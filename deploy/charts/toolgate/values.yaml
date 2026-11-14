@@ -256,6 +256,17 @@ config:
   # with `resources.persistence`.
   resolvers: []
 
+  # -- Token exchanges: OAuth token exchanges (RFC 8693) that a template's
+  # `${exchange:<name>}` gets a token from. Each item has a `name`, an
+  # `https://` `tokenURL`, a `clientID` and a `clientSecretFile`, and
+  # optionally `audience`, `scope`, `requestedTokenType`, `caFile` and
+  # `timeout` (default `10s`, at most `60s`). At most 8 items. The gateway
+  # needs `secretsKeysetFile` (set it with `config.extraEnv`:
+  # `TOOLGATE_SECRETS_KEYSET_FILE`). The chart writes them to the gateway's
+  # configuration file. Mount the client secret and the `caFile` with
+  # `resources.persistence`.
+  tokenExchanges: []
+
   spiffe:
     # -- SPIFFE trust domains whose JWT-SVIDs may sign in, attested as the
     # workload. Each item has a `name` (the trust domain), exactly one of

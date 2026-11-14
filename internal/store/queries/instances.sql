@@ -89,13 +89,22 @@ WHERE id = @id AND desired = 'running';
 
 -- name: SetInstanceStopping :execrows
 UPDATE instances
-SET status = 'stopping', updated_at = now()
+SET status = 'stopping', stopping_at = now(), updated_at = now()
 WHERE id = @id AND status = @from_status AND desired = 'stopped';
 
 -- name: SetInstanceStopped :execrows
-UPDATE instances
-SET status = 'stopped', updated_at = now()
-WHERE id = @id AND status = 'stopping';
+-- Also releases the volumes the instance held, in the same statement, so a
+-- stopped instance never holds one, whatever the feature setting.
+WITH stopped AS (
+    UPDATE instances
+    SET status = 'stopped', updated_at = now()
+    WHERE instances.id = @id AND status = 'stopping'
+    RETURNING instances.id
+), released AS (
+    UPDATE persistent_volumes SET instance_id = NULL, last_used_at = now()
+    WHERE instance_id IN (SELECT stopped.id FROM stopped)
+)
+SELECT 1 FROM stopped;
 
 -- name: SetInstanceReason :execrows
 UPDATE instances

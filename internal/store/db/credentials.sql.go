@@ -275,7 +275,7 @@ func (q *Queries) ListInstanceTemplateSecrets(ctx context.Context, instanceID st
 }
 
 const listLiveInstancesWithTemplateSecrets = `-- name: ListLiveInstancesWithTemplateSecrets :many
-SELECT i.id, i.template_ns, i.template_name, i.template_uid, i.generation, i.scope, i.scope_key, i.owner_principal, i.render_session, i.desired, i.status, i.reason, i.namespace, i.tools, i.secrets_used, i.created_at, i.attempt_started_at, i.ready_at, i.failed_at, i.last_used_at, i.updated_at, i.trace_context, i.restart_requested_at, i.restart_requested_by, i.resolved_expires_at, i.health_check, i.unhealthy_since, i.unhealthy_reason, i.repairs, i.mcp_revision, i.uses_exchange, i.credential_expired FROM instances i
+SELECT i.id, i.template_ns, i.template_name, i.template_uid, i.generation, i.scope, i.scope_key, i.owner_principal, i.render_session, i.desired, i.status, i.reason, i.namespace, i.tools, i.secrets_used, i.created_at, i.attempt_started_at, i.ready_at, i.failed_at, i.last_used_at, i.updated_at, i.trace_context, i.restart_requested_at, i.restart_requested_by, i.resolved_expires_at, i.health_check, i.unhealthy_since, i.unhealthy_reason, i.repairs, i.mcp_revision, i.uses_exchange, i.credential_expired, i.stopping_at FROM instances i
 WHERE i.desired = 'running' AND i.status IN ('starting', 'ready')
   AND EXISTS (SELECT 1 FROM instance_template_secrets s WHERE s.instance_id = i.id)
 ORDER BY i.id
@@ -323,6 +323,7 @@ func (q *Queries) ListLiveInstancesWithTemplateSecrets(ctx context.Context) ([]I
 			&i.McpRevision,
 			&i.UsesExchange,
 			&i.CredentialExpired,
+			&i.StoppingAt,
 		); err != nil {
 			return nil, err
 		}

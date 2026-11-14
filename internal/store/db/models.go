@@ -111,6 +111,7 @@ type Instance struct {
 	McpRevision        string
 	UsesExchange       bool
 	CredentialExpired  bool
+	StoppingAt         pgtype.Timestamptz
 }
 
 type InstanceExchange struct {
@@ -151,6 +152,26 @@ type McpSession struct {
 	CreatedAt         pgtype.Timestamptz
 	LastSeenAt        pgtype.Timestamptz
 	EndedAt           pgtype.Timestamptz
+}
+
+type PersistentVolume struct {
+	ID                string
+	TemplateNs        string
+	TemplateName      string
+	TemplateUid       string
+	VolumeName        string
+	Scope             string
+	ScopeID           string
+	StorageClass      string
+	SizeBytes         int64
+	PvName            pgtype.Text
+	InstanceID        pgtype.Text
+	CreatedAt         pgtype.Timestamptz
+	LastUsedAt        pgtype.Timestamptz
+	DeleteReason      string
+	DeleteRequestedAt pgtype.Timestamptz
+	ReclaimPatchedAt  pgtype.Timestamptz
+	Problem           string
 }
 
 type PrincipalProfile struct {
