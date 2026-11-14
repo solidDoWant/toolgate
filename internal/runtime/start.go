@@ -142,6 +142,18 @@ type Starter struct {
 	OmitOwnerDetails bool
 	// TracerProvider makes the render and apply spans. Nil means no spans.
 	TracerProvider trace.TracerProvider
+	// APIReader reads StorageClasses, PersistentVolumes and their claims
+	// without the cache. Nil means Client.
+	APIReader client.Reader
+	// Volumes reads and writes persistent volume rows. Nil means a template
+	// with persistent volumes can't start.
+	Volumes VolumeStore
+	// PersistentVolumesEnabled is the gateway setting
+	// persistentVolumes.enabled.
+	PersistentVolumesEnabled bool
+	// VolumeLimitPerUser bounds the bytes of one user's per-user volumes.
+	// Zero means no limit.
+	VolumeLimitPerUser int64
 	// Now is the clock. Nil means time.Now.
 	Now    func() time.Time
 	Logger *slog.Logger
@@ -188,6 +200,19 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 		return s.startRemote(ctx, instance, template)
 	}
 
+	// Volumes are claimed and checked before anything is rendered, so a row
+	// that waits for a volume holds no token and applies nothing.
+	var volumes []claimedVolume
+
+	if len(template.Spec.PersistentVolumes) > 0 {
+		claimed, proceed, err := s.claimVolumes(ctx, instance, template)
+		if err != nil || !proceed {
+			return err
+		}
+
+		volumes = claimed
+	}
+
 	identity, err := s.identity(ctx, instance)
 	if err != nil {
 		return err
@@ -223,6 +248,13 @@ func (s *Starter) startPending(ctx context.Context, instance db.Instance) error 
 
 	if err := s.Store.RecordSecretsUsed(ctx, instance.ID, result.SecretVersions); err != nil {
 		return fmt.Errorf("instance %s: %w", instance.ID, err)
+	}
+
+	if len(template.Spec.PersistentVolumes) > 0 {
+		bound, err := s.bindVolumes(ctx, instance, template, volumes, result.Metadata)
+		if err != nil || !bound {
+			return err
+		}
 	}
 
 	applied, err := s.applyAll(ctx, instance, template, result, spanAttributes)
@@ -282,6 +314,15 @@ func (s *Starter) checkStarting(ctx context.Context, instance db.Instance) error
 
 	if reason != "" {
 		return s.fail(ctx, instance, StatusStarting, reason)
+	}
+
+	// Each new volume's PV is recorded as soon as its claim binds. A ready
+	// instance never has an unrecorded volume.
+	if len(template.Spec.PersistentVolumes) > 0 {
+		recorded, err := s.recordHeldVolumes(ctx, instance, template)
+		if err != nil || !recorded {
+			return err
+		}
 	}
 
 	if !current {

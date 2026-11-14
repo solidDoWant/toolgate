@@ -126,6 +126,26 @@ A limit applies only when an enable must start a new instance. If the instance a
 
 If a limit refuses an enable, the user gets a message that names the limit. The audit log gets a `server.enable` event with `decision: refuse` and `reason: limit`. The field `limit` tells which limit refused it: `per-user` or `gateway`.
 
+## Start reasons for persistent volumes
+
+A template with `persistentVolumes` (see [Persistent volumes](persistent-volumes.md)) can make an instance wait or fail before its objects are applied. A waiting instance stays `pending`, and its reason tells you what it waits for. These are the wait reasons:
+
+- `Volume <name> is still held by instance <id>, which is <status>.` The old instance did not stop yet.
+- `Volume <name> is still bound to <namespace>/<claim>.` The PV is still bound to the claim of an old instance.
+- `Volume <name> is being deleted.` An admin or the clean-up marked the volume for deletion.
+
+If a wait lasts longer than the `startTimeout` of the template, the instance fails with `Timed out waiting for volume <name>: <wait reason>`. The time counts from the start of the attempt.
+
+These reasons make the instance fail at once:
+
+- `persistentVolumes needs the gateway setting persistentVolumes.enabled`: the feature is off.
+- `StorageClass <class> for volume <name> doesn't exist.`
+- `StorageClass <class> for volume <name> has reclaimPolicy <policy>.` and the rest of that message: the class does not keep the data.
+- `PersistentVolume <pv> has reclaim policy <policy>, so toolgate won't bind it.`
+- `PersistentVolume <pv> doesn't carry toolgate's labels for volume <name>, so toolgate won't use it.`
+- `PersistentVolume <pv> wasn't provisioned for volume <name>.` or `PersistentVolume <pv> belongs to another volume.`: the claim bound to a PV that toolgate did not make for it.
+- `<server> needs a <size> volume <name>, but your volumes already use <used> of your <limit> limit.` and the rest of that message: the size limit for one user. The audit log also gets an `instance.fail` event.
+
 ## Metrics
 
 The gateway serves these metrics on its metrics port. Only the replica that holds the leader Lease sets them. The other replicas report `0`.
