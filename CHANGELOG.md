@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Internal
-
-- The gateway now keeps the token of a user's request with that request, so that a later change can exchange it for a token of an MCP server. The token never appears in a log, a database row or a JSON document. Service account and SPIFFE requests do not keep their token.
-
 ### Documentation
 
 - The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
