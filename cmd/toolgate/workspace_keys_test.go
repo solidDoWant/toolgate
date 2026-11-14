@@ -210,25 +210,9 @@ func TestWorkspaceRegister(t *testing.T) {
 		assert.Contains(t, run.stderr, "Workspace keys are off on this gateway.")
 	})
 
-	t.Run("warns about a long-lived access token", func(t *testing.T) {
+	t.Run("no warning for a long-lived access token", func(t *testing.T) {
 		gateway := &keysGateway{postCode: 202, postBody: pendingBody, statuses: []string{"approved"}}
-		run := runKeys(t, gateway, t.TempDir(), tokenWithLifetime(t, 331*time.Second), "register", "dev")
-
-		require.Equal(t, 0, run.code, run.stderr)
-		assert.Contains(t, run.stderr, "Warning: your access tokens live 6 minutes.")
-	})
-
-	t.Run("no warning at the limit", func(t *testing.T) {
-		gateway := &keysGateway{postCode: 202, postBody: pendingBody, statuses: []string{"approved"}}
-		run := runKeys(t, gateway, t.TempDir(), tokenWithLifetime(t, 330*time.Second), "register", "dev")
-
-		require.Equal(t, 0, run.code, run.stderr)
-		assert.Empty(t, run.stderr)
-	})
-
-	t.Run("no warning for a token that is not a JWT", func(t *testing.T) {
-		gateway := &keysGateway{postCode: 202, postBody: pendingBody, statuses: []string{"approved"}}
-		run := runKeys(t, gateway, t.TempDir(), "opaque-token", "register", "dev")
+		run := runKeys(t, gateway, t.TempDir(), tokenWithLifetime(t, time.Hour), "register", "dev")
 
 		require.Equal(t, 0, run.code, run.stderr)
 		assert.Empty(t, run.stderr)

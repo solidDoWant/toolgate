@@ -166,7 +166,10 @@ func (v *workspaceKeyVerifier) attest(ctx context.Context, assertion string, ide
 	case errors.Is(err, jwt.ErrInvalidAudience):
 		return refused(reasonAssertionAudience)
 	case errors.Is(err, jwt.ErrExpired):
-		return refused(reasonAssertionExpired)
+		// Every other check passed, so the client holds an approved key
+		// of this user and only has to sign a new assertion. Claude Code
+		// runs the headers helper again only after a 401.
+		return identity, &Refusal{Reason: reasonAssertionExpired, Outcome: OutcomeChallenged}, nil
 	case errors.Is(err, jwt.ErrNotValidYet), errors.Is(err, jwt.ErrIssuedInTheFuture):
 		return refused(reasonAssertionIssuedFuture)
 	default:

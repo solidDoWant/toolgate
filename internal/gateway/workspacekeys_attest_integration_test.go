@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,8 +28,9 @@ import (
 // refusalLog collects the reasons of the auth.refuse events an authenticator
 // records.
 type refusalLog struct {
-	mutex   sync.Mutex
-	reasons []string
+	mutex    sync.Mutex
+	reasons  []string
+	outcomes []string
 }
 
 func (l *refusalLog) RecordAuthRefusal(_ context.Context, refusal auth.Refusal) {
@@ -36,6 +38,19 @@ func (l *refusalLog) RecordAuthRefusal(_ context.Context, refusal auth.Refusal) 
 	defer l.mutex.Unlock()
 
 	l.reasons = append(l.reasons, refusal.Reason)
+	l.outcomes = append(l.outcomes, refusal.Outcome)
+}
+
+// lastOutcome returns the outcome of the newest refusal, or "".
+func (l *refusalLog) lastOutcome() string {
+	l.mutex.Lock()
+	defer l.mutex.Unlock()
+
+	if len(l.outcomes) == 0 {
+		return ""
+	}
+
+	return l.outcomes[len(l.outcomes)-1]
 }
 
 // last returns the reason of the newest refusal, or "".
@@ -90,6 +105,14 @@ func (s lateKeyStore) TouchWorkspaceKey(ctx context.Context, id int64) error {
 func newKeyFixture(t *testing.T) (*mcpFixture, *refusalLog) {
 	t.Helper()
 
+	return newKeyFixtureAt(t, nil)
+}
+
+// newKeyFixtureAt is newKeyFixture whose key verifier reads the time from
+// now; nil uses the real time.
+func newKeyFixtureAt(t *testing.T, now func() time.Time) (*mcpFixture, *refusalLog) {
+	t.Helper()
+
 	refusals := &refusalLog{}
 
 	var fixture *mcpFixture
@@ -99,6 +122,7 @@ func newKeyFixture(t *testing.T) (*mcpFixture, *refusalLog) {
 	options.WorkspaceKeys = &auth.WorkspaceKeyOptions{
 		Store:             lateKeyStore{pool: func() *pgxpool.Pool { return fixture.pool }},
 		WorkspaceIDPrefix: gateway.DefaultWorkspaceKeysPrefix,
+		Now:               now,
 	}
 
 	fixture = newMCPFixtureWithAuth(t, options)
@@ -147,6 +171,13 @@ func (k workspaceKey) publicKey() string {
 func (k workspaceKey) assertion(t *testing.T) string {
 	t.Helper()
 
+	return k.assertionAt(t, time.Now())
+}
+
+// assertionAt signs a fresh assertion issued at issued.
+func (k workspaceKey) assertionAt(t *testing.T, issued time.Time) string {
+	t.Helper()
+
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: k.private},
 		(&jose.SignerOptions{}).WithType(attestation.AssertionType).WithHeader(jose.HeaderKey("kid"), k.id))
 	require.NoError(t, err)
@@ -155,7 +186,7 @@ func (k workspaceKey) assertion(t *testing.T) string {
 	_, err = rand.Read(nonce)
 	require.NoError(t, err)
 
-	now := time.Now().Truncate(time.Second)
+	now := issued.Truncate(time.Second)
 	token, err := jwt.Signed(signer).Claims(jwt.Claims{
 		Audience: jwt.Audience{auth.WorkspaceKeyAudience},
 		IssuedAt: jwt.NewNumericDate(now),
@@ -316,4 +347,49 @@ func TestWorkspaceKeysOffWithoutAttestation(t *testing.T) {
 	assert.Zero(t, refusals.count(), "the header is ignored with no event")
 	fixture.requireSession(t, client, "claimed/default", auth.AttestationUser)
 	assert.Equal(t, http.StatusOK, fixture.pingStatus(t, withKey(t, client, key), mcpSession))
+}
+
+func TestWorkspaceKeyAssertionExpiry(t *testing.T) {
+	var offset atomic.Int64
+
+	clock := func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }
+
+	fixture, refusals := newKeyFixtureAt(t, clock)
+	api := newKeyAPI(t, fixture, true)
+
+	t.Run("a long-lived user token keeps the verified workspace past the assertion's lifetime", func(t *testing.T) {
+		key := newWorkspaceKey(t)
+		api.activateKey(t, "expiry-keep", "dev", key.publicKey())
+
+		client := keyUser("expiry-keep")
+		client.session = "expiry"
+		now := time.Now()
+		client.claims.IssuedAt, client.claims.ExpiresAt = now, now.Add(time.Hour)
+		client.token = fixture.provider.MintAccessToken(t, client.claims)
+		client.attestation = key.assertionAt(t, clock())
+
+		mcpSession := fixture.startSession(t, fixture.server.URL, client)
+		fixture.requireSession(t, client, "registered/expiry-keep/dev", auth.AttestationAttested)
+
+		// The client reuses its assertion until it gets a 401.
+		offset.Store(int64(6 * time.Minute))
+
+		before := refusals.count()
+
+		for range 2 {
+			assert.Equal(t, http.StatusUnauthorized, fixture.pingStatus(t, client, mcpSession),
+				"the same expired assertion is challenged each time")
+			assert.Equal(t, "attestation assertion expired", refusals.last())
+			assert.Equal(t, auth.OutcomeChallenged, refusals.lastOutcome())
+		}
+
+		assert.Equal(t, before+2, refusals.count())
+
+		// The 401 makes the client run the headers helper, which signs a
+		// new assertion.
+		client.attestation = key.assertionAt(t, clock())
+		assert.Equal(t, http.StatusOK, fixture.pingStatus(t, client, mcpSession))
+		assert.Equal(t, before+2, refusals.count(), "the new assertion is attested")
+		fixture.requireSession(t, client, "registered/expiry-keep/dev", auth.AttestationAttested)
+	})
 }

@@ -185,7 +185,7 @@ Registering never makes a key usable. Only an approval in the browser does (sect
    - When the request is approved, it prints "Key `dev` is active. Sessions that use it run in workspace `registered/alice/dev`. To use it, run: toolgate configure --attestation-key-file PATH" with the absolute path. Exit 0.
    - When it is denied or expires, it prints the existing messages of `awaitDecision` and exits 1.
    - Errors print the gateway's message and exit 1. Usage errors exit 2.
-6. Before it sends the request, it reads the `iat` and `exp` claims of the user token that it sends, without verification, with go-jose's `UnsafeClaimsWithoutVerification`. If the token isn't a JWT, or has no `iat` or `exp`, the command skips the warning and goes on. If `exp - iat` is more than 330 s, it prints to standard error: "Warning: your access tokens live N minutes. A session that uses a workspace key loses its verified workspace after 5 minutes, unless access tokens live at most 5 minutes. Ask your admin to make the access-token lifetime 5 minutes or less." It goes on. Section 9 gives the reason.
+6. The command gives no warning about the lifetime of the user token. An expired assertion of a valid key gets a 401, so the client signs a new one (section 9).
 
 `register` does not change `config.json`. The user runs `toolgate configure` after the approval. To replace a key, the user registers the same name with a new `--key-file` path, approves it, and runs `toolgate configure --attestation-key-file` with the new path (section 6).
 
@@ -357,7 +357,7 @@ The key verifier runs these steps in this order. The first that fails gives the 
 8. `exp - iat` is more than 300 s: `attestation assertion lifetime too long`.
 9. `claims.ValidateWithLeeway(jwt.Expected{AnyAudience: jwt.Audience{"toolgate"}, Time: now}, 30*time.Second)`:
    - `jwt.ErrInvalidAudience`: `attestation assertion audience wrong`.
-   - `jwt.ErrExpired`: `attestation assertion expired`.
+   - `jwt.ErrExpired`: `attestation assertion expired`, challenged (see "Challenge" below).
    - `jwt.ErrNotValidYet` or `jwt.ErrIssuedInTheFuture`: `attestation assertion issued in the future`.
 10. Success. The identity gets `Attestation = attested` and `Workspace = <prefix>/<row.Username>/<row.Name>`. Then, only when `row.LastUsedAt` is null or more than one minute before `now`, the verifier calls `Store.TouchWorkspaceKey(row.ID)`. The `WHERE` clause of `TouchWorkspaceKey` stays, so two replicas that both call it write at most once. If that write fails, the verifier logs it at warning level and goes on. The request is still attested.
 
@@ -367,7 +367,9 @@ The order of steps 7 to 9 follows go-jose's `ValidateWithLeeway`, which checks t
 
 ### Fail open
 
-Every verdict above is a failed attestation, as in phase 3 §10 step 5. The request is served as the user, with `user` attestation and the claimed workspace. The gateway writes `auth.refuse` with the reason and the user's principal, under the existing rate limit. It never answers 401 because of the attestation.
+Every verdict above, except an expired assertion, is a failed attestation, as in phase 3 §10 step 5. The request is served as the user, with `user` attestation and the claimed workspace. The gateway writes `auth.refuse` with the reason and the user's principal, under the existing rate limit. It never answers 401 for these verdicts: a new assertion doesn't fix them, and a 401 would let a broken client or a stolen user token lock the user out.
+
+**Challenge.** An expired assertion reaches step 9 only after its signature verified against an approved, unrevoked key of the request's user, and its lifetime and audience passed. Only its age is wrong, and a new assertion fixes it. The gateway answers 401 with the usual `WWW-Authenticate` challenge and writes `auth.refuse` with `attestation assertion expired`, the user's principal and `outcome: challenged`. The client runs the headers helper again, which signs a new assertion on every run, and retries. A client that sends the same expired assertion again gets 401 again. An expired assertion that fails an earlier step gets that step's reason and is served unverified.
 
 **Unavailable.** If a store call in step 2 or 3 fails with a database error, the gateway answers 503 with `Retry-After: 1` and writes no `auth.refuse`. This is the same rule as a TokenReview outage today. A fallback moves a live attested session to another workspace.
 
@@ -409,7 +411,7 @@ The verifier reads the row on every request that carries an assertion. It keeps 
 
 **Resume.** Phase 3 §11 resumes an ended session only from the same workspace and attestation. A replaced key keeps the workspace, so a session resumes after a replacement. After a plain revocation the session comes back unverified, so its set is cleared.
 
-**Access-token lifetime.** Claude Code runs the headers helper when it connects, and again only after a 401 or 403 (Claude Code's MCP documentation, "Use dynamic headers for custom authentication"). An assertion lives 5 minutes. If the user token lives longer, the assertion expires first. The next request is then unverified, with `attestation assertion expired`, and the MCP session gets 404. If the user token lives at most 5 minutes, it expires first. The 401 makes Claude Code run the helper again, which signs a new assertion, and the gateway accepts an expired `exp` for 30 s more. So the admin docs must state the rule: "With workspace keys, user access tokens must live at most 5 minutes." Authentik's default access-token lifetime is 5 minutes. The CLI warns at registration (section 4).
+**Access-token lifetime.** Claude Code runs the headers helper when it connects, and again only after a 401 or 403 (Claude Code's MCP documentation, "Use dynamic headers for custom authentication"). An assertion lives 5 minutes, and a user token can live longer, so the assertion often expires first. The gateway accepts an expired `exp` for 30 s more, and then challenges an otherwise valid assertion with 401 (section 8, "Challenge"). Claude Code runs the helper again, which signs a new assertion, and the session keeps its workspace. So the user token's lifetime doesn't matter to workspace keys. An earlier version of this design required user tokens of at most 5 minutes instead. The owner replaced that rule, because it tied every deployment's IdP token lifetime to this feature.
 
 ## 10. Client
 
@@ -499,7 +501,7 @@ Each row is one state change combined with the work in flight at that time. Each
 | WK16 | User deleted or disabled at the IdP | sessions with the user's keys | The user token fails, so every request gets 401 before the attestation runs. The key rows stay. They are of no use without that user's token. | None new. The existing tests of a refused user token cover the 401. |
 | WK17 | `workspaceKeys` turned off (restart) | sessions bound to `registered/…` workspaces | Assertions get `attestation workspace keys off` when `workspaceAttestation` is on. Otherwise the header is ignored with no event. Requests are unverified and bound MCP sessions get 404. Registration and approval answer 409. List and revoke work. Rows stay, and turning the setting on again makes them work again. | `TestWorkspaceKeysOff` (integration) |
 | WK18 | `workspaceKeysPrefix` changed (restart) | bound sessions, workspace lists | Keys give the new workspace ID. Bound MCP sessions get 404. Lists under the old ID no longer match. The admin docs say so. | `TestWorkspaceKeyVerdicts/prefix is read from the configuration` (unit) |
-| WK19 | Assertion expires | an MCP session whose headers were not refreshed | `attestation assertion expired`, unverified, 404. A user token of at most 5 minutes gets a 401 first, and Claude Code runs the helper again (section 9). | `TestWorkspaceKeyVerdicts/expired assertion` (unit). The helper behaviour is documented, not tested. |
+| WK19 | Assertion expires | an MCP session whose headers were not refreshed | Past the 30 s skew, an assertion of an approved key of the user, with a valid audience and lifetime, gets 401 and `auth.refuse` with `attestation assertion expired` and `outcome: challenged`. The same assertion sent again gets 401 again. Claude Code runs the helper again, and the new assertion keeps the session's workspace. An expired assertion that also fails an earlier check (bad signature; unknown, unapproved or revoked key; owner mismatch; wrong audience; lifetime over 5 minutes; keys off) gets that check's reason and is unverified, with no 401. | `TestWorkspaceKeyVerdicts/expired assertion of an approved key is challenged`, `TestWorkspaceKeyVerdicts/expired assertion of an unknown key is unverified`, `TestWorkspaceKeyVerdicts/expired assertion of a revoked key is unverified`, `TestWorkspaceKeyVerdicts/expired assertion with a bad signature is unverified` (unit), `TestWorkspaceKeyAssertionExpiry` (integration) |
 | WK20 | `workspaceAttestation` with `match.by: email` is on too | a Coder pod's request | Routed by `typ`. The pod token never reaches the key verifier. The pod path does not change. | `TestAttestedUserSession/pod with email match while workspace keys are on` (e2e) |
 | WK21 | Database unavailable | a request with an assertion | 503 with `Retry-After: 1`. No `auth.refuse`. | `TestWorkspaceKeyVerdicts/store error gives unavailable` (unit) |
 | WK22 | `last_used_at` write fails | the request | Logged at warning level. The request stays attested. | `TestWorkspaceKeyVerdicts/touch failure keeps the attestation` (unit) |
@@ -523,7 +525,7 @@ The key proves one thing: the session runs where the private key is. With the us
 - **Code that runs in the workspace.** It can read the key file and the user's sign-in. It is in the workspace, so it is attested, as intended. The key does not prove that the machine was not changed. The issue's non-goals say so.
 - **A user who approves an attacker's request.** The approval page shows the fingerprint and where the request came from, and the CLI prints the fingerprint. The user must compare them. The user can revoke a key at once, and revoking also denies pending requests for the name.
 - **The user's preferred_username.** It forms the middle of the workspace ID. It isn't unique at every IdP, so two principals can hold the same workspace ID, such as `registered/alice/dev`. If the IdP lets users change it, a user can choose the name in their own future workspace IDs. Workspace lists are per user, so this gives no access to another user's lists. Rules only refuse, so a rule that names `registered/alice/*` can stop matching Alice if she changes her user name before she registers. An admin who writes rules for one user's keys must match on the principal, or use an IdP that does not let users change the name.
-- **A user token that lives longer than 5 minutes.** Sessions lose their verified workspace after 5 minutes (section 9). This is an availability problem, not an access problem.
+- **An expired assertion.** It gets 401 only when it is otherwise valid, so only a client that holds the user's approved key and token can cause the 401, and a new assertion ends it (section 8, "Challenge"). Every other failure stays fail-open.
 
 **What a stolen user token can still do:** revoke the user's keys and deny pending requests. Both only take access away.
 
@@ -537,7 +539,7 @@ The issue leaves these open, or they needed a decision against the code. Each is
 2. **The key ID is the RFC 7638 thumbprint**, computed by go-jose. The fingerprint is `SHA256:` plus the key ID. A standard value needs no format of our own.
 3. **Assertions are routed by the `typ` header**, so the existing TokenReview and SPIFFE paths see no key assertions, and the reverse.
 4. **`jti` is required but not tracked** (section 7).
-5. **The admin docs require user access tokens of at most 5 minutes** when keys are on (section 9). The issue fixes the assertion at 5 minutes and fails open, and Claude Code runs the helper again only on connect, 401 and 403.
+5. **An expired assertion of a valid key is challenged with 401** (section 8, "Challenge"). Claude Code runs the helper again only on connect, 401 and 403, so this is the only way to refresh the assertion without tying the IdP's token lifetime to this feature. An earlier version required user access tokens of at most 5 minutes; the owner replaced that rule.
 6. **The user name is `preferred_username` at registration**, stored on the row. A token without a usable value cannot register a key. The workspace ID then stays the same for the life of the key.
 7. **More refusal reasons than the issue lists:** `attestation key not approved`, `attestation assertion invalid`, `attestation assertion signature invalid`, `attestation assertion lifetime too long`, `attestation assertion audience wrong`, `attestation assertion issued in the future` and `attestation workspace keys off`. The acceptance list needs a distinct reason for each failure it names.
 8. **The signature is checked before the owner and the status**, so owner-mismatch and revoked events mean that the client holds the key.
@@ -587,7 +589,10 @@ Test names describe behaviour. They carry no tracking IDs.
 - replaced key is unverified
 - owner mismatch
 - bad signature
-- expired assertion
+- expired assertion of an approved key is challenged
+- expired assertion of an unknown key is unverified
+- expired assertion of a revoked key is unverified
+- expired assertion with a bad signature is unverified
 - lifetime over five minutes
 - wrong audience
 - issued in the future
@@ -605,7 +610,7 @@ Each subtest checks the identity's attestation and workspace, and the exact reas
 
 **Unit, `internal/config`:** `TestWorkspaceKeysSetting`: off by default, the default prefix, each forbidden prefix, a prefix equal to the Coder workspace ID's first segment, and the setting without the web UI.
 
-**Unit, client:** `TestWorkspaceKeySource`: the assertion's header and claims (decoded with go-jose), the conflict with each other source, a group-readable key file, a file that is not an Ed25519 key, and the environment variable winning over `config.json`. `TestConfigureAttestationKeyFile`: it saves the absolute path, refuses a second source, and removes the setting with an empty value. `TestWorkspaceRegister`: it makes a key with mode 0600 and a parent directory with mode 0700, reuses an existing file, prints the fingerprint, waits for approval, and prints the warning for a long-lived access token, and no warning for a token that isn't a JWT.
+**Unit, client:** `TestWorkspaceKeySource`: the assertion's header and claims (decoded with go-jose), the conflict with each other source, a group-readable key file, a file that is not an Ed25519 key, and the environment variable winning over `config.json`. `TestConfigureAttestationKeyFile`: it saves the absolute path, refuses a second source, and removes the setting with an empty value. `TestWorkspaceRegister`: it makes a key with mode 0600 and a parent directory with mode 0700, reuses an existing file, prints the fingerprint, waits for approval, and prints no warning for a long-lived access token.
 
 **Integration, `internal/gateway` and `internal/ui`** (PostgreSQL in Docker):
 
@@ -614,6 +619,7 @@ Each subtest checks the identity's attestation and workspace, and the exact reas
 - `TestWorkspaceKeyRevocation`: revoke applies on the next request; revoke denies pending requests; revoke works while the setting is off; revoke from the Workspaces page.
 - `TestWorkspaceKeySessionBinding`: an MCP session keeps its workspace across new assertions; a key with another name gets 404; approval during an unverified session gives 404.
 - `TestWorkspaceKeysOff`, `TestWorkspaceKeyCleanup`, `TestWorkspaceKeysUpgrade`.
+- `TestWorkspaceKeyAssertionExpiry`: with a 1-hour user token and a fake clock, an attested session past the assertion's 5 minutes gets 401 for its old assertion, twice, and keeps its workspace with a new one.
 
 **e2e, `test/e2e`:**
 
@@ -628,7 +634,7 @@ Each subtest checks the identity's attestation and workspace, and the exact reas
 - A key that is registered but not yet approved gives an unverified session.
 - The user token alone can't create a usable key.
 - A key registered by user A, used with user B's token, gives an unverified session and an `attestation key owner mismatch` event.
-- Expired assertions, assertions with a lifetime over 5 minutes, the wrong audience, a bad signature and a revoked key each give unverified, with a distinct reason.
+- Assertions with a lifetime over 5 minutes, the wrong audience, a bad signature and a revoked key each give unverified, with a distinct reason. An expired assertion of a valid key gets 401, and the client's new assertion keeps the session attested. The owner changed this line: an expired assertion of a valid key was served unverified before.
 - Revoking a key takes effect on the next request; there is no cache beyond one assertion's lifetime.
 - Coder pod attestation with `match.by: email` keeps working while this feature is on.
 - An MCP session keeps its bound workspace and attestation, as with the existing sources.

@@ -136,7 +136,15 @@ type Refusal struct {
 	TrustDomain string
 	// RemoteAddress is the client's IP address.
 	RemoteAddress string
+	// Outcome is OutcomeChallenged for a failed attestation answered with
+	// 401. It is empty for every other refusal.
+	Outcome string
 }
+
+// OutcomeChallenged marks a failed attestation that a fresh attestation
+// fixes, so the request is answered with 401 rather than served as the
+// user alone.
+const OutcomeChallenged = "challenged"
 
 // RefusalRecorder writes refusals to the audit log.
 type RefusalRecorder interface {
@@ -502,9 +510,19 @@ func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 			}
 
 			if refusal != nil {
-				// A failed attestation is served as the user alone.
 				refusal.Principal = identity.Principal
 				a.refuse(request, *refusal)
+
+				// The client's 401 handling signs a new attestation, so
+				// only a refusal that a new one fixes is challenged.
+				if refusal.Outcome == OutcomeChallenged {
+					writer.Header().Set("WWW-Authenticate", a.challenge(mcp, true))
+					http.Error(writer, "The workspace attestation expired. Send a new one.", http.StatusUnauthorized)
+
+					return
+				}
+
+				// Any other failed attestation is served as the user alone.
 			}
 
 			identity = attested

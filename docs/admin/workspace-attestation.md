@@ -260,11 +260,13 @@ Two settings control it. [Configuration](configuration.md) and [Chart values](ch
 - **Changing the prefix moves every key to a new workspace ID.** After a restart, `registered/alice/dev` becomes, for example, `keys/alice/dev`. Workspace lists, scope entries and rules that name the old ID stop matching. MCP sessions that were bound to the old workspace get 404. Choose the prefix before users register keys, and do not change it later.
 - **Turn it on only after every replica runs the new version.** An old replica sends a key assertion to TokenReview, if `workspaceAttestation` is on, and the attestation fails with `attestation token invalid`. An old replica also cannot approve a key request. Roll out the new version first, and then set `workspaceKeys`.
 
-### Access tokens must be short
+### When an assertion expires
 
-With workspace keys, user access tokens must live at most 5 minutes.
+An assertion lives 5 minutes, and access tokens can live longer. Claude Code runs the headers helper when it connects, and again only after a 401 or 403 response. So Claude Code can send an assertion after it expired. The gateway accepts an expired assertion for 30 more seconds.
 
-The reason: Claude Code runs the headers helper when it connects, and again only after a 401 or 403 response. An assertion lives 5 minutes. If the access token lives longer, the assertion expires first. The next request is then unverified (`attestation assertion expired`), and the MCP session gets 404. If the access token lives at most 5 minutes, it expires first. The 401 makes Claude Code run the helper again, and the client signs a new assertion. The gateway accepts an expired assertion for 30 more seconds. Authentik's default is 5 minutes. The client warns the user when it registers a key with a longer lifetime.
+After that, the gateway answers 401 if the assertion is otherwise valid: the signature matches an approved key of the user, and the audience and lifetime are correct. The 401 makes Claude Code run the helper again. The helper signs a new assertion, and the session keeps its verified workspace. The gateway writes `auth.refuse` with the reason `attestation assertion expired` and the outcome `challenged`.
+
+Every other failed assertion does not get a 401. The request is unverified, as described in the next sections. A new assertion does not fix these failures.
 
 ### How a user adds a key
 
@@ -290,11 +292,9 @@ It does not protect against:
 
 - **Code that runs in the workspace.** The key protects against a stolen user token, not against code running in the workspace. That code can read the key file and the user's sign-in, and it is attested, as intended.
 - **A user who approves an attacker's request.** The user must compare the fingerprint.
-- **An access token that lives longer than 5 minutes.** Sessions lose their verified workspace after 5 minutes. This stops work, but it gives no access.
 
 ### Admin checklist for keys
 
-- Set the access-token lifetime of the identity provider to 5 minutes or less.
 - Make sure that the identity provider gives every user a `preferred_username` claim of 1 to 63 letters, digits, `.`, `_` or `-`. Without it, registration fails with 400.
 - `preferred_username` is not unique at every identity provider, so two users can get the same workspace ID, such as `registered/alice/dev`. If your provider lets users change it, a user can choose the name in the workspace IDs of their own future keys. A rule for one user's keys must match the principal as well as the workspace. A rule that names only `registered/alice/*` is not safe.
 - Workspace lists are per user, so a shared workspace ID gives no access to the lists of another user.
