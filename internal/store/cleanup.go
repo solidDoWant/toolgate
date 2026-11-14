@@ -10,7 +10,7 @@ import (
 
 // DeleteStaleRows deletes web UI sessions that are no longer valid, web UI
 // sign-ins older than 10 minutes, and grants, temporary blocks, approvals
-// and access requests 7 days after they stopped being live, the allow entries and found tools of ended sessions, and MCP
+// access requests and ended workspace keys 7 days after they stopped being live, the allow entries and found tools of ended sessions, and MCP
 // sessions an hour after they ended.
 // The audit log keeps their history. A failed delete
 // doesn't keep the others from running.
@@ -25,6 +25,7 @@ func DeleteStaleRows(ctx context.Context, queries *db.Queries) error {
 		{"temporary blocks", queries.DeleteStaleTemporaryBlocks},
 		{"approvals", queries.DeleteStaleApprovals},
 		{"access requests", queries.DeleteStaleAccessRequests},
+		{"ended workspace keys", queries.DeleteStaleWorkspaceKeys},
 		// The end transaction already deletes these; this also catches sessions
 		// that an older gateway ended during a rolling upgrade, which didn't
 		// delete them.

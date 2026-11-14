@@ -276,6 +276,21 @@ type UserSecret struct {
 	UpdatedAt  pgtype.Timestamptz
 }
 
+type WorkspaceKey struct {
+	ID           int64
+	Principal    string
+	Username     string
+	Name         string
+	KeyID        string
+	PublicKey    []byte
+	Status       string
+	RequestID    string
+	RegisteredAt pgtype.Timestamptz
+	ApprovedAt   pgtype.Timestamptz
+	EndedAt      pgtype.Timestamptz
+	LastUsedAt   pgtype.Timestamptz
+}
+
 type WorkspaceList struct {
 	ID        int64
 	ScopeID   int64
