@@ -231,6 +231,8 @@ log "installing the chart (issuer $TOOLGATE_E2E_OIDC_ISSUER)"
 kubectl create namespace "$release_namespace" >&2
 workload_namespace=toolgate-workloads
 kubectl create namespace "$workload_namespace" >&2
+template_secrets_namespace=toolgate-template-secrets
+kubectl create namespace "$template_secrets_namespace" >&2
 kubectl -n "$release_namespace" create secret generic toolgate-database \
 	--from-literal=url="postgres://toolgate:$postgres_password@postgres.$deps_namespace.svc:5432/toolgate?sslmode=disable" >&2
 mkdir -p "$work/keyset"
@@ -257,6 +259,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set 'config.extraEnv[2].value=/etc/toolgate/secrets-keyset/keyset.json' \
 	--set config.otlpEndpoint="http://$TOOLGATE_E2E_OTLP_LISTEN" \
 	--set config.sharedNamespace.name=toolgate-shared \
+	--set config.templateSecretsNamespace="$template_secrets_namespace" \
 	--set 'config.extraEnv[0].name=TOOLGATE_SERVICE_ACCOUNT_NAMESPACES' \
 	--set "config.extraEnv[0].value=$workload_namespace" \
 	--set 'config.extraEnv[3].name=TOOLGATE_TEST_TIME_SCALE' \
@@ -282,6 +285,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"
 export TOOLGATE_E2E_MCPSERVER_IMAGE="$mcpserver_image"
 export TOOLGATE_E2E_WORKLOAD_NAMESPACE="$workload_namespace"
+export TOOLGATE_E2E_TEMPLATE_SECRETS_NAMESPACE="$template_secrets_namespace"
 export TOOLGATE_E2E_S3_ENDPOINT="http://s3.$deps_namespace.svc:7070"
 export TOOLGATE_E2E_CHART_REPOSITORY="oci://registry.$deps_namespace.svc:5000/charts/mcpserver"
 
