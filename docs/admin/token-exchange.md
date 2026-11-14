@@ -2,45 +2,11 @@
 
 For: admins who give an MCP server a token for the user that runs it.
 
-Token exchange (RFC 8693) swaps a token of the user for a new token that another service accepts. A template uses `${exchange:NAME}` to get that new token. For example, a Temporal MCP server can call Temporal as the user who enabled it. This page tells you how to configure the exchanges, how to set up Authentik, and what the risks are.
-
-## Configuration
-
-Set the chart value `config.tokenExchanges`, a list. The chart writes it to the configuration file of the gateway as `tokenExchanges`. You cannot set it with an environment variable. The list can have at most 8 items. The gateway reads it at start, so restart the gateway after you change it.
-
-```yaml
-config:
-  tokenExchanges:
-    - name: temporal
-      tokenURL: https://authentik.example.com/application/o/token/
-      clientID: toolgate-token-exchange
-      clientSecretFile: /etc/toolgate/exchanges/temporal/client-secret
-      audience: temporal-client-id
-      scope: openid temporal-permissions
-      requestedTokenType: urn:ietf:params:oauth:token-type:access_token
-      caFile: /etc/toolgate/exchanges/ca.pem
-      timeout: 10s
-```
-
-| Field | Rule |
-|---|---|
-| `name` | Required. Lowercase letters, digits and `-`, starting with a letter, at most 63 characters. Each name is unique. |
-| `tokenURL` | Required. An `https://` URL with a host. |
-| `clientID` | Required. The ID of a confidential client, so that only the gateway can exchange. |
-| `clientSecretFile` | Required. The gateway reads this file for each exchange and removes white space at the end. A missing or empty file fails the exchange. |
-| `audience` | Optional. The gateway sends it as `audience`. |
-| `scope` | Optional. Space-separated scopes. The gateway sends them as `scope`. |
-| `requestedTokenType` | Optional. A URI that the gateway sends as `requested_token_type`. |
-| `caFile` | Optional. A PEM file of the certificate authorities that sign the certificate of the token endpoint. Without it, the system roots are used. The gateway reads it at start. |
-| `timeout` | Optional. A Go duration. The default is `10s` and the most is `60s`. It limits one exchange. |
-
-The gateway refuses to start if `tokenExchanges` is set and `secretsKeysetFile` is not. The gateway encrypts each exchanged token on its way to the leader replica. See [User secrets](user-secrets.md) for the keyset. The chart fails the render if an item has no `name`, `tokenURL`, `clientID` or `clientSecretFile`, if a `name` is not valid, or if a `tokenURL` does not start with `https://`.
-
-Mount the client secret and the `caFile` with `resources.persistence` and `advancedMounts.gateway.gateway`, as for resolvers. The [configuration reference](configuration.md) and the [chart values](chart-values.md) list every setting.
+Token exchange (RFC 8693) swaps a token of the user for a new token that another service accepts. A template uses `${exchange:NAME}` to get that new token. For example, a Temporal MCP server can call Temporal as the user who enabled it. This page tells you how to define the exchanges, how to set up Authentik, and what the risks are.
 
 ## The TokenExchange resource
 
-A `TokenExchange` is a custom resource that describes one token exchange. You put it in a catalog namespace (`config.catalogNamespaces`, or the release namespace when that list is empty), next to the templates that use it. Templates do not use the resource yet. They still use `config.tokenExchanges`. The gateway already checks each `TokenExchange` and writes the result to its status.
+A `TokenExchange` is a custom resource that describes one token exchange. You put it in a catalog namespace (`config.catalogNamespaces`, or the release namespace when that list is empty), next to the templates that use it. A template that uses `${exchange:temporal}` gets the `TokenExchange` named `temporal` in the namespace of the template. A `TokenExchange` in another namespace does not count. You do not restart the gateway when you add, change or delete a resource.
 
 ```yaml
 apiVersion: toolgate.soliddowant.dev/v1alpha1
@@ -64,6 +30,14 @@ The gateway reads the client secret from the Secret `clientSecretRef.name`, key 
 
 The chart lets the gateway read `TokenExchange` resources in the catalog namespaces only. The gateway writes only their status.
 
+The gateway reads the resource and the client secret again for each exchange. So a change to the resource or a new client secret applies to the next exchange. A running instance keeps its token until its next refresh. If you delete the resource, the templates that use it become invalid.
+
+The gateway needs `secretsKeysetFile` to encrypt each exchanged token on its way to the leader replica. See [User secrets](user-secrets.md) for the keyset. Without it, every `TokenExchange` is invalid with the reason `NoKeyset`.
+
+### Trusted certificate authorities
+
+The gateway uses the system roots to check the certificate of a token endpoint. If your IdP uses a private certificate authority, set the chart value `config.tokenExchange.caFile` to the path of a PEM file of the certificate authorities. Mount the file with `resources.persistence` and `advancedMounts.gateway.gateway`, as for resolvers. One file applies to every exchange. A `TokenExchange` cannot choose the certificate authorities. The gateway reads the file at start.
+
 ### The allowed token endpoints
 
 The gateway sends a user's access token to the `tokenURL` of an exchange. Anyone who can write a `TokenExchange` chooses that URL. For this reason, the gateway uses a `TokenExchange` only if its `tokenURL` is on an allow-list that only the chart sets.
@@ -73,7 +47,7 @@ The gateway sends a user's access token to the `tokenURL` of an exchange. Anyone
 - If you set the list, it replaces this default. The gateway does not add the issuer endpoints to it.
 - The gateway compares each URL exactly. Only the scheme and the host can differ in case. A longer path, another port or a trailing slash is a different URL.
 
-So catalog authors can define exchanges, but they can send tokens only to the token endpoints that you allowed.
+So catalog authors can define exchanges, but they can send tokens only to the token endpoints that you allowed. The gateway also compares the `tokenURL` with the list before each exchange. If the URL is not on the list, the exchange fails and the gateway sends no request.
 
 ### Status
 
@@ -88,6 +62,8 @@ The gateway writes a `Valid` condition on each `TokenExchange`. Read it with `ku
 | `SecretMissing` | The Secret or its key does not exist, the value is empty, or the gateway has no template secrets namespace. The message names the Secret and the key, never the value. |
 
 The gateway checks each resource again every minute. So a Secret that you create later makes the resource valid after a short time.
+
+A template that uses an exchange is valid only when the `TokenExchange` exists in the namespace of the template and its `Valid` condition is `True` for its current spec. Just after you change a resource, its templates are invalid until the gateway checks it again. This takes a few seconds. The `Valid` condition of the template names the cause.
 
 ## An example template
 
@@ -121,6 +97,8 @@ The request that starts the instance runs the exchange. Each exchange writes a `
 
 If a token does not get to the leader, for example because the leader changed, another request of the user that waits for the instance runs the exchange again. This happens after the `timeout` of the exchange plus 30 seconds.
 
+If the `TokenExchange` is missing or is not valid when the exchange runs, the exchange fails with the error code `unavailable`, and the gateway sends no request.
+
 Only a signed-in user has a token to exchange. If the session that starts the instance belongs to a service account or a SPIFFE workload, the instance fails at once.
 
 ## Lifetime
@@ -137,6 +115,6 @@ If someone compromises the gateway, they can exchange the tokens of users who se
 
 The design was not tested against a live Authentik. Before you use a template in production, do this check:
 
-1. Exchange one token by hand against your Authentik with the configuration above.
+1. Exchange one token by hand against your Authentik with the `TokenExchange` above.
 2. Decode the token. Make sure that `iss` is the issuer of the target provider, that the `kid` is in the JWKS of the target provider, and that the claims hold the permission of the user.
 3. If one of these fails, change the Authentik configuration. toolgate needs no change, because it never checks the issuer or the key of the exchanged token.

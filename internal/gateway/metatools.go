@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/solidDoWant/toolgate/internal/credentials"
 	"github.com/solidDoWant/toolgate/internal/embeddings"
 	"github.com/solidDoWant/toolgate/internal/secrets"
 
@@ -118,9 +117,10 @@ type metaTools struct {
 	workspaces         *Workspaces
 	sessionIdleTimeout time.Duration
 
-	// exchanges are the configured token exchanges by name, and
-	// credentialsCipher seals the tokens they return for the leader.
-	exchanges         map[string]*credentials.Exchanger
+	// exchanges builds the exchanger of a template's token exchange, and
+	// credentialsCipher seals the tokens they return for the leader. Nil
+	// exchanges means the gateway runs no exchanges.
+	exchanges         ExchangeSource
 	credentialsCipher *secrets.Cipher
 	logger            *slog.Logger
 }

@@ -471,19 +471,13 @@ type Config struct {
 	// The chart sets it from `config.resolvers` and mounts each token.
 	Resolvers []Resolver `json:"resolvers"`
 
-	// The OAuth token exchanges (RFC 8693) that a template's
-	// `${exchange:<name>}` gets a token from. Set it in the YAML file only,
-	// with at most 8 items. Each item has a `name` (lowercase letters,
-	// digits and `-`, starting with a letter, at most 63 characters, unique),
-	// an `https://` `tokenURL`, a `clientID` and a `clientSecretFile` (the
-	// gateway reads the file for each exchange and trims white space at its
-	// end). It can also have an `audience`, a space-separated `scope`, a
-	// `requestedTokenType` URI, a `caFile` (a PEM file of the certificate
-	// authorities that sign the certificate of the token endpoint, read at
-	// start) and a `timeout` (a Go duration, default `10s`, at most `60s`).
-	// It needs `secretsKeysetFile`. The chart sets it from
-	// `config.tokenExchanges`. See [Token exchange](token-exchange.md).
-	TokenExchanges []TokenExchange `json:"tokenExchanges"`
+	// A PEM file of the certificate authorities that sign the certificates
+	// of the token endpoints that `TokenExchange` resources use. One file
+	// covers every exchange: a resource never chooses whom it trusts. Empty
+	// means the system roots. The gateway reads it at start. The chart sets
+	// it from `config.tokenExchange.caFile`. See
+	// [Token exchange](token-exchange.md).
+	TokenExchangeCAFile string `json:"tokenExchangeCAFile"`
 
 	// The token endpoints that `TokenExchange` resources may send a user's
 	// access token to. Set it in the YAML file only, with at most 16
@@ -1311,7 +1305,6 @@ func (c Config) Validate() []error {
 	problems = append(problems, c.validateToolSearchEmbeddings()...)
 	problems = append(problems, c.validateUI()...)
 	problems = append(problems, c.validateResolvers()...)
-	problems = append(problems, c.validateTokenExchanges()...)
 	problems = append(problems, c.validateAllowedTokenURLs()...)
 	problems = append(problems, c.validateSPIFFETrustDomains()...)
 	problems = append(problems, c.validateWorkspaceAttestation()...)
@@ -1517,28 +1510,8 @@ func (c Config) validatePersistentVolumes() []error {
 	return problems
 }
 
-// TokenExchange is one entry of the tokenExchanges setting.
-type TokenExchange struct {
-	Name               string   `json:"name"`
-	TokenURL           string   `json:"tokenURL"`
-	ClientID           string   `json:"clientID"`
-	ClientSecretFile   string   `json:"clientSecretFile"`
-	Audience           string   `json:"audience"`
-	Scope              string   `json:"scope"`
-	RequestedTokenType string   `json:"requestedTokenType"`
-	CAFile             string   `json:"caFile"`
-	Timeout            Duration `json:"timeout"`
-}
-
-// tokenExchangesNeedKeyset is the exact refusal text for tokenExchanges
-// without secretsKeysetFile.
-const tokenExchangesNeedKeyset = "tokenExchanges needs secretsKeysetFile: the gateway encrypts each exchanged token on its way to the leader."
-
 // Token exchange limits.
 const (
-	DefaultTokenExchangeTimeout = Duration(10 * time.Second)
-	MaxTokenExchangeTimeout     = Duration(60 * time.Second)
-	MaxTokenExchanges           = 8
 	// MaxAllowedTokenURLs bounds tokenExchangeAllowedTokenURLs.
 	MaxAllowedTokenURLs = 16
 	// maxURLLength bounds each tokenExchangeAllowedTokenURLs item.
@@ -1566,64 +1539,6 @@ func (c Config) validateAllowedTokenURLs() []error {
 	for index, allowed := range c.TokenExchangeAllowedTokenURLs {
 		if len(allowed) > maxURLLength || !isHTTPSURL(allowed) {
 			problems = append(problems, fmt.Errorf("tokenExchangeAllowedTokenURLs[%d]: must be an https:// URL of at most %d characters", index, maxURLLength))
-		}
-	}
-
-	return problems
-}
-
-// ExchangeTimeout returns the exchange's timeout, or the default when it is
-// not set.
-func (e TokenExchange) ExchangeTimeout() time.Duration {
-	if e.Timeout == 0 {
-		return time.Duration(DefaultTokenExchangeTimeout)
-	}
-
-	return time.Duration(e.Timeout)
-}
-
-func (c Config) validateTokenExchanges() []error {
-	var problems []error
-
-	if len(c.TokenExchanges) == 0 {
-		return nil
-	}
-
-	if c.SecretsKeysetFile == "" {
-		problems = append(problems, errors.New(tokenExchangesNeedKeyset)) //nolint:staticcheck // the message text is fixed and ends with a full stop
-	}
-
-	if len(c.TokenExchanges) > MaxTokenExchanges {
-		problems = append(problems, fmt.Errorf("tokenExchanges: at most %d items, got %d", MaxTokenExchanges, len(c.TokenExchanges)))
-	}
-
-	seen := map[string]bool{}
-
-	for index, exchange := range c.TokenExchanges {
-		where := fmt.Sprintf("tokenExchanges[%d]", index)
-
-		if !resolverNamePattern.MatchString(exchange.Name) {
-			problems = append(problems, fmt.Errorf("%s.name: %q must match %s", where, exchange.Name, resolverNamePattern))
-		} else if seen[exchange.Name] {
-			problems = append(problems, fmt.Errorf("%s.name: %q is listed twice", where, exchange.Name))
-		}
-
-		seen[exchange.Name] = true
-
-		if !isHTTPSURL(exchange.TokenURL) {
-			problems = append(problems, fmt.Errorf("%s.tokenURL: %q must be an https:// URL", where, exchange.TokenURL))
-		}
-
-		if exchange.ClientID == "" {
-			problems = append(problems, fmt.Errorf("%s.clientID: required", where))
-		}
-
-		if exchange.ClientSecretFile == "" {
-			problems = append(problems, fmt.Errorf("%s.clientSecretFile: required", where))
-		}
-
-		if exchange.Timeout < 0 || exchange.Timeout > MaxTokenExchangeTimeout {
-			problems = append(problems, fmt.Errorf("%s.timeout: must be at most 60s", where))
 		}
 	}
 

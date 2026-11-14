@@ -289,17 +289,6 @@ config:
   # with `resources.persistence`.
   resolvers: []
 
-  # -- Token exchanges: OAuth token exchanges (RFC 8693) that a template's
-  # `${exchange:<name>}` gets a token from. Each item has a `name`, an
-  # `https://` `tokenURL`, a `clientID` and a `clientSecretFile`, and
-  # optionally `audience`, `scope`, `requestedTokenType`, `caFile` and
-  # `timeout` (default `10s`, at most `60s`). At most 8 items. The gateway
-  # needs `secretsKeysetFile` (set it with `config.extraEnv`:
-  # `TOOLGATE_SECRETS_KEYSET_FILE`). The chart writes them to the gateway's
-  # configuration file. Mount the client secret and the `caFile` with
-  # `resources.persistence`.
-  tokenExchanges: []
-
   tokenExchange:
     # -- Token endpoints that `TokenExchange` resources may send a user's
     # access token to, such as
@@ -310,6 +299,11 @@ config:
     # discovery documents. A list replaces that default; it doesn't add to
     # it. See the token exchange page of the admin docs.
     allowedTokenURLs: []
+    # -- Path of a PEM file of the certificate authorities that sign the
+    # certificates of the allowed token endpoints. One file covers every
+    # `TokenExchange`; a resource never chooses whom it trusts. Empty means
+    # the system roots. Mount the file with `resources.persistence`.
+    caFile: ""
 
   spiffe:
     # -- SPIFFE trust domains whose JWT-SVIDs may sign in, attested as the

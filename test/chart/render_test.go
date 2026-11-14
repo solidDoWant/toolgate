@@ -418,6 +418,17 @@ func TestChartTokenExchangeAllowedTokenURLs(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "config.tokenExchange.allowedTokenURLs")
 	})
+
+	t.Run("caFile goes in the configuration file", func(t *testing.T) {
+		file := configFile(t, []string{"config.tokenExchange.caFile=/etc/toolgate/token-exchange/ca.pem"})
+		assert.Equal(t, "/etc/toolgate/token-exchange/ca.pem", file["tokenExchangeCAFile"])
+	})
+
+	t.Run("caFile unset by default", func(t *testing.T) {
+		for _, candidate := range ofKind(renderQuickStart(t), "ConfigMap") {
+			assert.NotContains(t, string(candidate.raw), "tokenExchangeCAFile")
+		}
+	})
 }
 
 func TestAdmissionPolicyAppliesToEveryWriteByTheGateway(t *testing.T) {
@@ -893,58 +904,20 @@ func TestOIDCAdditionalIssuersSetting(t *testing.T) {
 	})
 }
 
-func TestChartTokenExchangesConfigFile(t *testing.T) {
-	writeValues := func(t *testing.T, entries string) string {
-		t.Helper()
-
-		path := filepath.Join(t.TempDir(), "exchanges.yaml")
-		require.NoError(t, os.WriteFile(path, []byte("config:\n  tokenExchanges:\n"+entries), 0o600))
-
-		return path
-	}
-
-	t.Run("exchanges go in the configuration file", func(t *testing.T) {
-		values := writeValues(t, `    - name: temporal
+func TestChartRefusesTheRemovedTokenExchangesValue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "exchanges.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(`config:
+  tokenExchanges:
+    - name: temporal
       tokenURL: https://authentik.example.com/application/o/token/
       clientID: toolgate-token-exchange
       clientSecretFile: /etc/toolgate/exchanges/temporal/client-secret
-      audience: temporal-client-id
-      timeout: 20s
-`)
-		manifests := renderQuickStart(t, "--values", values)
-		configMap := find[corev1.ConfigMap](t, manifests, "ConfigMap")
+`), 0o600))
 
-		var file struct {
-			TokenExchanges []map[string]string `json:"tokenExchanges"`
-		}
-		require.NoError(t, yaml.UnmarshalStrict([]byte(configMap.Data["config.yaml"]), &file))
-		assert.Equal(t, []map[string]string{{
-			"name": "temporal", "tokenURL": "https://authentik.example.com/application/o/token/",
-			"clientID": "toolgate-token-exchange", "clientSecretFile": "/etc/toolgate/exchanges/temporal/client-secret",
-			"audience": "temporal-client-id", "timeout": "20s",
-		}}, file.TokenExchanges)
-
-		deployment := find[appsv1.Deployment](t, manifests, "Deployment")
-		assert.Equal(t, []string{"serve", "--config", "/etc/toolgate/config.yaml"}, deployment.Spec.Template.Spec.Containers[0].Args)
-	})
-
-	failures := map[string]struct{ entry, want string }{
-		"missing name":             {"    - {tokenURL: \"https://i.example/t\", clientID: c, clientSecretFile: /s}\n", "name"},
-		"bad name":                 {"    - {name: Temporal, tokenURL: \"https://i.example/t\", clientID: c, clientSecretFile: /s}\n", "name \"Temporal\""},
-		"missing tokenURL":         {"    - {name: t, clientID: c, clientSecretFile: /s}\n", "needs a tokenURL"},
-		"missing clientID":         {"    - {name: t, tokenURL: \"https://i.example/t\", clientSecretFile: /s}\n", "needs a clientID"},
-		"missing clientSecretFile": {"    - {name: t, tokenURL: \"https://i.example/t\", clientID: c}\n", "needs a clientSecretFile"},
-		"http tokenURL":            {"    - {name: t, tokenURL: \"http://i.example/t\", clientID: c, clientSecretFile: /s}\n", "https://"},
-	}
-
-	for name, failure := range failures {
-		t.Run(name, func(t *testing.T) {
-			_, err := render(t, quickStartValues, "--values", writeValues(t, failure.entry))
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "config.tokenExchanges")
-			assert.Contains(t, err.Error(), failure.want)
-		})
-	}
+	_, err := render(t, quickStartValues, "--values", path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "config.tokenExchanges was removed")
+	assert.Contains(t, err.Error(), "TokenExchange resource")
 }
 
 func TestChartTemplateSecretsRole(t *testing.T) {

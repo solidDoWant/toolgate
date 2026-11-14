@@ -48,45 +48,23 @@ Rows still say what is wanted and when. A request claims an exchange with a row 
 
 ## 3. Token exchange
 
-### Configuration
+### The TokenExchange resource and the allow-list
 
-Chart value `config.tokenExchanges`, a list. The chart writes it to the gateway's configuration file as `tokenExchanges`. It is a YAML-only setting, like `resolvers`, and the generated reference documents it.
-
-```yaml
-config:
-  tokenExchanges:
-    - name: temporal
-      tokenURL: https://authentik.example.com/application/o/token/
-      clientID: toolgate-token-exchange
-      clientSecretFile: /etc/toolgate/exchanges/temporal/client-secret
-      audience: temporal-client-id               # optional
-      scope: openid temporal-permissions         # optional
-      requestedTokenType: urn:ietf:params:oauth:token-type:access_token   # optional
-      caFile: /etc/toolgate/exchanges/ca.pem     # optional
-      timeout: 10s                               # optional
-```
+An exchange is a namespaced custom resource, `TokenExchange` (`api/v1alpha1`), in the catalog namespaces. It replaces the removed chart value `config.tokenExchanges`.
 
 | Field | Rule |
 |---|---|
-| `name` | Required. `^[a-z][a-z0-9-]{0,62}$`, unique in the list. |
-| `tokenURL` | Required. An `https://` URL with a host. |
+| `tokenURL` | Required. An `https://` URL with a host, on the allow-list below. |
 | `clientID` | Required. A confidential client, so only the gateway can exchange. |
-| `clientSecretFile` | Required. The gateway reads the file for each exchange, because the kubelet updates a mounted Secret in place. It trims white space at the end. A missing or empty file fails that exchange. |
+| `clientSecretRef` | Required. `name` and `key` of a Secret in the template secrets namespace. The gateway reads it through the API for each exchange, so a rotation needs no restart. It trims white space at the end. A missing or empty value fails that exchange with a reason that names the Secret and key. |
 | `audience` | Optional. Sent as `audience` when set. |
 | `scope` | Optional. Space-separated scopes, sent as `scope` when set. |
 | `requestedTokenType` | Optional. A URI, sent as `requested_token_type` when set. |
-| `caFile` | Optional. A PEM file of the CAs that sign the certificate of the token endpoint. Otherwise the system roots are used. It is read at start, like a resolver's `caFile`. |
 | `timeout` | Optional. A Go duration, default `10s`, at most `60s`. It bounds one exchange. |
 
-- The list has at most 8 entries.
-- `tokenExchanges` needs `secretsKeysetFile`. Without it, the gateway refuses to start with "tokenExchanges needs secretsKeysetFile: the gateway encrypts each exchanged token on its way to the leader."
-- The chart fails the render for a missing `name`, `tokenURL`, `clientID` or `clientSecretFile`, a bad `name`, or a `tokenURL` that isn't `https://`. The gateway checks the same rules at start.
-- The admin mounts the client secret and the `caFile` with `resources.persistence` and `advancedMounts.gateway.gateway`, as for resolvers.
-- Settings are read at start. A changed list takes effect after a restart of the gateway.
+There is no `caFile` on the resource, because a resource author must not choose trust roots. The chart-only `tokenExchangeCAFile` (chart value `config.tokenExchange.caFile`) is one PEM bundle for every exchange, read at start. Without it the system roots are used.
 
-### The TokenExchange resource and the allow-list
-
-Exchanges move from the chart value to a namespaced custom resource, `TokenExchange` (`api/v1alpha1`), in the catalog namespaces. Its spec has the fields above, with two changes: `clientSecretRef` (`name`, `key`) replaces `clientSecretFile` and reads a Secret in the template secrets namespace, and there is no `caFile`, because a resource author must not choose trust roots.
+**Resolution.** `${exchange:NAME}` names the `TokenExchange` `NAME` in the template's own namespace. `instance_exchanges.exchange` stores only the name, because the instance's template namespace plus the name identify the resource. The gateway builds the exchanger from the resource in its cache at each exchange (`tokenexchange.Source`), so an edit applies from the next exchange. Before it sends anything, it requires the `Valid` condition to be `True` for the resource's current generation, and it checks the fields and the allow-list again itself, so a status written before an edit or a list change never sends a token to a URL that isn't allowed. A failure there fails the exchange with the audit code `unavailable`, and no request is sent.
 
 The resource decides where the gateway sends a user's token, so a chart-only allow-list limits `tokenURL`:
 
@@ -111,17 +89,19 @@ Condition reasons are CamelCase because the Kubernetes API refuses a reason with
 
 ### Template syntax, scope and validation
 
-`${exchange:NAME}`, where `NAME` is the `name` of an entry. It follows the rules of §2.
+`${exchange:NAME}`, where `NAME` is the name of a `TokenExchange` in the template's namespace. It follows the rules of §2.
 
 **Scope.** `templatescope.ForVariable` returns `per-user` for `exchange:`, like `secret:` and `resolver:`. So a template that uses it is `per-user` or narrower, and `namespace: shared` is never allowed with it. `templatescope.Display` shows it as `${exchange:…}`. The scope table in `SPEC.md` §9 lists it in the `per-user` row.
 
-**Validation** (the catalog's `Validator`, so every replica agrees). The `Validator` gets a new field `Exchanges []string`, the configured names. Each problem goes in the `Valid` condition, sorted, like today's variable problems:
+**Validation** (the catalog's `Validator`, so every replica agrees). The `Validator`'s `Exchanges` lookup (`tokenexchange.Lookup`) reads the `TokenExchange` of the template's namespace from the cache. The template is invalid when the resource is missing, exists only in another namespace, or isn't `Valid` for its current generation. The catalog reconciler watches `TokenExchange` resources and validates the templates of a namespace again when one of them, or its status, changes. Each problem goes in the `Valid` condition, sorted, like today's variable problems:
 
 | Problem | Reason |
 |---|---|
 | Not a Secret value | `<location>: ${exchange:temporal} is allowed only in the data or stringData values of a Secret` (the existing message, with `exchange:` added to `isSecretVariable`) |
 | Not the whole value | `` <location>: ${exchange:temporal} must be the whole value, with no other text `` |
-| Name not configured | `` <location>: token exchange `temporal` isn't configured `` |
+| No `TokenExchange` in the namespace | `` <location>: token exchange `temporal` doesn't exist in namespace <ns> `` |
+| Not valid | `` <location>: token exchange `temporal` isn't valid: <its Valid message> `` |
+| Not checked since its last edit | `` <location>: token exchange `temporal` hasn't been checked yet `` |
 | Scope too broad | The existing scope reason, for example `` `scope: shared`, but `resources[0].stringData.token` uses `${exchange:…}`, which needs `per-user` or narrower `` |
 
 An invalid template is handled as today: it isn't offered, and running instances keep their generation.
@@ -161,7 +141,7 @@ A new package, `internal/credentials`, makes the request with `golang.org/x/oaut
 
   `clientcredentials` lets `EndpointParams` replace `grant_type`, and says so in its source. The request never has `resource` or `actor_token`. Authentik refuses `resource` with `invalid_target`.
 - It calls `Config.Token(ctx)` once. `Token` makes a new token source for each call, so nothing is cached between exchanges.
-- `ctx` carries `oauth2.HTTPClient`: an `http.Client` with the entry's `timeout`, its `caFile` roots, TLS 1.2 or later, and `CheckRedirect` returning `http.ErrUseLastResponse`. Redirects aren't followed, because the request carries two credentials. The library reads at most 1 MiB of the answer.
+- `ctx` carries `oauth2.HTTPClient`: an `http.Client` with the resource's `timeout`, the roots of `tokenExchangeCAFile`, TLS 1.2 or later, and `CheckRedirect` returning `http.ErrUseLastResponse`. Redirects aren't followed, because the request carries two credentials. The library reads at most 1 MiB of the answer.
 
 **The answer.**
 - `access_token` must not be empty, and must be at most 4 KiB, so it fits a notification (§3, "Delivery to the leader").
@@ -236,7 +216,7 @@ WHERE e.instance_id = @instance_id AND e.exchange = t.exchange
 RETURNING e.exchange
 ```
 
-The two arrays list each configured exchange and its own claim timeout: the exchange's `timeout` plus 30 seconds. So each row expires after the timeout of its own exchange. A claim of a replica that died, or whose delivery was lost, expires after this time. A row of an exchange that is no longer configured is never claimed (X16). The request runs one exchange for each row returned.
+The two arrays list each configured exchange and its own claim timeout: the exchange's `timeout` plus 30 seconds. So each row expires after the timeout of its own exchange. A claim of a replica that died, or whose delivery was lost, expires after this time. A row whose `TokenExchange` is missing or not usable now is never claimed (X16). The request runs one exchange for each row returned.
 
 A request claims only when all of these hold:
 - the instance is live and `uses_exchange` is true;
@@ -315,7 +295,7 @@ The replica that ran an exchange writes one `credential.exchange` event for each
 | `exchange` | The configured name. |
 | `kind` | `start` or `refresh`. A start is an exchange for a row with `wanted_since` set. |
 | `outcome` | `success` or `failure`. |
-| `error` | On failure: the OAuth error code, or one of `http-status`, `timeout`, `unreachable`, `bad-answer`, `client-secret`. |
+| `error` | On failure: the OAuth error code, or one of `http-status`, `timeout`, `unreachable`, `bad-answer`, `client-secret`, `unavailable` (the `TokenExchange` is missing, not valid, or its `tokenURL` isn't allowed; nothing was sent). |
 | `expiresAt` | On success: the expiry. |
 
 It never holds a token, a client secret or an `error_description`. The web UI's audit summary labels it "Credential exchanged".
@@ -464,7 +444,7 @@ Phase 1 to phase 4 rows still hold. Each row is one event combined with one oper
 | X13 | Older delivery arrives after a newer apply | leader | `issuedAt` isn't later than `issued_at`, so it is dropped. | `internal/runtime: TestRefreshDropsOlderDelivery` |
 | X14 | Template changed | instance running with an exchange | It keeps its generation. Refresh patches the `targets` from its render and never reads the template. | `internal/runtime: TestRefreshUsesRenderedTargets` |
 | X15 | Template changed | instance `pending`, waiting for a token | The leader renders the current generation and makes the rows match it. | `internal/runtime: TestPendingExchangeRowsFollowRenderedGeneration` |
-| X16 | Exchange removed from the gateway configuration (restart) | instance running | The template becomes invalid. Running instances keep their generation. No refresh can run, so the instance stops at the expiry. | `internal/runtime: TestUnconfiguredExchangeStopsAtExpiry` |
+| X16 | `TokenExchange` deleted or not valid | instance running | The template becomes invalid. Running instances keep their generation. Each refresh fails with `unavailable` and sends nothing, so the instance stops at the expiry. | `internal/runtime: TestUnconfiguredExchangeStopsAtExpiry` |
 | X17 | Restart, resolver-expiry or `replace` repair | instance with an exchange | The new row waits for a token from the owner's next request, or fails after `startTimeout`. | `internal/runtime: TestReplacementWaitsForExchangedToken` |
 | X18 | `reapply` repair due | instance with an exchange | It replaces the instance instead. | `internal/runtime: TestReapplyReplacesInstanceWithExchange` |
 | X19 | Objects missing after a leader change | instance `ready` with an exchange | The sweep sends it to `pending` and marks its rows wanted. It continues as X17. | `internal/runtime: TestSweepMarksExchangeWanted` |
@@ -512,14 +492,15 @@ Phase 1 to phase 4 rows still hold. Each row is one event combined with one oper
 
 Unit and integration tests use a fake token endpoint: an `httptest.Server` in tests, and a small binary in `test/tokenexchange/` for e2e, like `test/resolver/`. It answers per subject with a token that holds the subject's `sub` and a counter, with a lifetime and error codes that the test sets. No test needs a live Authentik. The test MCP server reads a file from its Secret volume on each call, so a test can see the value it gets.
 
-- `internal/config`: `TestTokenExchangesConfig` (each field rule, at most 8, `secretsKeysetFile` needed), `TestTemplateSecretsNamespaceConfig` (DNS label, `tg-`, the gateway's own, the shared, `kube-system` and each catalog namespace refused).
+- `internal/config`: `TestTokenExchangesSettingIsRefused`, `TestTokenExchangeCAFileSetting`, `TestTemplateSecretsNamespaceConfig` (DNS label, `tg-`, the gateway's own, the shared, `kube-system` and each catalog namespace refused).
 - `internal/auth`: `TestSubjectTokenIsNeverPrinted`: `fmt` with `%v`, `%+v` and `%#v`, a `slog` attribute and `json.Marshal`, of the value alone and of a struct that holds it, never contain the token.
 - `internal/catalog`: `TestValidateExchangeVariable` and `TestValidateTemplateSecretVariable`, tables over every reason in §3 and §4. `internal/templatescope`: `TestExchangeNarrowsAndTemplateSecretDoesNot`.
 - `internal/credentials`: `TestExchangeSendsTokenExchangeGrant` (form fields, Basic auth, no `resource`, no redirect followed), `TestExchangeExpiryFromExpiresInOrJWT`, `TestExchangeRefusesBadAnswers` (no token, no expiry, under 2 minutes, over 4 KiB, wrong `issued_token_type`), `TestExchangeErrorsNameCodeOnly` (no body, description or token in any error), `TestClientSecretReadForEachExchange`, `TestClaimSkipsExpiredSubjectToken`, `TestExpiredClaimCanBeTakenAgain`, `TestDeliveryPayloadHoldsNoToken`, `TestDeliveryRejectsChangedPayload` (each bound field changed).
 - `internal/runtime`: the runtime rows of §5, plus `TestRenderAppliesSecretsFirst` (with a `kubernetes.io/service-account-token` Secret that keeps its position) and `TestRenderTemplateSecretEncoding` (`data` base64, `stringData` text).
 - `internal/gateway` (integration): the gateway rows of §5, plus `TestNoTokenInDatabaseLogsOrConditions`. It runs a start, refreshes and failures, then searches every table (the identity snapshot of the `sessions` row included), the captured log and audit lines, and the template's conditions for the subject token, the exchanged tokens and the client secret. It also checks that the `requestContext` that `setCurrent` stores holds no subject token.
-- `test/chart`: `TestChartTokenExchangesConfigFile` (written to the file, chart failures) and `TestChartTemplateSecretsRole` (a Role and RoleBinding in that namespace only, no Secret read in the ClusterRole, the namespace rules, `kube-system` and the catalog namespaces included).
-- `test/e2e`: `TestTokenExchangeEndToEnd` (two users, refresh with the session kept, idle stop and start again, a refused user) and `TestTemplateSecretSharedInstance` (the value at first start, an update with no restart). `TestTemplateSecretsRBACConfinedToNamespace` runs a `SubjectAccessReview` for the gateway's service account: `get secrets` is allowed in the template secrets namespace and refused in the gateway's namespace, the catalog namespace and an instance namespace.
+- `internal/tokenexchange`: `TestSourceExchangesWithTheResourceOfTheTemplateNamespace`, `TestSourceRefusesAnExchangeItCannotUse` (another namespace, missing, invalid, not checked since an edit, a `tokenURL` off the allow-list; the fake endpoint receives nothing), `TestSourceAppliesAnEditToTheNextExchange`, `TestSourceClientSecretErrorNamesTheSecretAndKey`, `TestLookupAcceptsOnlyAValidExchangeOfTheTemplateNamespace`.
+- `test/chart`: `TestChartRefusesTheRemovedTokenExchangesValue`, `TestChartTokenExchangeAllowedTokenURLs` (with `caFile`) and `TestChartTemplateSecretsRole` (a Role and RoleBinding in that namespace only, no Secret read in the ClusterRole, the namespace rules, `kube-system` and the catalog namespaces included).
+- `test/e2e`: `TestTokenExchangeEndToEnd` (a `TokenExchange` in the template's namespace: two users, refresh with the session kept, idle stop and start again, a refused user, a `tokenURL` that isn't allowed and an exchange in another namespace with no request sent, an edit applied at the next refresh, a deletion that makes the template invalid) and `TestTemplateSecretSharedInstance` (the value at first start, an update with no restart). `TestTemplateSecretsRBACConfinedToNamespace` runs a `SubjectAccessReview` for the gateway's service account: `get secrets` is allowed in the template secrets namespace and refused in the gateway's namespace, the catalog namespace and an instance namespace.
 
 Tests named with `-count=50` in §5 are timing-sensitive and pass with `-count=50 -race`. They wait on conditions with deadlines, never fixed sleeps. Time-based rules (half-life, claim expiry, stop at expiry, the 60 s retry) take their clock from a `Now` field, as resolvers do.
 
@@ -540,7 +521,7 @@ Tests named with `-count=50` in §5 are timing-sensitive and pass with `-count=5
 - **`docs/admin/templates-and-rules.md`**: add `${exchange:NAME}` and `${templateSecret:NAME/KEY}` to the variables table, `${exchange:…}` to the `per-user` row of the scope table, the whole-value rule, and the `data` encoding. Link both new pages.
 - **`docs/admin/security-model.md`**: one short section for each feature that links its threat model.
 - **`docs/admin/metrics.md`**: the two counters.
-- **Generated**: `docs/admin/configuration.md` (`tokenExchanges`, `templateSecretsNamespace`) and `docs/admin/chart-values.md` (`config.tokenExchanges`, `config.templateSecretsNamespace`), from `make generate`.
+- **Generated**: `docs/admin/configuration.md` (`tokenExchangeAllowedTokenURLs`, `tokenExchangeCAFile`, `templateSecretsNamespace`) and `docs/admin/chart-values.md` (`config.tokenExchange.*`, `config.templateSecretsNamespace`), from `make generate`.
 - **`docs/README.md`**: list the two new pages.
 
 ## 8. Choices made
@@ -558,7 +539,7 @@ Tests named with `-count=50` in §5 are timing-sensitive and pass with `-count=5
 11. **Expiry is the earlier of `expires_in` and the JWT's unverified `exp`,** at least 2 minutes away, like resolvers.
 12. **Reasons give only the OAuth error code.** `error_description` comes from the IdP with no bound on its content, so it goes only to the log, cut short.
 13. **`client_secret_basic` only.** Authentik supports it. A configurable style can come later.
-14. **`tokenExchanges` needs `secretsKeysetFile`,** for the delivery encryption.
+14. **Exchanges need `secretsKeysetFile`,** for the delivery encryption. Without it every `TokenExchange` is `NoKeyset`, and the gateway still starts.
 15. **The Role has `list` as well as `get` and `watch`.** The issue says `get`/`watch`. A controller-runtime watch lists first. `list` in the same namespace doesn't widen what the gateway can read.
 16. **Namespace rules.** The template secrets namespace can't be the gateway's own namespace, the shared namespace, `kube-system` or a catalog namespace, and can't start with `tg-`. The gateway's own namespace holds the keyset and its database credentials.
 17. **Only the leader watches template secrets.** Other replicas never hold their values.
@@ -566,7 +547,7 @@ Tests named with `-count=50` in §5 are timing-sensitive and pass with `-count=5
 19. **`SPEC.md` already matches this design.** §9, "Resources", says that the gateway reads Secrets only in the template secrets namespace. The connector paragraph of §6 says that the only user credential an upstream server can get is one exchanged for it with `${exchange:…}`. No `SPEC.md` change is left for the worker.
 20. **At most 8 exchanges,** to bound the metric series and the configuration.
 21. **A restart from the web UI waits for the owner's next MCP request** to get a token. The web UI's token is for another client, which the exchange provider does not have to accept.
-22. **One claim statement with a timeout for each exchange.** The arrays hold the configured values, so a changed `timeout` applies after the gateway restarts, with no column to update.
+22. **One claim statement with a timeout for each exchange.** The arrays hold the `timeout` each `TokenExchange` sets when the claim runs, so a changed `timeout` applies at the next claim, with no column to update.
 23. **Changing the template secrets namespace never moves values between namespaces.** A row records where its value came from. Copying a Secret of the same name from the new namespace would put a value into an instance that its template never chose.
 
 ## 9. Not in scope

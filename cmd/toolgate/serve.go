@@ -45,6 +45,7 @@ import (
 	"github.com/solidDoWant/toolgate/internal/telemetry"
 	"github.com/solidDoWant/toolgate/internal/telemetry/ingest"
 	"github.com/solidDoWant/toolgate/internal/testtime"
+	"github.com/solidDoWant/toolgate/internal/tokenexchange"
 	"github.com/solidDoWant/toolgate/internal/ui"
 	"github.com/solidDoWant/toolgate/internal/volumesapi"
 	"github.com/solidDoWant/toolgate/internal/wellknown"
@@ -246,7 +247,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	resultCache := resultcache.NewPostgres(server.Database(), cfg.ToolResultCacheMaxEntryBytes, int64(cfg.ToolResultCacheMaxTemplateBytes))
 
-	exchangers, credentialsCipher, err := tokenExchangers(cfg, server.RegisterMetrics, logger)
+	exchanges, credentialsCipher, err := newTokenExchanges(cfg, server.RegisterMetrics, logger)
 	if err != nil {
 		logger.Error("gateway failed to start", "error", err)
 
@@ -279,7 +280,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 		ToolSearchSessionStarted: embeddingsDemand,
 		Secrets:                  runtime.BrokerSecrets(userSecrets(broker)),
-		TokenExchanges:           exchangers,
+		TokenExchanges:           exchanges.gatewaySource(),
 		CredentialsCipher:        credentialsCipher,
 	})
 	server.Handle(gateway.MCPPath, authenticator.Middleware(mcpHandler, true))
@@ -324,6 +325,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			catalog:         templates,
 			rules:           rules,
 			ruleLister:      ruleView,
+			exchanges:       exchanges,
 			profiles:        profiles,
 			secrets:         userSecrets(broker),
 			registerMetrics: server.RegisterMetrics,
@@ -720,12 +722,13 @@ func spiffeOptions(cfg config.Config, logger *slog.Logger) *auth.SPIFFEOptions {
 	return &auth.SPIFFEOptions{TrustDomains: domains, Logger: logger}
 }
 
-// tokenExchangers returns the exchanger of each configured token exchange
-// and the cipher that seals their tokens for the leader. With no exchange
-// configured it returns neither.
-func tokenExchangers(cfg config.Config, registerMetrics func(...prometheus.Collector) error, logger *slog.Logger,
-) ([]*credentials.Exchanger, *secrets.Cipher, error) {
-	if len(cfg.TokenExchanges) == 0 {
+// newTokenExchanges returns the source of the exchangers of TokenExchange
+// resources, and the cipher that seals their tokens for the leader. Without
+// a secrets keyset it returns neither: every TokenExchange is then invalid,
+// so no template uses one.
+func newTokenExchanges(cfg config.Config, registerMetrics func(...prometheus.Collector) error, logger *slog.Logger,
+) (*lateExchangeSource, *secrets.Cipher, error) {
+	if cfg.SecretsKeysetFile == "" {
 		return nil, nil, nil
 	}
 
@@ -739,16 +742,67 @@ func tokenExchangers(cfg config.Config, registerMetrics func(...prometheus.Colle
 		return nil, nil, err
 	}
 
-	exchangers := make([]*credentials.Exchanger, 0, len(cfg.TokenExchanges))
-
-	for _, entry := range cfg.TokenExchanges {
-		exchanger, err := credentials.NewExchanger(entry, metrics, logger)
-		if err != nil {
-			return nil, nil, err
-		}
-
-		exchangers = append(exchangers, exchanger)
+	transport, err := credentials.NewTransport(cfg.TokenExchangeCAFile)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return exchangers, cipher, nil
+	return &lateExchangeSource{
+		allowList: tokenExchangeAllowList(cfg),
+		transport: transport,
+		metrics:   metrics,
+		logger:    logger,
+	}, cipher, nil
+}
+
+// tokenExchangeAllowList returns the token endpoints exchanges may use: the
+// chart's list when it sets one, or else the token endpoints of the user
+// OIDC issuers.
+func tokenExchangeAllowList(cfg config.Config) tokenexchange.AllowList {
+	if len(cfg.TokenExchangeAllowedTokenURLs) > 0 {
+		return tokenexchange.StaticAllowList(cfg.TokenExchangeAllowedTokenURLs)
+	}
+
+	return &tokenexchange.DiscoveredAllowList{Issuers: cfg.UserIssuerURLs()}
+}
+
+// lateExchangeSource builds exchangers from the TokenExchange resources in
+// the manager's cache. It builds none until the manager exists.
+type lateExchangeSource struct {
+	allowList tokenexchange.AllowList
+	transport http.RoundTripper
+	metrics   *credentials.Metrics
+	logger    *slog.Logger
+
+	source atomic.Pointer[tokenexchange.Source]
+}
+
+// set gives the source the manager's cache and the template secrets
+// reader. secretSource is nil when the gateway has no template secrets
+// namespace.
+func (l *lateExchangeSource) set(reader client.Reader, secretSource tokenexchange.SecretSource) {
+	l.source.Store(&tokenexchange.Source{
+		Reader: reader, AllowList: l.allowList, Secrets: secretSource,
+		Transport: l.transport, Metrics: l.metrics, Logger: l.logger,
+	})
+}
+
+// gatewaySource returns l as the gateway's exchange source, or nil when
+// the gateway runs no exchanges.
+func (l *lateExchangeSource) gatewaySource() gateway.ExchangeSource {
+	if l == nil {
+		return nil
+	}
+
+	return l
+}
+
+// Exchanger implements gateway.ExchangeSource.
+func (l *lateExchangeSource) Exchanger(ctx context.Context, namespace, name string) (*credentials.Exchanger, error) {
+	source := l.source.Load()
+	if source == nil {
+		return nil, fmt.Errorf("token exchange `%s`: the gateway hasn't read the TokenExchange resources yet", name)
+	}
+
+	return source.Exchanger(ctx, namespace, name)
 }

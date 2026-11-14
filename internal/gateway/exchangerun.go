@@ -124,16 +124,18 @@ func (m *metaTools) runHeldClaims(ctx context.Context, current requestContext, h
 // returns. A waiting request calls it at each wake, so a lost delivery is
 // retried once its claim expires.
 func (m *metaTools) claimAndExchange(ctx context.Context, current requestContext, instanceID string) {
-	if len(m.exchanges) == 0 || instanceID == "" || current.subjectToken == "" {
+	if m.exchanges == nil || instanceID == "" || current.subjectToken == "" {
 		return
 	}
 
-	timeouts := make(map[string]time.Duration, len(m.exchanges))
-	for name, exchanger := range m.exchanges {
-		timeouts[name] = exchanger.Timeout()
-	}
-
 	queries := db.New(m.database)
+
+	instance, err := queries.GetInstance(ctx, instanceID)
+	if err != nil {
+		m.logger.WarnContext(ctx, "read an instance with token exchanges", slog.String("instance", instanceID), slog.Any("error", err))
+
+		return
+	}
 
 	rows, err := queries.ListInstanceExchanges(ctx, instanceID)
 	if err != nil {
@@ -141,6 +143,8 @@ func (m *metaTools) claimAndExchange(ctx context.Context, current requestContext
 
 		return
 	}
+
+	timeouts := m.exchangeTimeouts(ctx, instance, rows)
 
 	// A start whose exchange failed is over: the leader fails the instance
 	// with that reason. Claiming again would exchange in a loop, because
@@ -164,13 +168,6 @@ func (m *metaTools) claimAndExchange(ctx context.Context, current requestContext
 		return
 	}
 
-	instance, err := queries.GetInstance(ctx, instanceID)
-	if err != nil {
-		m.logger.WarnContext(ctx, "read a claimed instance", slog.String("instance", instanceID), slog.Any("error", err))
-
-		return
-	}
-
 	m.runExchanges(ctx, current, instance, claimed)
 }
 
@@ -181,17 +178,14 @@ func (m *metaTools) claimAndExchange(ctx context.Context, current requestContext
 // context that keeps no cancellation from the request and ends after the
 // longest exchange timeout.
 func (m *metaTools) refreshInBackground(ctx context.Context, current requestContext, instance db.Instance) {
-	if instance.ID == "" || !instance.UsesExchange || len(m.exchanges) == 0 || current.subjectToken == "" {
+	if instance.ID == "" || !instance.UsesExchange || m.exchanges == nil || current.subjectToken == "" {
 		return
 	}
 
-	var longest time.Duration
-	for _, exchanger := range m.exchanges {
-		longest = max(longest, exchanger.Timeout())
-	}
-
-	// The margin covers the writes that follow an exchange.
-	background, cancel := context.WithTimeout(context.WithoutCancel(ctx), longest+refreshWriteMargin)
+	// The margin covers the writes that follow an exchange. The timeout of
+	// each exchange is read from its resource when it runs, so the context
+	// allows the longest one a resource may set.
+	background, cancel := context.WithTimeout(context.WithoutCancel(ctx), maxExchangeTimeout+refreshWriteMargin)
 
 	go func() {
 		defer cancel()
@@ -203,6 +197,25 @@ func (m *metaTools) refreshInBackground(ctx context.Context, current requestCont
 // refreshWriteMargin is the time a background refresh keeps after the
 // exchange's own timeout, to write its result.
 const refreshWriteMargin = 10 * time.Second
+
+// maxExchangeTimeout is the longest timeout a TokenExchange may set.
+const maxExchangeTimeout = 60 * time.Second
+
+// exchangeTimeouts returns the claim timeout of each exchange row whose
+// TokenExchange can be used now: the timeout the resource sets. A row whose
+// exchange is missing or not valid is left out, so it is never claimed and
+// nothing is sent; a running instance then stops at its token's expiry.
+func (m *metaTools) exchangeTimeouts(ctx context.Context, instance db.Instance, rows []db.InstanceExchange) map[string]time.Duration {
+	timeouts := make(map[string]time.Duration, len(rows))
+
+	for _, row := range rows {
+		if exchanger, err := m.exchanges.Exchanger(ctx, instance.TemplateNs, row.Exchange); err == nil {
+			timeouts[row.Exchange] = exchanger.Timeout()
+		}
+	}
+
+	return timeouts
+}
 
 // runExchanges runs each named exchange of the instance with the request's
 // token. A success sends the sealed token to the leader; a failure records
@@ -228,9 +241,18 @@ func (m *metaTools) runExchange(ctx context.Context, current requestContext, ins
 		kind = credentials.KindStart
 	}
 
-	exchanger, configured := m.exchanges[name]
-	if !configured {
+	// The exchanger is built from the TokenExchange of the template's
+	// namespace as it is now, so an edit applies from the next exchange.
+	// One that is missing, invalid or not allowed fails the exchange, and
+	// nothing is sent. A gateway that runs no exchanges leaves the row
+	// alone; its templates that use one are invalid.
+	if m.exchanges == nil {
 		return nil
+	}
+
+	exchanger, err := m.exchanges.Exchanger(ctx, instance.TemplateNs, name)
+	if err != nil {
+		return m.recordExchangeFailure(ctx, current, instance, name, kind, credentials.UnavailableError(name, err))
 	}
 
 	exchanged, err := exchanger.Exchange(ctx, current.subjectToken, kind)

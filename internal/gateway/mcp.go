@@ -124,13 +124,23 @@ type MCPOptions struct {
 	// (store.Listener.SubscribeReplies). Nil means none: a client's answer
 	// to a request of this replica that reaches another replica is lost.
 	SubscribeReplies func() (<-chan []byte, func())
-	// TokenExchanges are the configured token exchanges. A start of a
-	// template that uses one exchanges the caller's token and delivers it
-	// to the leader.
-	TokenExchanges []*credentials.Exchanger
+	// TokenExchanges builds the exchanger of a template's token exchange
+	// from its TokenExchange resource. A start of a template that uses one
+	// exchanges the caller's token and delivers it to the leader. Nil means
+	// the gateway runs no exchanges.
+	TokenExchanges ExchangeSource
 	// CredentialsCipher encrypts each exchanged token on its way to the
 	// leader. It is needed when TokenExchanges is set.
 	CredentialsCipher *secrets.Cipher
+}
+
+// ExchangeSource builds the exchanger of one token exchange each time an
+// exchange runs.
+type ExchangeSource interface {
+	// Exchanger returns the exchanger of the token exchange name for a
+	// template in namespace. It fails, sending nothing, when the exchange
+	// can't be used.
+	Exchanger(ctx context.Context, namespace, name string) (*credentials.Exchanger, error)
 }
 
 // defaultSessionIdleTimeout is the SessionIdleTimeout when MCPOptions sets
@@ -367,13 +377,9 @@ func NewMCPHandler(options MCPOptions) MCPHandler {
 		workspaces:           options.Workspaces,
 		sessionIdleTimeout:   valueOr(options.SessionIdleTimeout, defaultSessionIdleTimeout),
 		embedder:             options.Embedder,
-		exchanges:            make(map[string]*credentials.Exchanger, len(options.TokenExchanges)),
+		exchanges:            options.TokenExchanges,
 		credentialsCipher:    options.CredentialsCipher,
 		logger:               logger,
-	}
-
-	for _, exchanger := range options.TokenExchanges {
-		tools.exchanges[exchanger.Name()] = exchanger
 	}
 
 	if tools.workspaces == nil {

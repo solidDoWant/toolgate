@@ -2,6 +2,7 @@ package catalog_test
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,18 @@ func secretTemplate(t *testing.T, scope, field, value string) *v1alpha1.MCPServe
 	return template
 }
 
+// namespaceExchanges is an exchange lookup that knows the usable exchanges
+// of each namespace by name.
+type namespaceExchanges map[string][]string
+
+func (n namespaceExchanges) ExchangeProblem(namespace, name string) string {
+	if slices.Contains(n[namespace], name) {
+		return ""
+	}
+
+	return "token exchange `" + name + "` doesn't exist in namespace " + namespace
+}
+
 func TestValidateExchangeVariable(t *testing.T) {
 	const location = "resources[0].stringData.token"
 
@@ -39,6 +52,9 @@ func TestValidateExchangeVariable(t *testing.T) {
 		value    string
 		problem  string
 		exchange []string
+		// elsewhere are exchanges that exist only in another namespace.
+		elsewhere []string
+		nilLookup bool
 	}{
 		{name: "valid", scope: "per-user", field: "stringData", value: "${exchange:temporal}", exchange: []string{"temporal"}},
 		{name: "valid under data", scope: "per-user", field: "data", value: "${exchange:temporal}", exchange: []string{"temporal"}},
@@ -48,9 +64,11 @@ func TestValidateExchangeVariable(t *testing.T) {
 			problem: location + ": ${exchange:temporal} must be the whole value, with no other text"},
 		{name: "two variables", scope: "per-user", field: "stringData", value: "${exchange:temporal}${exchange:temporal}", exchange: []string{"temporal"},
 			problem: location + ": ${exchange:temporal} must be the whole value, with no other text"},
-		{name: "name not configured", scope: "per-user", field: "stringData", value: "${exchange:temporal}", exchange: []string{"other"},
-			problem: location + ": token exchange `temporal` isn't configured"},
-		{name: "no exchanges", scope: "per-user", field: "stringData", value: "${exchange:temporal}",
+		{name: "name not in the namespace", scope: "per-user", field: "stringData", value: "${exchange:temporal}", exchange: []string{"other"},
+			problem: location + ": token exchange `temporal` doesn't exist in namespace catalog"},
+		{name: "exchange only in another namespace", scope: "per-user", field: "stringData", value: "${exchange:temporal}", elsewhere: []string{"temporal"},
+			problem: location + ": token exchange `temporal` doesn't exist in namespace catalog"},
+		{name: "no exchange lookup", scope: "per-user", field: "stringData", value: "${exchange:temporal}", nilLookup: true,
 			problem: location + ": token exchange `temporal` isn't configured"},
 		{name: "scope too broad", scope: "shared", field: "stringData", value: "${exchange:temporal}", exchange: []string{"temporal"},
 			problem: "`scope: shared`, but `" + location + "` uses `${exchange:…}`, which needs `per-user` or narrower"},
@@ -58,7 +76,15 @@ func TestValidateExchangeVariable(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			problems := catalog.Reason(catalog.Validator{Exchanges: test.exchange}.Validate(secretTemplate(t, test.scope, test.field, test.value)))
+			validator := catalog.Validator{Exchanges: namespaceExchanges{"catalog": test.exchange, "other-catalog": test.elsewhere}}
+			if test.nilLookup {
+				validator.Exchanges = nil
+			}
+
+			template := secretTemplate(t, test.scope, test.field, test.value)
+			template.Namespace = "catalog"
+
+			problems := catalog.Reason(validator.Validate(template))
 			if test.problem == "" {
 				assert.NotContains(t, problems, "exchange")
 				assert.NotContains(t, problems, "whole value")
