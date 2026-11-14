@@ -20,6 +20,8 @@ const adminUsage = `Usage: toolgate admin <command>
 Commands:
   rewrap    Re-encrypt every user secret under the keyset's primary key
             (rewrap --config FILE)
+  volumes   List persistent volumes and mark them for deletion
+            (volumes list, volumes delete ID...)
 `
 
 // admin runs an admin command and returns the exit code.
@@ -33,6 +35,8 @@ func admin(args []string, stdout, stderr io.Writer) int {
 	switch args[0] {
 	case "rewrap":
 		return rewrap(args[1:], stdout, stderr)
+	case "volumes":
+		return adminVolumes(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, adminUsage)
 

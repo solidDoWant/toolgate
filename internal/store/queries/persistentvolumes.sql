@@ -69,3 +69,6 @@ GROUP BY 1, 2;
 
 -- name: ReleasePersistentVolumes :execrows
 UPDATE persistent_volumes SET instance_id = NULL, last_used_at = now() WHERE instance_id = @instance_id;
+
+-- name: GetPersistentVolume :one
+SELECT * FROM persistent_volumes WHERE id = @id;

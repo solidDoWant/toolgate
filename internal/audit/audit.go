@@ -36,6 +36,8 @@ const (
 	TypeBlockCreate     = "block.create"
 	TypeSecretSet       = "secret.set"
 	TypeSecretDelete    = "secret.delete"
+	// TypeVolumeDelete is the decision to delete a persistent volume.
+	TypeVolumeDelete    = "volume.delete"
 	logMessage          = "audit"
 	redactedPlaceholder = "[REDACTED]"
 )
