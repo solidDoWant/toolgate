@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Internal
-
-- The gateway can encrypt an exchanged token and send it to the leader on the `toolgate_credentials` channel, and the leader keeps it in memory for at most 2 minutes. Nothing uses this yet.
-
 ### Documentation
 
 - The KubeVirt part of `docs/admin/workspace-attestation.md` now prefers a `containerPath` volume (KubeVirt 1.8 and later, feature gate `ContainerPathVolumes`) with a MutatingAdmissionPolicy that adds the token. It needs no Role and no egress to the API server. The TokenRequest setup stays as the fallback for older KubeVirt.
