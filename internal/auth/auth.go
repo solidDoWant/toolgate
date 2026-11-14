@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"regexp"
@@ -172,6 +173,13 @@ type Options struct {
 	// Attestation enables attested user sessions. Nil ignores the
 	// attestation header.
 	Attestation *AttestationOptions
+	// WorkspaceKeys enables attestation with registered workspace keys.
+	// Nil refuses key assertions as `attestation workspace keys off`, or
+	// ignores the header when Attestation is nil too.
+	WorkspaceKeys *WorkspaceKeyOptions
+	// Logger receives warnings that don't change a request's outcome. Nil
+	// uses slog.Default.
+	Logger *slog.Logger
 	// ResourceMetadataURL is the URL of the MCP endpoint's OAuth protected
 	// resource metadata. When it is set, a refused MCP request's
 	// WWW-Authenticate header names it. Empty sends a plain challenge.
@@ -204,6 +212,7 @@ type Authenticator struct {
 	accounts *serviceAccountVerifier
 	spiffe   *spiffeVerifier
 	attest   *attestationVerifier
+	keys     *workspaceKeyVerifier
 	claims   claimNames
 	recorder RefusalRecorder
 	limiter  *RateLimiter
@@ -376,8 +385,24 @@ func New(ctx context.Context, options Options) (*Authenticator, error) {
 		}
 	}
 
+	var keys *workspaceKeyVerifier
+
+	if options.WorkspaceKeys != nil {
+		if options.WorkspaceKeys.Store == nil {
+			return nil, errors.New("auth: workspaceKeys: a store is required")
+		}
+
+		logger := options.Logger
+		if logger == nil {
+			logger = slog.Default()
+		}
+
+		keys = &workspaceKeyVerifier{options: *options.WorkspaceKeys, logger: logger}
+	}
+
 	return &Authenticator{
 		attest:   attest,
+		keys:     keys,
 		issuers:  issuers,
 		accounts: accounts,
 		spiffe:   spiffe,
@@ -467,8 +492,8 @@ func (a *Authenticator) Middleware(next http.Handler, mcp bool) http.Handler {
 
 		// The attestation never authenticates: it runs only for a signed-in
 		// user, and a workload is already attested as itself.
-		if a.attest != nil && identity.Kind == KindUser {
-			attested, refusal, err := a.attest.attest(request.Context(), request, identity, claims)
+		if (a.attest != nil || a.keys != nil) && identity.Kind == KindUser {
+			attested, refusal, err := a.attestUser(request.Context(), request, identity, claims)
 			if err != nil {
 				writer.Header().Set("Retry-After", "1")
 				http.Error(writer, "The gateway can't check the workspace attestation right now. Try again.", http.StatusServiceUnavailable)

@@ -432,6 +432,8 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 			ServiceAccounts: serviceAccounts,
 			SPIFFE:          spiffeOptions(cfg, logger),
 			Attestation:     attestation,
+			WorkspaceKeys:   workspaceKeyOptions(cfg, server),
+			Logger:          logger,
 			// The MCP endpoint's 401 names the protected resource
 			// metadata that gateway.New serves.
 			ResourceMetadataURL: wellknown.ProtectedResourceMetadataURL(cfg.MCPResourceURL()),

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/audit"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/config"
+	"github.com/solidDoWant/toolgate/internal/gateway"
+	"github.com/solidDoWant/toolgate/internal/store"
 )
 
 // discoveryTimeout bounds one attempt to read the identity provider's
@@ -130,4 +134,42 @@ func (r refusalRecorder) RecordAuthRefusal(ctx context.Context, refusal auth.Ref
 	if err != nil {
 		r.logger.WarnContext(ctx, "cannot write the auth.refuse audit event", "error", err)
 	}
+}
+
+// workspaceKeyOptions enables attestation with registered workspace keys
+// when the workspaceKeys setting is on. Nil leaves it off.
+func workspaceKeyOptions(cfg config.Config, server *gateway.Server) *auth.WorkspaceKeyOptions {
+	if !cfg.WorkspaceKeys {
+		return nil
+	}
+
+	return &auth.WorkspaceKeyOptions{
+		Store:             workspaceKeyStore{keys: store.NewWorkspaceKeys(server.Database())},
+		WorkspaceIDPrefix: cfg.WorkspaceKeysPrefix,
+	}
+}
+
+// workspaceKeyStore adapts the database's key rows to the authenticator.
+type workspaceKeyStore struct {
+	keys *store.WorkspaceKeys
+}
+
+func (s workspaceKeyStore) WorkspaceKey(ctx context.Context, keyID string) (auth.WorkspaceKey, bool, error) {
+	row, found, err := s.keys.WorkspaceKey(ctx, keyID)
+	if err != nil || !found {
+		return auth.WorkspaceKey{}, found, err
+	}
+
+	return auth.WorkspaceKey{
+		ID: row.ID, Principal: row.Principal, Username: row.Username, Name: row.Name,
+		Status: row.Status, PublicKey: ed25519.PublicKey(row.PublicKey), LastUsedAt: row.LastUsedAt,
+	}, true, nil
+}
+
+func (s workspaceKeyStore) HasPendingKeyRequest(ctx context.Context, principal, keyID string) (bool, error) {
+	return s.keys.HasPendingKeyRequest(ctx, principal, keyID)
+}
+
+func (s workspaceKeyStore) TouchWorkspaceKey(ctx context.Context, id int64) error {
+	return s.keys.TouchWorkspaceKey(ctx, id)
 }
