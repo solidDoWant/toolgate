@@ -7,7 +7,7 @@
 <div><dt class="text-xs text-muted">Client</dt><dd class="m-0">{{if .Client}}{{.Client}}{{else}}unknown client{{end}} <span class="badge badge-neutral">{{if .Connector}}connector{{else}}helper{{end}}</span></dd></div>
 <div><dt class="text-xs text-muted">State</dt><dd class="m-0">{{if eq .State.Name "resumable"}}<span class="badge badge-neutral">resumable until {{.State.Until.UTC}}</span>{{else}}<span class="badge {{if eq .State.Name "active"}}badge-ok{{else}}badge-neutral{{end}}">{{.State.Name}}</span>{{end}}</dd></div>
 <div><dt class="text-xs text-muted">Tool search</dt><dd class="m-0">{{if .ToolSearch}}on{{else}}off{{end}}</dd></div>
-<div><dt class="text-xs text-muted">Session</dt><dd class="m-0">{{template "short-id" .SessionID}}</dd></div>
+<div><dt class="text-xs text-muted">Session</dt><dd class="m-0">{{template "full-id" .SessionID}}</dd></div>
 <div><dt class="text-xs text-muted">Started</dt><dd class="m-0">{{template "reltime" (since .CreatedAt)}}</dd></div>
 <div><dt class="text-xs text-muted">Last activity</dt><dd class="m-0">{{template "reltime" (since .LastSeenAt)}}</dd></div>
 </dl>{{end}}

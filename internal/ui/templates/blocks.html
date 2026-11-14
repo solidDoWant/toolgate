@@ -4,7 +4,7 @@
 {{if .Data.Blocks}}
 {{template "table-start" (dict "ID" "blocks" "Label" "Temporary blocks" "Columns" (list "ID" "Match" "Reason" "Created by" "Created" "Ends"))}}
 {{range .Data.Blocks}}<tr>
-<td data-label="ID">{{template "short-id" .ID}}</td>
+<td data-label="ID">{{template "full-id" .ID}}</td>
 <td data-label="Match">{{template "match-chips" .Match}}</td>
 <td data-label="Reason">{{.Reason}}</td>
 <td data-label="Created by">{{template "who" .Who}}</td>

@@ -17,7 +17,6 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/policy"
-	"github.com/solidDoWant/toolgate/internal/principal"
 	"github.com/solidDoWant/toolgate/internal/store"
 	"github.com/solidDoWant/toolgate/internal/ui"
 )
@@ -102,9 +101,8 @@ func TestBlocksPage(t *testing.T) {
 
 		page := readBody(t, get(t, admin, env.server.URL+"/ui/blocks"))
 		assert.Contains(t, page, "Incident 7.")
-		assert.Contains(t, page, `<span class="font-mono text-xs" title="`+id+`">`+principal.Short(id)+`</span>`, "the ID shows shortened, the full ID on hover")
+		assert.Contains(t, page, `<span class="font-mono text-xs break-all">`+id+`</span>`, "the full ID shows as text")
 		assert.Contains(t, page, `data-copy-text="`+id+`"`, "a copy button holds the full ID")
-		assert.NotContains(t, page, ">"+id+"<", "the full ID isn't shown as text")
 		assert.Contains(t, page, `<span class="chip"><span class="chip-label">server</span> <span class="font-mono">github</span></span>`)
 		assert.Contains(t, page, `<span class="chip"><span class="chip-label">server</span> <span class="font-mono">wiki</span></span>`)
 		assert.NotContains(t, page, "servers: github", "the match shows as chips, not a joined string")

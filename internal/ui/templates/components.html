@@ -32,13 +32,24 @@ right-aligned on a wide screen and at the bottom of the card on a phone. */}}
 {{define "row-actions-start"}}<td class="row-actions" data-label="Actions"><div class="inline-flex items-center justify-end gap-1">{{end}}
 {{define "row-actions-end"}}</div></td>{{end}}
 
+{{/* copy-button: Text (what is copied) and Label (what the button says). A
+fixed-size box holds three stacked icons (copy, copied, failed); copy.js sets
+data-state, and CSS shows one icon, so a click never changes the layout. The
+status span is read aloud and takes no room. */}}
+{{define "copy-button"}}<button type="button" class="copy-id-button text-muted" data-copy-text="{{.Text}}" title="{{.Label}}" aria-label="{{.Label}}"><svg class="icon-copy" aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.500 3.500V9A1.5 1.5 0 0 0 4 10.500h1.500"/></svg><svg class="icon-done" aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8.5l3.500 3.500L13 4.500"/></svg><svg class="icon-failed" aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg></button><span class="sr-only" role="status" aria-live="polite" data-copy-status></span>{{end}}
+
 {{/* short-id: a long opaque ID (a string) as its first characters in
-monospace, with the full ID on hover, and a small icon button that copies
-the full ID. The button needs JavaScript; the full ID stays in its title. */}}
-{{define "short-id"}}<span class="whitespace-nowrap"><span class="font-mono text-xs" title="{{.}}">{{short .}}</span> <button type="button" class="copy-id-button inline-flex align-middle text-muted" data-copy-text="{{.}}" title="Copy the full ID" aria-label="Copy the full ID"><svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.500 3.500V9A1.5 1.5 0 0 0 4 10.500h1.500"/></svg></button></span>{{end}}
+monospace, with the full ID on hover and on keyboard focus, and a copy
+button. */}}
+{{define "short-id"}}<span class="whitespace-nowrap"><span class="font-mono text-xs" tabindex="0" title="{{.}}">{{short .}}</span> {{template "copy-button" (dict "Text" . "Label" "Copy the full ID")}}</span>{{end}}
+
+{{/* full-id: the whole ID in monospace, wrapping where the line is short, with
+a copy button. For pages that have room for it. */}}
+{{define "full-id"}}<span class="font-mono text-xs break-all">{{.}}</span> {{template "copy-button" (dict "Text" . "Label" "Copy the full ID")}}{{end}}
 
 {{/* short-fingerprint: Short (the text shown) and Full (the fingerprint the copy button copies). */}}
-{{define "short-fingerprint"}}<span class="whitespace-nowrap"><span class="font-mono text-xs" title="{{.Full}}">{{.Short}}</span> <button type="button" class="copy-id-button inline-flex align-middle text-muted" data-copy-text="{{.Full}}" title="Copy the full fingerprint" aria-label="Copy the full fingerprint"><svg aria-hidden="true" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.500 3.500V9A1.5 1.5 0 0 0 4 10.500h1.500"/></svg></button></span>{{end}}
+{{define "short-fingerprint"}}<span class="whitespace-nowrap"><span class="font-mono text-xs" tabindex="0" title="{{.Full}}">{{.Short}}</span> {{template "copy-button" (dict "Text" .Full "Label" "Copy the full fingerprint")}}</span>{{end}}
+
 
 {{/* chip: a small labelled value, Label then Value. */}}
 {{define "chip"}}<span class="chip"><span class="chip-label">{{.Label}}</span> <span class="font-mono">{{.Value}}</span></span>{{end}}
