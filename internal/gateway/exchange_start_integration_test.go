@@ -104,7 +104,7 @@ type exchangeFixture struct {
 	applied map[string][]string
 }
 
-func newExchangeStartFixture(t *testing.T) *exchangeFixture {
+func newExchangeStartFixture(t *testing.T, extra ...func(*gateway.MCPOptions)) *exchangeFixture {
 	t.Helper()
 
 	endpoint := &fakeTokenEndpoint{}
@@ -133,6 +133,10 @@ func newExchangeStartFixture(t *testing.T) *exchangeFixture {
 	fixture.mcpFixture = newMCPFixture(t, func(options *gateway.MCPOptions) {
 		options.TokenExchanges = []*credentials.Exchanger{exchanger}
 		options.CredentialsCipher = cipher
+
+		for _, change := range extra {
+			change(options)
+		}
 	})
 
 	fixture.listenForDeliveries(t, cipher)

@@ -174,6 +174,36 @@ func (m *metaTools) claimAndExchange(ctx context.Context, current requestContext
 	m.runExchanges(ctx, current, instance, claimed)
 }
 
+// refreshInBackground keeps the exchanged tokens of a ready instance fresh
+// while its owner calls it. It runs the claim and the exchanges it returns
+// in a goroutine, so the call is forwarded at once with the token already in
+// the Secret. The goroutine gets a copy of the request's subject token and a
+// context that keeps no cancellation from the request and ends after the
+// longest exchange timeout.
+func (m *metaTools) refreshInBackground(ctx context.Context, current requestContext, instance db.Instance) {
+	if instance.ID == "" || !instance.UsesExchange || len(m.exchanges) == 0 || current.subjectToken == "" {
+		return
+	}
+
+	var longest time.Duration
+	for _, exchanger := range m.exchanges {
+		longest = max(longest, exchanger.Timeout())
+	}
+
+	// The margin covers the writes that follow an exchange.
+	background, cancel := context.WithTimeout(context.WithoutCancel(ctx), longest+refreshWriteMargin)
+
+	go func() {
+		defer cancel()
+
+		m.claimAndExchange(background, current, instance.ID)
+	}()
+}
+
+// refreshWriteMargin is the time a background refresh keeps after the
+// exchange's own timeout, to write its result.
+const refreshWriteMargin = 10 * time.Second
+
 // runExchanges runs each named exchange of the instance with the request's
 // token. A success sends the sealed token to the leader; a failure records
 // its reason on the row so the leader fails the start. Either writes
