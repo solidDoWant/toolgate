@@ -33,13 +33,13 @@ type refreshScene struct {
 	logs     *lockedBuffer
 }
 
-func newRefreshScene(t *testing.T) *refreshScene {
+func newRefreshScene(t *testing.T, extra ...func(*gateway.MCPOptions)) *refreshScene {
 	t.Helper()
 
 	logs := &lockedBuffer{}
-	fixture := newExchangeStartFixture(t, func(options *gateway.MCPOptions) {
+	fixture := newExchangeStartFixture(t, append([]func(*gateway.MCPOptions){func(options *gateway.MCPOptions) {
 		options.Logger = slog.New(slog.NewJSONHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	})
+	}}, extra...)...)
 	template := fixture.addTokenTemplate("temporal-mcp")
 	fixture.startUpstream(t, template.Name)
 
