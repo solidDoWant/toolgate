@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -275,7 +277,13 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 		// that the instance stays is part of the wait.
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Contains(collect, instanceIDs(collect, admin, name), aliceInstance, "the instance is not replaced")
-			assert.Equal(collect, tokenexchange.Token("alice", 2), exchangedToken(t, alice, name))
+			// A slow poll can miss the second token, so any later one counts.
+			token := exchangedToken(t, alice, name)
+			counter, err := strconv.Atoi(strings.TrimPrefix(token, "exchanged-alice-"))
+
+			if assert.NoError(collect, err, "token %q", token) {
+				assert.GreaterOrEqual(collect, counter, 2, "the token is not the first one")
+			}
 		}, enableTimeout, 3*time.Second, "the Secret gets the second token before the first expires")
 
 		assert.Subset(t, listedTools(t, t.Context(), alice.session), exchangeTools(name), "the session survives")
