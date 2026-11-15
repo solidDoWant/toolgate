@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.4.15
+
+toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release lets a running Claude Code session move to a new workspace when it reconnects. A workspace is the set of servers and access that toolgate gives to one project. The release also fixes the client when its workspace key is missing, the copy button of the web UI, and the messages of `toolgate workspace register` and `toolgate configure`.
+
+To install toolgate:
+
+- Admins install the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `0.4.15`. The chart runs the image `ghcr.io/soliddowant/toolgate:0.4.15`. Follow `docs/admin/quick-start.md`.
+- Users open the Quick setup page of the web UI (`/ui/setup`) and run the command that it shows, for example `curl -fsSL https://toolgate.example.com/install.sh | sh`. The script installs the `toolgate` command and the Claude Code plugin. You can also download the `toolgate` command for your system from the files of this release, put it on your `PATH`, and install the plugin with `claude plugin marketplace add solidDoWant/toolgate` and `claude plugin install toolgate@toolgate`. Follow `docs/user/README.md`.
+
+### Upgrade notes for admins
+
+- Tell your users that a reconnect can now start a new toolgate session. When a running Claude Code session reconnects (for example with `/mcp`) in a different workspace, the gateway ends the old toolgate session and starts a new one in the new workspace. Before, the gateway refused the reconnect with HTTP 400, and the user had to restart Claude Code. Nothing carries over from the old session: its enabled servers, session additions, session grants and approvals end with it. The user turns the servers on again. This applies when a workspace key starts to work and when an admin revokes it. A request in an MCP connection that is already open still gets HTTP 404 and then HTTP 400, so no connection changes workspace while it is open. The audit log records the end of the old session with the reason `workspace-changed`. You do not have to change any setting. ([#781](https://github.com/solidDoWant/toolgate/pull/781))
+
+### Servers and sessions
+
+- A running Claude Code session can now move to a new workspace. Reconnect with `/mcp` after an admin approves your workspace key, or after an admin revokes it. The session starts over in the new workspace, so turn its servers on again. ([#781](https://github.com/solidDoWant/toolgate/pull/781))
+
+### Claude Code plugin and CLI
+
+- `toolgate workspace register` and `toolgate configure` now tell you that Claude Code uses a new workspace key when it next connects. To use the key in a running session, reconnect with `/mcp`. The HTTP 400 for a changed workspace now also tells the client to reconnect. ([#779](https://github.com/solidDoWant/toolgate/pull/779), [#781](https://github.com/solidDoWant/toolgate/pull/781), [#784](https://github.com/solidDoWant/toolgate/pull/784))
+
+### Fixes
+
+- If the attestation source fails, for example because the key file is missing or not valid, the `toolgate` command now sends the request without an attestation and prints one warning. The gateway then serves the session as unverified. Before, the command failed, and Claude Code lost its connection to toolgate. Commands that only call the API, for example `toolgate workspace keys list`, no longer fail in this case. To stop the client from using a key file, run `toolgate configure --no-attestation`. ([#775](https://github.com/solidDoWant/toolgate/pull/775))
+- In the web UI, the copy button next to an ID no longer makes the page move. Approval pages show the full request ID. After you copy, the button shows a check mark, and screen readers announce the copy. ([#780](https://github.com/solidDoWant/toolgate/pull/780))
+
+Internal work: a fix for a flaky test of the image build. ([#783](https://github.com/solidDoWant/toolgate/pull/783))
+
+### Known issues
+
+- None.
+
 ## 0.4.14
 
 toolgate is a gateway that you run yourself, between Claude Code and MCP servers. An MCP server gives Claude tools, for example to read GitHub issues. toolgate starts each server on Kubernetes when a session needs it. It checks every tool call against the rules of the admin, and it records every decision in an audit log. This patch release fixes the fresh sign-in of the web UI and lets admins set how long a fresh sign-in lasts. It also fixes two layout problems in the web UI, and `toolgate workspace register` now uses the key after it is approved.
