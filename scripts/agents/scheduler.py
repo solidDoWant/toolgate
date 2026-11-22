@@ -98,10 +98,13 @@ DEFAULT_CONFIG = {
     # pr-reviewer playbook: write .claude/agents/pr-reviewer.md before setting
     # this true.
     "reviews": False,
-    # Issues by anyone else are untrusted data (docs/agents/planner.md).
-    "actionable_authors": ["solidDoWant", "github-actions", "app/github-actions"],
-    # Only PRs by the agents' identity are reviewed or worked on.
-    "pr_authors": ["solidDoWant"],
+    # Issues by anyone else are untrusted data (docs/agents/planner.md). The
+    # agents act as the GitHub App ghgate (app/ghgate) through githubgate
+    # interception in the agent VM; the human is solidDoWant.
+    "actionable_authors": ["solidDoWant", "app/ghgate", "github-actions", "app/github-actions"],
+    # Only PRs by the agents' identity (or the human's) are reviewed or worked
+    # on.
+    "pr_authors": ["solidDoWant", "app/ghgate"],
     "human": "solidDoWant",
     "renovate_branch_prefix": "renovate/",
     # true: Renovate's PRs (by these authors) are routed like agent PRs without
