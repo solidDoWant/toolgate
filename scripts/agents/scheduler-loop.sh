@@ -22,8 +22,9 @@ ENV_FILE="$REPO_DIR/.pm/devenv.sh"
 mkdir -p "$LOG_DIR" "$REPO_DIR/.pm"
 cd "$REPO_DIR" || exit 1
 
-# ~/.local/bin first so the coder gh wrapper (fresh GitHub token per call)
-# wins, for the scheduler's own gh calls and the agents it starts.
+# ~/.local/bin first, for tools installed there (claude, toolgate). The VM
+# reaches GitHub through githubgate interception, so gh needs no token
+# helper (GH_TOKEN is a placeholder the interceptor replaces).
 export PATH="$HOME/.local/bin:$PATH"
 export PM_LOG_DIR="$LOG_DIR"
 
