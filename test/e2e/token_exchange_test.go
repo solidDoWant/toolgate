@@ -164,6 +164,25 @@ func exchangeTools(server string) []string {
 	return []string{server + "__echo", server + "__secrets"}
 }
 
+// instanceToken returns the token in the Secret the instance's server mounts,
+// or an empty string while the Secret has none.
+func instanceToken(t require.TestingT, admin *kubernetes.Clientset, template, instance string) string {
+	for _, namespace := range instanceNamespaces(t, context.Background(), admin, template) {
+		if namespace.Labels[runtime.LabelInstance] != instance {
+			continue
+		}
+
+		secret, err := admin.CoreV1().Secrets(namespace.Name).Get(context.Background(), "creds", metav1.GetOptions{})
+		if err != nil {
+			return ""
+		}
+
+		return string(secret.Data["token"])
+	}
+
+	return ""
+}
+
 // instanceIDs returns the instance IDs of the live instance namespaces of a
 // template.
 func instanceIDs(t require.TestingT, admin *kubernetes.Clientset, template string) []string {
@@ -214,7 +233,7 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 
 	// The shortest lifetime the gateway accepts, so the half-life refresh
 	// and the expiry both happen within the test.
-	lifetime := scaled(credentials.MinExchangedTokenLifetime) + 3*time.Second
+	lifetime := scaled(credentials.MinExchangedTokenLifetime) + 14*time.Second
 	endpoint := testTokenEndpoint(t, lifetime)
 	endpoint.Refuse("carol", "invalid_grant")
 
@@ -276,17 +295,22 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 
 	t.Run("the token is refreshed in place while the user keeps working", func(t *testing.T) {
 		// A new instance would also have a second token, so the check
-		// that the instance stays is part of the wait.
+		// that the instance stays is part of the wait. The call is what
+		// makes the gateway exchange again; the token is read from the
+		// instance's Secret, because the kubelet takes up to a minute to
+		// show a changed Secret in a mounted volume.
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Contains(collect, instanceIDs(collect, admin, name), aliceInstance, "the instance is not replaced")
+			assert.NotEmpty(collect, exchangedToken(collect, alice, name))
+
 			// A slow poll can miss the second token, so any later one counts.
-			token := exchangedToken(t, alice, name)
+			token := instanceToken(collect, admin, name, aliceInstance)
 			counter, err := strconv.Atoi(strings.TrimPrefix(token, "exchanged-alice-"))
 
 			if assert.NoError(collect, err, "token %q", token) {
 				assert.GreaterOrEqual(collect, counter, 2, "the token is not the first one")
 			}
-		}, enableTimeout, 3*time.Second, "the Secret gets the second token before the first expires")
+		}, enableTimeout, 2*time.Second, "the Secret gets the second token before the first expires")
 
 		assert.Subset(t, listedTools(t, t.Context(), alice.session), exchangeTools(name), "the session survives")
 	})
