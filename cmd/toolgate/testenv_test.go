@@ -22,19 +22,21 @@ type environment interface {
 	set(name, value string)
 }
 
-// processEnv is the real process environment, for the tests whose subject
-// also reads it (the gateway's configuration). Such a test cannot run in
-// parallel.
-type processEnv struct{ t *testing.T }
-
-func (e processEnv) get(name string) string { return os.Getenv(name) }
-
-func (e processEnv) set(name, value string) { e.t.Setenv(name, value) }
+// runAsBinaryEnv makes the test binary run main instead of the tests.
+const runAsBinaryEnv = "TOOLGATE_TEST_RUN_MAIN"
 
 // TestMain replaces the OS keychain with an in-memory one. The keychain is
 // process-wide, so a test that changes it or depends on its contents does not
 // call t.Parallel.
 func TestMain(m *testing.M) {
+	// A test that needs a real process (to send it SIGTERM) runs this test
+	// binary as the toolgate command.
+	if os.Getenv(runAsBinaryEnv) != "" {
+		main()
+
+		return
+	}
+
 	keyring.MockInit()
 
 	os.Exit(m.Run())

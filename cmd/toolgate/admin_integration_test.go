@@ -29,7 +29,9 @@ func writeKeysetFile(t *testing.T, path string, handle *keyset.Handle) {
 }
 
 func TestAdminRewrapReencryptsEveryRowUnderThePrimaryKey(t *testing.T) {
-	clearConfigEnv(t)
+	t.Parallel()
+
+	env := testEnv{}
 
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())
@@ -66,14 +68,14 @@ func TestAdminRewrapReencryptsEveryRowUnderThePrimaryKey(t *testing.T) {
 	keysetPath := filepath.Join(t.TempDir(), "keyset.json")
 	writeKeysetFile(t, keysetPath, rotated)
 
-	t.Setenv("TOOLGATE_DATABASE_URL", pg.ConnString())
-	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
-	t.Setenv("TOOLGATE_OIDC_AUDIENCE", "toolgate")
-	t.Setenv("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
+	env.set("TOOLGATE_DATABASE_URL", pg.ConnString())
+	env.set("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
+	env.set("TOOLGATE_OIDC_AUDIENCE", "toolgate")
+	env.set("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
 
 	var stdout, stderr bytes.Buffer
 
-	code := run(os.Getenv, []string{"admin", "rewrap"}, &stdout, &stderr)
+	code := run(env.get, []string{"admin", "rewrap"}, &stdout, &stderr)
 	require.Equal(t, 0, code, "stderr: %s", stderr.String())
 	assert.Contains(t, stdout.String(), "Re-encrypted 6 secrets")
 
@@ -102,14 +104,16 @@ func TestAdminRewrapReencryptsEveryRowUnderThePrimaryKey(t *testing.T) {
 }
 
 func TestAdminRewrapNeedsTheKeyset(t *testing.T) {
-	clearConfigEnv(t)
-	t.Setenv("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate")
-	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
-	t.Setenv("TOOLGATE_OIDC_AUDIENCE", "toolgate")
+	t.Parallel()
+
+	env := testEnv{}
+	env.set("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate")
+	env.set("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
+	env.set("TOOLGATE_OIDC_AUDIENCE", "toolgate")
 
 	var stdout, stderr bytes.Buffer
 
-	code := run(os.Getenv, []string{"admin", "rewrap"}, &stdout, &stderr)
+	code := run(env.get, []string{"admin", "rewrap"}, &stdout, &stderr)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr.String(), "secretsKeysetFile is not set")
 }

@@ -20,7 +20,9 @@ import (
 const coderAudience = "coder-toolgate"
 
 func TestSignInThroughTokenCommand(t *testing.T) {
-	env := processEnv{t}
+	t.Parallel()
+
+	env := testEnv{}
 
 	isolateUserConfig(t, env)
 
@@ -37,10 +39,10 @@ func TestSignInThroughTokenCommand(t *testing.T) {
 	alice := testutil.TokenClaims{Subject: "alice", Email: "alice@example.com", EmailVerified: true, Groups: []string{"eng"}}
 	bob := testutil.TokenClaims{Subject: "bob", Email: "bob@example.com", EmailVerified: true, Groups: []string{"sales"}}
 
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Setenv("TOOLGATE_GATEWAY", served.url)
-	t.Setenv("TOOLGATE_SESSION", "coder-session")
-	t.Setenv("TOOLGATE_WORKSPACE", "dev")
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
+	env.set("TOOLGATE_GATEWAY", served.url)
+	env.set("TOOLGATE_SESSION", "coder-session")
+	env.set("TOOLGATE_WORKSPACE", "dev")
 
 	// connect opens an MCP session with the headers `toolgate headers` prints.
 	connect := func(t *testing.T) *mcp.ClientSession {
@@ -77,9 +79,7 @@ func TestSignInThroughTokenCommand(t *testing.T) {
 	}
 
 	t.Run("a token from TOOLGATE_TOKEN_COMMAND signs the CLI in as the user, with no saved sign-in", func(t *testing.T) {
-		env := processEnv{t}
-
-		t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+mint(alice))
+		env.set("TOOLGATE_TOKEN_COMMAND", "echo "+mint(alice))
 
 		session := connect(t)
 
@@ -96,8 +96,8 @@ func TestSignInThroughTokenCommand(t *testing.T) {
 	})
 
 	t.Run("a user outside the group is refused the group-only server", func(t *testing.T) {
-		t.Setenv("TOOLGATE_SESSION", "coder-session-bob")
-		t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+mint(bob))
+		env.set("TOOLGATE_SESSION", "coder-session-bob")
+		env.set("TOOLGATE_TOKEN_COMMAND", "echo "+mint(bob))
 
 		session := connect(t)
 

@@ -3,10 +3,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/solidDoWant/toolgate/internal/client/spiffe"
 	"github.com/solidDoWant/toolgate/internal/client/tokencommand"
@@ -35,7 +38,13 @@ Commands:
 `
 
 func main() {
-	os.Exit(runWithInput(os.Getenv, os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	// The server commands stop when this context ends, so the process
+	// stops cleanly on SIGTERM or SIGINT.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	code := runWithContext(ctx, os.Getenv, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+
+	stop()
+	os.Exit(code)
 }
 
 // run executes one command with no standard input and returns the process
@@ -44,8 +53,19 @@ func run(getenv func(string) string, args []string, stdout, stderr io.Writer) in
 	return runWithInput(getenv, args, strings.NewReader(""), stdout, stderr)
 }
 
+// runContext is run with a context that stops the server commands.
+func runContext(ctx context.Context, getenv func(string) string, args []string, stdout, stderr io.Writer) int {
+	return runWithContext(ctx, getenv, args, strings.NewReader(""), stdout, stderr)
+}
+
 // runWithInput executes one command and returns the process exit code.
 func runWithInput(getenv func(string) string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+	return runWithContext(context.Background(), getenv, args, stdin, stdout, stderr)
+}
+
+// runWithContext executes one command and returns the process exit code. The
+// serve, migrate and admin commands stop when ctx ends.
+func runWithContext(ctx context.Context, getenv func(string) string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, usage)
 
@@ -88,13 +108,13 @@ func runWithInput(getenv func(string) string, args []string, stdin io.Reader, st
 	case "sessions":
 		return sessions(getenv, args[1:], stdout, stderr)
 	case "serve":
-		return serve(args[1:], stdout, stderr)
+		return serve(ctx, getenv, args[1:], stdout, stderr)
 	case "migrate":
-		return migrate(args[1:], stdout, stderr)
+		return migrate(ctx, getenv, args[1:], stdout, stderr)
 	case "audit":
 		return auditCommand(getenv, args[1:], stdout, stderr)
 	case "admin":
-		return admin(getenv, args[1:], stdout, stderr)
+		return admin(ctx, getenv, args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 

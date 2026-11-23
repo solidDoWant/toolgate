@@ -9,10 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,7 +22,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
@@ -61,10 +58,10 @@ var auditTailPollInterval time.Duration
 var auditTailSettle time.Duration
 
 // serve runs the gateway until SIGTERM or SIGINT and returns the exit code.
-func serve(args []string, stdout, stderr io.Writer) int {
+func serve(parent context.Context, getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	configPath := flags.String("config", os.Getenv(config.FileEnv),
+	configPath := flags.String("config", getenv(config.FileEnv),
 		"path to the YAML configuration file (default from "+config.FileEnv+")")
 
 	if err := flags.Parse(args); err != nil {
@@ -77,7 +74,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	cfg, err := config.Load(*configPath, os.Getenv)
+	cfg, err := config.Load(*configPath, getenv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate serve: invalid configuration:\n%s\n", err)
 
@@ -90,7 +87,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		logger.Warn("ignoring a setting that was removed: sessions always list toolgate_enable_server and toolgate_disable_server", "setting", name)
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	ctx, stop := context.WithCancel(parent)
 	defer stop()
 
 	server, err := gateway.New(ctx, cfg, logger)
@@ -106,7 +103,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	authenticator, err := newAuthenticator(ctx, cfg, server, stdout, logger)
+	authenticator, err := newAuthenticator(ctx, getenv, cfg, server, stdout, logger)
 	if err != nil {
 		logger.Error("gateway failed to start", "error", err)
 
@@ -331,6 +328,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 
 	if cfg.LeaseNamespace != "" {
 		managerDone, err := startRuntime(ctx, runtimeOptions{
+			getenv:          getenv,
 			cfg:             cfg,
 			pool:            server.Database(),
 			catalog:         templates,
@@ -432,7 +430,7 @@ func migrateDatabase(ctx context.Context, pool *pgxpool.Pool, migrateOnStart boo
 // their service-account tokens, checked by TokenReview. When
 // workspaceAttestation is set, a user's request may carry a workload token
 // that verifies its workspace.
-func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Server, stdout io.Writer,
+func newAuthenticator(ctx context.Context, getenv func(string) string, cfg config.Config, server *gateway.Server, stdout io.Writer,
 	logger *slog.Logger,
 ) (*lazyAuthenticator, error) {
 	var (
@@ -441,7 +439,7 @@ func newAuthenticator(ctx context.Context, cfg config.Config, server *gateway.Se
 	)
 
 	if len(cfg.ServiceAccountNamespaces) > 0 || attestation != nil {
-		restConfig, err := ctrl.GetConfig()
+		restConfig, err := kubeRESTConfig(getenv)
 		if err != nil {
 			return nil, fmt.Errorf("kubernetes: %w", err)
 		}

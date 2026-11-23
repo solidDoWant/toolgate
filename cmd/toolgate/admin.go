@@ -5,9 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/secrets"
@@ -25,7 +22,7 @@ Commands:
 `
 
 // admin runs an admin command and returns the exit code.
-func admin(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
+func admin(ctx context.Context, getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, adminUsage)
 
@@ -34,7 +31,7 @@ func admin(getenv func(string) string, args []string, stdout, stderr io.Writer) 
 
 	switch args[0] {
 	case "rewrap":
-		return rewrap(args[1:], stdout, stderr)
+		return rewrap(ctx, getenv, args[1:], stdout, stderr)
 	case "volumes":
 		return adminVolumes(getenv, args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -50,10 +47,10 @@ func admin(getenv func(string) string, args []string, stdout, stderr io.Writer) 
 
 // rewrap re-encrypts every user secret not under the primary key of the
 // gateway's keyset. It reads the gateway's configuration.
-func rewrap(args []string, stdout, stderr io.Writer) int {
+func rewrap(parent context.Context, getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("admin rewrap", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	configPath := flags.String("config", os.Getenv(config.FileEnv),
+	configPath := flags.String("config", getenv(config.FileEnv),
 		"path to the gateway's YAML configuration file (default from "+config.FileEnv+")")
 
 	if err := flags.Parse(args); err != nil {
@@ -66,7 +63,7 @@ func rewrap(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	cfg, err := config.Load(*configPath, os.Getenv)
+	cfg, err := config.Load(*configPath, getenv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate admin rewrap: invalid configuration:\n%s\n", err)
 
@@ -86,7 +83,7 @@ func rewrap(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	ctx, stop := context.WithCancel(parent)
 	defer stop()
 
 	pool, err := store.Open(ctx, cfg.DatabaseURL)

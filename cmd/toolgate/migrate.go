@@ -5,9 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/store"
@@ -16,10 +13,10 @@ import (
 // migrate applies the database migrations and creates the audit partitions,
 // then returns the exit code. It reads only databaseURL, so a Job needs no
 // other configuration.
-func migrate(args []string, stdout, stderr io.Writer) int {
+func migrate(parent context.Context, getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	configPath := flags.String("config", os.Getenv(config.FileEnv),
+	configPath := flags.String("config", getenv(config.FileEnv),
 		"path to the gateway's YAML configuration file (default from "+config.FileEnv+")")
 
 	if err := flags.Parse(args); err != nil {
@@ -32,14 +29,14 @@ func migrate(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	databaseURL, err := config.LoadDatabaseURL(*configPath, os.Getenv)
+	databaseURL, err := config.LoadDatabaseURL(*configPath, getenv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate migrate: invalid configuration:\n%s\n", err)
 
 		return 1
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	ctx, stop := context.WithCancel(parent)
 	defer stop()
 
 	pool, err := store.Open(ctx, databaseURL)

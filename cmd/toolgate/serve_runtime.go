@@ -48,8 +48,10 @@ import (
 
 // runtimeOptions are the dependencies of startRuntime.
 type runtimeOptions struct {
-	cfg  config.Config
-	pool *pgxpool.Pool
+	// getenv reads the environment, for the kubeconfig.
+	getenv func(string) string
+	cfg    config.Config
+	pool   *pgxpool.Pool
 	// catalog and rules are filled by their reconcilers, on every replica.
 	catalog *catalog.Catalog
 	rules   *policy.Rules
@@ -95,7 +97,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	kubeLogger := logr.FromSlogHandler(logger.Handler())
 	ctrl.SetLogger(kubeLogger)
 
-	restConfig, err := ctrl.GetConfig()
+	restConfig, err := kubeRESTConfig(options.getenv)
 	if err != nil {
 		return nil, fmt.Errorf("kubernetes: %w", err)
 	}
