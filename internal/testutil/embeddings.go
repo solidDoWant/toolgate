@@ -1,6 +1,8 @@
 package testutil
 
 import (
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,21 +54,60 @@ func startModelServer(tb testing.TB, model string) *Embeddings {
 
 	ctx := tb.Context()
 
-	container, err := testcontainers.Run(ctx, EmbeddingsImage,
-		testcontainers.WithCmd("--model-id", model, "--port", "80"),
-		testcontainers.WithHostConfigModifier(func(config *container.HostConfig) {
-			config.Binds = append(config.Binds, cache+":/data")
-		}),
-		testcontainers.WithExposedPorts(embeddingsPort),
-		testcontainers.WithWaitStrategy(
-			wait.ForHTTP("/health").WithPort(embeddingsPort).WithStartupTimeout(5*time.Minute),
-		),
+	// The server downloads the model on first start and can exit when the
+	// download or the machine is under load, so a failed start is retried
+	// and its logs are reported.
+	var (
+		server   testcontainers.Container
+		startErr error
 	)
-	testcontainers.CleanupContainer(tb, container)
-	require.NoError(tb, err, "start embeddings server")
 
-	endpoint, err := container.PortEndpoint(ctx, embeddingsPort, "http")
+	for attempt := 1; attempt <= embeddingsStartAttempts; attempt++ {
+		server, startErr = testcontainers.Run(ctx, EmbeddingsImage,
+			testcontainers.WithCmd("--model-id", model, "--port", "80"),
+			testcontainers.WithHostConfigModifier(func(config *container.HostConfig) {
+				config.Binds = append(config.Binds, cache+":/data")
+			}),
+			testcontainers.WithExposedPorts(embeddingsPort),
+			testcontainers.WithWaitStrategy(
+				wait.ForHTTP("/health").WithPort(embeddingsPort).WithStartupTimeout(2*time.Minute),
+			),
+		)
+		testcontainers.CleanupContainer(tb, server)
+
+		if startErr == nil {
+			break
+		}
+
+		tb.Logf("start embeddings server, attempt %d of %d: %v%s", attempt, embeddingsStartAttempts, startErr, containerLogs(ctx, server))
+	}
+
+	require.NoError(tb, startErr, "start embeddings server")
+
+	endpoint, err := server.PortEndpoint(ctx, embeddingsPort, "http")
 	require.NoError(tb, err)
 
 	return &Embeddings{URL: endpoint, Model: model}
+}
+
+const embeddingsStartAttempts = 3
+
+// containerLogs returns the tail of a container's logs for an error message.
+func containerLogs(ctx context.Context, started testcontainers.Container) string {
+	if started == nil {
+		return ""
+	}
+
+	reader, err := started.Logs(ctx)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = reader.Close() }()
+
+	data, _ := io.ReadAll(io.LimitReader(reader, 1<<20))
+	if len(data) > 4096 {
+		data = data[len(data)-4096:]
+	}
+
+	return "\nlogs:\n" + string(data)
 }
