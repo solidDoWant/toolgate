@@ -49,6 +49,23 @@ stages:
     paths:
       - "docs/acceptance/**"
     push: false
+  release-scripts:
+    # A release dry run builds the chart package and every CLI binary, and
+    # the image test builds the image, so these run only when a file they
+    # depend on changes.
+    run: make test-release
+    paths:
+      - "scripts/release*"
+      - "scripts/build-images*"
+      - "scripts/chart-deps.sh"
+      - "scripts/check-images*"
+      - "Makefile"
+      - "flake.nix"
+      - "flake.lock"
+      - "go.mod"
+      - "deploy/charts/**"
+      - "ci.yaml"
+    push: false
   plugin:
     # The Claude Code plugin and marketplace manifests, checked with a pinned
     # Claude Code from npm. The dev shell has no Node, so it comes from this
