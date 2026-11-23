@@ -192,8 +192,7 @@ func connectWithHeader(t *testing.T, endpoint string, header http.Header) *gatew
 }
 
 func TestAttestedUserSessions(t *testing.T) {
-	t.Parallel()
-
+	// Serial: it reads sign-in refusals from the audit log, and the gateway writes at most 10 a minute per address.
 	namespace := workloadNamespace(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)

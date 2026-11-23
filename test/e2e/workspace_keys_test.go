@@ -51,8 +51,7 @@ func scanForMatch(t *testing.T, command *exec.Cmd, pattern *regexp.Regexp, onMat
 }
 
 func TestWorkspaceKeyAttestation(t *testing.T) {
-	t.Parallel()
-
+	// Serial: it reads sign-in refusals from the audit log, and the gateway writes at most 10 a minute per address.
 	provider := oidcProvider(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)
