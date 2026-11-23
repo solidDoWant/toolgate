@@ -74,9 +74,8 @@ func pendingMessage(id string) string {
 	return fmt.Sprintf("Tool `github__echo` needs approval. Approve request `%s` at %s%s, then call the tool again with the same arguments.", id, approvalBaseURL, id)
 }
 
+// This test is not parallel: it sets a package-wide approval hook or interval.
 func TestApprovalRequest(t *testing.T) {
-	t.Parallel()
-
 	t.Run("a call needing approval inserts a pending approval, writes approval.request and refuses with the link", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
@@ -319,9 +318,8 @@ func TestApprovalPendingLimit(t *testing.T) {
 	}
 }
 
+// This test is not parallel: it sets a package-wide approval hook or interval.
 func TestApprovalUseRechecks(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name   string
 		change func(t *testing.T, fixture *approvalFixture)

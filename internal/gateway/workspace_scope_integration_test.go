@@ -198,9 +198,8 @@ func TestWorkspaceScope(t *testing.T) {
 	})
 }
 
+// This test is not parallel: it sets a package-wide approval hook or interval.
 func TestWorkspaceScopeApprovalWait(t *testing.T) {
-	t.Parallel()
-
 	t.Run("a call waiting for approval is refused with the step-4 message once the scope narrows, and the approval isn't used", func(t *testing.T) {
 		defer gateway.SetApprovalWaitInterval(100 * time.Millisecond)()
 

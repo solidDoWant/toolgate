@@ -280,9 +280,8 @@ func TestApprovalElicitation(t *testing.T) {
 	})
 }
 
+// This test is not parallel: it sets a package-wide approval hook or interval.
 func TestApprovalWait(t *testing.T) {
-	t.Parallel()
-
 	t.Run("a denial fails the waiting call", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
