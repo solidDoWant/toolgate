@@ -24,7 +24,8 @@ A release is public, and admins deploy it straight from the registries, so every
 
 - the image `ghcr.io/soliddowant/toolgate:<version>` (plus `:latest` for a final version);
 - the Helm chart `oci://ghcr.io/soliddowant/charts/toolgate`, version `<version>`;
-- CLI binaries for Linux, macOS and Windows on amd64 and arm64, attached to the GitHub release `<version>`;
+- the git tag `v<version>` on a `master` commit (releases before 0.4.16 were tagged without the `v`);
+- CLI binaries for Linux, macOS and Windows on amd64 and arm64, attached to the GitHub release `v<version>`;
 - release notes on the GitHub release that are exactly the `## <version>` section of `CHANGELOG.md`. Never use GitHub's generated notes (`--generate-notes`).
 
 ## Hard limits
@@ -50,13 +51,13 @@ A release is public, and admins deploy it straight from the registries, so every
 
    Open the PR (`chore(release): <version>`), arm auto-merge on its head after a self-check like any other PR, and hand back with `HANDOFF: wait-pr #<PR>`: the scheduler resumes you once it has merged (or closed: then find out why before going on). Then continue on the merge commit.
 4. **Gates on the exact merge commit** (detached checkout of it in your worktree; background each long run and poll with `scripts/agents/wait-for.sh`):
-   - CI's `checks` is green for that commit on `master` (`gh run list --branch master --commit <sha>`).
+   - CI is green for that commit on `master`: the push PipelineRun's check run (named `Tekton CI / toolgate-push-`) has the conclusion `success` (`gh api repos/solidDoWant/toolgate/commits/<sha>/check-runs --jq '.check_runs[] | select(.name | startswith("Tekton CI")) | .conclusion'`). If it failed, the `stage: <name>` check runs of the commit name the failed stages.
    - `make acceptance` shows every automated scenario of the phase passing (the scoreboard reads the checklist's `Tests:` lines; it fails if a line names a missing test). Manual scenarios do not gate the release; don't list them as open items or known issues.
    - `govulncheck ./...` is clean, or every finding is listed under Known issues with a reason it is not reachable.
    - `make release VERSION=<version>` (dry run) succeeds; keep its log.
-5. **Publish** with the repository's release target from the clean detached checkout of the merge commit, as `docs/dev/` describes it (`make release VERSION=<version>` with its publish switch). It tags, pushes the tag and creates the GitHub release with the CHANGELOG section as notes and the CLI binaries attached; the tag's release workflow builds and pushes the image and chart with its own `GITHUB_TOKEN`. Never push the image or chart yourself.
-6. **Verify.** Find the tag's workflow run and wait for it with `scripts/agents/wait-for.sh` on a background `gh run watch <run-id> --exit-status` log (never block a tool call on it). If it fails, read the log (`gh run view <run-id> --log-failed`) and re-run it only for a transient cause; otherwise stop and report (`HANDOFF: blocked`). Then check:
-   - `gh release view <version>` shows the notes equal to the `CHANGELOG.md` section (latest for a final version, a pre-release for `-rc.K`) and the six CLI binaries;
+5. **Publish** with the repository's release target from the clean detached checkout of the merge commit, as `docs/dev/` describes it (`make release VERSION=<version>` with its publish switch). It tags `v<version>` and pushes the tag. The tag starts the Tekton release PipelineRun (`.tekton/release.yaml`, the shared release Pipeline with `ci.yaml`'s `release`): it pushes the image and chart, builds the CLI binaries (`scripts/ci/build-release-assets.sh`) and creates the GitHub release with the CHANGELOG section as notes and the binaries attached. Never push the image or chart, or create the release, yourself.
+6. **Verify.** Wait for the release PipelineRun's check run on the tagged commit (named `Tekton CI / toolgate-release-`): poll `gh api repos/solidDoWant/toolgate/commits/<sha>/check-runs` from a background loop that logs its conclusion, and wait on that log with `scripts/agents/wait-for.sh` (never block a tool call on it). If it fails, the check run's details link to the PipelineRun log (or use the toolgate `tekton` tools). `/retest` is refused for releases, and every step is safe to repeat: for a transient cause, report it and hand back `HANDOFF: blocked` so the owner re-runs it; otherwise stop and report (`HANDOFF: blocked`). **If the run failed, create no GitHub release yourself.** Then check:
+   - `gh release view v<version>` shows the notes equal to the `CHANGELOG.md` section (latest for a final version, a pre-release for `-rc.K`) and the six CLI binaries;
    - `docker manifest inspect ghcr.io/soliddowant/toolgate:<version>` resolves;
    - `helm show chart oci://ghcr.io/soliddowant/charts/toolgate --version <version>` resolves.
 7. **Hand back** with your handoff report: version, commit, gate results, release URL, Known issues, and anything that failed, posted on the `pm:status` issue too; last line `HANDOFF: done` (or `blocked` when a gate failed).

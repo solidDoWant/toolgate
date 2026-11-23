@@ -123,35 +123,35 @@ class PlanTest(unittest.TestCase):
         self.assertIn(("PR #13", "CI pending"), plan.skipped)
 
     def test_armed_ci_failure_reruns_once_then_worker(self):
-        failed = [{"name": "e2e", "url": "https://x/1", "run_id": 99}]
+        failed = [{"name": "stage: e2e", "url": "https://x/1", "run": "run-99"}]
         sn = snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)])
         plan = plan_for(sn)
-        self.assertEqual(plan.reruns, [(10, [99], ["e2e"])])
+        self.assertEqual(plan.reruns, [(10, ["run-99"], ["stage: e2e"])])
         self.assertEqual(keys(plan), [])
         plan = plan_for(sn, {"ci_reruns": {"10": {"sha": "h" * 40, "jobs": ["e2e"]}}})
         self.assertEqual(plan.reruns, [])
         self.assertEqual(keys(plan), ["worker:2"])
-        self.assertIn("e2e (https://x/1)", plan.jobs[0].trigger)
+        self.assertIn("stage: e2e (https://x/1)", plan.jobs[0].trigger)
 
     def test_armed_lint_failure_goes_to_the_worker_without_a_rerun(self):
-        failed = [{"name": "lint", "url": "https://x/1", "run_id": 99}, {"name": "unit", "url": "https://x/2", "run_id": 99}]
+        failed = [{"name": "stage: lint", "url": "https://x/1", "run": "run-99"}, {"name": "stage: unit", "url": "https://x/2", "run": "run-99"}]
         plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)]))
         self.assertEqual(plan.reruns, [])
         self.assertEqual(keys(plan), ["worker:2"])
-        self.assertIn("lint (https://x/1)", plan.jobs[0].trigger)
+        self.assertIn("stage: lint (https://x/1)", plan.jobs[0].trigger)
         self.assertIn("reproduce the failing tests locally", plan.jobs[0].trigger)
-        failed = [{"name": "integration", "url": "https://x/3", "run_id": 98}]
+        failed = [{"name": "stage: integration", "url": "https://x/3", "run": "run-98"}]
         plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)]))
         self.assertEqual((plan.reruns, keys(plan)), ([], ["worker:2"]))
 
     def test_armed_assertion_failure_goes_to_the_worker_without_a_rerun(self):
-        failed = [{"name": "e2e (2)", "url": "https://x/job/7", "run_id": 99, "assertion": True}]
+        failed = [{"name": "stage: e2e", "url": "https://x/1", "run": "run-99", "assertion": True}]
         plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)]))
         self.assertEqual((plan.reruns, keys(plan)), ([], ["worker:2"]))
         self.assertIn("assertion failures, so it was not re-run", plan.jobs[0].trigger)
         failed[0]["assertion"] = False
         plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)]))
-        self.assertEqual((plan.reruns, keys(plan)), ([(10, [99], ["e2e (2)"])], []))
+        self.assertEqual((plan.reruns, keys(plan)), ([(10, ["run-99"], ["stage: e2e"])], []))
 
     def test_red_unarmed_pr_goes_to_reviewer(self):
         plan = plan_for(snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure")]), cfg=REVIEWED)
@@ -567,10 +567,67 @@ class LogClassifierTest(unittest.TestCase):
             with self.subTest(log=log[:40]):
                 self.assertFalse(s.is_assertion_failure(log))
 
-    def test_job_id_from_url(self):
-        self.assertEqual(s.job_id_from_url("https://github.com/o/r/actions/runs/5/job/77"), 77)
-        self.assertIsNone(s.job_id_from_url("https://github.com/o/r/runs/5"))
-        self.assertIsNone(s.job_id_from_url(None))
+    def test_pipelinerun_from_url(self):
+        self.assertEqual(
+            s.pipelinerun_from_url("https://tekton.example/#/namespaces/ci-x/pipelineruns/toolgate-pull-request-abc12"),
+            "toolgate-pull-request-abc12")
+        self.assertIsNone(s.pipelinerun_from_url("https://github.com/o/r/runs/5"))
+        self.assertIsNone(s.pipelinerun_from_url(None))
+
+
+
+def check_run(name, status="COMPLETED", conclusion="SUCCESS", url=None, check_id=1):
+    return {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion,
+            "detailsUrl": url, "databaseId": check_id}
+
+
+def pr_node(contexts):
+    return {"number": 10, "title": "t", "author": {"login": "solidDoWant"}, "isDraft": False, "headRefName": "b",
+            "headRefOid": "h" * 40, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "autoMergeRequest": None,
+            "closingIssuesReferences": {"nodes": []}, "files": {"nodes": []}, "reviews": {"nodes": []},
+            "commits": {"nodes": [{"commit": {"statusCheckRollup": {"contexts": {"nodes": contexts}}}}]}}
+
+
+class ParsePRTest(unittest.TestCase):
+    RUN_URL = "https://tekton.example/#/namespaces/ci-x/pipelineruns/toolgate-pull-request-abc12"
+
+    def test_the_tekton_check_decides_the_ci_state(self):
+        required = CFG["required_check"]
+        cases = {
+            "missing": [check_run("stage: e2e")],
+            "pending": [check_run(required, status="IN_PROGRESS", conclusion=None)],
+            "success": [check_run(required)],
+            "failure": [check_run(required, conclusion="FAILURE")],
+        }
+        for want, contexts in cases.items():
+            with self.subTest(want=want):
+                self.assertEqual(s.parse_pr(pr_node(contexts), CFG).check, want)
+
+    def test_failed_stages_carry_their_pipelinerun_and_check_run(self):
+        contexts = [
+            check_run(CFG["required_check"], conclusion="FAILURE", url=self.RUN_URL, check_id=5),
+            check_run("stage: e2e", conclusion="FAILURE", url=self.RUN_URL, check_id=7),
+            check_run("stage: lint", url=self.RUN_URL, check_id=8),
+        ]
+        got = s.parse_pr(pr_node(contexts), CFG)
+        self.assertEqual(got.failed_runs, [{"name": "stage: e2e", "url": self.RUN_URL,
+                                            "run": "toolgate-pull-request-abc12", "check_id": 7,
+                                            "conclusion": "FAILURE"}])
+
+
+class RetestTest(unittest.TestCase):
+    def test_retest_comments_the_tekton_pipelinerun_name_not_the_generated_one_on_the_pull_request(self):
+        calls = []
+        github = s.GitHub({"repo": "o/r"})
+        github._gh = lambda *args, **kwargs: calls.append(args) or ""
+        github.retest(10, "toolgate-pull-request-abc12")
+        self.assertEqual(calls, [("pr", "comment", "10", "-R", "o/r", "--body", "/retest toolgate-pull-request-")])
+
+    def test_stage_report_is_the_check_run_output_text(self):
+        github = s.GitHub({"repo": "o/r"})
+        github._gh = lambda *args, **kwargs: json.dumps({"output": {"text": "--- FAIL: TestX"}}) if args == (
+            "api", "repos/o/r/check-runs/7") else ""
+        self.assertEqual(github.stage_report(7), "--- FAIL: TestX")
 
 
 class FakeGitHub:
@@ -579,7 +636,7 @@ class FakeGitHub:
         self.writes = []
         self.comments = []  # what GitHub.pm_comments returns: /pm comments by the human
         self.comment_queries = []
-        self.logs = {}  # job id -> what GitHub.failed_job_log returns
+        self.logs = {}  # check run id -> what GitHub.stage_report returns
         self.log_reads = []
 
     def snapshot(self):
@@ -589,14 +646,14 @@ class FakeGitHub:
         self.comment_queries.append(since)
         return [c for c in self.comments if c["updated_at"] >= since]
 
-    def rerun_failed(self, run_id):
-        self.writes.append(("rerun", run_id))
+    def retest(self, pr, run):
+        self.writes.append(("retest", pr, run))
 
-    def failed_job_log(self, job_id):
-        self.log_reads.append(job_id)
-        if job_id not in self.logs:
-            raise RuntimeError("gh run view: HTTP 404")
-        return self.logs[job_id]
+    def stage_report(self, check_id):
+        self.log_reads.append(check_id)
+        if check_id not in self.logs:
+            raise RuntimeError("gh api: HTTP 404")
+        return self.logs[check_id]
 
     def set_status(self, issue, status, remove):
         self.writes.append(("status", issue, status))
@@ -643,22 +700,28 @@ class SchedulerTest(unittest.TestCase):
         self.sched.housekeeping = lambda: None
 
     def test_assertion_failure_skips_the_rerun(self):
-        failed = [{"name": "e2e (1)", "url": "https://x/runs/99/job/7", "run_id": 99, "conclusion": "FAILURE"},
-                  {"name": "e2e (2)", "url": "https://x/runs/99/job/8", "run_id": 99, "conclusion": "FAILURE"}]
+        failed = [{"name": "stage: e2e", "url": "https://x/1", "run": "run-99", "check_id": 7, "conclusion": "FAILURE"}]
         self.gh.snap = snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)])
-        self.gh.logs = {7: ASSERTION_LOG, 8: "##[error]The runner has received a shutdown signal.\n"}
+        self.gh.logs = {7: ASSERTION_LOG}
         self.sched.poll()
-        self.assertNotIn(("rerun", 99), self.gh.writes)
-        self.assertEqual(self.sched.state["ci_logs"], {"7": True, "8": False})
+        self.assertNotIn(("retest", 10, "run-99"), self.gh.writes)
+        self.assertEqual(self.sched.state["ci_logs"], {"7": True})
         self.sched.poll()
-        self.assertEqual(sorted(self.gh.log_reads), [7, 8])  # read once, then cached
+        self.assertEqual(self.gh.log_reads, [7])  # read once, then cached
 
-    def test_unreadable_or_infra_log_keeps_the_rerun(self):
-        failed = [{"name": "e2e (1)", "url": "https://x/runs/99/job/7", "run_id": 99, "conclusion": "FAILURE"},
-                  {"name": "e2e (2)", "url": "https://x/runs/99/job/9", "run_id": 99, "conclusion": "TIMED_OUT"}]
+    def test_environment_failure_report_keeps_the_rerun(self):
+        failed = [{"name": "stage: e2e", "url": "https://x/1", "run": "run-99", "check_id": 7, "conclusion": "FAILURE"}]
         self.gh.snap = snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)])
-        self.sched.poll()  # job 7's log is missing (404); job 9 timed out, so its log is not read
-        self.assertIn(("rerun", 99), self.gh.writes)
+        self.gh.logs = {7: "panic: test timed out after 10m0s\n--- FAIL: TestX (600.00s)\n"}
+        self.sched.poll()
+        self.assertIn(("retest", 10, "run-99"), self.gh.writes)
+
+    def test_unreadable_report_or_timed_out_stage_keeps_the_rerun(self):
+        failed = [{"name": "stage: e2e", "url": "https://x/1", "run": "run-99", "check_id": 7, "conclusion": "FAILURE"},
+                  {"name": "stage: e2e", "url": "https://x/1", "run": "run-99", "check_id": 9, "conclusion": "TIMED_OUT"}]
+        self.gh.snap = snap([issue(2, status="status:in-review")], [pr(10, 2, check="failure", auto=True, failed=failed)])
+        self.sched.poll()  # check run 7's report is missing (404); 9 timed out, so its report is not read
+        self.assertEqual(self.gh.writes.count(("retest", 10, "run-99")), 1)
         self.assertEqual(self.gh.log_reads, [7])
 
     def tearDown(self):

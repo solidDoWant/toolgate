@@ -8,9 +8,9 @@
 #    pushes and calls gh for nothing;
 #  - without a CHANGELOG section for the version, the release refuses before
 #    it builds or publishes anything, with and without PUSH_ALL=true;
-#  - PUSH_ALL=true pushes the tag and creates the GitHub release with the
-#    CHANGELOG section as its notes, never GitHub's generated notes, and the
-#    binaries attached; a second publish of the same version is refused.
+#  - PUSH_ALL=true pushes the tag v<VERSION> and calls gh for nothing (the
+#    Tekton release run creates the GitHub release); a second publish of the
+#    same version is refused, and so is one whose tag exists without the v.
 #
 # The image build is replaced by a stub that records how it was called;
 # scripts/build-images_test.sh tests the real one.
@@ -102,8 +102,8 @@ chart_version="$(tar -xOzf "$out/toolgate-$version.tgz" toolgate/Chart.yaml 2>/d
 [[ "$chart_version" == "$version" ]] || fail "the chart package has version '$chart_version', want '$version'"
 grep -qx "VERSION=$version PUSH_ALL=false" "$work/build-images.calls" 2>/dev/null ||
 	fail "the image was not built without pushing; calls: $(cat "$work/build-images.calls" 2>/dev/null)"
-for want in "tag:     $version" "image:   ghcr.io/soliddowant/toolgate:$version" \
-	"chart:   oci://ghcr.io/soliddowant/charts/toolgate:$version" "--prerelease" "| The first candidate." \
+for want in "tag:     v$version" "image:   ghcr.io/soliddowant/toolgate:$version" \
+	"chart:   oci://ghcr.io/soliddowant/charts/toolgate:$version" "(pre-release)" "| The first candidate." \
 	"nothing was published"; do
 	grep -qF -- "$want" "$work/dry.log" || fail "the dry run does not report '$want'"
 done
@@ -125,24 +125,16 @@ done
 [[ -e "$work/gh.calls" ]] && fail "gh was called without a CHANGELOG section: $(cat "$work/gh.calls")"
 [[ -n "$(git -C "$work/origin.git" tag)" ]] && fail "a tag was pushed without a CHANGELOG section"
 
-echo "== PUSH_ALL=true tags, pushes and creates the release with the CHANGELOG section as notes"
+echo "== PUSH_ALL=true pushes the tag v<VERSION> and leaves the GitHub release to the release run"
 if ! run_release VERSION="$version" PUSH_ALL=true >"$work/publish.log" 2>&1; then
 	cat "$work/publish.log" >&2
 	fail "the publish failed"
 fi
-[[ "$(git -C "$work/origin.git" tag)" == "$version" ]] || fail "tag $version was not pushed"
-[[ "$(git -C "$work/origin.git" rev-parse "$version^{commit}" 2>/dev/null)" == "$(git -C "$repo" rev-parse HEAD)" ]] ||
-	fail "tag $version does not point at HEAD"
-calls="$(cat "$work/gh.calls" 2>/dev/null)"
-[[ "$(wc -l <<<"$calls")" == 1 && "$calls" == "release create $version --verify-tag "* ]] ||
-	fail "gh was not called once as 'release create $version --verify-tag ...': $calls"
-[[ "$calls" == *--generate-notes* ]] && fail "the release uses GitHub's generated notes"
-[[ "$calls" == *--prerelease* ]] || fail "the -rc release is not marked as a pre-release"
-for name in toolgate-linux-amd64 toolgate-darwin-arm64 toolgate-windows-arm64.exe checksums.txt; do
-	[[ "$calls" == *"build/release/$version/bin/$name"* ]] || fail "the release does not attach $name"
-done
-printf '\nThe first candidate.\n\n- It has notes.\n\n' >"$work/want.notes"
-diff -u "$work/want.notes" "$work/gh.notes" || fail "the release notes are not the CHANGELOG section"
+[[ "$(git -C "$work/origin.git" tag)" == "v$version" ]] || fail "tag v$version was not pushed: $(git -C "$work/origin.git" tag)"
+[[ "$(git -C "$work/origin.git" rev-parse "v$version^{commit}" 2>/dev/null)" == "$(git -C "$repo" rev-parse HEAD)" ]] ||
+	fail "tag v$version does not point at HEAD"
+[[ -e "$work/gh.calls" ]] && fail "the publish called gh (the release run creates the GitHub release): $(cat "$work/gh.calls")"
+grep -qF "pushed tag v$version" "$work/publish.log" || fail "the publish does not report the pushed tag"
 
 echo "== an existing tag refuses the release"
 rm -f "$work/gh.calls"
@@ -151,6 +143,22 @@ if run_release VERSION="$version" PUSH_ALL=true >"$work/again.log" 2>&1; then
 fi
 grep -qF "already exists" "$work/again.log" || fail "the refusal does not say the tag exists: $(cat "$work/again.log")"
 [[ -e "$work/gh.calls" ]] && fail "gh was called for an existing tag"
+
+echo "== a tag without the v (releases before 0.4.16) refuses the release too"
+cat >>"$repo/CHANGELOG.md" <<'EOF2'
+
+## 0.0.3
+
+Notes.
+EOF2
+git -C "$repo" commit --quiet -am "changelog 0.0.3"
+git -C "$repo" push --quiet origin master
+git -C "$repo" tag --annotate 0.0.3 --message 0.0.3
+git -C "$repo" push --quiet origin refs/tags/0.0.3
+if run_release VERSION=0.0.3 PUSH_ALL=true >"$work/old.log" 2>&1; then
+	fail "a publish of 0.0.3 succeeded although tag 0.0.3 exists"
+fi
+grep -qF "tag 0.0.3 already exists" "$work/old.log" || fail "the refusal does not name tag 0.0.3: $(cat "$work/old.log")"
 
 if ((failures > 0)); then
 	echo "release_test: $failures failure(s)" >&2

@@ -111,6 +111,9 @@ cleanup() {
 		log "keeping cluster $cluster (KUBECONFIG=$KUBECONFIG); delete it with: kind delete cluster --name $cluster"
 	else
 		kind delete cluster --name "$cluster" >&2 || true
+		# The images are tagged for this run only; without this they pile up
+		# in the Docker storage (and in CI's cached volume).
+		docker image rm "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >/dev/null 2>&1 || true
 		rm -rf "$work"
 	fi
 	exit "$status"
@@ -143,7 +146,15 @@ printf 'FROM scratch\nCOPY embeddingsserver /embeddingsserver\nCOPY embeddingsse
 docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
 
 log "creating kind cluster $cluster"
-kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
+if command -v ci-kind-config >/dev/null; then
+	# Tekton CI: the nodes pull through the CI cluster's registrygate and keep
+	# their image cache between builds, keyed by the cluster's name (ci.yaml
+	# gives each shard a fixed one).
+	ci-kind-config --name "$cluster" --image "$kind_node_image" |
+		kind create cluster --kubeconfig "$KUBECONFIG" --wait 3m --config=- >&2
+else
+	kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
+fi
 kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
 
 log "installing Flux"
