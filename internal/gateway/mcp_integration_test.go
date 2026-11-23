@@ -581,6 +581,11 @@ func TestSessions(t *testing.T) {
 		require.NoError(t, fixture.pool.QueryRow(context.WithoutCancel(t.Context()),
 			"SELECT count(*) FROM audit_events WHERE type = 'session.start' AND principal = 'alice'").Scan(&starts))
 		assert.Equal(t, 2, starts)
+
+		restartEvents := fixture.sessionEventsOf(t, "session.start", "alice", "session-1")
+		require.Len(t, restartEvents, 2)
+		assert.Equal(t, "claimed/repo-a", restartEvents[1].Details["previousWorkspace"])
+		assert.NotContains(t, restartEvents[0].Details, "previousWorkspace")
 	})
 
 	t.Run("a request for an ended session from the same workspace restarts it with its enabled set", func(t *testing.T) {

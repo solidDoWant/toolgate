@@ -160,7 +160,7 @@ func (s *sessionStore) create(ctx context.Context, identity auth.Identity, searc
 
 		found = true
 
-		return s.recordStart(ctx, tx, identity)
+		return s.recordStart(ctx, tx, identity, nil)
 	})
 
 	return session, found, err
@@ -227,7 +227,12 @@ func (s *sessionStore) restart(ctx context.Context, id int64, identity auth.Iden
 		}
 
 		if len(kept) == 0 {
-			return s.recordStart(ctx, tx, identity)
+			var details map[string]any
+			if locked.Workspace != identity.Workspace {
+				details = map[string]any{"previousWorkspace": locked.Workspace}
+			}
+
+			return s.recordStart(ctx, tx, identity, details)
 		}
 
 		servers := make([]string, 0, len(kept))
@@ -413,7 +418,7 @@ func (s *sessionStore) refresh(ctx context.Context, session db.Session, identity
 	return session, nil
 }
 
-func (s *sessionStore) recordStart(ctx context.Context, tx pgx.Tx, identity auth.Identity) error {
+func (s *sessionStore) recordStart(ctx context.Context, tx pgx.Tx, identity auth.Identity, details map[string]any) error {
 	recorder := audit.NewRecorder(s.auditOutput, db.New(tx))
 
 	return recorder.Record(ctx, audit.Event{
@@ -422,6 +427,7 @@ func (s *sessionStore) recordStart(ctx context.Context, tx pgx.Tx, identity auth
 		Workspace:   identity.Workspace,
 		Session:     identity.Session,
 		Attestation: identity.Attestation,
+		Details:     details,
 	})
 }
 
