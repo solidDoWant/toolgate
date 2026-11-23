@@ -206,6 +206,8 @@ func exchangedToken(t require.TestingT, session *gatewaySession, server string) 
 // or in another namespace, never sends a request, and deleting the
 // exchange makes its template invalid.
 func TestTokenExchangeEndToEnd(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

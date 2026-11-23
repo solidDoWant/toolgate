@@ -104,6 +104,8 @@ func serverEntry(t require.TestingT, ctx context.Context, session *mcp.ClientSes
 }
 
 func TestSPIFFESignIn(t *testing.T) {
+	t.Parallel()
+
 	allowed := testutil.NewSPIFFETrustDomain(t, "allowed.test")
 	other := testutil.NewSPIFFETrustDomain(t, "other.test")
 	spiffeBundleEndpoint(t, allowed)
