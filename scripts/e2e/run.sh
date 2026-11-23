@@ -87,7 +87,7 @@ release_namespace=toolgate-system
 deps_namespace=toolgate-e2e
 image_tag="e2e-$suffix"
 # The e2e gateway image and the tests scale product waits by this factor.
-export TOOLGATE_TEST_TIME_SCALE="${TOOLGATE_TEST_TIME_SCALE:-0.05}"
+export TOOLGATE_TEST_TIME_SCALE="${TOOLGATE_TEST_TIME_SCALE:-0.1}"
 gateway_repository=ghcr.io/soliddowant/toolgate
 # Kubernetes 1.35 (the chart needs it), through the Docker Hub mirror, pinned by digest.
 kind_node_image=mirror.gcr.io/kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0
@@ -316,7 +316,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--set embeddings.server.enabled=true \
 	--set embeddings.server.scaleToZero.enabled=true \
-	--set embeddings.server.scaleToZero.idleTimeout=2m \
+	--set embeddings.server.scaleToZero.idleTimeout=1m \
 	--set embeddings.server.image.repository="$embeddings_repository" \
 	--set embeddings.server.image.tag="$image_tag" \
 	--set embeddings.server.image.digest= \

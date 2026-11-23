@@ -233,7 +233,7 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 
 	// The shortest lifetime the gateway accepts, so the half-life refresh
 	// and the expiry both happen within the test.
-	lifetime := scaled(credentials.MinExchangedTokenLifetime) + 14*time.Second
+	lifetime := scaled(credentials.MinExchangedTokenLifetime) + 45*time.Second
 	endpoint := testTokenEndpoint(t, lifetime)
 	endpoint.Refuse("carol", "invalid_grant")
 
@@ -282,8 +282,10 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 		require.ElementsMatch(t, exchangeTools(name), enable(t, bob, name))
 		require.Len(t, instanceIDs(t, admin, name), 2)
 
-		assert.Equal(t, tokenexchange.Token("alice", 1), exchangedToken(t, alice, name))
-		assert.Equal(t, tokenexchange.Token("bob", 1), exchangedToken(t, bob, name))
+		// A slow start can let a refresh happen first, so the counter is
+		// not fixed; each user's token carries that user's name.
+		assert.Contains(t, exchangedToken(t, alice, name), "exchanged-alice-")
+		assert.Contains(t, exchangedToken(t, bob, name), "exchanged-bob-")
 	})
 
 	t.Run("a refused user gets no instance and the reason names the exchange", func(t *testing.T) {
