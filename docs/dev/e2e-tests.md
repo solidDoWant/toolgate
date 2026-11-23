@@ -46,6 +46,7 @@ The runtime in `internal/runtime` scales these waits:
 - The 30-second interval between two full passes of the reconciler (`DefaultPassInterval`).
 - The 60 seconds that an object's `Ready` condition must stay `False` before the object counts as failed (`ReadyFailureHold`).
 - The 2-minute minimum validity of a resolved value (`MinResolvedLifetime`), and the 60 seconds before its expiry when the instance is replaced (`ResolverExpiryMargin`).
+- The 2-minute minimum lifetime of an exchanged token (`MinExchangedTokenLifetime`).
 - The interval of a custom health check and of the MCP ping. The health check timeout bounds a real request, so the runtime does not scale it.
 
 The CRD limits for a health check do not change: the `interval` is 10 seconds to 10 minutes, and the `timeout` is 1 second to 60 seconds. The API server enforces them. The tests use the smallest values that the CRD allows, and the e2e gateway then checks every second.
