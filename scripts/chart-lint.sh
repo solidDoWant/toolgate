@@ -17,7 +17,10 @@ failed=""
 helm lint --strict "$chart" "${quick_start[@]}" || failed="$failed helm-lint"
 helm template toolgate "$chart" --namespace toolgate-system "${quick_start[@]}" >/dev/null ||
 	failed="$failed helm-template"
-go test -count=1 ./test/chart/ || failed="$failed rendered-manifests"
+# CI's unit stage runs these tests already and sets CHART_LINT_SKIP_GO_TEST.
+if [[ -z "${CHART_LINT_SKIP_GO_TEST:-}" ]]; then
+	go test -count=1 ./test/chart/ || failed="$failed rendered-manifests"
+fi
 
 generated="$(mktemp)"
 trap 'rm -f "$generated"' EXIT
