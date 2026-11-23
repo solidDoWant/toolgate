@@ -32,6 +32,16 @@ func insertAuditRow(ctx context.Context, pool *pgxpool.Pool) error {
 func dropCurrentPartitions(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 
+	dropCurrentPartitionsNoCheck(t, pool)
+
+	require.Error(t, insertAuditRow(t.Context(), pool), "no partition holds this month's rows")
+}
+
+// dropCurrentPartitionsNoCheck is dropCurrentPartitions for when a keeper is
+// running: it may recreate the partitions before any check could run.
+func dropCurrentPartitionsNoCheck(t *testing.T, pool *pgxpool.Pool) {
+	t.Helper()
+
 	var current, next string
 	require.NoError(t, pool.QueryRow(t.Context(),
 		"SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY_MM'), to_char((now() AT TIME ZONE 'UTC') + interval '1 month', 'YYYY_MM')",
@@ -41,8 +51,6 @@ func dropCurrentPartitions(t *testing.T, pool *pgxpool.Pool) {
 		_, err := pool.Exec(t.Context(), "DROP TABLE IF EXISTS "+pgx.Identifier{"audit_events_" + month}.Sanitize())
 		require.NoError(t, err)
 	}
-
-	require.Error(t, insertAuditRow(t.Context(), pool), "no partition holds this month's rows")
 }
 
 // syncBuffer is a log destination safe for the keeper's goroutine.
@@ -96,7 +104,7 @@ func TestAuditPartitionKeeperCreatesPartitionsOnItsSchedule(t *testing.T) {
 
 	// The clock passes into a month the gateway has no partition for,
 	// without a restart. The next scheduled call creates it.
-	dropCurrentPartitions(t, pool)
+	dropCurrentPartitionsNoCheck(t, pool)
 
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
 		assert.NoError(c, insertAuditRow(ctx, pool))
