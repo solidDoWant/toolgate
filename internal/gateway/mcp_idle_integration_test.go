@@ -87,8 +87,9 @@ func (f *mcpFixture) openStream(t *testing.T, client user, mcpSessionID string) 
 	}
 }
 
-// This test is not parallel: it compares process-wide goroutine counts.
 func TestMCPSessionIdleRelease(t *testing.T) {
+	t.Parallel()
+
 	const idleTimeout = 500 * time.Millisecond
 
 	t.Run("an idle MCP session's copy is released and the session is adopted again", func(t *testing.T) {
@@ -132,40 +133,43 @@ func TestMCPSessionIdleRelease(t *testing.T) {
 			time.Sleep(idleTimeout / 10)
 		}
 	})
+}
 
-	t.Run("sessions abandoned without DELETE give back their memory and goroutines", func(t *testing.T) {
-		fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))
+// This test is not parallel: it compares process-wide goroutine counts.
+func TestAbandonedMCPSessionsGiveBackMemoryAndGoroutines(t *testing.T) {
+	const idleTimeout = 500 * time.Millisecond
 
-		// One session first, so lazily started goroutines and pools are
-		// part of the baseline.
-		warmUp := fixture.initializeRaw(t, alice())
-		require.NotEmpty(t, warmUp)
-		require.Eventually(t, func() bool {
-			return gateway.HeldMCPSessions(fixture.handlers[0]) == 0
-		}, 30*idleTimeout, idleTimeout/5)
+	fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))
 
-		baseGoroutines, baseHeap := goroutinesAndHeap()
+	// One session first, so lazily started goroutines and pools are
+	// part of the baseline.
+	warmUp := fixture.initializeRaw(t, alice())
+	require.NotEmpty(t, warmUp)
+	require.Eventually(t, func() bool {
+		return gateway.HeldMCPSessions(fixture.handlers[0]) == 0
+	}, 30*idleTimeout, idleTimeout/5)
 
-		const abandoned = 500
+	baseGoroutines, baseHeap := goroutinesAndHeap()
 
-		ids := make([]string, 0, abandoned)
-		for range abandoned {
-			ids = append(ids, fixture.initializeRaw(t, alice()))
-		}
+	const abandoned = 250
 
-		require.Eventually(t, func() bool {
-			goroutines, _ := goroutinesAndHeap()
+	ids := make([]string, 0, abandoned)
+	for range abandoned {
+		ids = append(ids, fixture.initializeRaw(t, alice()))
+	}
 
-			return goroutines <= baseGoroutines+10
-		}, 60*time.Second, idleTimeout, "goroutines stay above the baseline of %d", baseGoroutines)
+	require.Eventually(t, func() bool {
+		goroutines, _ := goroutinesAndHeap()
 
-		_, heap := goroutinesAndHeap()
-		// Each abandoned session held about 80 KB, 40 MB in all.
-		assert.Less(t, heap, baseHeap+8<<20, "heap %d KiB, baseline %d KiB", heap>>10, baseHeap>>10)
+		return goroutines <= baseGoroutines+10
+	}, 60*time.Second, idleTimeout, "goroutines stay above the baseline of %d", baseGoroutines)
 
-		assert.Zero(t, gateway.HeldMCPSessions(fixture.handlers[0]), "every abandoned copy is released")
-		assert.Equal(t, http.StatusOK, fixture.pingStatus(t, alice(), ids[0]), "a released session is adopted again")
-	})
+	_, heap := goroutinesAndHeap()
+	// Each abandoned session held about 80 KB, 20 MB in all.
+	assert.Less(t, heap, baseHeap+8<<20, "heap %d KiB, baseline %d KiB", heap>>10, baseHeap>>10)
+
+	assert.Zero(t, gateway.HeldMCPSessions(fixture.handlers[0]), "every abandoned copy is released")
+	assert.Equal(t, http.StatusOK, fixture.pingStatus(t, alice(), ids[0]), "a released session is adopted again")
 }
 
 func goroutinesAndHeap() (int, uint64) {

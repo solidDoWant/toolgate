@@ -76,6 +76,8 @@ func pendingMessage(id string) string {
 
 // Runs serially: it sets a process-wide test hook that parallel tests would also trigger.
 func TestApprovalRequest(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a call needing approval inserts a pending approval, writes approval.request and refuses with the link", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
