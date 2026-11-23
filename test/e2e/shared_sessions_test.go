@@ -49,7 +49,9 @@ func (s *switchableTransport) RoundTrip(request *http.Request) (*http.Response, 
 }
 
 func TestSessionSurvivesGatewayPodDeletion(t *testing.T) {
-	// Serial: it deletes a gateway pod.
+	// It kills or restarts gateway pods, so it runs on its own install.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{})
 	kube := templateClient(t)
 	admin := adminClient(t)
 	server := revisionTemplate(t, kube, "both")
@@ -119,7 +121,7 @@ func TestSessionSurvivesGatewayPodDeletion(t *testing.T) {
 	mu.Unlock()
 
 	grace := int64(0)
-	require.NoError(t, admin.CoreV1().Pods(releaseNamespace()).Delete(t.Context(), pods[0], metav1.DeleteOptions{GracePeriodSeconds: &grace}))
+	require.NoError(t, admin.CoreV1().Pods(releaseNamespace(t)).Delete(t.Context(), pods[0], metav1.DeleteOptions{GracePeriodSeconds: &grace}))
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		assert.Positive(collect, count(eventListChanged))

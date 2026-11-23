@@ -79,7 +79,7 @@ func TestStandingRulesShown(t *testing.T) {
 	publicURL := webUI(t, forwardToGateway(t, admin, gatewayPods(t, admin)[0]))
 
 	rule := &v1alpha1.ToolgateRule{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: "e2e-rule-" + rand.String(5)},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: "e2e-rule-" + rand.String(5)},
 		Spec: v1alpha1.ToolgateRuleSpec{
 			Match:  v1alpha1.RuleMatch{Servers: []string{"no-such-server-" + rand.String(5)}},
 			Reason: "Listed by the e2e test.",

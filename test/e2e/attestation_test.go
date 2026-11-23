@@ -100,7 +100,7 @@ func attestationTemplate(t *testing.T, kube client.Client, prefix, scope string,
 
 	name := prefix + "-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        scope,
 			StartTimeout: &metav1.Duration{Duration: enableTimeout},

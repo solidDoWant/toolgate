@@ -84,7 +84,9 @@ func signInToUI(t *testing.T, publicURL string, user testutil.OIDCUser) context.
 }
 
 func TestRestartFromTheUI(t *testing.T) {
-	// Serial: it restarts the gateway.
+	// It restarts gateway pods, so it runs on its own install.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{})
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -109,7 +111,7 @@ func TestRestartFromTheUI(t *testing.T) {
 
 		// A new template version makes the running instance outdated.
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(t, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(t, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 		template.Spec.Resources = testServerResources(t, image, 0, map[string]string{"VERSION": "v2"})
 		require.NoError(t, kube.Update(t.Context(), &template))
 

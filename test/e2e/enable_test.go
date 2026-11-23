@@ -152,7 +152,7 @@ func createTemplate(t *testing.T, kube client.Client, prefix, scope string, reso
 
 	name := prefix + "-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        scope,
 			StartTimeout: &metav1.Duration{Duration: enableTimeout},
@@ -177,7 +177,7 @@ func requireTemplateValid(t *testing.T, kube client.Client, name string) {
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 		assert.True(collect, meta.IsStatusConditionTrue(template.Status.Conditions, catalog.ConditionValid),
 			"template %s is valid: %+v", name, template.Status.Conditions)
 	}, 2*time.Minute, time.Second)
@@ -191,7 +191,7 @@ func gatewayPods(t *testing.T, admin *kubernetes.Clientset) []string {
 	var names []string
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		pods, err := admin.CoreV1().Pods(releaseNamespace()).List(t.Context(), metav1.ListOptions{LabelSelector: gatewayPodSelector})
+		pods, err := admin.CoreV1().Pods(releaseNamespace(t)).List(t.Context(), metav1.ListOptions{LabelSelector: gatewayPodSelector})
 		require.NoError(collect, err)
 
 		names = nil
@@ -221,7 +221,7 @@ func forwardToGateway(t *testing.T, admin *kubernetes.Clientset, pod string) str
 	roundTripper, upgrader, err := spdy.RoundTripperFor(config)
 	require.NoError(t, err)
 
-	url := admin.CoreV1().RESTClient().Post().Resource("pods").Namespace(releaseNamespace()).Name(pod).SubResource("portforward").URL()
+	url := admin.CoreV1().RESTClient().Post().Resource("pods").Namespace(releaseNamespace(t)).Name(pod).SubResource("portforward").URL()
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: roundTripper}, http.MethodPost, url)
 
 	stop, ready := make(chan struct{}), make(chan struct{})
@@ -611,7 +611,7 @@ func TestSharedScope(t *testing.T) {
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			var template v1alpha1.MCPServerTemplate
-			require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+			require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 
 			condition := meta.FindStatusCondition(template.Status.Conditions, catalog.ConditionValid)
 			require.NotNil(collect, condition, "the leader reports validity")
@@ -644,7 +644,10 @@ func TestSharedScope(t *testing.T) {
 // the start from the rows and the labelled objects, with no duplicate
 // instance and no orphaned objects.
 func TestLeaderKilledDuringStart(t *testing.T) {
-	// Serial: it kills the leader.
+	// It kills or restarts gateway pods, so it runs on its own install.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{})
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -681,7 +684,7 @@ func TestLeaderKilledDuringStart(t *testing.T) {
 			assert.Zero(collect, deployment.Status.ReadyReplicas, "the instance is still starting")
 		}, 2*time.Minute, 500*time.Millisecond)
 
-		require.NoError(t, admin.CoreV1().Pods(releaseNamespace()).Delete(t.Context(), leader,
+		require.NoError(t, admin.CoreV1().Pods(releaseNamespace(t)).Delete(t.Context(), leader,
 			metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}))
 	})
 
@@ -690,7 +693,7 @@ func TestLeaderKilledDuringStart(t *testing.T) {
 		require.Empty(t, result.err)
 		assert.ElementsMatch(t, prefixedTools(name), result.tools)
 
-		current, err := leaderPod(t.Context(), admin)
+		current, err := leaderPod(t.Context(), admin, releaseNamespace(t))
 		require.NoError(t, err)
 		assert.NotEqual(t, leader, current, "another replica holds the Lease")
 

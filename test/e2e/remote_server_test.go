@@ -91,7 +91,7 @@ func createRemoteTemplate(t *testing.T, url string) string {
 	kube := templateClient(t)
 	name := "e2e-remote-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:  "per-user",
 			Access: v1alpha1.Access{Users: []string{"alice", "bob", "carol", "dave"}, Environments: "any"},

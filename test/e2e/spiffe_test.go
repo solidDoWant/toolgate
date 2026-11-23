@@ -117,7 +117,7 @@ func TestSPIFFESignIn(t *testing.T) {
 	// An attested-only template that only allowed.test's owners may use.
 	name := "e2e-spiffe-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        "per-session",
 			StartTimeout: &metav1.Duration{Duration: enableTimeout},
@@ -132,7 +132,7 @@ func TestSPIFFESignIn(t *testing.T) {
 
 	// A rule refusing the server in scratch workspaces only.
 	rule := &v1alpha1.ToolgateRule{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: "e2e-spiffe-rule-" + rand.String(5)},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: "e2e-spiffe-rule-" + rand.String(5)},
 		Spec: v1alpha1.ToolgateRuleSpec{
 			Match: v1alpha1.RuleMatch{
 				Workspaces: []string{"/owner/*/workspace/scratch-*"}, Attestation: "attested", Servers: []string{name},

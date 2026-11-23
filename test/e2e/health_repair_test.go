@@ -53,7 +53,7 @@ func createHealthTemplate(t *testing.T, kube client.Client, prefix, onFailure st
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 
 		template.Spec.HealthCheck = &v1alpha1.HealthCheck{
 			HTTP:             v1alpha1.HealthCheckHTTP{Service: "mcp", Port: 8080, Path: "/healthz", ExpectedStatus: 200},

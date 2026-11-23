@@ -38,16 +38,16 @@ func TestChartInstall(t *testing.T) {
 
 	t.Run("two replicas are ready and /healthz answers on both", func(t *testing.T) {
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
-			deployment, err := admin.AppsV1().Deployments(releaseNamespace()).Get(t.Context(), gatewayDeployment, metav1.GetOptions{})
+			deployment, err := admin.AppsV1().Deployments(releaseNamespace(t)).Get(t.Context(), gatewayDeployment, metav1.GetOptions{})
 			require.NoError(collect, err)
 			assert.Equal(collect, int32(2), deployment.Status.ReadyReplicas)
 		}, 5*time.Minute, 2*time.Second)
 
-		deployment, err := admin.AppsV1().Deployments(releaseNamespace()).Get(t.Context(), gatewayDeployment, metav1.GetOptions{})
+		deployment, err := admin.AppsV1().Deployments(releaseNamespace(t)).Get(t.Context(), gatewayDeployment, metav1.GetOptions{})
 		require.NoError(t, err)
 
 		selector := metav1.FormatLabelSelector(deployment.Spec.Selector)
-		pods, err := admin.CoreV1().Pods(releaseNamespace()).List(t.Context(), metav1.ListOptions{LabelSelector: selector})
+		pods, err := admin.CoreV1().Pods(releaseNamespace(t)).List(t.Context(), metav1.ListOptions{LabelSelector: selector})
 		require.NoError(t, err)
 
 		var ready []corev1.Pod
@@ -61,7 +61,7 @@ func TestChartInstall(t *testing.T) {
 		require.Len(t, ready, 2)
 
 		for _, pod := range ready {
-			body, err := admin.CoreV1().Pods(releaseNamespace()).ProxyGet("http", pod.Name, "8080", "/healthz", nil).DoRaw(t.Context())
+			body, err := admin.CoreV1().Pods(releaseNamespace(t)).ProxyGet("http", pod.Name, "8080", "/healthz", nil).DoRaw(t.Context())
 			require.NoError(t, err, "pod %s", pod.Name)
 			assert.NotEmpty(t, body, "pod %s", pod.Name)
 		}

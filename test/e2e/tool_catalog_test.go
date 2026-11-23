@@ -35,7 +35,7 @@ func TestToolCatalog(t *testing.T) {
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			var template v1alpha1.MCPServerTemplate
-			require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+			require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 
 			template.Spec.Start = catalog.StartOnEnable
 			template.Spec.DeclaredTools = []v1alpha1.DeclaredTool{{
@@ -90,7 +90,7 @@ func requireTemplateStartsOnEnable(t *testing.T, kube client.Client, name string
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 
 		template.Spec.Start = catalog.StartOnEnable
 		require.NoError(collect, kube.Update(t.Context(), &template))

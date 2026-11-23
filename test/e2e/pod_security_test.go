@@ -95,7 +95,7 @@ func grantNamespaceUpdate(t *testing.T, admin *kubernetes.Clientset, name string
 	binding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: name},
-		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: gatewayServiceAccount, Namespace: releaseNamespace()}},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: gatewayServiceAccount, Namespace: releaseNamespace(t)}},
 	}
 	_, err = admin.RbacV1().ClusterRoleBindings().Create(t.Context(), binding, metav1.CreateOptions{})
 	require.NoError(t, err)

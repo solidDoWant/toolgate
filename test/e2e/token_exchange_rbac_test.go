@@ -18,7 +18,7 @@ func TestTokenExchangeRBACConfinedToCatalogNamespaces(t *testing.T) {
 	t.Parallel()
 
 	admin := adminClient(t)
-	user := "system:serviceaccount:" + releaseNamespace() + ":" + gatewayServiceAccount
+	user := "system:serviceaccount:" + releaseNamespace(t) + ":" + gatewayServiceAccount
 
 	can := func(t *testing.T, namespace, verb, subresource string) bool {
 		t.Helper()
@@ -43,7 +43,7 @@ func TestTokenExchangeRBACConfinedToCatalogNamespaces(t *testing.T) {
 		allowed   bool
 	}{
 		// The release namespace is also the catalog namespace here.
-		{"catalog namespace", releaseNamespace(), true},
+		{"catalog namespace", releaseNamespace(t), true},
 		{"template secrets namespace", templateSecretsNamespace(t), false},
 		{"shared namespace", e2eSharedNamespace, false},
 		{"another namespace", "default", false},

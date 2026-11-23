@@ -30,7 +30,7 @@ func curatedTemplate(t *testing.T, kube client.Client, change func(*v1alpha1.MCP
 
 	name := "e2e-curate-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        "per-user",
 			StartTimeout: &metav1.Duration{Duration: enableTimeout},
@@ -169,7 +169,7 @@ func TestToolOverrides(t *testing.T) {
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			var template v1alpha1.MCPServerTemplate
-			require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: long}, &template))
+			require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: long}, &template))
 			assert.True(collect, meta.IsStatusConditionFalse(template.Status.Conditions, catalog.ConditionValid), "%+v", template.Status.Conditions)
 		}, 2*time.Minute, time.Second)
 	})

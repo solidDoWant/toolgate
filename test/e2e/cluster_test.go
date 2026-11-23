@@ -8,6 +8,8 @@ package e2e
 
 import (
 	"os"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,12 +22,21 @@ import (
 // for a release named toolgate.
 const gatewayServiceAccount = "toolgate"
 
-func releaseNamespace() string {
-	if namespace := os.Getenv("TOOLGATE_E2E_NAMESPACE"); namespace != "" {
-		return namespace
+// ownInstances maps the name of a top-level test to the namespace of the
+// install it made for itself with installGateway.
+var ownInstances sync.Map
+
+// releaseNamespace returns the namespace of the gateway install the test
+// talks to: the one the test installed for itself, or else the harness's.
+func releaseNamespace(t testing.TB) string {
+	t.Helper()
+
+	top, _, _ := strings.Cut(t.Name(), "/")
+	if namespace, found := ownInstances.Load(top); found {
+		return namespace.(string)
 	}
 
-	return "toolgate-system"
+	return harnessNamespace()
 }
 
 // adminConfig returns the REST configuration of the cluster in KUBECONFIG, or
@@ -60,8 +71,8 @@ func gatewayClient(t *testing.T) *kubernetes.Clientset {
 
 	config := rest.CopyConfig(adminConfig(t))
 	config.Impersonate = rest.ImpersonationConfig{
-		UserName: "system:serviceaccount:" + releaseNamespace() + ":" + gatewayServiceAccount,
-		Groups:   []string{"system:serviceaccounts", "system:serviceaccounts:" + releaseNamespace(), "system:authenticated"},
+		UserName: "system:serviceaccount:" + releaseNamespace(t) + ":" + gatewayServiceAccount,
+		Groups:   []string{"system:serviceaccounts", "system:serviceaccounts:" + releaseNamespace(t), "system:authenticated"},
 	}
 
 	client, err := kubernetes.NewForConfig(config)

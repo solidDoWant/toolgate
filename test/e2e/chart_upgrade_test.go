@@ -109,12 +109,12 @@ func TestChartUpgradeAndUninstall(t *testing.T) {
 		return true
 	}
 
-	values := helmCommand(t, "get", "values", releaseName, "--namespace", releaseNamespace(), "--output", "yaml")
+	values := helmCommand(t, "get", "values", releaseName, "--namespace", releaseNamespace(t), "--output", "yaml")
 	valuesFile := filepath.Join(t.TempDir(), "values.yaml")
 	require.NoError(t, os.WriteFile(valuesFile, values, 0o600))
 
 	install := func(chart string) {
-		helmCommand(t, "upgrade", "--install", releaseName, chart, "--namespace", releaseNamespace(),
+		helmCommand(t, "upgrade", "--install", releaseName, chart, "--namespace", releaseNamespace(t),
 			"--values", valuesFile, "--wait", "--timeout", "5m")
 	}
 
@@ -161,7 +161,7 @@ func TestChartUpgradeAndUninstall(t *testing.T) {
 		_, err = profiles.Create(t.Context(), profile, metav1.CreateOptions{})
 		require.NoError(t, err)
 
-		helmCommand(t, "uninstall", releaseName, "--namespace", releaseNamespace(), "--wait", "--timeout", "5m")
+		helmCommand(t, "uninstall", releaseName, "--namespace", releaseNamespace(t), "--wait", "--timeout", "5m")
 
 		for _, name := range []string{
 			"mcpservertemplates.toolgate.soliddowant.dev",
