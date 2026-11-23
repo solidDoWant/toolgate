@@ -93,7 +93,7 @@ func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
 	kube := templateClient(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
 
-	idle := scaled(time.Minute)
+	idle := scaled(2 * time.Minute)
 	deadline := idle + 3*time.Minute
 
 	template := createTemplate(t, kube, "e2e-embed", "per-session", testServerResources(t, mcpServerImage(t), 0, nil))

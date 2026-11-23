@@ -316,7 +316,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set-json 'rbac.extraRules=[{"apiGroups":["helm.toolkit.fluxcd.io"],"resources":["helmreleases"],"verbs":["create","patch","delete","get","list","watch"]},{"apiGroups":["source.toolkit.fluxcd.io"],"resources":["ocirepositories"],"verbs":["create","patch","delete","get","list","watch"]}]' \
 	--set embeddings.server.enabled=true \
 	--set embeddings.server.scaleToZero.enabled=true \
-	--set embeddings.server.scaleToZero.idleTimeout=1m \
+	--set embeddings.server.scaleToZero.idleTimeout=2m \
 	--set embeddings.server.image.repository="$embeddings_repository" \
 	--set embeddings.server.image.tag="$image_tag" \
 	--set embeddings.server.image.digest= \
