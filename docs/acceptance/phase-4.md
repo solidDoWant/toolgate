@@ -54,7 +54,7 @@ toolgate works as a standard OAuth-protected remote MCP server, so clients witho
 - **AC-4-09 OAuth sign-in.** An MCP request with no token gets HTTP 401 with a `WWW-Authenticate` header pointing at `/.well-known/oauth-protected-resource`. That document names the IdP as the authorization server. A client that follows the MCP authorization spec (for example a claude.ai custom connector) signs the user in through the IdP, and its requests then act as that user.
   Tests: `test/e2e: TestConnectorSignIn`
 - **AC-4-10 Sessions without the helper.** A client that sends no `X-Toolgate-Session` gets a toolgate session tied to its MCP session (`Mcp-Session-Id`). It has its own enabled set, works with list, enable, disable, calls and approvals, and ends when the MCP session ends or idles out.
-  Tests: `test/e2e: TestSessionsWithoutHelper`
+  Tests: `test/e2e: TestSessionsWithoutHelper`, `test/e2e: TestIdleConnectorSessionEnds`
 - **AC-4-11 Unverified allow list.** A user can set an allow list of servers for their unverified sessions, in the UI or CLI, as an alternative to `none` or `all`. Such a session lists and can enable only those servers.
   Tests: `cmd/toolgate: TestWorkspaceListUnverifiedAllowList`, `cmd/toolgate: TestWorkspaceChanges`, `internal/gateway: TestUnverifiedAllowListInGatewayRequests`, `internal/ui: TestUnverifiedAllowListPage`, `internal/workspacesapi: TestChangeUnverified`
 

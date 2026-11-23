@@ -190,6 +190,8 @@ func volumeSession(t *testing.T, admin *kubernetes.Clientset, pod, user string) 
 }
 
 func TestPersistentVolumeKeepsDataAcrossInstances(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	name := volumeTemplate(t, kube, "e2e-pv-keep", retainStorageClass)
@@ -299,6 +301,8 @@ func TestPersistentVolumeSurvivesCrash(t *testing.T) {
 }
 
 func TestPersistentVolumeIsolation(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	provider := oidcProvider(t)
@@ -341,6 +345,8 @@ func TestPersistentVolumeIsolation(t *testing.T) {
 }
 
 func TestPersistentVolumeCleanup(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 
@@ -428,6 +434,8 @@ func TestPersistentVolumeCleanup(t *testing.T) {
 }
 
 func TestPersistentVolumeNeedsRetainClass(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 
@@ -444,6 +452,8 @@ func TestPersistentVolumeNeedsRetainClass(t *testing.T) {
 }
 
 func TestPersistentVolumeLostIsReplaced(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	name := volumeTemplate(t, kube, "e2e-pv-lost", retainStorageClass)

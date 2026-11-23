@@ -85,6 +85,8 @@ func requireNamespaceDeleted(t *testing.T, admin *kubernetes.Clientset, name str
 }
 
 func TestHelmReleaseTemplate(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -122,6 +124,8 @@ func TestHelmReleaseTemplate(t *testing.T) {
 }
 
 func TestFailingHelmRelease(t *testing.T) {
+	t.Parallel()
+
 	mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

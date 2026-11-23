@@ -88,6 +88,8 @@ func resolverServerResources(t *testing.T, image string) []k8sruntime.RawExtensi
 }
 
 func TestResolver(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
