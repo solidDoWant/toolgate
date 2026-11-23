@@ -105,6 +105,9 @@ cleanup() {
 		log "a step failed; cluster state:"
 		kubectl get pods --all-namespaces -o wide >&2 || true
 		kubectl -n "$release_namespace" logs --all-containers --prefix --tail=100 -l app.kubernetes.io/name=toolgate >&2 || true
+		# Crash-looping system pods (Flux, kube-proxy) log why only before they restart.
+		kubectl -n flux-system logs --all-containers --prefix --tail=20 --previous -l app.kubernetes.io/part-of=flux >&2 || true
+		kubectl -n kube-system logs --all-containers --prefix --tail=20 --previous -l k8s-app=kube-proxy >&2 || true
 	fi
 	((${#lgtm_forwards[@]} == 0)) || kill "${lgtm_forwards[@]}" 2>/dev/null || true
 	if [[ "${E2E_KEEP_CLUSTER:-false}" == true ]]; then

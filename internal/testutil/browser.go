@@ -54,6 +54,9 @@ func StartBrowser(tb testing.TB, extra ...chromedp.ExecAllocatorOption) context.
 		// CI runners and containers don't allow Chromium's sandbox; the
 		// browser only opens the test's own pages.
 		chromedp.NoSandbox,
+		// Containers get a 64 MiB /dev/shm, too small for Chromium, which then
+		// aborts; /tmp has room.
+		chromedp.Flag("disable-dev-shm-usage", true),
 	)
 	options = append(options, extra...)
 
