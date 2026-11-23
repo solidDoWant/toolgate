@@ -21,6 +21,9 @@ const EmbeddingsModel = "BAAI/bge-small-en-v1.5"
 
 const embeddingsPort = "80/tcp"
 
+// embeddingsStartAttempts is how many times the server start is tried.
+const embeddingsStartAttempts = 3
+
 // Embeddings is a running server of the OpenAI embeddings API.
 type Embeddings struct {
 	// URL is the base URL; the API is at URL + "/v1/embeddings".
@@ -52,20 +55,33 @@ func startModelServer(tb testing.TB, model string) *Embeddings {
 
 	ctx := tb.Context()
 
-	container, err := testcontainers.Run(ctx, EmbeddingsImage,
-		testcontainers.WithCmd("--model-id", model, "--port", "80"),
-		testcontainers.WithHostConfigModifier(func(config *container.HostConfig) {
-			config.Binds = append(config.Binds, cache+":/data")
-		}),
-		testcontainers.WithExposedPorts(embeddingsPort),
-		testcontainers.WithWaitStrategy(
-			wait.ForHTTP("/health").WithPort(embeddingsPort).WithStartupTimeout(5*time.Minute),
-		),
-	)
-	testcontainers.CleanupContainer(tb, container)
-	require.NoError(tb, err, "start embeddings server")
+	// The server downloads its model on first start. A download that fails
+	// or a start that is starved of CPU while other tests run makes the
+	// container exit or miss its health check, so a start is retried.
+	var ctr testcontainers.Container
 
-	endpoint, err := container.PortEndpoint(ctx, embeddingsPort, "http")
+	for attempt := 1; attempt <= embeddingsStartAttempts; attempt++ {
+		ctr, err = testcontainers.Run(ctx, EmbeddingsImage,
+			testcontainers.WithCmd("--model-id", model, "--port", "80"),
+			testcontainers.WithHostConfigModifier(func(config *container.HostConfig) {
+				config.Binds = append(config.Binds, cache+":/data")
+			}),
+			testcontainers.WithExposedPorts(embeddingsPort),
+			testcontainers.WithWaitStrategy(
+				wait.ForHTTP("/health").WithPort(embeddingsPort).WithStartupTimeout(5*time.Minute),
+			),
+		)
+		testcontainers.CleanupContainer(tb, ctr)
+
+		if err == nil {
+			break
+		}
+
+		tb.Logf("start embeddings server, attempt %d of %d: %v", attempt, embeddingsStartAttempts, err)
+	}
+
+	require.NoError(tb, err, "start embeddings server")
+	endpoint, err := ctr.PortEndpoint(ctx, embeddingsPort, "http")
 	require.NoError(tb, err)
 
 	return &Embeddings{URL: endpoint, Model: model}
