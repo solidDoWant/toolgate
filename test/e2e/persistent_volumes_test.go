@@ -144,7 +144,7 @@ func requireNote(t *testing.T, session *gatewaySession, server, want, why string
 		text, err := readNote(t.Context(), session, server)
 		require.NoError(collect, err)
 		assert.Equal(collect, want, text, why)
-	}, 2*time.Minute, 2*time.Second)
+	}, 2*time.Minute, 500*time.Millisecond)
 }
 
 // stopInstance disables the server for the session. The per-user instance
@@ -167,7 +167,7 @@ func requireVolumesReleased(t *testing.T, admin *kubernetes.Clientset, server st
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		assert.Equal(collect, "0", volumeRows(t, admin, "count(*)", server, "instance_id IS NOT NULL"), "no instance holds the volume")
 		assert.Empty(collect, instanceNamespaces(collect, t.Context(), admin, server), "the instance namespace is gone")
-	}, 4*time.Minute, 2*time.Second)
+	}, 4*time.Minute, 500*time.Millisecond)
 }
 
 // requirePVGone waits until the PersistentVolume does not exist.
@@ -179,7 +179,26 @@ func requirePVGone(t *testing.T, admin *kubernetes.Clientset, pvName, why string
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		_, err := admin.CoreV1().PersistentVolumes().Get(t.Context(), pvName, metav1.GetOptions{})
 		assert.True(collect, apierrors.IsNotFound(err), "%s: %v", why, err)
-	}, volumeCleanupWait, 3*time.Second)
+	}, volumeCleanupWait, 500*time.Millisecond)
+}
+
+// followerPod returns a gateway pod that is not the leader. Every persistent
+// volume test talks to such a pod, so that the test that kills the leader
+// does not cut the sessions of the tests that run beside it.
+func followerPod(t *testing.T, admin *kubernetes.Clientset) string {
+	t.Helper()
+
+	leader := runningLeader(t, admin)
+
+	for _, pod := range gatewayPods(t, admin) {
+		if pod != leader {
+			return pod
+		}
+	}
+
+	require.Fail(t, "no gateway pod that is not the leader")
+
+	return ""
 }
 
 // volumeSession returns an MCP session of user with the gateway.
@@ -195,7 +214,7 @@ func TestPersistentVolumeKeepsDataAcrossInstances(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	name := volumeTemplate(t, kube, "e2e-pv-keep", retainStorageClass)
-	alice := volumeSession(t, admin, gatewayPods(t, admin)[0], "alice")
+	alice := volumeSession(t, admin, followerPod(t, admin), "alice")
 
 	enable(t, alice, name)
 	writeNote(t, alice, name, "first instance")
@@ -223,26 +242,14 @@ func TestPersistentVolumeKeepsDataAcrossInstances(t *testing.T) {
 	requireNote(t, alice, name, "first instance", "the new instance reads the old instance's note")
 }
 
+// TestPersistentVolumeSurvivesCrash is not parallel: it kills the leader, and
+// every other e2e test that waits on the leader would stall or fail.
 func TestPersistentVolumeSurvivesCrash(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	name := volumeTemplate(t, kube, "e2e-pv-crash", retainStorageClass)
 
-	// Talk to a gateway pod that is not the leader, so killing the leader
-	// leaves the session's pod running.
-	leader := runningLeader(t, admin)
-
-	var other string
-
-	for _, pod := range gatewayPods(t, admin) {
-		if pod != leader {
-			other = pod
-		}
-	}
-
-	require.NotEmpty(t, other, "a gateway pod that is not the leader")
-
-	alice := volumeSession(t, admin, other, "alice")
+	alice := volumeSession(t, admin, followerPod(t, admin), "alice")
 
 	enable(t, alice, name)
 	writeNote(t, alice, name, "before the server crash")
@@ -313,7 +320,7 @@ func TestPersistentVolumeIsolation(t *testing.T) {
 
 	first := volumeTemplate(t, kube, "e2e-pv-iso-a", retainStorageClass)
 	second := volumeTemplate(t, kube, "e2e-pv-iso-b", retainStorageClass)
-	pod := gatewayPods(t, admin)[0]
+	pod := followerPod(t, admin)
 	alice, bob := volumeSession(t, admin, pod, "alice"), volumeSession(t, admin, pod, "bob")
 
 	enable(t, alice, first)
@@ -356,7 +363,7 @@ func TestPersistentVolumeCleanup(t *testing.T) {
 		t.Helper()
 
 		name := volumeTemplate(t, kube, prefix, retainStorageClass)
-		alice := volumeSession(t, admin, gatewayPods(t, admin)[0], "alice")
+		alice := volumeSession(t, admin, followerPod(t, admin), "alice")
 
 		enable(t, alice, name)
 		writeNote(t, alice, name, "to be deleted")
@@ -368,6 +375,8 @@ func TestPersistentVolumeCleanup(t *testing.T) {
 	}
 
 	t.Run("deleting the template deletes the volume", func(t *testing.T) {
+		t.Parallel()
+
 		name, _, pvName := startedVolume(t, "e2e-pv-tmpl")
 
 		var template v1alpha1.MCPServerTemplate
@@ -378,10 +387,12 @@ func TestPersistentVolumeCleanup(t *testing.T) {
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Equal(collect, "0", volumeRows(t, admin, "count(*)", name, ""), "the row is deleted")
-		}, volumeCleanupWait, 3*time.Second)
+		}, volumeCleanupWait, 500*time.Millisecond)
 	})
 
 	t.Run("a volume unused for longer than unusedRetention is deleted", func(t *testing.T) {
+		t.Parallel()
+
 		name, alice, pvName := startedVolume(t, "e2e-pv-unused")
 
 		stopInstance(t, admin, alice, name)
@@ -394,8 +405,10 @@ func TestPersistentVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("toolgate admin volumes delete deletes the volume", func(t *testing.T) {
+		t.Parallel()
+
 		provider := oidcProvider(t)
-		endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
+		endpoint := forwardToGateway(t, admin, followerPod(t, admin))
 		binary := buildToolgate(t)
 
 		subject := "pv-admin-" + rand.String(6)
@@ -429,7 +442,7 @@ func TestPersistentVolumeCleanup(t *testing.T) {
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			assert.Equal(collect, "0", volumeRows(t, admin, "count(*)", name, ""), "the row is deleted")
-		}, volumeCleanupWait, 3*time.Second)
+		}, volumeCleanupWait, 500*time.Millisecond)
 	})
 }
 
@@ -441,7 +454,7 @@ func TestPersistentVolumeNeedsRetainClass(t *testing.T) {
 
 	// kind's default class deletes the volume when the claim goes.
 	name := volumeTemplate(t, kube, "e2e-pv-delete", "standard")
-	alice := volumeSession(t, admin, gatewayPods(t, admin)[0], "alice")
+	alice := volumeSession(t, admin, followerPod(t, admin), "alice")
 
 	result := awaitEnable(t, startEnable(t, alice, name))
 	require.NotEmpty(t, result.err, "the instance fails to start")
@@ -457,7 +470,7 @@ func TestPersistentVolumeLostIsReplaced(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 	name := volumeTemplate(t, kube, "e2e-pv-lost", retainStorageClass)
-	alice := volumeSession(t, admin, gatewayPods(t, admin)[0], "alice")
+	alice := volumeSession(t, admin, followerPod(t, admin), "alice")
 
 	enable(t, alice, name)
 	writeNote(t, alice, name, "in the lost volume")
