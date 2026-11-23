@@ -99,6 +99,9 @@ export KUBECONFIG="$work/kubeconfig"
 
 log() { echo "e2e: $*" >&2; }
 
+# Read by cleanup, which can run before the port-forwards start.
+lgtm_forwards=()
+
 cleanup() {
 	local status=$?
 	if ((status != 0)); then
@@ -194,7 +197,6 @@ kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 de
 
 # Port-forwards to the telemetry test backend, alive until the script exits.
 free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
-lgtm_forwards=()
 for lgtm_port in 4318 9090 3100 3200; do
 	local_port="$(free_port)"
 	kubectl -n "$deps_namespace" port-forward --address 127.0.0.1 service/otel-lgtm "$local_port:$lgtm_port" >"$work/lgtm-forward-$lgtm_port.log" 2>&1 &
