@@ -55,6 +55,8 @@ func sessionEvents(t *testing.T, admin *kubernetes.Clientset, session string) []
 }
 
 func TestResumeAfterLongPause(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
