@@ -28,6 +28,10 @@ spec:
       value: "{{ repo_owner }}/{{ repo_name }}"
     - name: pull_request_number
       value: "{{ pull_request_number }}"
+    # The stages' CPU budget, the dind sidecar's CPU request below: three
+    # kind clusters, integration and -race tests at once.
+    - name: cpus
+      value: "12"
   timeouts:
     pipeline: 1h
   workspaces:
@@ -46,7 +50,7 @@ spec:
         - name: dind
           computeResources:
             requests:
-              cpu: "8"
+              cpu: "12"
               memory: 20Gi
             limits:
               memory: 20Gi
