@@ -193,6 +193,9 @@ type watcher struct {
 	// stored is the tool list last read from or written to the row.
 	stored  []byte
 	changed chan struct{}
+	// relistFailed is set when a re-list or its store failed, so the next
+	// tick tries again: the change that asked for it was consumed.
+	relistFailed bool
 }
 
 // watch monitors one instance until it is no longer ready, it is marked
@@ -250,6 +253,10 @@ func (m *Monitor) watch(ctx context.Context, instance db.Instance, endpoint stri
 			}
 		case <-ticker.C:
 			if !state.check(ctx) {
+				return
+			}
+
+			if state.relistFailed && !state.refreshTools(ctx) {
 				return
 			}
 		}
@@ -357,6 +364,8 @@ func (w *watcher) refreshTools(ctx context.Context) bool {
 		return true
 	}
 
+	w.relistFailed = false
+
 	// The re-list is bounded like a health check, so an upstream that
 	// never answers `tools/list` can't stop the checks.
 	listCtx, cancel := context.WithTimeout(ctx, w.monitor.interval())
@@ -374,6 +383,8 @@ func (w *watcher) refreshTools(ctx context.Context) bool {
 		// A broken session also fails the next health check.
 		w.monitor.logger().InfoContext(ctx, "re-listing changed tools failed", slog.String("instance", w.instance.ID),
 			slog.String("error", err.Error()))
+
+		w.relistFailed = true
 
 		return ctx.Err() == nil
 	}
@@ -399,6 +410,8 @@ func (w *watcher) refreshTools(ctx context.Context) bool {
 	if err != nil {
 		w.monitor.logger().WarnContext(ctx, "storing changed tools failed", slog.String("instance", w.instance.ID),
 			slog.String("error", err.Error()))
+
+		w.relistFailed = true
 
 		return ctx.Err() == nil
 	}

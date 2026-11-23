@@ -111,7 +111,7 @@ DEFAULT_CONFIG = {
     # a reviewer: green ones are armed, conflicts go to the merge-fixer and CI
     # failures to a worker. Renovate's own minimumReleaseAge gates their creation.
     "renovate_prs": False,
-    "renovate_authors": ["infra-mk3-renovate-operator"],
+    "renovate_authors": ["app/infra-mk3-renovate-operator"],
     # The Pipelines-as-Code check run of the pull request PipelineRun
     # (.tekton/pull-request.yaml).
     "required_check": "Tekton CI / toolgate-pull-request-",
@@ -315,7 +315,7 @@ query($owner: String!, $name: String!, $cursor: String) {
     issues(first: 100, states: OPEN, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title author { login }
+        number title author { login __typename }
         labels(first: 30) { nodes { name } }
         milestone { title }
         parent { number }
@@ -332,11 +332,11 @@ query($owner: String!, $name: String!, $cursor: String) {
     pullRequests(first: 25, states: OPEN, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title isDraft author { login } headRefName headRefOid
+        number title isDraft author { login __typename } headRefName headRefOid
         mergeable mergeStateStatus autoMergeRequest { enabledAt }
         closingIssuesReferences(first: 10) { nodes { number } }
         files(first: 100) { nodes { path } }
-        reviews(last: 30) { nodes { author { login } submittedAt url body commit { oid } } }
+        reviews(last: 30) { nodes { author { login __typename } submittedAt url body commit { oid } } }
         commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
           __typename
           ... on CheckRun { name status conclusion detailsUrl databaseId }
@@ -360,11 +360,21 @@ def model_override(cfg: dict, job: "Job", snap: "Snapshot") -> dict:
     return override
 
 
+def actor_login(actor: dict | None) -> str:
+    """An author's login in the form gh and the config lists use. GraphQL gives
+    an App's bot as login "ghgate" with __typename Bot, where gh writes
+    "app/ghgate". A user's login stays as it is, so a user account named like a
+    bot never passes as the bot."""
+    actor = actor or {}
+    login = actor.get("login") or "ghost"
+    return f"app/{login}" if actor.get("__typename") == "Bot" else login
+
+
 def parse_issue(node: dict) -> Issue:
     return Issue(
         number=node["number"],
         title=node["title"],
-        author=(node.get("author") or {}).get("login") or "ghost",
+        author=actor_login(node.get("author")),
         labels={label["name"] for label in node["labels"]["nodes"]},
         milestone=(node.get("milestone") or {}).get("title"),
         parent=(node.get("parent") or {}).get("number"),
@@ -435,14 +445,14 @@ def parse_pr(node: dict, cfg: dict) -> PR:
     ]
     reviews = []
     for r in node["reviews"]["nodes"]:
-        if ((r.get("author") or {}).get("login")) not in cfg["pr_authors"]:
+        if actor_login(r.get("author")) not in cfg["pr_authors"]:
             continue
         verdict, headline = parse_verdict(r.get("body") or "")
         reviews.append(Review(verdict, (r.get("commit") or {}).get("oid"), r["url"], r.get("submittedAt") or "", headline))
     return PR(
         number=node["number"],
         title=node["title"],
-        author=(node.get("author") or {}).get("login") or "ghost",
+        author=actor_login(node.get("author")),
         draft=node["isDraft"],
         head_ref=node["headRefName"],
         head_sha=node["headRefOid"],
@@ -511,13 +521,17 @@ class GitHub:
         prs = {n["number"]: parse_pr(n, self.cfg) for n in pr_nodes}
         return Snapshot(issues=issues, prs=prs, milestones=milestones)
 
-    def pm_comments(self, since: str) -> list:
+    def pm_comments(self, since: str) -> tuple[list, str | None]:
         """Issue and PR conversation comments updated since `since` that are
-        human instructions: by the human, first line starting with /pm.
+        human instructions (by the human, first line starting with /pm), and
+        the newest `updated_at` of any comment read, for the caller's cursor.
 
         `since` goes out as `...Z`, URL-encoded: a raw `+00:00` offset decodes
         to a space and GitHub then returns no comments at all. Every page is
-        read, because the caller's cursor only advances on a /pm comment."""
+        read. The cursor must follow every comment, not only /pm ones: GitHub's
+        next-page links address the repository by ID (/repositories/<id>/...),
+        which githubgate refuses, so a window past one page (100 comments)
+        fails on every cycle and no /pm comment is ever read again."""
         stamp = parse_iso(since)
         if stamp:
             since = stamp.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -527,14 +541,16 @@ class GitHub:
             f"repos/{self.cfg['repo']}/issues/comments?since={since_q}&sort=updated&direction=asc&per_page=100",
         )
         found = []
+        newest = None
         for c in (c for page in json.loads(out) for c in page):
+            newest = max(newest or "", c.get("updated_at") or "") or None
             if (c.get("user") or {}).get("login") != self.cfg["human"]:
                 continue
             if not (c.get("body") or "").lstrip().startswith("/pm"):
                 continue
             found.append({"id": c["id"], "url": c["html_url"], "updated_at": c["updated_at"],
                           "line": c["body"].strip().splitlines()[0][:200]})
-        return found
+        return found, newest
 
     # Writes -------------------------------------------------------------
 
@@ -1687,7 +1703,10 @@ class Scheduler:
             try:
                 since = p.get("comments_since") or iso(now_utc() - dt.timedelta(hours=1))
                 seen = set(p.get("seen_comments", []))
-                for c in self.github.pm_comments(since):
+                found, newest = self.github.pm_comments(since)
+                if newest:
+                    p["comments_since"] = max(p.get("comments_since") or "", newest)
+                for c in found:
                     if c["id"] not in seen:
                         self.planner_reason(f"/pm instruction {c['url']}: {c['line']}")
                         seen.add(c["id"])

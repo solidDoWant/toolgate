@@ -287,7 +287,7 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(plan.arms, [])
 
     def test_renovate_prs_are_routed_only_when_enabled(self):
-        bot = dict(author="infra-mk3-renovate-operator", branch="renovate/go-modules")
+        bot = dict(author="app/infra-mk3-renovate-operator", branch="renovate/go-modules")
         # Off (the default): Renovate PRs are ignored entirely.
         plan = plan_for(snap([], [pr(20, None, check="failure", **bot)]))
         self.assertEqual((keys(plan), plan.arms), ([], []))
@@ -450,6 +450,20 @@ class SessionTest(unittest.TestCase):
 
 
 class ParseTest(unittest.TestCase):
+    def test_bot_authors_take_the_app_form(self):
+        # GraphQL gives the agents' App bot as "ghgate" (__typename Bot); the
+        # config lists and gh use "app/ghgate". A user named "ghgate" is not
+        # the bot and must not match it.
+        def node(author):
+            return {"number": 1, "title": "t", "author": author, "labels": {"nodes": []},
+                    "milestone": None, "parent": None, "blockedBy": {"nodes": []}}
+        self.assertEqual(s.parse_issue(node({"login": "ghgate", "__typename": "Bot"})).author, "app/ghgate")
+        self.assertEqual(s.parse_issue(node({"login": "ghgate", "__typename": "User"})).author, "ghgate")
+        self.assertEqual(s.parse_issue(node({"login": "solidDoWant", "__typename": "User"})).author, "solidDoWant")
+        self.assertEqual(s.parse_issue(node(None)).author, "ghost")
+        self.assertEqual(s.actor_login({"login": "infra-mk3-renovate-operator", "__typename": "Bot"}),
+                         "app/infra-mk3-renovate-operator")
+
     def test_limit_reset(self):
         cases = [
             ("You've hit your session limit · resets 3am (UTC)", NOW.replace(hour=3), True),
@@ -635,6 +649,7 @@ class FakeGitHub:
         self.snap = snapshot
         self.writes = []
         self.comments = []  # what GitHub.pm_comments returns: /pm comments by the human
+        self.newest = None  # the newest comment of any kind, when newer than every /pm one
         self.comment_queries = []
         self.logs = {}  # check run id -> what GitHub.stage_report returns
         self.log_reads = []
@@ -644,7 +659,8 @@ class FakeGitHub:
 
     def pm_comments(self, since):
         self.comment_queries.append(since)
-        return [c for c in self.comments if c["updated_at"] >= since]
+        found = [c for c in self.comments if c["updated_at"] >= since]
+        return found, max([c["updated_at"] for c in found] + ([self.newest] if self.newest else []), default=None)
 
     def retest(self, pr, run):
         self.writes.append(("retest", pr, run))
@@ -996,6 +1012,21 @@ class SchedulerTest(unittest.TestCase):
         self.assertEqual(p["pending"].count(reason), 1)
         self.wait_idle()
 
+    def test_other_comments_advance_the_cursor(self):
+        # Without /pm comments the cursor must still follow the newest comment
+        # read; otherwise its window grows past one page, whose next-page link
+        # githubgate refuses, and no /pm comment is read again.
+        self.disable_planner()
+        self.sched.state["planner"]["comments_since"] = "2026-11-10T08:22:13Z"
+        self.gh.newest = "2026-11-23T05:00:00Z"
+        self.sched.poll()
+        p = self.sched.state["planner"]
+        self.assertEqual(p["comments_since"], "2026-11-23T05:00:00Z")
+        self.assertFalse(any(r.startswith("/pm instruction") for r in p.get("pending", [])))
+        self.sched.poll()
+        self.assertEqual(self.gh.comment_queries[-1], "2026-11-23T05:00:00Z")
+        self.wait_idle()
+
     def test_pm_comment_during_planner_run_survives_its_exit(self):
         os.environ["FAKE_CLAUDE_MODE"] = "sleep"
         os.environ["FAKE_CLAUDE_SLEEP"] = "3"  # outlives the second poll
@@ -1039,8 +1070,9 @@ class GitHubPmCommentsTest(unittest.TestCase):
             calls.append(args)
             return json.dumps(pages)
         gh._gh = fake_gh
-        found = gh.pm_comments("2026-10-28T09:00:00+00:00")
+        found, newest = gh.pm_comments("2026-10-28T09:00:00+00:00")
         self.assertEqual([c["id"] for c in found], [2])
+        self.assertEqual(newest, "2026-10-28T09:30:00Z")  # the newest comment read, /pm or not
         self.assertEqual(found[0]["line"], "/pm go")
         args = calls[0]
         self.assertIn("--paginate", args)
