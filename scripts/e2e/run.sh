@@ -154,15 +154,33 @@ build_images() {
 build_images >"$work/build-images.log" 2>&1 &
 build_pid=$!
 
+# One kind create attempt; its output goes to stderr and to $1.
+create_cluster() {
+	local output="$1"
+	if command -v ci-kind-config >/dev/null; then
+		# Tekton CI: the nodes pull through the CI cluster's registrygate and keep
+		# their image cache between builds, keyed by the cluster's name (ci.yaml
+		# gives the e2e stage a fixed one).
+		ci-kind-config --name "$cluster" --image "$kind_node_image" |
+			kind create cluster --kubeconfig "$KUBECONFIG" --wait 3m --config=- 2>&1 | tee "$output" >&2
+	else
+		kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m 2>&1 | tee "$output" >&2
+	fi
+}
+
+# kind gives up when the node's systemd is slow to boot on a busy host. That
+# failure is transient: delete the half-made cluster and try once more. Any
+# other error fails at once.
+boot_timeout_pattern='could not find a log line that matches "Reached target'
 log "creating kind cluster $cluster"
-if command -v ci-kind-config >/dev/null; then
-	# Tekton CI: the nodes pull through the CI cluster's registrygate and keep
-	# their image cache between builds, keyed by the cluster's name (ci.yaml
-	# gives the e2e stage a fixed one).
-	ci-kind-config --name "$cluster" --image "$kind_node_image" |
-		kind create cluster --kubeconfig "$KUBECONFIG" --wait 3m --config=- >&2
-else
-	kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
+if ! create_cluster "$work/kind-create.log"; then
+	if grep -q "$boot_timeout_pattern" "$work/kind-create.log"; then
+		log "the kind node did not boot in time; deleting the cluster and retrying once"
+		kind delete cluster --name "$cluster" --kubeconfig "$KUBECONFIG" >&2 || true
+		create_cluster "$work/kind-create.log"
+	else
+		exit 1
+	fi
 fi
 if ! wait "$build_pid"; then
 	cat "$work/build-images.log" >&2
