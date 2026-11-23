@@ -66,7 +66,7 @@ func grantAdmin(t *testing.T, admin *kubernetes.Clientset, namespace string) {
 	binding := &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: "e2e-gateway-admin", Namespace: namespace},
 		RoleRef:    rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "ClusterRole", Name: "admin"},
-		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: gatewayServiceAccount, Namespace: releaseNamespace()}},
+		Subjects:   []rbacv1.Subject{{Kind: "ServiceAccount", Name: gatewayServiceAccount, Namespace: releaseNamespace(t)}},
 	}
 	_, err := admin.RbacV1().RoleBindings(namespace).Create(t.Context(), binding, metav1.CreateOptions{})
 	require.NoError(t, err)

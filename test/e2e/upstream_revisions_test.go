@@ -25,7 +25,7 @@ func revisionTemplate(t *testing.T, kube client.Client, mode string) string {
 
 	name := "e2e-rev-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        "per-user",
 			StartTimeout: &metav1.Duration{Duration: enableTimeout},

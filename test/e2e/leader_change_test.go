@@ -22,8 +22,8 @@ import (
 // leaderPod returns the name of the gateway pod holding the runtime Lease,
 // or "" when nobody holds it. The holder identity is the pod's hostname, an
 // underscore and a UUID.
-func leaderPod(ctx context.Context, admin *kubernetes.Clientset) (string, error) {
-	lease, err := admin.CoordinationV1().Leases(releaseNamespace()).Get(ctx, runtime.LeaseName, metav1.GetOptions{})
+func leaderPod(ctx context.Context, admin *kubernetes.Clientset, namespace string) (string, error) {
+	lease, err := admin.CoordinationV1().Leases(namespace).Get(ctx, runtime.LeaseName, metav1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -88,11 +88,11 @@ func runningLeader(t *testing.T, admin *kubernetes.Clientset) string {
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var err error
 
-		leader, err = leaderPod(t.Context(), admin)
+		leader, err = leaderPod(t.Context(), admin, releaseNamespace(t))
 		require.NoError(collect, err)
 		require.NotEmpty(collect, leader, "a gateway replica holds the runtime Lease")
 
-		pod, err := admin.CoreV1().Pods(releaseNamespace()).Get(t.Context(), leader, metav1.GetOptions{})
+		pod, err := admin.CoreV1().Pods(releaseNamespace(t)).Get(t.Context(), leader, metav1.GetOptions{})
 		require.NoError(collect, err, "the Lease holder is a pod that exists")
 		assert.Nil(collect, pod.DeletionTimestamp, "the Lease holder is not being deleted")
 		assert.Equal(collect, corev1.PodRunning, pod.Status.Phase)
@@ -102,7 +102,9 @@ func runningLeader(t *testing.T, admin *kubernetes.Clientset) string {
 }
 
 func TestLeaderChangeRecovery(t *testing.T) {
-	// Serial: it kills the leader.
+	// It kills or restarts gateway pods, so it runs on its own install.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{})
 	admin := adminClient(t)
 
 	t.Run("the leader deletes an instance namespace with no instance row", func(t *testing.T) {
@@ -113,7 +115,7 @@ func TestLeaderChangeRecovery(t *testing.T) {
 	t.Run("after the leader is killed the new leader deletes orphans", func(t *testing.T) {
 		leader := runningLeader(t, admin)
 
-		require.NoError(t, admin.CoreV1().Pods(releaseNamespace()).Delete(t.Context(), leader,
+		require.NoError(t, admin.CoreV1().Pods(releaseNamespace(t)).Delete(t.Context(), leader,
 			metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}))
 
 		// Created after the old leader was killed, so only a new leader can
@@ -121,7 +123,7 @@ func TestLeaderChangeRecovery(t *testing.T) {
 		name := orphanNamespace(t, admin, "00000000000000000000000000e2e117")
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
-			current, err := leaderPod(t.Context(), admin)
+			current, err := leaderPod(t.Context(), admin, releaseNamespace(t))
 			require.NoError(collect, err)
 			assert.NotEmpty(collect, current)
 			assert.NotEqual(collect, leader, current, "another replica takes the Lease")

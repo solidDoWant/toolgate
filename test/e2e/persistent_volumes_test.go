@@ -75,7 +75,7 @@ func volumeTemplate(t *testing.T, kube client.Client, prefix, storageClass strin
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(collect, kube.Get(t.Context(), client.ObjectKey{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(collect, kube.Get(t.Context(), client.ObjectKey{Namespace: releaseNamespace(t), Name: name}, &template))
 
 		template.Spec.Start = catalog.StartOnEnable
 		template.Spec.PersistentVolumes = []v1alpha1.PersistentVolume{{Name: volumeName, Size: "100Mi", StorageClassName: storageClass}}
@@ -297,7 +297,7 @@ func TestPersistentVolumeSurvivesCrash(t *testing.T) {
 		result := callServerTool(t.Context(), alice.session, gateway.ToolDisableServer, name)
 		require.Empty(t, result.err)
 
-		require.NoError(t, admin.CoreV1().Pods(releaseNamespace()).Delete(t.Context(), leader,
+		require.NoError(t, admin.CoreV1().Pods(releaseNamespace(t)).Delete(t.Context(), leader,
 			metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}))
 
 		requireVolumesReleased(t, admin, name)
@@ -381,7 +381,7 @@ func TestPersistentVolumeCleanup(t *testing.T) {
 		name, _, pvName := startedVolume(t, "e2e-pv-tmpl")
 
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(t, kube.Get(t.Context(), client.ObjectKey{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(t, kube.Get(t.Context(), client.ObjectKey{Namespace: releaseNamespace(t), Name: name}, &template))
 		require.NoError(t, kube.Delete(t.Context(), &template))
 
 		requirePVGone(t, admin, pvName, "the volume of a deleted template is deleted")

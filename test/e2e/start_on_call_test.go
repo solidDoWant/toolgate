@@ -25,7 +25,7 @@ func declareTools(t *testing.T, name, start string, tools ...string) {
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 
 		template.Spec.Start = start
 		template.Spec.DeclaredTools = nil

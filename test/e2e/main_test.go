@@ -101,7 +101,11 @@ func userScopeDefaults(databaseURL string) (func(context.Context, string) error,
 	}
 
 	return func(ctx context.Context, subject string) error {
-		return store.EnsureUserScope(ctx, pool, subject)
+		if err := store.EnsureUserScope(ctx, pool, subject); err != nil {
+			return err
+		}
+
+		return ensureExtraUserScopes(ctx, subject)
 	}, pool.Close, nil
 }
 

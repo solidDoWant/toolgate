@@ -96,7 +96,7 @@ func createApprovalTemplate(t *testing.T) string {
 
 	name := "e2e-timeout-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        "per-user",
 			StartTimeout: &metav1.Duration{Duration: enableTimeout},
@@ -182,7 +182,9 @@ func TestApprovalTimeout(t *testing.T) {
 }
 
 func TestApprovalWaitReplicaDies(t *testing.T) {
-	// Serial: it kills a gateway pod.
+	// It kills or restarts gateway pods, so it runs on its own install.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{})
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 
@@ -208,7 +210,7 @@ func TestApprovalWaitReplicaDies(t *testing.T) {
 
 	requireWaiting(t, alice)
 
-	require.NoError(t, admin.CoreV1().Pods(releaseNamespace()).Delete(t.Context(), waiter,
+	require.NoError(t, admin.CoreV1().Pods(releaseNamespace(t)).Delete(t.Context(), waiter,
 		metav1.DeleteOptions{GracePeriodSeconds: ptr.To[int64](0)}))
 
 	// The client may try to resume the dead replica's stream; stop it.

@@ -94,7 +94,7 @@ func TestTemplateSecretSharedInstance(t *testing.T) {
 
 	name := "e2e-template-secret-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        "shared",
 			Namespace:    "shared",
@@ -175,7 +175,7 @@ func TestTemplateSecretsRBACConfinedToNamespace(t *testing.T) {
 		_ = admin.CoreV1().Namespaces().Delete(context.WithoutCancel(t.Context()), instanceNamespace, metav1.DeleteOptions{})
 	})
 
-	user := "system:serviceaccount:" + releaseNamespace() + ":" + gatewayServiceAccount
+	user := "system:serviceaccount:" + releaseNamespace(t) + ":" + gatewayServiceAccount
 
 	tests := []struct {
 		name      string
@@ -184,7 +184,7 @@ func TestTemplateSecretsRBACConfinedToNamespace(t *testing.T) {
 	}{
 		{"template secrets namespace", namespace, true},
 		// The release namespace is also the catalog namespace here.
-		{"gateway and catalog namespace", releaseNamespace(), false},
+		{"gateway and catalog namespace", releaseNamespace(t), false},
 		{"shared namespace", e2eSharedNamespace, false},
 		{"instance namespace", instanceNamespace, false},
 	}

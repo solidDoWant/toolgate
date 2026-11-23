@@ -98,7 +98,7 @@ func TestSharedNamespaceSecretsAreDeleted(t *testing.T) {
 	t.Run("stopping a shared-namespace instance deletes its Secret", func(t *testing.T) {
 		name := "e2e-shared-ns-" + rand.String(5)
 		template := &v1alpha1.MCPServerTemplate{
-			ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+			ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 			Spec: v1alpha1.MCPServerTemplateSpec{
 				Scope:        "shared",
 				Namespace:    "shared",

@@ -32,7 +32,7 @@ func TestTimeScaleMatchesGateway(t *testing.T) {
 	}
 
 	admin := adminClient(t)
-	deployment, err := admin.AppsV1().Deployments(releaseNamespace()).Get(t.Context(), gatewayDeployment, metav1.GetOptions{})
+	deployment, err := admin.AppsV1().Deployments(releaseNamespace(t)).Get(t.Context(), gatewayDeployment, metav1.GetOptions{})
 	require.NoError(t, err)
 
 	var gatewayValue string

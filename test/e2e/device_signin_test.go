@@ -60,7 +60,7 @@ func TestDeviceSignInFromAWorkspace(t *testing.T) {
 	// A server only this user may use.
 	name := "e2e-device-" + rand.String(5)
 	template := &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        "per-session",
 			StartTimeout: &metav1.Duration{Duration: enableTimeout},

@@ -28,8 +28,8 @@ const embeddingsComponentSelector = "app.kubernetes.io/component=embeddings"
 
 // embeddingsReplicas returns the desired and ready replicas of the bundled
 // embeddings server's Deployment.
-func embeddingsReplicas(ctx context.Context, t require.TestingT, admin *kubernetes.Clientset) (desired, ready int32) {
-	deployments, err := admin.AppsV1().Deployments(releaseNamespace()).List(ctx, metav1.ListOptions{LabelSelector: embeddingsComponentSelector})
+func embeddingsReplicas(ctx context.Context, t require.TestingT, admin *kubernetes.Clientset, namespace string) (desired, ready int32) {
+	deployments, err := admin.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{LabelSelector: embeddingsComponentSelector})
 	require.NoError(t, err)
 	require.Len(t, deployments.Items, 1)
 
@@ -49,7 +49,7 @@ func searchEmbeddingErrors(t *testing.T, admin *kubernetes.Clientset, reason str
 	var total float64
 
 	for _, pod := range gatewayPods(t, admin) {
-		body, err := admin.CoreV1().Pods(releaseNamespace()).ProxyGet("http", pod, "9090", "metrics", nil).DoRaw(t.Context())
+		body, err := admin.CoreV1().Pods(releaseNamespace(t)).ProxyGet("http", pod, "9090", "metrics", nil).DoRaw(t.Context())
 		require.NoError(t, err)
 
 		prefix := `toolgate_tool_search_embedding_errors_total{reason="` + reason + `",use="query"} `
@@ -88,7 +88,10 @@ func searchTools(t *testing.T, session *gatewaySession, query string) gateway.Fi
 }
 
 func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
-	// Serial: it watches the one shared embeddings server scale, so no other test may use tool search meanwhile.
+	// It watches an embeddings server scale, so it runs on its own install with its own server.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{Embeddings: true})
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
@@ -106,7 +109,7 @@ func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
 		t.Helper()
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
-			desired, _ := embeddingsReplicas(t.Context(), collect, admin)
+			desired, _ := embeddingsReplicas(t.Context(), collect, admin, releaseNamespace(t))
 			assert.Zero(collect, desired, "the embeddings server is scaled down once tool search is idle")
 		}, deadline, time.Second)
 	}
@@ -137,7 +140,7 @@ func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
 
 		t.Run("the server starts, and once it is ready a search is not degraded", func(t *testing.T) {
 			require.EventuallyWithT(t, func(collect *assert.CollectT) {
-				desired, _ := embeddingsReplicas(t.Context(), collect, admin)
+				desired, _ := embeddingsReplicas(t.Context(), collect, admin, releaseNamespace(t))
 				assert.EqualValues(collect, 1, desired)
 			}, deadline, time.Second)
 
@@ -159,7 +162,7 @@ func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
 			connectGatewayWithHeader(t, endpoint, "alice", "e2e-"+rand.String(8), toolSearch)
 
 			require.EventuallyWithT(t, func(collect *assert.CollectT) {
-				desired, _ := embeddingsReplicas(t.Context(), collect, admin)
+				desired, _ := embeddingsReplicas(t.Context(), collect, admin, releaseNamespace(t))
 				assert.EqualValues(collect, 1, desired)
 			}, deadline, time.Second)
 		})

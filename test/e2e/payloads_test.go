@@ -142,7 +142,10 @@ func auditEventLinks(t *testing.T, browser context.Context, publicURL, server st
 }
 
 func TestAuditPayloads(t *testing.T) {
-	// Serial: it upgrades the chart with new settings.
+	// It upgrades the chart with new settings, so it runs on its own install.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{})
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -155,13 +158,13 @@ func TestAuditPayloads(t *testing.T) {
 	_, err := s3Client.CreateBucket(t.Context(), &s3.CreateBucketInput{Bucket: aws.String(bucket)})
 	require.NoError(t, err)
 
-	_, err = admin.CoreV1().Secrets(releaseNamespace()).Create(t.Context(), &corev1.Secret{
+	_, err = admin.CoreV1().Secrets(releaseNamespace(t)).Create(t.Context(), &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: payloadSecretName},
 		StringData: map[string]string{"accessKeyID": accessKey, "secretAccessKey": secretKey},
 	}, metav1.CreateOptions{})
 	if err != nil {
-		require.NoError(t, admin.CoreV1().Secrets(releaseNamespace()).Delete(t.Context(), payloadSecretName, metav1.DeleteOptions{}))
-		_, err = admin.CoreV1().Secrets(releaseNamespace()).Create(t.Context(), &corev1.Secret{
+		require.NoError(t, admin.CoreV1().Secrets(releaseNamespace(t)).Delete(t.Context(), payloadSecretName, metav1.DeleteOptions{}))
+		_, err = admin.CoreV1().Secrets(releaseNamespace(t)).Create(t.Context(), &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: payloadSecretName},
 			StringData: map[string]string{"accessKeyID": accessKey, "secretAccessKey": secretKey},
 		}, metav1.CreateOptions{})
@@ -170,13 +173,13 @@ func TestAuditPayloads(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Cleanup(func() {
-		_ = admin.CoreV1().Secrets(releaseNamespace()).Delete(context.WithoutCancel(t.Context()), payloadSecretName, metav1.DeleteOptions{})
+		_ = admin.CoreV1().Secrets(releaseNamespace(t)).Delete(context.WithoutCancel(t.Context()), payloadSecretName, metav1.DeleteOptions{})
 	})
 
 	upgrade := func(t *testing.T, payloads bool) {
 		t.Helper()
 
-		helmCommand(t, "upgrade", "toolgate", chartDir, "--namespace", releaseNamespace(), "--reuse-values",
+		helmCommand(t, "upgrade", "toolgate", chartDir, "--namespace", releaseNamespace(t), "--reuse-values",
 			"--set", fmt.Sprintf("config.audit.payloads=%t", payloads),
 			"--set", "config.audit.s3.endpoint="+getenv("TOOLGATE_E2E_S3_ENDPOINT"),
 			"--set", "config.audit.s3.region=us-east-1",
@@ -185,15 +188,6 @@ func TestAuditPayloads(t *testing.T) {
 			"--set", "config.audit.s3.existingSecret="+payloadSecretName,
 			"--wait", "--timeout", "5m")
 	}
-
-	// Leave the release as it was found.
-	t.Cleanup(func() {
-		helmCommand(t, "upgrade", "toolgate", chartDir, "--namespace", releaseNamespace(), "--reuse-values",
-			"--set", "config.audit.payloads=false", "--set", "config.audit.s3.bucket=",
-			"--set", "config.audit.s3.endpoint=", "--set", "config.audit.s3.region=",
-			"--set", "config.audit.s3.pathStyle=false", "--set", "config.audit.s3.existingSecret=",
-			"--wait", "--timeout", "5m")
-	})
 
 	echo := func(t *testing.T, text string) *mcp.CallToolResult {
 		t.Helper()

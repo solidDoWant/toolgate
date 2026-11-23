@@ -72,7 +72,7 @@ type jobObservation struct {
 func (o *jobObservation) observe(t *testing.T, admin *kubernetes.Clientset, stop <-chan struct{}) {
 	t.Helper()
 
-	namespace := releaseNamespace()
+	namespace := releaseNamespace(t)
 	started := time.Now().Add(-time.Second)
 	ctx, cancel := context.WithCancel(context.WithoutCancel(t.Context()))
 
@@ -129,11 +129,14 @@ func (o *jobObservation) observe(t *testing.T, admin *kubernetes.Clientset, stop
 }
 
 func TestSeparateMigrationCredential(t *testing.T) {
-	// Serial: it changes the chart settings.
+	// It changes the chart settings, so it runs on its own install.
+	t.Parallel()
+	install := installGateway(t, gatewayInstallOptions{})
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
-	namespace := releaseNamespace()
+	namespace := install.Namespace
 
 	// The database host, and the namespace of the PostgreSQL pod, come from
 	// the connection string the harness gave the gateway.
@@ -195,12 +198,6 @@ func TestSeparateMigrationCredential(t *testing.T) {
 	raw, err := yaml.Marshal(splitValues)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(splitFile, raw, 0o600))
-
-	// Whatever happens, leave the release as the harness installed it.
-	t.Cleanup(func() {
-		helmCommand(t, "upgrade", releaseName, chartDir, "--namespace", namespace, "--reset-values",
-			"--values", harnessFile, "--wait", "--timeout", "5m")
-	})
 
 	upgrade := func(extra ...string) *jobObservation {
 		observation := &jobObservation{}

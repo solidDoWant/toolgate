@@ -41,7 +41,10 @@ func connectThroughReplicas(t *testing.T, user string, endpoints []*url.URL) (*m
 }
 
 func TestStatefulServerKeepsOneUpstreamSessionAcrossReplicas(t *testing.T) {
-	// Serial: it counts sessions across both gateway replicas.
+	// Its own install, so no other test adds sessions to the replicas it counts.
+	t.Parallel()
+	installGateway(t, gatewayInstallOptions{})
+
 	kube := templateClient(t)
 	admin := adminClient(t)
 

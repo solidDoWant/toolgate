@@ -100,7 +100,7 @@ func requireTemplateInvalid(t *testing.T, kube client.Client, name, want string)
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		var template v1alpha1.MCPServerTemplate
-		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(), Name: name}, &template))
+		require.NoError(collect, kube.Get(t.Context(), types.NamespacedName{Namespace: releaseNamespace(t), Name: name}, &template))
 
 		condition := meta.FindStatusCondition(template.Status.Conditions, catalog.ConditionValid)
 		require.NotNil(collect, condition)
@@ -115,7 +115,7 @@ func exchangeTemplate(t *testing.T, name, image, exchange string) *v1alpha1.MCPS
 	t.Helper()
 
 	return &v1alpha1.MCPServerTemplate{
-		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(), Name: name},
+		ObjectMeta: metav1.ObjectMeta{Namespace: releaseNamespace(t), Name: name},
 		Spec: v1alpha1.MCPServerTemplateSpec{
 			Scope:        "per-user",
 			Start:        catalog.StartOnEnable,
@@ -219,7 +219,7 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 	endpoint.Refuse("carol", "invalid_grant")
 
 	name := "e2e-exchange-" + rand.String(5)
-	exchange := createTokenExchange(t, kube, releaseNamespace(), name, tokenURL("/token"))
+	exchange := createTokenExchange(t, kube, releaseNamespace(t), name, tokenURL("/token"))
 
 	template := exchangeTemplate(t, name, image, name)
 	require.NoError(t, kube.Create(t.Context(), template))
@@ -233,7 +233,7 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 
 	t.Run("an exchange to a URL that isn't allowed or in another namespace is never used", func(t *testing.T) {
 		denied := name + "-denied"
-		createTokenExchange(t, kube, releaseNamespace(), denied, tokenURL("/not-allowed"))
+		createTokenExchange(t, kube, releaseNamespace(t), denied, tokenURL("/not-allowed"))
 
 		deniedTemplate := exchangeTemplate(t, denied, image, denied)
 		require.NoError(t, kube.Create(t.Context(), deniedTemplate))
@@ -248,7 +248,7 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 		elsewhereTemplate := exchangeTemplate(t, elsewhere, image, elsewhere)
 		require.NoError(t, kube.Create(t.Context(), elsewhereTemplate))
 		t.Cleanup(func() { _ = kube.Delete(context.WithoutCancel(t.Context()), elsewhereTemplate) })
-		requireTemplateInvalid(t, kube, elsewhere, "doesn't exist in namespace "+releaseNamespace())
+		requireTemplateInvalid(t, kube, elsewhere, "doesn't exist in namespace "+releaseNamespace(t))
 
 		assert.NotContains(t, listedTools(t, t.Context(), alice.session), denied+"__echo")
 		assert.Empty(t, endpoint.Requests(), "the token endpoint receives nothing")
@@ -332,6 +332,6 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 		}, enableTimeout, 3*time.Second)
 
 		require.NoError(t, kube.Delete(t.Context(), exchange))
-		requireTemplateInvalid(t, kube, name, "doesn't exist in namespace "+releaseNamespace())
+		requireTemplateInvalid(t, kube, name, "doesn't exist in namespace "+releaseNamespace(t))
 	})
 }

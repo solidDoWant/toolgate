@@ -30,7 +30,7 @@ func objectFailureBound() time.Duration {
 func gatewayQuery(t *testing.T, admin *kubernetes.Clientset, sql string) string {
 	t.Helper()
 
-	secret, err := admin.CoreV1().Secrets(releaseNamespace()).Get(t.Context(), "toolgate-database", metav1.GetOptions{})
+	secret, err := admin.CoreV1().Secrets(releaseNamespace(t)).Get(t.Context(), "toolgate-database", metav1.GetOptions{})
 	require.NoError(t, err)
 
 	database, err := url.Parse(string(secret.Data["url"]))
