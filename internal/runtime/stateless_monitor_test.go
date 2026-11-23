@@ -33,6 +33,8 @@ type statelessUpstream struct {
 	refuseDiscover atomic.Bool
 	// discoverGate is held for reading by each `server/discover`.
 	discoverGate sync.RWMutex
+	// gated counts the `server/discover` requests waiting on discoverGate.
+	gated atomic.Int32
 
 	mu        sync.Mutex
 	methods   []string
@@ -73,8 +75,10 @@ func newStatelessUpstream(t *testing.T) *statelessUpstream {
 
 		switch method {
 		case "server/discover":
+			upstream.gated.Add(1)
 			upstream.discoverGate.RLock()
 			upstream.discoverGate.RUnlock()
+			upstream.gated.Add(-1)
 
 			if upstream.refuseDiscover.Load() {
 				upstream.record(method)
@@ -234,7 +238,9 @@ func TestStatelessMonitorFailsAfterThreeFailedDiscovers(t *testing.T) {
 
 func TestStatelessMonitorRelistsOnceAfterTheListenRequestEnds(t *testing.T) {
 	upstream := newStatelessUpstream(t)
-	healthRows := monitorStateless(t, upstream, 20*time.Millisecond)
+	// The interval also bounds each health check, so a short one makes
+	// three slow checks on a loaded machine fail the instance.
+	healthRows := monitorStateless(t, upstream, 250*time.Millisecond)
 
 	// The re-list that follows the first connect has run.
 	require.Eventually(t, func() bool {
@@ -246,6 +252,13 @@ func TestStatelessMonitorRelistsOnceAfterTheListenRequestEnds(t *testing.T) {
 	// No health check runs between the end of the listen request and the
 	// tool change, so the change is made while nothing listens.
 	upstream.discoverGate.Lock()
+
+	// A health check that already passed the gate could see the ended
+	// listen request and re-list before the tool is added. Once one waits
+	// at the gate, the monitor has finished its earlier check.
+	require.Eventually(t, func() bool { return upstream.gated.Load() > 0 },
+		10*time.Second, time.Millisecond, "a health check waits at the gate")
+
 	upstream.endListen()
 	upstream.addTool("two")
 	upstream.discoverGate.Unlock()
