@@ -23,6 +23,8 @@ import (
 const startDelay = 20 * time.Second
 
 func TestToolCatalog(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)

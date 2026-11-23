@@ -44,11 +44,30 @@ func run(ctx context.Context, stdin string, name string, args ...string) (string
 	return output.String(), err
 }
 
+// harnessKubeconfig returns the kubeconfig of the cluster scripts/e2e/run.sh
+// made, whose chart already installed the CRDs, or "" outside that harness.
+// The test only dry-runs creates, so sharing that cluster changes nothing.
+func harnessKubeconfig() string {
+	if os.Getenv("TOOLGATE_E2E_NAMESPACE") == "" {
+		return ""
+	}
+
+	return os.Getenv("KUBECONFIG")
+}
+
 // kindCluster returns a kubeconfig for a kind cluster with the toolgate CRDs
-// applied. It creates the cluster if it doesn't exist, and then deletes it
-// when the test ends.
+// applied: the harness's cluster when there is one. Otherwise it creates the
+// cluster if it doesn't exist, and then deletes it when the test ends.
 func kindCluster(t *testing.T) string {
 	t.Helper()
+
+	if kubeconfig := harnessKubeconfig(); kubeconfig != "" {
+		if _, err := exec.LookPath("kubectl"); err != nil {
+			t.Skipf("kubectl is not installed: %v", err)
+		}
+
+		return kubeconfig
+	}
 
 	for _, tool := range []string{"kind", "kubectl", "docker"} {
 		if _, err := exec.LookPath(tool); err != nil {

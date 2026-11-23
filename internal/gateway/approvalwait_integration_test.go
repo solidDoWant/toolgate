@@ -280,7 +280,7 @@ func TestApprovalElicitation(t *testing.T) {
 	})
 }
 
-// This test is not parallel: it sets a package-wide approval hook or interval.
+// Runs serially: it sets a process-wide wait interval that parallel tests also read.
 func TestApprovalWait(t *testing.T) {
 	t.Run("a denial fails the waiting call", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)

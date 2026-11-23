@@ -54,7 +54,7 @@ The e2e tests are built with the `e2e` tag too, so they read the same scale. To 
 
 ## Parallel and serial tests
 
-All tests run on one cluster. A test that can share the cluster calls `t.Parallel()` and uses only what it creates: namespaces, servers, users and names that no other test uses. Go runs the serial tests first, one at a time, and then runs all parallel tests together. A test stays serial when it changes state that every test sees, or when it binds a fixed address. For example: it restarts or upgrades the gateway, changes the chart's settings, uninstalls the chart, or serves the test resolver, token endpoint, SPIFFE bundle or web UI proxy on its fixed port. Use `go test -parallel N` to limit the number of parallel tests.
+All tests run on one cluster. A test that can share the cluster calls `t.Parallel()` and uses only what it creates: namespaces, servers, users and names that no other test uses. Go runs the serial tests first, one at a time, and then runs all parallel tests together. A test stays serial when it changes state that every test sees, when it kills the leader or a gateway pod, or when it needs a fixed address that more than one test uses. For example: it restarts or upgrades the gateway, changes the chart's settings, uninstalls the chart, or serves the web UI proxy on its fixed port. A test that is the only user of a fixed address (the test resolver, the token endpoint, the SPIFFE bundle) can still run in parallel. The CRD validation test uses the harness cluster, with server-side dry runs, instead of making its own. Use `go test -parallel N` to limit the number of parallel tests.
 
 ## In CI
 
