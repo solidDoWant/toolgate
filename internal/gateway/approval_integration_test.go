@@ -74,9 +74,8 @@ func pendingMessage(id string) string {
 	return fmt.Sprintf("Tool `github__echo` needs approval. Approve request `%s` at %s%s, then call the tool again with the same arguments.", id, approvalBaseURL, id)
 }
 
+// Runs serially: it sets a process-wide test hook that parallel tests would also trigger.
 func TestApprovalRequest(t *testing.T) {
-	t.Parallel()
-
 	t.Run("a call needing approval inserts a pending approval, writes approval.request and refuses with the link", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
@@ -319,9 +318,8 @@ func TestApprovalPendingLimit(t *testing.T) {
 	}
 }
 
+// Runs serially: it sets a process-wide test hook that parallel tests would also trigger.
 func TestApprovalUseRechecks(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name   string
 		change func(t *testing.T, fixture *approvalFixture)
