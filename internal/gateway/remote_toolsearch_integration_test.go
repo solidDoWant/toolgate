@@ -62,6 +62,8 @@ func (f *mcpFixture) rebuildSearchRows(t *testing.T, template *v1alpha1.MCPServe
 }
 
 func TestRemoteServerToolsInListAndSearch(t *testing.T) {
+	t.Parallel()
+
 	t.Run("declared tools are listed and searchable before any enable", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addRemoteTemplate("mail-archiver")

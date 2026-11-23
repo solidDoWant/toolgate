@@ -36,6 +36,8 @@ func unverifiedServerStatus(t *testing.T, client user, fixture *mcpFixture, name
 // a verified one does; the ones the workspace scope blocks are blocked with
 // the cause and the fix. Nothing about what is allowed changes.
 func TestUnverifiedSessionShowsBlockedServers(t *testing.T) {
+	t.Parallel()
+
 	const blockedReason = "not allowed in sessions without a verified workspace; set the default for unverified sessions (Workspaces page, or `toolgate workspace defaults --unverified …`), or allow it with `toolgate workspace allow --unverified <server>`"
 
 	setup := func(t *testing.T) *mcpFixture {

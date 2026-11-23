@@ -15,6 +15,8 @@ import (
 )
 
 func TestCatalogViewAccessPatterns(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addTemplate("public", "shared", v1alpha1.Access{Users: []string{"*"}, Environments: "any"})
 	fixture.addTemplate("company", "shared", v1alpha1.Access{Users: []string{"bob", "*@example.com"}, Groups: []string{"eng", "dev-*"}, Environments: "any"})

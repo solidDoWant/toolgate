@@ -83,6 +83,8 @@ func body(t *testing.T, response *http.Response) string {
 }
 
 func TestStepUpRedirectAsksForAFreshSignIn(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -99,6 +101,8 @@ func TestStepUpRedirectAsksForAFreshSignIn(t *testing.T) {
 }
 
 func TestStepUpUpdatesTheSession(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -128,6 +132,8 @@ func TestStepUpUpdatesTheSession(t *testing.T) {
 }
 
 func TestStepUpAsADifferentUserSignsOut(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -147,6 +153,8 @@ func TestStepUpAsADifferentUserSignsOut(t *testing.T) {
 }
 
 func TestStepUpWithoutASessionCreatesOne(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -165,6 +173,8 @@ func TestStepUpWithoutASessionCreatesOne(t *testing.T) {
 // A step-up whose auth_time is not fresh starts a new step-up once, then
 // shows the page.
 func TestStepUpRestartsOnceWhenTheSignInIsNotFresh(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -212,6 +222,8 @@ func TestStepUpRestartsOnceWhenTheSignInIsNotFresh(t *testing.T) {
 }
 
 func TestStepUpFailsClosedWithoutAuthTime(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnvWithIdP(t, "", toolgatetest.OIDCOptions{OmitAuthTime: true})
 	browser := env.browser(t)
 
@@ -242,6 +254,8 @@ func TestStepUpFailsClosedWithoutAuthTime(t *testing.T) {
 // POST past 5 minutes changes nothing and redirects to a step-up that
 // returns to the form.
 func TestStepUpFormAndSubmit(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 

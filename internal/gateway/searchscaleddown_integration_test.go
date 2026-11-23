@@ -23,6 +23,8 @@ import (
 // search ranks by words only without calling the endpoint, counts the skip as
 // scaled_down, records demand, and leaves the circuit closed.
 func TestFindToolsWhileEmbeddingsServerScaledDown(t *testing.T) {
+	t.Parallel()
+
 	var requests atomic.Int32
 
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

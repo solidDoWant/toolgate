@@ -17,6 +17,8 @@ import (
 )
 
 func TestSearchQualityInUse(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a call at rank 3 is a hit, a replaced search a re-search, an idle search no call, and no row holds the query", func(t *testing.T) {
 		metrics := toolruntime.NewMetrics()
 		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Metrics = metrics })

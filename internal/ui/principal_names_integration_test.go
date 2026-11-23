@@ -15,6 +15,8 @@ import (
 )
 
 func TestSessionsPageShowsPeopleInsteadOfSubjects(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	admin := env.insertSession(t, "admin-session", []string{"admins"})
 	hashed := "914009fed7908eb8fcb6d9435a3aa8d878cf45ec4470a94c688a25539b0125fb"
@@ -38,6 +40,8 @@ func TestSessionsPageShowsPeopleInsteadOfSubjects(t *testing.T) {
 }
 
 func TestSignInRecordsTheNewestDisplayFields(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 
 	signIn := func(user toolgatetest.OIDCUser) {

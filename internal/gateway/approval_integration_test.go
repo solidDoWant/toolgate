@@ -75,6 +75,8 @@ func pendingMessage(id string) string {
 }
 
 func TestApprovalRequest(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a call needing approval inserts a pending approval, writes approval.request and refuses with the link", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 
@@ -284,6 +286,8 @@ func TestApprovalRequest(t *testing.T) {
 }
 
 func TestApprovalPendingLimit(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		pending int
 		refused bool
@@ -316,6 +320,8 @@ func TestApprovalPendingLimit(t *testing.T) {
 }
 
 func TestApprovalUseRechecks(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		change func(t *testing.T, fixture *approvalFixture)

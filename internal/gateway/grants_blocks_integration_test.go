@@ -102,6 +102,8 @@ func (f *mcpFixture) insertBlock(t *testing.T, match v1alpha1.RuleMatch, reason 
 }
 
 func TestGrants(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a grant created on another replica lets the retry of a refused enable through, and the call records the grant", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
@@ -210,6 +212,8 @@ func TestGrants(t *testing.T) {
 }
 
 func TestTemporaryBlocks(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a temporary block made on one replica sends list_changed on every replica within 5 s and refuses calls with its reason", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)

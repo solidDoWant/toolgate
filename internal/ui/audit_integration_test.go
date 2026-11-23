@@ -82,6 +82,8 @@ func auditPageOf(t *testing.T, browser *http.Client, base string, query url.Valu
 }
 
 func TestAuditPageFilters(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
@@ -131,6 +133,8 @@ func TestAuditPageFilters(t *testing.T) {
 }
 
 func TestAuditPageTimeRangeLimit(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "audit-range", nil)
 	to := time.Now().UTC().Truncate(time.Second)
@@ -156,6 +160,8 @@ func TestAuditPageTimeRangeLimit(t *testing.T) {
 }
 
 func TestAuditPagePages(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "audit-paging", nil)
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -190,6 +196,8 @@ func TestAuditPagePages(t *testing.T) {
 }
 
 func TestAuditEventPage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
@@ -230,6 +238,8 @@ func TestAuditEventPage(t *testing.T) {
 }
 
 func TestAuditPagesNeedASession(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 	browser.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -255,6 +265,8 @@ func toolsInBrowser(ctx context.Context) []string {
 // In a browser, filtering the audit log by principal, workspace,
 // session, server, tool and time returns exactly the matching events.
 func TestAuditFilters(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.insertSession(t, "browser-audit", []string{"admins"})
 
@@ -347,6 +359,8 @@ func TestAuditFilters(t *testing.T) {
 }
 
 func TestAuditPageOutcomeAndCategoryFilters(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
@@ -392,6 +406,8 @@ func TestAuditPageOutcomeAndCategoryFilters(t *testing.T) {
 }
 
 func TestAuditPageShowsPeopleNotRawSubjects(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	hash := strings.Repeat("ab", 32)
@@ -413,6 +429,8 @@ func TestAuditPageShowsPeopleNotRawSubjects(t *testing.T) {
 }
 
 func TestAuditExportScopesToTheViewer(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
@@ -432,6 +450,8 @@ func TestAuditExportScopesToTheViewer(t *testing.T) {
 }
 
 func TestAuditPageFiltersByEventType(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	now := time.Now().UTC().Truncate(time.Microsecond)
 
@@ -468,6 +488,8 @@ func TestAuditPageFiltersByEventType(t *testing.T) {
 }
 
 func TestAuditPageShowsRemovableFilterChips(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	now := time.Now().UTC().Truncate(time.Microsecond)
 

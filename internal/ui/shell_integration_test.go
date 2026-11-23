@@ -42,6 +42,8 @@ func sidebarLinks(page string) []string {
 }
 
 func TestShell(t *testing.T) {
+	t.Parallel()
+
 	t.Run("the sidebar groups the pages, with Admin only for admins", func(t *testing.T) {
 		env := startUIEnv(t, "toolgate-admins")
 		admin, _ := env.adminBrowser(t)
@@ -130,6 +132,8 @@ func activeElement(ctx context.Context) (string, error) {
 }
 
 func TestNewBlockDialogWorksFromTheKeyboard(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "toolgate-admins")
 	ctx := openBrowserAsAdmin(t, env)
 
@@ -201,6 +205,8 @@ func TestNewBlockDialogWorksFromTheKeyboard(t *testing.T) {
 }
 
 func TestBlocksPageOnAPhone(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "toolgate-admins")
 	ctx := openBrowserAsAdmin(t, env)
 

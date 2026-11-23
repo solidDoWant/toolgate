@@ -87,6 +87,7 @@ func (f *mcpFixture) openStream(t *testing.T, client user, mcpSessionID string) 
 	}
 }
 
+// This test is not parallel: it compares process-wide goroutine counts.
 func TestMCPSessionIdleRelease(t *testing.T) {
 	const idleTimeout = 500 * time.Millisecond
 

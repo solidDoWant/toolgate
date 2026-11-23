@@ -108,6 +108,8 @@ func (f *mcpFixture) countSessions(t *testing.T) int {
 }
 
 func TestStatelessClient(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a 2026-07-28 client lists, enables, calls and disables on the stateless handler", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)

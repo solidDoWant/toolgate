@@ -156,6 +156,8 @@ func (s *refreshScene) newInstance(t *testing.T) db.Instance {
 }
 
 func TestRefreshAtHalfLifeKeepsSessionAndInstance(t *testing.T) {
+	t.Parallel()
+
 	scene := newRefreshScene(t)
 
 	// Before the half-life a call exchanges nothing.
@@ -182,6 +184,8 @@ func TestRefreshAtHalfLifeKeepsSessionAndInstance(t *testing.T) {
 }
 
 func TestOneRefreshPerHalfLife(t *testing.T) {
+	t.Parallel()
+
 	scene := newRefreshScene(t)
 	scene.makeRefreshDue(t)
 
@@ -213,6 +217,8 @@ func TestOneRefreshPerHalfLife(t *testing.T) {
 }
 
 func TestFailedRefreshKeepsTokenUntilExpiry(t *testing.T) {
+	t.Parallel()
+
 	scene := newRefreshScene(t)
 	scene.endpoint.refuse.Store("invalid_grant")
 	scene.makeRefreshDue(t)
@@ -258,6 +264,8 @@ func TestFailedRefreshKeepsTokenUntilExpiry(t *testing.T) {
 }
 
 func TestCallAfterExpiryStopStartsNewInstance(t *testing.T) {
+	t.Parallel()
+
 	scene := newRefreshScene(t)
 	scene.expire(t)
 
@@ -285,6 +293,8 @@ func TestCallAfterExpiryStopStartsNewInstance(t *testing.T) {
 }
 
 func TestRefusedRefreshThenRefusedStart(t *testing.T) {
+	t.Parallel()
+
 	scene := newRefreshScene(t)
 	scene.endpoint.refuse.Store("invalid_grant")
 
@@ -321,6 +331,8 @@ func TestRefusedRefreshThenRefusedStart(t *testing.T) {
 }
 
 func TestNoTokenInDatabaseLogsOrConditions(t *testing.T) {
+	t.Parallel()
+
 	scene := newRefreshScene(t)
 	scene.makeRefreshDue(t)
 	require.Equal(t, "hi", resultText(scene.echo(t)))

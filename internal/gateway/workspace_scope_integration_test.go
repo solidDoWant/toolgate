@@ -74,6 +74,8 @@ func serverNames(entries []gateway.ServerEntry) []string {
 }
 
 func TestWorkspaceScope(t *testing.T) {
+	t.Parallel()
+
 	everyone := v1alpha1.Access{Users: []string{"alice", "bob"}, Environments: "any"}
 
 	t.Run("an unverified session with no user_scopes row sees no servers, gets no tools and is refused an enable without a request", func(t *testing.T) {
@@ -197,6 +199,8 @@ func TestWorkspaceScope(t *testing.T) {
 }
 
 func TestWorkspaceScopeApprovalWait(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a call waiting for approval is refused with the step-4 message once the scope narrows, and the approval isn't used", func(t *testing.T) {
 		defer gateway.SetApprovalWaitInterval(100 * time.Millisecond)()
 

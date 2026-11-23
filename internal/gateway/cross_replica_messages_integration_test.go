@@ -142,6 +142,8 @@ func boundedCall(ctx context.Context, session *mcp.ClientSession, text string) c
 }
 
 func TestCrossReplicaMessages(t *testing.T) {
+	t.Parallel()
+
 	t.Run("an elicitation sent on one replica and answered on another reaches the waiting call", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 		asking, answering := mustParseURL(t, fixture.server.URL), mustParseURL(t, fixture.replica(t).URL)

@@ -16,6 +16,8 @@ import (
 )
 
 func TestCatalogViewCatalogDetails(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addTemplate("eng-only", "per-session", v1alpha1.Access{Groups: []string{"eng"}, Environments: "any"})
 	fixture.addTemplate("ops-only", "shared", v1alpha1.Access{Groups: []string{"ops"}, Environments: "any"})

@@ -70,6 +70,8 @@ func startGrants(t *testing.T) grantsFixture {
 var grantUser = auth.Identity{Principal: "erin", Groups: []string{"dev"}, Kind: auth.KindUser, Attestation: auth.AttestationUser}
 
 func TestGrantCreationRules(t *testing.T) {
+	t.Parallel()
+
 	fixture := startGrants(t)
 
 	_, err := db.New(fixture.pool).CreateSession(t.Context(), db.CreateSessionParams{
@@ -163,6 +165,8 @@ func TestGrantCreationRules(t *testing.T) {
 }
 
 func TestGrantableServers(t *testing.T) {
+	t.Parallel()
+
 	fixture := startGrants(t)
 
 	assert.Equal(t, []gateway.GrantableServer{
@@ -173,6 +177,8 @@ func TestGrantableServers(t *testing.T) {
 }
 
 func TestGrantLimit(t *testing.T) {
+	t.Parallel()
+
 	fixture := startGrants(t)
 
 	for index := range store.MaxLiveGrantsPerPrincipal {
@@ -210,6 +216,8 @@ func grantEvents(t *testing.T, pool *pgxpool.Pool, grantID string) []string {
 }
 
 func TestGrantCreateAndRevokeAreRecordedAndNotified(t *testing.T) {
+	t.Parallel()
+
 	fixture := startGrants(t)
 
 	listener := store.NewListener(fixture.pool, slog.New(slog.DiscardHandler))

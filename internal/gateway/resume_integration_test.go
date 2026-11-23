@@ -33,6 +33,8 @@ func (f *mcpFixture) stopInstance(t *testing.T, id string) {
 }
 
 func TestSessionResume(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a resume from the same workspace restores the set, starts an instance without an enable and sends the tools with list_changed", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
@@ -221,6 +223,8 @@ func TestSessionResume(t *testing.T) {
 }
 
 func TestSessionResumeInterrupted(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a restore that fails part-way leaves the session ended, and the next request restores every server once", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		github := fixture.addEnableTemplate("github", "per-session", anyone)

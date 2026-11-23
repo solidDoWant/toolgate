@@ -46,6 +46,8 @@ func databaseURLVariable(t *testing.T, variables []corev1.EnvVar) corev1.EnvVar 
 }
 
 func TestGatewayDatabaseURLSource(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]struct {
 		set       []string
 		wantValue string
@@ -101,6 +103,8 @@ func TestGatewayDatabaseURLSource(t *testing.T) {
 }
 
 func TestMigrationJobDatabaseURLSource(t *testing.T) {
+	t.Parallel()
+
 	base := []string{"config.database.migrateOnStart=false"}
 
 	tests := map[string]struct {

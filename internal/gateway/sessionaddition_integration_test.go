@@ -108,6 +108,8 @@ func attestedAliceIn(session string) user {
 }
 
 func TestSessionAdditions(t *testing.T) {
+	t.Parallel()
+
 	t.Run("without elicitation an enable inserts one server request, fails with the link, and finds the same request again", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
@@ -379,6 +381,8 @@ func (f *mcpFixture) requestStatus(t *testing.T, id string) string {
 }
 
 func TestServerRequestApprovalLimits(t *testing.T) {
+	t.Parallel()
+
 	limitError := func(message string) require.ErrorAssertionFunc {
 		return func(t require.TestingT, err error, _ ...any) {
 			var refusal *gateway.WorkspaceError

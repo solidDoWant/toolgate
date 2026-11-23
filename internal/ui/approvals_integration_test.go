@@ -110,6 +110,8 @@ func approvalID(n byte) string {
 }
 
 func TestApprovalsAreOwnerOnly(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	id := approvalID(0)
 	env.insertApproval(t, id, "erin", approvalTimeout)
@@ -135,6 +137,8 @@ func TestApprovalsAreOwnerOnly(t *testing.T) {
 }
 
 func TestApprovalsList(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.insertApproval(t, approvalID(0), "dave", approvalTimeout)
 	env.insertApproval(t, approvalID(1), "dave", -time.Second)
@@ -153,6 +157,8 @@ func TestApprovalsList(t *testing.T) {
 }
 
 func TestApprovalDetailSaysPayloadsAreOff(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	id := approvalID(0)
 	env.insertApproval(t, id, "dave", approvalTimeout)
@@ -168,6 +174,8 @@ func TestApprovalDetailSaysPayloadsAreOff(t *testing.T) {
 }
 
 func TestApprovalLinkWithoutSessionGoesToStepUp(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	id := approvalID(0)
 	browser := env.browser(t)
@@ -178,6 +186,8 @@ func TestApprovalLinkWithoutSessionGoesToStepUp(t *testing.T) {
 }
 
 func TestApproveNeedsAFreshStepUp(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	id := approvalID(0)
 	env.insertApproval(t, id, "dave", approvalTimeout)
@@ -201,6 +211,8 @@ func TestApproveNeedsAFreshStepUp(t *testing.T) {
 }
 
 func TestApproveAndDeny(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "decide-session", nil)
 	env.ageSignIn(t, "decide-session", time.Minute)
@@ -256,6 +268,8 @@ func TestApproveAndDeny(t *testing.T) {
 }
 
 func TestDecisionsShowTheRealStatus(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "race-session", nil)
 	env.ageSignIn(t, "race-session", 0)
@@ -305,6 +319,8 @@ func TestDecisionsShowTheRealStatus(t *testing.T) {
 }
 
 func TestApprovalsListShowsAccessRequests(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 	browser := env.insertSession(t, "ar-list-session", nil)
@@ -363,6 +379,8 @@ func TestApprovalsListShowsAccessRequests(t *testing.T) {
 }
 
 func TestSidebarApprovalCountFollowsDecisions(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "badge-session", nil)
 	env.ageSignIn(t, "badge-session", 0)

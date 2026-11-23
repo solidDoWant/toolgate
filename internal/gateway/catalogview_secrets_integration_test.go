@@ -16,6 +16,8 @@ import (
 )
 
 func TestRestartAfterSecretChange(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		secretSet bool

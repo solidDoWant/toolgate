@@ -106,6 +106,8 @@ func (f *mcpFixture) foundToolCount(t *testing.T) int {
 }
 
 func TestToolSearchMode(t *testing.T) {
+	t.Parallel()
+
 	t.Run("the header and the setting decide the mode on each request, and find_tools is only listed in search mode", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
@@ -298,6 +300,8 @@ func TestToolSearchMode(t *testing.T) {
 }
 
 func TestSearchNeverReturnsRefusedTools(t *testing.T) {
+	t.Parallel()
+
 	newFixture := func(t *testing.T) *mcpFixture {
 		t.Helper()
 
@@ -410,6 +414,8 @@ const (
 // TestToolSearchQuality runs the frozen fixture through the real rebuild
 // and the real search.
 func TestToolSearchQuality(t *testing.T) {
+	t.Parallel()
+
 	endpoint := testutil.StartEmbeddings(t)
 
 	embedder, err := embeddings.New(embeddings.Options{URL: endpoint.URL, Model: endpoint.Model, Timeout: 30 * time.Second})
@@ -426,6 +432,8 @@ func TestToolSearchQuality(t *testing.T) {
 // SEARCH_EVAL_EMBED_MODEL, and prints the scores and the misses. It never
 // fails on a score.
 func TestSearchEval(t *testing.T) {
+	t.Parallel()
+
 	url := os.Getenv("SEARCH_EVAL_EMBED_URL")
 	model := os.Getenv("SEARCH_EVAL_EMBED_MODEL")
 
@@ -553,6 +561,8 @@ func contains(values []string, want string) bool {
 // A failing embeddings endpoint never fails a search: it answers by words
 // and counts the failure.
 func TestToolSearchEmbeddingsEndpointDown(t *testing.T) {
+	t.Parallel()
+
 	var calls atomic.Int32
 
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -580,6 +590,8 @@ func TestToolSearchEmbeddingsEndpointDown(t *testing.T) {
 // vector, a tool that matches by words only still comes back, and the vector
 // order decides between tools that share no word.
 func TestToolSearchRanksByMeaning(t *testing.T) {
+	t.Parallel()
+
 	vectorOf := func(text string) []float32 {
 		switch {
 		case strings.Contains(text, "marine"), strings.Contains(text, "waves"):
@@ -653,6 +665,8 @@ const (
 // TestToolSearchNotes covers the notes of a degraded search and of an empty
 // result, and the circuit breaker that skips a failed endpoint.
 func TestToolSearchNotes(t *testing.T) {
+	t.Parallel()
+
 	var calls atomic.Int32
 
 	down := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -705,6 +719,8 @@ func TestToolSearchNotes(t *testing.T) {
 // A request writes its effective search mode to the session row: the header
 // first, else the setting, and a later request with another mode changes it.
 func TestSessionRecordsToolSearchMode(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 
 	stored := func(session string) bool {
@@ -740,6 +756,8 @@ func TestSessionRecordsToolSearchMode(t *testing.T) {
 var searchModeToolNames = append([]string{gateway.ToolFindTools}, metaToolNames...)
 
 func TestEnableDisableToolList(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		search string
@@ -794,6 +812,8 @@ func TestEnableDisableToolList(t *testing.T) {
 }
 
 func TestBlockedServerReasonInSearchMode(t *testing.T) {
+	t.Parallel()
+
 	fixture, _ := newScopedFixture(t)
 	fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -811,6 +831,8 @@ func TestBlockedServerReasonInSearchMode(t *testing.T) {
 // Starting a session stores the verified display fields of the user, and a
 // user whose email the IdP didn't verify gets no email stored.
 func TestSessionStartRecordsThePrincipalProfile(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 
 	profileOf := func(principal string) (email, name, username string, found bool) {

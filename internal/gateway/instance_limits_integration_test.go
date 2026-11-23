@@ -52,6 +52,8 @@ func (f *mcpFixture) requireLimitRefusal(t *testing.T, client user, name, limit 
 }
 
 func TestInstanceLimits(t *testing.T) {
+	t.Parallel()
+
 	t.Run("at the per-user limit a new instance is refused, reuse works, and other users are not affected", func(t *testing.T) {
 		fixture := newMCPFixture(t, withInstanceLimits(2, 200))
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -113,6 +115,8 @@ func TestInstanceLimits(t *testing.T) {
 }
 
 func TestInstanceLimitInteractions(t *testing.T) {
+	t.Parallel()
+
 	t.Run("two enables of different servers by one user at the per-user limit take the last slot once", func(t *testing.T) {
 		fixture := newMCPFixture(t, withInstanceLimits(1, 200))
 		github := fixture.addEnableTemplate("github", "per-user", anyone)
