@@ -155,6 +155,12 @@
           ];
 
           KUBEBUILDER_ASSETS = "${envtestAssets}";
+
+          # A fontconfig with one font for the headless Chromium of the browser
+          # tests. Without any, Chromium aborts on the first text it renders
+          # (Skia's font manager: "Not implemented"); the CI image, like any
+          # minimal container, has no system fonts.
+          FONTCONFIG_FILE = pkgs.makeFontsConf { fontDirectories = [ pkgs.dejavu_fonts ]; };
         });
       });
 }

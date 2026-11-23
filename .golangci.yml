@@ -1,7 +1,8 @@
 version: "2"
 
 run:
-  timeout: 5m
+  # CI runs lint next to every other stage on a shared CPU budget.
+  timeout: 10m
   build-tags:
     - integration
     - e2e

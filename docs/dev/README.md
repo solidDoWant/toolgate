@@ -45,11 +45,11 @@ If you set `PUSH_ALL=true`, the target also pushes both images and a multi-archi
 
 All the files go to `build/release/x.y.z/`.
 
-If you set `PUSH_ALL=true`, the script publishes the release. Before it builds, it stops if the working tree has changes, if `HEAD` is not on `origin/master`, or if the tag exists already. After the build, it creates the tag `x.y.z`, pushes the tag and creates the GitHub release with `gh`. The release notes are the `CHANGELOG.md` section, never the notes that GitHub generates. The release has the CLI binaries attached. A release candidate is marked as a pre-release.
+If you set `PUSH_ALL=true`, the script publishes the release. Before it builds, it stops if the working tree has changes, if `HEAD` is not on `origin/master`, or if the tag exists already (`vx.y.z`, or `x.y.z` as releases before 0.4.16 were tagged). After the build, it creates the tag `vx.y.z` and pushes it.
 
-The tag starts the `release` workflow (`.github/workflows/release.yml`). The workflow uses its own `GITHUB_TOKEN` to push the image `ghcr.io/soliddowant/toolgate:x.y.z` and the chart `oci://ghcr.io/soliddowant/charts/toolgate`. For a final version, it also tags the image `latest`. Only the release-manager agent publishes releases.
+The tag starts the Tekton release run (`.tekton/release.yaml`, infra-mk3's shared release Pipeline, with the `release` section of `ci.yaml`). The run pushes the image `ghcr.io/soliddowant/toolgate:x.y.z` and the chart `oci://ghcr.io/soliddowant/charts/toolgate`, and for a final version also tags the image `latest`. Then it builds the CLI binaries (`scripts/ci/build-release-assets.sh`) and creates the GitHub release `vx.y.z`. The release notes are the `CHANGELOG.md` section, never the notes that GitHub generates. The release has the CLI binaries and `checksums.txt` attached. A release candidate is marked as a pre-release. Only the release-manager agent publishes releases.
 
-`scripts/release_test.sh` tests the script in a copy of the repository with a local remote and a stub for `gh`. `make test` runs it.
+`scripts/release_test.sh` tests the script in a copy of the repository with a local remote and a stub for `gh`, which it must never call. `make test` runs it.
 
 ## The web UI's styles and components
 

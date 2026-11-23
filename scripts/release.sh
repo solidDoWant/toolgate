@@ -10,10 +10,12 @@
 #     amd64 and arm64 with their SHA-256 checksums;
 #  3. dry run: prints what a publish would do and stops;
 #  4. PUSH_ALL=true: refuses unless the tree is clean, HEAD is on
-#     origin/master and the tag is new; then tags HEAD, pushes the tag and
-#     creates the GitHub release with the CHANGELOG section as its notes and
-#     the CLI binaries attached. The tag's release workflow
-#     (.github/workflows/release.yml) pushes the image and the chart.
+#     origin/master and the tag is new; then tags HEAD v<VERSION> and pushes
+#     the tag. The tag starts the Tekton release run (.tekton/release.yaml,
+#     the shared release Pipeline with ci.yaml's `release`), which pushes the
+#     image and the chart, builds the CLI binaries again
+#     (scripts/ci/build-release-assets.sh) and creates the GitHub release with
+#     the CHANGELOG section as its notes and the binaries attached.
 #
 # Environment: VERSION (required), PUSH_ALL (default false).
 set -euo pipefail
@@ -23,7 +25,6 @@ version="${VERSION:-}"
 push_all="${PUSH_ALL:-false}"
 image="ghcr.io/soliddowant/toolgate"
 chart_repository="oci://ghcr.io/soliddowant/charts"
-platforms=(linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64)
 
 fail() {
 	echo "release: $*" >&2
@@ -63,10 +64,13 @@ if [[ "$push_all" == true ]]; then
 	[[ -z "$(git status --porcelain)" ]] || fail "the working tree is not clean; release only from a clean checkout"
 	git fetch --quiet origin master
 	git merge-base --is-ancestor HEAD origin/master || fail "HEAD is not on origin/master; release only from a commit on master"
-	if git rev-parse --quiet --verify "refs/tags/$version" >/dev/null ||
-		[[ -n "$(git ls-remote --tags origin "refs/tags/$version")" ]]; then
-		fail "tag $version already exists; a release is never replaced"
-	fi
+	# Releases before 0.4.16 were tagged without the v.
+	for tag in "v$version" "$version"; do
+		if git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null ||
+			[[ -n "$(git ls-remote --tags origin "refs/tags/$tag")" ]]; then
+			fail "tag $tag already exists; a release is never replaced"
+		fi
+	done
 fi
 
 echo "release: building the gateway image $image:$version"
@@ -78,32 +82,20 @@ helm package deploy/charts/toolgate --version "$version" --app-version "$version
 chart="$out_dir/toolgate-$version.tgz"
 [[ -f "$chart" ]] || fail "helm package wrote no $chart"
 
-assets=()
-for platform in "${platforms[@]}"; do
-	os="${platform%/*}"
-	arch="${platform#*/}"
-	name="toolgate-$os-$arch"
-	[[ "$os" == windows ]] && name="$name.exe"
-	echo "release: building $out_dir/bin/$name"
-	CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath \
-		-ldflags="-s -w -X github.com/solidDoWant/toolgate/internal/version.version=$version" \
-		-o "$out_dir/bin/$name" ./cmd/toolgate
-	assets+=("$out_dir/bin/$name")
-done
-(cd "$out_dir/bin" && sha256sum -- toolgate-*) >"$out_dir/bin/checksums.txt"
-assets+=("$out_dir/bin/checksums.txt")
+./scripts/ci/build-release-assets.sh "$version" "$out_dir/bin"
+assets=("$out_dir"/bin/toolgate-* "$out_dir/bin/checksums.txt")
 
-release_flags=(--latest)
+kind="latest release"
 if [[ "$version" == *-* ]]; then
-	release_flags=(--prerelease --latest=false)
+	kind="pre-release"
 fi
 
 echo
 echo "release: $version would publish:"
-echo "  tag:     $version on $(git rev-parse HEAD)"
-echo "  image:   $image:$version (linux/amd64, linux/arm64)$([[ "$version" == *-* ]] || echo ", and :latest") (by the release workflow)"
-echo "  chart:   $chart_repository/toolgate:$version (by the release workflow)"
-echo "  release: $version (${release_flags[*]}) with notes from $notes:"
+echo "  tag:     v$version on $(git rev-parse HEAD); the rest is the Tekton release run's"
+echo "  image:   $image:$version (linux/amd64, linux/arm64)$([[ "$version" == *-* ]] || echo ", and :latest")"
+echo "  chart:   $chart_repository/toolgate:$version"
+echo "  release: v$version ($kind) with notes from $notes:"
 sed 's/^/           | /' "$notes"
 echo "  assets:"
 for asset in "${assets[@]}"; do echo "           $asset"; done
@@ -114,7 +106,6 @@ if [[ "$push_all" != true ]]; then
 	exit 0
 fi
 
-git tag --annotate "$version" --message "toolgate $version"
-git push origin "refs/tags/$version"
-gh release create "$version" --verify-tag --title "$version" --notes-file "$notes" "${release_flags[@]}" "${assets[@]}"
-echo "release: published $version; the release workflow pushes the image and the chart"
+git tag --annotate "v$version" --message "toolgate $version"
+git push origin "refs/tags/v$version"
+echo "release: pushed tag v$version; the Tekton release run publishes the image, the chart and the GitHub release"

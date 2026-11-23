@@ -148,6 +148,10 @@ func TestAttestationKeyFileProblemsFallBackToUnverified(t *testing.T) {
 			require.NoError(t, os.Chmod(path, 0o644))
 		},
 		"unreadable": func(t *testing.T, path string) {
+			if os.Geteuid() == 0 {
+				t.Skip("root can read a file with mode 000 (CI stages run as root)")
+			}
+
 			_, err := loadOrCreateKey(path)
 			require.NoError(t, err)
 			require.NoError(t, os.Chmod(path, 0o000))

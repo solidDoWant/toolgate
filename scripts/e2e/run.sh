@@ -105,12 +105,18 @@ cleanup() {
 		log "a step failed; cluster state:"
 		kubectl get pods --all-namespaces -o wide >&2 || true
 		kubectl -n "$release_namespace" logs --all-containers --prefix --tail=100 -l app.kubernetes.io/name=toolgate >&2 || true
+		# Crash-looping system pods (Flux, kube-proxy) log why only before they restart.
+		kubectl -n flux-system logs --all-containers --prefix --tail=20 --previous -l app.kubernetes.io/part-of=flux >&2 || true
+		kubectl -n kube-system logs --all-containers --prefix --tail=20 --previous -l k8s-app=kube-proxy >&2 || true
 	fi
 	((${#lgtm_forwards[@]} == 0)) || kill "${lgtm_forwards[@]}" 2>/dev/null || true
 	if [[ "${E2E_KEEP_CLUSTER:-false}" == true ]]; then
 		log "keeping cluster $cluster (KUBECONFIG=$KUBECONFIG); delete it with: kind delete cluster --name $cluster"
 	else
 		kind delete cluster --name "$cluster" >&2 || true
+		# The images are tagged for this run only; without this they pile up
+		# in the Docker storage (and in CI's cached volume).
+		docker image rm "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >/dev/null 2>&1 || true
 		rm -rf "$work"
 	fi
 	exit "$status"
@@ -143,7 +149,15 @@ printf 'FROM scratch\nCOPY embeddingsserver /embeddingsserver\nCOPY embeddingsse
 docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
 
 log "creating kind cluster $cluster"
-kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
+if command -v ci-kind-config >/dev/null; then
+	# Tekton CI: the nodes pull through the CI cluster's registrygate and keep
+	# their image cache between builds, keyed by the cluster's name (ci.yaml
+	# gives each shard a fixed one).
+	ci-kind-config --name "$cluster" --image "$kind_node_image" |
+		kind create cluster --kubeconfig "$KUBECONFIG" --wait 3m --config=- >&2
+else
+	kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
+fi
 kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
 
 log "installing Flux"

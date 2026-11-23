@@ -1,0 +1,93 @@
+# CI for the shared Tekton Pipelines (infra-mk3's container images/ci-tools,
+# whose ci-config documents this format). Every stage runs at once, in the CI
+# image built from flake.nix.
+version: 1
+image:
+  inputs:
+    - path: go.mod
+      lines: '^(module|go|toolchain) '
+env:
+  # Each build's Docker is thrown away with its pod, so testcontainers' reaper
+  # (pulled from Docker Hub) isn't needed to clean up.
+  TESTCONTAINERS_RYUK_DISABLED: "true"
+# Files that cannot change what the build or the tests produce.
+not-code:
+  - "*.md"
+  - "docs/**"
+  - ".claude/**"
+  - "LICENSE"
+  - ".github/renovate.json5"
+  - ".github/renovate/**"
+stages:
+  lint:
+    run: make lint
+  generate:
+    run: make check-generate
+    own-tree: true
+  unit:
+    run: make test && make build
+  integration:
+    run: make test-integration
+  # The e2e tests in three shards (scripts/e2e/shard.py picks each shard's
+  # tests), each on its own kind cluster. A fixed cluster name per shard keeps
+  # its kind node's image cache between builds.
+  e2e-1:
+    run: E2E_SHARD=1/3 E2E_CLUSTER=toolgate-ci-1 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
+    kind: true
+  e2e-2:
+    run: E2E_SHARD=2/3 E2E_CLUSTER=toolgate-ci-2 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
+    kind: true
+  e2e-3:
+    run: E2E_SHARD=3/3 E2E_CLUSTER=toolgate-ci-3 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
+    kind: true
+  docs:
+    run: make docs-check
+    # The style report is advisory.
+    run-pull-request: make docs-check && { ./scripts/docs/style_report.sh origin/master || true; }
+    paths:
+      - "**/*.md"
+      - "scripts/docs/**"
+  scoreboard:
+    # The scoreboard's tests read the real checklist; the unit stage runs
+    # them too when code changed.
+    run: ./scripts/acceptance-scoreboard_test.py
+    paths:
+      - "docs/acceptance/**"
+    push: false
+  plugin:
+    # The Claude Code plugin and marketplace manifests, checked with a pinned
+    # Claude Code from npm. The dev shell has no Node, so it comes from this
+    # repository's locked nixpkgs. The package's postinstall script puts a
+    # native Linux binary in place (npm 11 runs it only with --allow-scripts),
+    # and that binary expects glibc's loader at the standard path, which the
+    # Nix-based CI image lacks, so the stage links the locked glibc's loader
+    # there.
+    run: >-
+      mkdir -p /lib64 &&
+      ln -sfn "$(nix build --inputs-from . --no-link --print-out-paths "nixpkgs#glibc^out")/lib/ld-linux-x86-64.so.2" /lib64/ld-linux-x86-64.so.2 &&
+      nix shell --inputs-from . nixpkgs#nodejs -c sh -c '
+      npm install --global --prefix "$XDG_CACHE_HOME/claude-code" --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@2.1.318 >/dev/null &&
+      PATH="$XDG_CACHE_HOME/claude-code/bin:$PATH" make plugin-check'
+    paths:
+      - "plugin/**"
+      - ".claude-plugin/**"
+      - "scripts/plugin-check.sh"
+      - "ci.yaml"
+  ui-screenshots:
+    # Renders every web UI page (PostgreSQL in Docker, Chromium from the dev
+    # shell), so a change that breaks a page fails here. CI keeps no files:
+    # run `make ui-screenshots` locally to look at them.
+    run: make ui-screenshots
+    paths:
+      - "internal/ui/**"
+    push: false
+test-guard: true
+release:
+  # The chart's `common` dependency is vendored into charts/ first, for
+  # `helm package`.
+  build: ./scripts/chart-deps.sh && make build-images VERSION="$RELEASE_VERSION" PUSH_ALL=true
+  images:
+    - ghcr.io/soliddowant/toolgate
+  charts:
+    - deploy/charts/toolgate
+  chart-registry: oci://ghcr.io/soliddowant/charts

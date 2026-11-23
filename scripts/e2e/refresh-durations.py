@@ -3,8 +3,9 @@
 
 Usage: refresh-durations.py [--output FILE] EVENTS.json...
 
-Reads the `go test -json` event files of the e2e shards of one CI run (the
-`go-e2e-shard-*.json` files in the `acceptance-results-*` artifacts). For
+Reads the `go test -json` event files of the three e2e shards (the
+`build/acceptance/results/go-e2e-shard-*.json` files that
+`E2E_SHARD=i/3 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh` writes). For
 each top-level test that passed or failed, it records the elapsed seconds.
 If a name appears more than once, it keeps the longest time. The output is a
 JSON object that maps a test name to seconds, sorted by name, and
