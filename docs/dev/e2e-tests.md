@@ -7,13 +7,13 @@ End-to-end (e2e) tests are Go tests with the `//go:build e2e` tag. They run agai
 ## Run the tests
 
 You need Docker and the dev shell. The dev shell gives `kind`, `kubectl`, `helm` and `flux`.
-
+- `make test-e2e` runs every e2e test (the packages `test/e2e`, `api` and `internal/testtime`). A test that hangs fails after 25 minutes (`E2E_TEST_TIMEOUT`) with a dump of its goroutines.
 - `make test-e2e` runs every e2e test.
 - `make acceptance` runs every acceptance test and prints the scoreboard for the phase checklist. An acceptance test is a test that a scenario names on its `Tests:` line in the checklist (`docs/acceptance/phase-N.md`). The line holds the package directory and the test name, for example `` `test/e2e: TestDenyAppliesAtOnce/workspace deny withdraws the tools` ``. To tie a test to a scenario, add it to the scenario's `Tests:` line. The scoreboard fails if a line names a test that does not exist, or if a scenario that is not manual or a release has no `Tests:` line. The test names in Go code carry no scenario IDs. The last line of the scoreboard gives the number of passing scenarios, for example `passing 3/30`.
 
 Both targets use `scripts/e2e/run.sh`. The script does these steps:
 
-1. It builds the gateway image from your checkout with `scripts/build-images.sh` and the `e2e` build tag (`GO_TAGS=e2e`). See [The test time scale](#the-test-time-scale).
+1. It builds, in the background while the cluster comes up, the gateway image from your checkout with `scripts/build-images.sh` and the `e2e` build tag (`GO_TAGS=e2e`). See [The test time scale](#the-test-time-scale).
 2. It builds the image of the test MCP server from `test/mcpserver`.
 3. It creates a kind cluster with a new name, `toolgate-<worktree>-<random>`, and loads the two images into it.
 4. It installs Flux.

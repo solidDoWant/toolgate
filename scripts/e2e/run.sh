@@ -131,22 +131,28 @@ postgres_image="$(pinned_image PostgresImage internal/testutil/postgres.go)"
 s3_image="$(pinned_image S3Image internal/testutil/s3.go)"
 [[ -n "$postgres_image" && -n "$s3_image" ]] || { log "cannot read the pinned images in internal/testutil"; exit 1; }
 
-log "building the e2e gateway image $gateway_repository:$image_tag"
-GO_TAGS=e2e VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
+build_images() {
+	log "building the e2e gateway image $gateway_repository:$image_tag"
+	GO_TAGS=e2e VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
 
-log "building the test MCP server image $mcpserver_image"
-mkdir -p "$work/mcpserver"
-CGO_ENABLED=0 go build -trimpath -o "$work/mcpserver/mcpserver" ./test/mcpserver
-printf 'FROM scratch\nCOPY mcpserver /mcpserver\nUSER 65532:65532\nEXPOSE 8080\nENTRYPOINT ["/mcpserver"]\n' >"$work/mcpserver/Dockerfile"
-docker build --quiet --tag "$mcpserver_image" "$work/mcpserver" >&2
+	log "building the test MCP server image $mcpserver_image"
+	mkdir -p "$work/mcpserver"
+	CGO_ENABLED=0 go build -trimpath -o "$work/mcpserver/mcpserver" ./test/mcpserver
+	printf 'FROM scratch\nCOPY mcpserver /mcpserver\nUSER 65532:65532\nEXPOSE 8080\nENTRYPOINT ["/mcpserver"]\n' >"$work/mcpserver/Dockerfile"
+	docker build --quiet --tag "$mcpserver_image" "$work/mcpserver" >&2
 
-# The embeddings server stands in for text-embeddings-inference. The same
-# binary is also installed as uvx, so it passes as the model download Job.
-log "building the test embeddings server image $embeddings_image"
-mkdir -p "$work/embeddingsserver"
-CGO_ENABLED=0 go build -trimpath -o "$work/embeddingsserver/embeddingsserver" ./test/embeddingsserver
-printf 'FROM scratch\nCOPY embeddingsserver /embeddingsserver\nCOPY embeddingsserver /usr/local/bin/uvx\nUSER 1000:1000\nEXPOSE 80\nENTRYPOINT ["/embeddingsserver"]\n' >"$work/embeddingsserver/Dockerfile"
-docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
+	# The embeddings server stands in for text-embeddings-inference. The same
+	# binary is also installed as uvx, so it passes as the model download Job.
+	log "building the test embeddings server image $embeddings_image"
+	mkdir -p "$work/embeddingsserver"
+	CGO_ENABLED=0 go build -trimpath -o "$work/embeddingsserver/embeddingsserver" ./test/embeddingsserver
+	printf 'FROM scratch\nCOPY embeddingsserver /embeddingsserver\nCOPY embeddingsserver /usr/local/bin/uvx\nUSER 1000:1000\nEXPOSE 80\nENTRYPOINT ["/embeddingsserver"]\n' >"$work/embeddingsserver/Dockerfile"
+	docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
+}
+
+# The images build in the background while the kind cluster comes up.
+build_images >"$work/build-images.log" 2>&1 &
+build_pid=$!
 
 log "creating kind cluster $cluster"
 if command -v ci-kind-config >/dev/null; then
@@ -158,6 +164,12 @@ if command -v ci-kind-config >/dev/null; then
 else
 	kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m >&2
 fi
+if ! wait "$build_pid"; then
+	cat "$work/build-images.log" >&2
+	log "building the images failed"
+	exit 1
+fi
+cat "$work/build-images.log" >&2
 kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
 
 log "installing Flux"
