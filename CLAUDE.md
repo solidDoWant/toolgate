@@ -51,7 +51,7 @@ Run `make help` for the full list, and keep it and this section current as targe
 - `make build`: build `bin/toolgate`.
 - `make build-images`: build the gateway image (amd64, arm64) with Nix, check the binaries with `govulncheck -mode=binary`, load it into Docker; `PUSH_ALL=true` also pushes (releases only).
 - `make fmt` / `make lint` (`lint-fix`): format; run every linter and check, reporting all failures before exiting non-zero.
-- `make test`: unit tests with `-race`.
+- `make test`: unit tests with `-race` (`make test-go`) and the script tests (`make test-scripts`).
 - `make test-release`: the image build and release script tests (slow; CI runs them only when release files change).
 - `make generate` / `make check-generate`: regenerate CRDs, deepcopy and sqlc code, or fail on drift.
 - `make ui-css`: build the web UI's stylesheet with the Tailwind CSS standalone CLI. `make generate` runs it too.

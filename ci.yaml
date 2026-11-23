@@ -27,7 +27,11 @@ stages:
     run: make check-generate
     own-tree: true
   unit:
-    run: make test && make build
+    run: make test-go
+  # The script tests (about 35 s on one core) and the build check run next to
+  # the Go tests instead of after them.
+  scripts:
+    run: make test-scripts && make build
   integration:
     run: make test-integration
   # All e2e tests on one kind cluster: the images are built and Flux,
@@ -45,7 +49,7 @@ stages:
       - "**/*.md"
       - "scripts/docs/**"
   scoreboard:
-    # The scoreboard's tests read the real checklist; the unit stage runs
+    # The scoreboard's tests read the real checklist; the scripts stage runs
     # them too when code changed.
     run: ./scripts/acceptance-scoreboard_test.py
     paths:
