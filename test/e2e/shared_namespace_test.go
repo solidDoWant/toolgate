@@ -89,6 +89,8 @@ func requireSecretGone(t *testing.T, admin *kubernetes.Clientset, name, why stri
 // owned by the instance's anchor ConfigMap, so the garbage collector deletes
 // them when the anchor is deleted. The gateway never reads Secrets.
 func TestSharedNamespaceSecretsAreDeleted(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

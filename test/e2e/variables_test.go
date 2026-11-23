@@ -12,6 +12,8 @@ import (
 )
 
 func TestRenderedVariables(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

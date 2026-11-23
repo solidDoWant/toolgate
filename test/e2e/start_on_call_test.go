@@ -43,6 +43,8 @@ func declareTools(t *testing.T, name, start string, tools ...string) {
 }
 
 func TestStartOnFirstCall(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)

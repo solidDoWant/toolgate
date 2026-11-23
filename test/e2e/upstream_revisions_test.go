@@ -55,6 +55,8 @@ func replaceUpstreamTools(t *testing.T, admin *kubernetes.Clientset, template, n
 }
 
 func TestUpstreamRevisions(t *testing.T) {
+	t.Parallel()
+
 	kube := templateClient(t)
 	admin := adminClient(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])

@@ -28,17 +28,12 @@ stages:
     run: make test && make build
   integration:
     run: make test-integration
-  # The e2e tests in three shards (scripts/e2e/shard.py picks each shard's
-  # tests), each on its own kind cluster. A fixed cluster name per shard keeps
-  # its kind node's image cache between builds.
-  e2e-1:
-    run: E2E_SHARD=1/3 E2E_CLUSTER=toolgate-ci-1 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
-    kind: true
-  e2e-2:
-    run: E2E_SHARD=2/3 E2E_CLUSTER=toolgate-ci-2 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
-    kind: true
-  e2e-3:
-    run: E2E_SHARD=3/3 E2E_CLUSTER=toolgate-ci-3 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
+  # All e2e tests on one kind cluster: the images are built and Flux,
+  # PostgreSQL, S3 and the chart are installed once. Tests that can share the
+  # cluster run concurrently. A fixed cluster name keeps its kind node's image
+  # cache between builds.
+  e2e:
+    run: E2E_CLUSTER=toolgate-ci ./scripts/e2e/run.sh ./scripts/ci/e2e.sh
     kind: true
   docs:
     run: make docs-check

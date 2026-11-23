@@ -82,6 +82,8 @@ func toolCall(t *testing.T, session *mcp.ClientSession, name string, arguments m
 }
 
 func TestToolFiltering(t *testing.T) {
+	t.Parallel()
+
 	kube := templateClient(t)
 	admin := adminClient(t)
 
@@ -115,6 +117,8 @@ func TestToolFiltering(t *testing.T) {
 }
 
 func TestToolOverrides(t *testing.T) {
+	t.Parallel()
+
 	kube := templateClient(t)
 	admin := adminClient(t)
 

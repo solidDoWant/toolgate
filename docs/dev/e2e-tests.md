@@ -52,19 +52,13 @@ The CRD limits for a health check do not change: the `interval` is 10 seconds to
 
 The e2e tests are built with the `e2e` tag too, so they read the same scale. To get the deadline for a scaled wait, call `scaled(d)` in `test/e2e`. Do not write the scaled number of seconds in the test. `TestTimeScaleMatchesGateway` makes sure that the gateway and the tests use the same value.
 
-## Run one shard
+## Parallel and serial tests
 
-A shard is one part of the tests. If you set `E2E_SHARD=i/n`, `make test-e2e` and `make acceptance` run only shard `i` of `n` shards. For example, `E2E_SHARD=2/3 make test-e2e` runs the second of three shards. If you do not set `E2E_SHARD`, the targets run all the tests on one cluster.
-
-`scripts/e2e/shard.py` selects the tests of a shard. It gets the names of the top-level tests from `go test -list`. It reads the recorded test durations in `test/e2e/durations.json` (test name to seconds). It puts the tests with a recorded duration into shards with greedy bin packing: longest test first, each into the shard with the least total time so far. So the shards take about the same time. A test with no recorded duration goes into the shard that the SHA-256 hash of the test name gives, modulo `n`. Thus each test is in exactly one shard, and a new test goes into a shard automatically. You do not update a list.
-
-To refresh the durations, run the three CI shards locally, one after the other: `E2E_SHARD=i/3 ./scripts/e2e/run.sh ./scripts/ci/e2e.sh` for `i` from 1 to 3. Each writes `build/acceptance/results/go-e2e-shard-i.json`. Then run `scripts/e2e/refresh-durations.py build/acceptance/results/go-e2e-shard-*.json`, and commit the new `test/e2e/durations.json`. The script reads the `go test -json` events and records the elapsed time of each top-level test.
-
-With `E2E_SHARD`, `make acceptance` writes the results to `build/acceptance/results/go-acceptance-shard-i.json`, and its scoreboard shows only the tests of that shard.
+All tests run on one cluster. A test that can share the cluster calls `t.Parallel()` and uses only what it creates: namespaces, servers, users and names that no other test uses. Go runs the serial tests first, one at a time, and then runs all parallel tests together. A test stays serial when it changes state that every test sees, or when it binds a fixed address. For example: it restarts or upgrades the gateway, changes the chart's settings, uninstalls the chart, or serves the test resolver, token endpoint, SPIFFE bundle or web UI proxy on its fixed port. Use `go test -parallel N` to limit the number of parallel tests.
 
 ## In CI
 
-CI runs on infra-mk3's shared Tekton Pipelines from `ci.yaml`. The e2e tests run as three stages, `e2e-1` to `e2e-3`, at the same time in one build. Each stage runs its shard on its own kind cluster with a fixed name (`toolgate-ci-1` to `toolgate-ci-3`), so the cluster's node keeps its image cache between builds, acceptance tests included. A failing test fails the stage, and each stage has its own check run on the pull request. CI keeps no test results, so it prints no scoreboard: run `make acceptance` to see one. A change only under `docs/acceptance/` runs the `scoreboard` stage (the tests of the scoreboard script) and the docs checks, not the other stages.
+CI runs on infra-mk3's shared Tekton Pipelines from `ci.yaml`. The e2e tests run as one stage, `e2e`, on one kind cluster with a fixed name (`toolgate-ci`), so the cluster's node keeps its image cache between builds. The stage builds the images and installs Flux, PostgreSQL, S3 and the chart once. A failing test fails the stage. CI keeps no test results, so it prints no scoreboard: run `make acceptance` to see one. A change only under `docs/acceptance/` runs the `scoreboard` stage (the tests of the scoreboard script) and the docs checks, not the other stages.
 
 ## The fake identity provider
 
