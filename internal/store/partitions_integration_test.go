@@ -88,6 +88,8 @@ func runKeeper(t *testing.T, keeper *store.AuditPartitionKeeper) {
 }
 
 func TestAuditPartitionKeeperCreatesPartitionsOnItsSchedule(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 
@@ -114,6 +116,8 @@ func TestAuditPartitionKeeperCreatesPartitionsOnItsSchedule(t *testing.T) {
 }
 
 func TestAuditPartitionKeeperLogsAndCountsFailures(t *testing.T) {
+	t.Parallel()
+
 	pg, admin := migratedPool(t)
 	ctx := t.Context()
 
@@ -140,6 +144,8 @@ func TestAuditPartitionKeeperLogsAndCountsFailures(t *testing.T) {
 }
 
 func TestAuditPartitionFunctionWorksForRoleWithoutDDLRights(t *testing.T) {
+	t.Parallel()
+
 	pg, admin := migratedPool(t)
 	ctx := t.Context()
 
@@ -169,6 +175,8 @@ func TestAuditPartitionFunctionWorksForRoleWithoutDDLRights(t *testing.T) {
 }
 
 func TestAuditPartitionFunctionIgnoresSessionTimeZone(t *testing.T) {
+	t.Parallel()
+
 	pg, pool := migratedPool(t)
 	ctx := t.Context()
 

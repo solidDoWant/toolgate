@@ -115,6 +115,8 @@ func TestGrantEnablesOptInServer(t *testing.T) {
 	t.Parallel()
 
 	t.Run("revoked", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
 		fixture.startUpstream(t, "github")
@@ -149,6 +151,8 @@ func TestGrantEnablesOptInServer(t *testing.T) {
 	})
 
 	t.Run("expired", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
 		fixture.startUpstream(t, "github")
@@ -164,10 +168,9 @@ func TestGrantEnablesOptInServer(t *testing.T) {
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
 		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, waitTimeout, 10*time.Millisecond)
 
-		row, err := db.New(fixture.pool).GetGrant(t.Context(), grant)
-		require.NoError(t, err)
-
-		expiresAt := row.ExpiresAt.Time
+		// The page's shortest lifetime is a minute; the expiry path is the
+		// same for any expires_at.
+		expiresAt := fixture.shortenGrant(t, grant, 3*time.Second)
 		require.Eventually(t, func() bool { return client.listChangedCount() == 3 }, time.Until(expiresAt)+expiryNotificationWindow, 50*time.Millisecond,
 			"no list_changed after the grant's expiry")
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session), "the server's tools are withdrawn")

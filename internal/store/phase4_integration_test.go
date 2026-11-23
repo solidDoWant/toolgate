@@ -21,6 +21,8 @@ import (
 const phase3Version = 6
 
 func TestPhase4MigrationKeepsPhase3Rows(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool := openPool(t, pg.ConnString())
 	ctx := t.Context()
@@ -81,6 +83,8 @@ func TestPhase4MigrationKeepsPhase3Rows(t *testing.T) {
 }
 
 func TestPhase4Tables(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)

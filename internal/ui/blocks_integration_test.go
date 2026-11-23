@@ -42,6 +42,8 @@ func TestBlocksPage(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a non-admin gets 403 from the page and the form, and has no Blocks link", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		user := env.insertSession(t, "user-session", []string{"dev"})
 
@@ -54,6 +56,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("an admin creates a block with its event and notification, and sees it live", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
 
@@ -111,6 +115,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("a refused form changes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
 
@@ -153,6 +159,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("the limits are accepted at exactly their bound", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
 
@@ -170,6 +178,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("the duration takes a number and a unit, bounded at 30 days", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
 
@@ -216,6 +226,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("the new block form has its own page that posts to the Blocks page", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
 		user := env.insertSession(t, "user-session", []string{"dev"})
@@ -244,6 +256,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("a refused form shows again with the problem and what was typed", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
 
@@ -261,6 +275,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("the 1001st live block is refused and an expired one doesn't count", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, token := env.adminBrowser(t)
 
@@ -276,6 +292,8 @@ func TestBlocksPage(t *testing.T) {
 	})
 
 	t.Run("it lists the rules read-only with their validity", func(t *testing.T) {
+		t.Parallel()
+
 		env := startUIEnv(t, "toolgate-admins")
 		admin, _ := env.adminBrowser(t)
 

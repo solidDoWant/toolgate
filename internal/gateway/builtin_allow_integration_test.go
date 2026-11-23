@@ -409,6 +409,8 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 	}
 
 	t.Run("the same allow through the tool and the API makes the same request", func(t *testing.T) {
+		t.Parallel()
+
 		for _, target := range []map[string]any{
 			{"workspace": "coder/alice/other"},
 			{"session": "session-2"},
@@ -441,6 +443,8 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 	})
 
 	t.Run("rows 243, 244: the same deny through the tool and the API gives the same rows for every target, and a clear after them", func(t *testing.T) {
+		t.Parallel()
+
 		scenarios := []struct {
 			name   string
 			listed bool

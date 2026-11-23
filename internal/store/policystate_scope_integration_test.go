@@ -14,6 +14,8 @@ import (
 )
 
 func TestLoadPolicyStateScope(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool := openPool(t, pg.ConnString())
 	ctx := t.Context()

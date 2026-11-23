@@ -109,6 +109,8 @@ func TestToolSearchMode(t *testing.T) {
 	t.Parallel()
 
 	t.Run("the header and the setting decide the mode on each request, and find_tools is only listed in search mode", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.declareTools(t, template, declared("create_issue", "Create an issue"))
@@ -129,6 +131,8 @@ func TestToolSearchMode(t *testing.T) {
 	})
 
 	t.Run("the setting turns search mode on when no header is sent, and the header wins", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.ToolSearch = true })
 
 		assert.ElementsMatch(t, searchModeToolNames, toolNames(t, fixture.connect(t, alice())))
@@ -139,6 +143,8 @@ func TestToolSearchMode(t *testing.T) {
 	})
 
 	t.Run("a search returns tools with schemas, adds them to the list, and a call enables the server", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.declareTools(t, template, declared("echo", "Echo text back to the caller"), declared("list_repos", "List repositories"))
@@ -185,6 +191,8 @@ func TestToolSearchMode(t *testing.T) {
 	})
 
 	t.Run("a query with no words, or only stop words, gives no tools and the message", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.declareTools(t, template, declared("create_issue", "Create an issue"))
@@ -203,6 +211,8 @@ func TestToolSearchMode(t *testing.T) {
 	})
 
 	t.Run("the limits: limit 20 and query 2000 characters pass, one more is refused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -234,6 +244,8 @@ func TestToolSearchMode(t *testing.T) {
 	})
 
 	t.Run("a 51st found tool pushes out the oldest; ending the session deletes them", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -261,6 +273,8 @@ func TestToolSearchMode(t *testing.T) {
 	})
 
 	t.Run("a rebuild of the template's rows sends list_changed to search-mode sessions with its found tools", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.declareTools(t, template, declared("create_issue", "Create an issue"))

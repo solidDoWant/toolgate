@@ -281,6 +281,8 @@ func TestWorkspaceLists(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a CLI allow applies only after approval, the list filters servers, tools and calls, and a deny withdraws within 5 s across replicas", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -349,6 +351,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("allow of a server outside catalog access is refused and inserts nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", v1alpha1.Access{Users: []string{"bob"}, Environments: "any"})
 
@@ -363,6 +367,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("a listed server the user loses access to stays refused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -382,6 +388,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("deny with no list makes no list, denying the last server keeps an empty list, and only clear deletes it", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -423,6 +431,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("deny deletes the server's session additions of the user's open sessions in that workspace", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -439,6 +449,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("rows 161, 164: deny --session removes that session's additions only, keeps the lists, and gets 404 for another session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -475,6 +487,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("concurrent writes to the same principal's lists run in turn as set operations", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 
 		const writers = 16
@@ -512,6 +526,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("the list and server limits hold at exactly their size", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 
 		servers := make([]string, 0, gateway.MaxWorkspaceListServers+1)
@@ -544,6 +560,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("a principal has at most 100 pending access requests", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addTemplate("github", "per-user", aliceAndBob)
 
@@ -562,6 +580,8 @@ func TestWorkspaceLists(t *testing.T) {
 	})
 
 	t.Run("the API refuses unauthenticated callers, other kinds, other users' requests and bad bodies, and is off without the web UI", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addTemplate("github", "per-user", aliceAndBob)
 

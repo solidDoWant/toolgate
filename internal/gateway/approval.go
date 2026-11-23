@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -299,9 +300,11 @@ func (m *metaTools) requestApproval(ctx context.Context, call approvalCall) (fou
 	return found, nil, nil
 }
 
-// beforeApprovalUse, when set, runs before step 6 begins. Tests use it to
-// change state while a call holds a usable approval, as a wait would.
-var beforeApprovalUse func()
+// beforeApprovalUse holds, per database pool, a hook that runs before step 6
+// begins. Tests use it to change state while a call holds a usable approval,
+// as a wait would. It is keyed by pool so parallel tests don't trigger each
+// other's hooks.
+var beforeApprovalUse sync.Map // map of *pgxpool.Pool to func()
 
 // errRefusedInUse rolls back the use of an approval when a check refuses.
 var errRefusedInUse = errors.New("refused")
@@ -321,8 +324,8 @@ func (m *metaTools) useApproval(ctx context.Context, call approvalCall, approval
 		lost     bool
 	)
 
-	if beforeApprovalUse != nil {
-		beforeApprovalUse()
+	if hook, ok := beforeApprovalUse.Load(m.database); ok {
+		hook.(func())()
 	}
 
 	allow := callEvent(call.current, "tool.decision", call.server(), call.tool, map[string]any{"decision": "allow", "approval": approval.ID})

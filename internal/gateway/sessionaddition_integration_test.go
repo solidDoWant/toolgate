@@ -111,6 +111,8 @@ func TestSessionAdditions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("without elicitation an enable inserts one server request, fails with the link, and finds the same request again", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 
@@ -152,6 +154,8 @@ func TestSessionAdditions(t *testing.T) {
 	})
 
 	t.Run("a session approval lets the next enable through in that session only", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		first := fixture.connectObserved(t, attestedAlice())
 
@@ -184,6 +188,8 @@ func TestSessionAdditions(t *testing.T) {
 	})
 
 	t.Run("an \"always\" approval wakes the enables waiting in two sessions of the workspace", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		first := fixture.connectElicitingAs(t, attestedAlice(), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 		second := fixture.connectElicitingAs(t, attestedAliceIn("session-2"), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
@@ -238,6 +244,8 @@ func TestSessionAdditions(t *testing.T) {
 	})
 
 	t.Run("the session ending during a wait stops the enable without restarting the session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		client := fixture.connectElicitingAs(t, attestedAlice(), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -265,6 +273,8 @@ func TestSessionAdditions(t *testing.T) {
 	})
 
 	t.Run("ending a session deletes its additions and expires its requests, so a restarted session has none", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
 		client := fixture.connectObserved(t, attestedAlice())
@@ -299,6 +309,8 @@ func TestSessionAdditions(t *testing.T) {
 	})
 
 	t.Run("a session approval refuses a session that ended or moved to another workspace", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 

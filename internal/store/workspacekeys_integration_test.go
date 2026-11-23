@@ -51,6 +51,8 @@ func keyRowCount(t *testing.T, pool *pgxpool.Pool, id int64) int {
 }
 
 func TestWorkspaceKeyCleanup(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 
 	revokedOld := insertKeyRow(t, pool, "alice", "a", keyIDOf("a"), "revoked", "7 days 1 minute")
@@ -67,6 +69,8 @@ func TestWorkspaceKeyCleanup(t *testing.T) {
 }
 
 func TestWorkspaceKeyConstraints(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 
 	insert := func(principal, username, name, keyID string, publicKey []byte, status string, ended bool) error {
@@ -124,6 +128,8 @@ func TestWorkspaceKeyConstraints(t *testing.T) {
 }
 
 func TestGetWorkspaceKeyByKeyID(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	keys := store.NewWorkspaceKeys(pool)
 
@@ -155,6 +161,8 @@ func TestGetWorkspaceKeyByKeyID(t *testing.T) {
 }
 
 func TestTouchWorkspaceKeyWritesAtMostOncePerMinute(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	keys := store.NewWorkspaceKeys(pool)
 	id := insertKeyRow(t, pool, "alice", "dev", keyIDOf("a"), "active", "")
@@ -198,6 +206,8 @@ func TestTouchWorkspaceKeyWritesAtMostOncePerMinute(t *testing.T) {
 }
 
 func TestHasPendingKeyRequest(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	keys := store.NewWorkspaceKeys(pool)
 
@@ -232,6 +242,8 @@ func TestHasPendingKeyRequest(t *testing.T) {
 }
 
 func TestInsertKeyRequestWithinLimit(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	queries := db.New(pool)
 

@@ -13,6 +13,8 @@ import (
 )
 
 func TestMigrateNamesSearchPathWhenVectorIsNotVisible(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgresEmpty(t)
 	pool := openPool(t, pg.ConnString())
 	ctx := t.Context()

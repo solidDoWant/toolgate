@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/store/db"
 )
@@ -29,12 +31,12 @@ func CanonicalArguments(arguments json.RawMessage) (json.RawMessage, []byte, err
 // DurationWords exposes durationWords to tests.
 var DurationWords = durationWords
 
-// SetBeforeApprovalUse makes hook run before each use of an approval, and
-// returns a function that removes it.
-func SetBeforeApprovalUse(hook func()) func() {
-	beforeApprovalUse = hook
+// SetBeforeApprovalUse makes hook run before each use of an approval by a
+// handler that uses pool, and returns a function that removes it.
+func SetBeforeApprovalUse(pool *pgxpool.Pool, hook func()) func() {
+	beforeApprovalUse.Store(pool, hook)
 
-	return func() { beforeApprovalUse = nil }
+	return func() { beforeApprovalUse.Delete(pool) }
 }
 
 // SetApprovalWaitInterval sets how often a waiting call re-reads its

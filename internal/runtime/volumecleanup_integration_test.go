@@ -108,6 +108,8 @@ func TestVolumeCleanup(t *testing.T) {
 	t.Parallel()
 
 	t.Run("deletes the volume of a deleted template after the reclaim wait", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("gone", "per-user", time.Hour, v1alpha1.Access{})
 		row := fixture.freeVolume(t, template, "pv-gone")
@@ -148,6 +150,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("treats a template with a new UID as deleted and an invalid one as present", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("recreated", "per-user", time.Hour, v1alpha1.Access{})
 		recreated := fixture.freeVolume(t, template, "pv-recreated")
@@ -176,6 +180,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("deletes an unused volume only when retention is on and the volume is old enough", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("unused", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -208,6 +214,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("deletes a volume an admin marked", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("admin", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -230,6 +238,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("leaves a held volume alone, even when an admin marked it", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("held", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -255,6 +265,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("deletes the row of a volume whose PV is missing or never recorded", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("missing", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -276,6 +288,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("never touches a PV that carries another install's label", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("other-install", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -298,6 +312,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("never touches a PV without toolgate's labels and forgets its row", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("labels", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -321,6 +337,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("sets the Delete policy on a leader's next pass after it died before the patch", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("died", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -341,6 +359,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("waits for a PV still bound elsewhere, then forgets the row after the forget bound", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("bound", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())
@@ -379,6 +399,8 @@ func TestVolumeCleanup(t *testing.T) {
 	})
 
 	t.Run("sets the gauges for every series each pass", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newStopFixture(t)
 		template := fixture.template("gauges", "per-user", time.Hour, v1alpha1.Access{})
 		fixture.setNow(time.Now())

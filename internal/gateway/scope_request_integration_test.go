@@ -48,6 +48,8 @@ func TestScopeRequests(t *testing.T) {
 	t.Parallel()
 
 	t.Run("an allow without credentials is refused and writes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -58,6 +60,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("an allow of a server the user has no access to is refused and writes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		template := fixture.addEnableTemplate("bobonly", "per-user", aliceAndBob)
 		template.Spec.Access.Users = []string{"bob"}
@@ -70,6 +74,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("an allow for a session answers 202 with a scope request and changes nothing before approval", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -102,6 +108,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("a widening change of a granted shape still creates a change request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -111,6 +119,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("the change-request approval, which a 0.3 replica runs, refuses a scope row and changes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -126,6 +136,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("another user can't approve the request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -141,6 +153,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("workspace, server: adds it to a new list and deletes the server's deny entries", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addWorkspaceEntry(t, aliceWorkspace, "github", "", policy.EffectDeny)
@@ -165,6 +179,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("workspace, tool: deletes its deny entry and inserts an allow entry when the server isn't reachable", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addWorkspaceEntry(t, aliceWorkspace, "github", "create_issue", policy.EffectDeny)
@@ -185,6 +201,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("workspace, tool: inserts no allow entry when the list already reaches the server", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		api.widen(t, attestedAlice(), workspacesapi.Change{Action: "allow", Servers: []string{"github"}})
@@ -197,6 +215,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("session, server: inserts a session addition and deletes the session's deny entries for it", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -219,6 +239,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("session, tool: deletes the session's deny entry and inserts a session allow entry", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -233,6 +255,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("a tool of a server denied on the target is refused and nothing is written", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addWorkspaceEntry(t, aliceWorkspace, "github", "", policy.EffectDeny)
@@ -244,6 +268,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("an allow for an unverified session is refused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, alice())
@@ -255,6 +281,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("a session target in another workspace rolls the approval back with the reason", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -278,6 +306,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("ending the session expires its scope requests and deletes its allows, keeping its denies", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -304,6 +334,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("the leader's pass expires scope requests whose target session ended after the request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -329,6 +361,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("a scope request created after its session ended is left to its own expiry", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.connectObserved(t, attestedAlice())
@@ -345,6 +379,8 @@ func TestScopeRequests(t *testing.T) {
 	})
 
 	t.Run("a scope request counts toward the 100 pending requests", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 

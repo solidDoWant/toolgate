@@ -75,6 +75,8 @@ func (f upstreamFixture) insert(t *testing.T, instanceID, upstreamID string) (in
 }
 
 func TestUpstreamSessionLiveRowIsUniquePerPair(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	f.instance(t, upstreamInstanceA, "tg-a")
 
@@ -110,6 +112,8 @@ func TestUpstreamSessionLiveRowIsUniquePerPair(t *testing.T) {
 }
 
 func TestUpstreamSessionIDLengthIsChecked(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	f.instance(t, upstreamInstanceA, "tg-a")
 
@@ -140,6 +144,8 @@ func TestUpstreamSessionIDLengthIsChecked(t *testing.T) {
 }
 
 func TestUpstreamSessionsAreRemovedWithInstanceAndSession(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	f.instance(t, upstreamInstanceA, "tg-a")
 	f.instance(t, upstreamInstanceB, "tg-b")
@@ -166,6 +172,8 @@ func TestUpstreamSessionsAreRemovedWithInstanceAndSession(t *testing.T) {
 }
 
 func TestUpstreamClaimQueries(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	f.instance(t, upstreamInstanceA, "tg-a")
 	ctx := t.Context()
@@ -193,6 +201,8 @@ func TestUpstreamClaimQueries(t *testing.T) {
 }
 
 func TestDeleteUpstreamSessionIfUnchangedMatchesOnlyTheOldValue(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	f.instance(t, upstreamInstanceA, "tg-a")
 
@@ -212,6 +222,8 @@ func TestDeleteUpstreamSessionIfUnchangedMatchesOnlyTheOldValue(t *testing.T) {
 }
 
 func TestEndUpstreamSessionsOfTemplateAndSession(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	f.instance(t, upstreamInstanceA, "tg-a")
 
@@ -245,6 +257,8 @@ func TestEndUpstreamSessionsOfTemplateAndSession(t *testing.T) {
 }
 
 func TestEndInvalidUpstreamSessionsEndsOnlyInvalidPairs(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	ctx := t.Context()
 
@@ -298,6 +312,8 @@ func TestEndInvalidUpstreamSessionsEndsOnlyInvalidPairs(t *testing.T) {
 }
 
 func TestListEndedUpstreamSessionsReadsOldestFirstUpToALimit(t *testing.T) {
+	t.Parallel()
+
 	f := newUpstreamFixture(t)
 	ctx := t.Context()
 
@@ -354,6 +370,8 @@ func TestListEndedUpstreamSessionsReadsOldestFirstUpToALimit(t *testing.T) {
 const upstreamSessionsVersion = 15
 
 func TestUpstreamSessionsMigrationAppliesToThePreviousVersion(t *testing.T) {
+	t.Parallel()
+
 	pool := openPool(t, testutil.StartPostgresEmpty(t).ConnString())
 	ctx := t.Context()
 

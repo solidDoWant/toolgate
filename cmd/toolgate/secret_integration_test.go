@@ -193,6 +193,8 @@ func objectsHolding(t *testing.T, kube client.Client, value string) []string {
 }
 
 func TestSecretCommands(t *testing.T) {
+	t.Parallel()
+
 	env := testEnv{}
 
 	isolateUserConfig(t, env)
