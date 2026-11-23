@@ -111,7 +111,7 @@ DEFAULT_CONFIG = {
     # a reviewer: green ones are armed, conflicts go to the merge-fixer and CI
     # failures to a worker. Renovate's own minimumReleaseAge gates their creation.
     "renovate_prs": False,
-    "renovate_authors": ["infra-mk3-renovate-operator"],
+    "renovate_authors": ["app/infra-mk3-renovate-operator"],
     "required_check": "checks",
     # null = the lowest-numbered open "Phase N" milestone with open issues.
     "current_phase": None,
@@ -312,7 +312,7 @@ query($owner: String!, $name: String!, $cursor: String) {
     issues(first: 100, states: OPEN, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title author { login }
+        number title author { login __typename }
         labels(first: 30) { nodes { name } }
         milestone { title }
         parent { number }
@@ -329,11 +329,11 @@ query($owner: String!, $name: String!, $cursor: String) {
     pullRequests(first: 25, states: OPEN, after: $cursor) {
       pageInfo { hasNextPage endCursor }
       nodes {
-        number title isDraft author { login } headRefName headRefOid
+        number title isDraft author { login __typename } headRefName headRefOid
         mergeable mergeStateStatus autoMergeRequest { enabledAt }
         closingIssuesReferences(first: 10) { nodes { number } }
         files(first: 100) { nodes { path } }
-        reviews(last: 30) { nodes { author { login } submittedAt url body commit { oid } } }
+        reviews(last: 30) { nodes { author { login __typename } submittedAt url body commit { oid } } }
         commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
           __typename
           ... on CheckRun { name status conclusion detailsUrl checkSuite { workflowRun { databaseId } } }
@@ -357,11 +357,21 @@ def model_override(cfg: dict, job: "Job", snap: "Snapshot") -> dict:
     return override
 
 
+def actor_login(actor: dict | None) -> str:
+    """An author's login in the form gh and the config lists use. GraphQL gives
+    an App's bot as login "ghgate" with __typename Bot, where gh writes
+    "app/ghgate". A user's login stays as it is, so a user account named like a
+    bot never passes as the bot."""
+    actor = actor or {}
+    login = actor.get("login") or "ghost"
+    return f"app/{login}" if actor.get("__typename") == "Bot" else login
+
+
 def parse_issue(node: dict) -> Issue:
     return Issue(
         number=node["number"],
         title=node["title"],
-        author=(node.get("author") or {}).get("login") or "ghost",
+        author=actor_login(node.get("author")),
         labels={label["name"] for label in node["labels"]["nodes"]},
         milestone=(node.get("milestone") or {}).get("title"),
         parent=(node.get("parent") or {}).get("number"),
@@ -429,14 +439,14 @@ def parse_pr(node: dict, cfg: dict) -> PR:
     ]
     reviews = []
     for r in node["reviews"]["nodes"]:
-        if ((r.get("author") or {}).get("login")) not in cfg["pr_authors"]:
+        if actor_login(r.get("author")) not in cfg["pr_authors"]:
             continue
         verdict, headline = parse_verdict(r.get("body") or "")
         reviews.append(Review(verdict, (r.get("commit") or {}).get("oid"), r["url"], r.get("submittedAt") or "", headline))
     return PR(
         number=node["number"],
         title=node["title"],
-        author=(node.get("author") or {}).get("login") or "ghost",
+        author=actor_login(node.get("author")),
         draft=node["isDraft"],
         head_ref=node["headRefName"],
         head_sha=node["headRefOid"],
