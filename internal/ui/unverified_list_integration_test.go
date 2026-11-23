@@ -39,6 +39,21 @@ func TestUnverifiedAllowListPage(t *testing.T) {
 	}
 	save := chromedp.CSS(`#defaults button[type="submit"]`)
 
+	// saveAndSettle clicks save and waits until the browser has loaded the
+	// page the form post redirects to. Navigating away earlier aborts the
+	// post's navigation (net::ERR_ABORTED), which a busy machine makes likely.
+	saveAndSettle := func(t *testing.T) {
+		_, err := chromedp.Run(ctx, chromedp.Evaluate[any](`window.beforeSave = true`))
+		require.NoError(t, err)
+		require.NoError(t, chromedp.Do(ctx, chromedp.Click(save)))
+
+		require.Eventually(t, func() bool {
+			fresh, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`window.beforeSave === undefined && document.readyState === "complete"`))
+
+			return err == nil && fresh
+		}, time.Minute, 50*time.Millisecond)
+	}
+
 	stored := func() (string, []string) {
 		scopes := env.scopesOf(t, user.Subject)
 
@@ -64,8 +79,8 @@ func TestUnverifiedAllowListPage(t *testing.T) {
 		require.NoError(t, chromedp.Do(ctx,
 			chromedp.Click(checkbox("any-server")),
 			chromedp.Click(checkbox("optin-server")),
-			chromedp.Click(save),
 		))
+		saveAndSettle(t)
 
 		assert.Eventually(t, func() bool {
 			value, servers := stored()
@@ -79,7 +94,8 @@ func TestUnverifiedAllowListPage(t *testing.T) {
 		require.NoError(t, err)
 
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+ui.WorkspacesPath), chromedp.WaitVisible(save)))
-		require.NoError(t, chromedp.Do(ctx, chromedp.Click(checkbox("optin-server")), chromedp.Click(save)))
+		require.NoError(t, chromedp.Do(ctx, chromedp.Click(checkbox("optin-server"))))
+		saveAndSettle(t)
 
 		assert.Eventually(t, func() bool {
 			value, servers := stored()
