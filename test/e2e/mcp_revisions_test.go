@@ -184,6 +184,8 @@ func approveInBrowser(t *testing.T, link string) {
 }
 
 func TestClientRevisions(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])

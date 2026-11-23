@@ -371,6 +371,8 @@ func fixtureDeltas(t *testing.T) (tokens map[string]float64, cost float64) {
 }
 
 func TestUsageQueries(t *testing.T) {
+	t.Parallel()
+
 	telemetryEnv(t, "TOOLGATE_E2E_PROMETHEUS_URL")
 	telemetryEnv(t, "TOOLGATE_E2E_OTLP_FORWARD_TO")
 
@@ -444,6 +446,8 @@ func normalizedContent() map[string]bool {
 }
 
 func TestTelemetryIdentity(t *testing.T) {
+	t.Parallel()
+
 	telemetryEnv(t, "TOOLGATE_E2E_PROMETHEUS_URL")
 	telemetryEnv(t, "TOOLGATE_E2E_OTLP_FORWARD_TO")
 

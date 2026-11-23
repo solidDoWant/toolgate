@@ -112,6 +112,8 @@ func callText(result *mcp.CallToolResult) string {
 }
 
 func TestApprovalOnThePage(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

@@ -147,6 +147,7 @@ func requireWaiting(t *testing.T, session *gatewaySession) {
 }
 
 func TestApprovalTimeout(t *testing.T) {
+	// Serial: it waits out the shared approval timeout.
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 
@@ -181,6 +182,7 @@ func TestApprovalTimeout(t *testing.T) {
 }
 
 func TestApprovalWaitReplicaDies(t *testing.T) {
+	// Serial: it kills a gateway pod.
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 

@@ -51,6 +51,8 @@ func scanForMatch(t *testing.T, command *exec.Cmd, pattern *regexp.Regexp, onMat
 }
 
 func TestWorkspaceKeyAttestation(t *testing.T) {
+	t.Parallel()
+
 	provider := oidcProvider(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)

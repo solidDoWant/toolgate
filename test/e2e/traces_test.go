@@ -48,6 +48,8 @@ func descendsFrom(span *tracepb.Span, byID map[string]*tracepb.Span, ancestor st
 }
 
 func TestTraces(t *testing.T) {
+	t.Parallel()
+
 	receiver := otlpReceiver(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)

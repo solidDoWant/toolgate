@@ -19,16 +19,22 @@ import (
 )
 
 func TestToolSearch(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)
 	endpoint := forwardToGateway(t, admin, pods[0])
 
 	t.Run("with search on the list holds the meta tools and find_tools, a search finds tools of several servers, and a call enables and runs", func(t *testing.T) {
+		// A declared tool name no other test uses, so parallel tests' tools
+		// cannot crowd this search's results.
+		word := "echo" + strings.ToLower(rand.String(6))
+
 		first := createTemplate(t, kube, "e2e-search-a", "per-session", testServerResources(t, mcpServerImage(t), 0, nil))
 		second := createTemplate(t, kube, "e2e-search-b", "per-session", testServerResources(t, mcpServerImage(t), 0, nil))
-		declareTools(t, first, "", "echo")
-		declareTools(t, second, "", "echo")
+		declareTools(t, first, "", "echo", word)
+		declareTools(t, second, "", "echo", word)
 
 		header := http.Header{}
 		header.Set(auth.ToolSearchHeader, "on")
@@ -52,7 +58,7 @@ func TestToolSearch(t *testing.T) {
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
 			result, err := session.session.CallTool(t.Context(), &mcp.CallToolParams{
-				Name: gateway.ToolFindTools, Arguments: map[string]any{"query": "echo", "limit": 20},
+				Name: gateway.ToolFindTools, Arguments: map[string]any{"query": word, "limit": 20},
 			})
 			require.NoError(collect, err)
 

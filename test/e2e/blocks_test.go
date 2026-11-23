@@ -41,6 +41,8 @@ func pageText(browser context.Context, publicURL, path string) (string, error) {
 }
 
 func TestNonAdminHasNoBlocksPage(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	publicURL := webUI(t, forwardToGateway(t, admin, gatewayPods(t, admin)[0]))
 
@@ -70,6 +72,8 @@ func TestNonAdminHasNoBlocksPage(t *testing.T) {
 }
 
 func TestStandingRulesShown(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	publicURL := webUI(t, forwardToGateway(t, admin, gatewayPods(t, admin)[0]))
@@ -117,6 +121,8 @@ func blockLifetime() time.Duration {
 }
 
 func TestTemporaryBlock(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

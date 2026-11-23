@@ -90,6 +90,7 @@ func changedChart(t *testing.T) string {
 }
 
 func TestChartUpgradeAndUninstall(t *testing.T) {
+	// Serial: it upgrades and uninstalls the chart.
 	config := adminConfig(t)
 	admin := adminClient(t)
 	extensions, err := apiextensionsclient.NewForConfig(config)

@@ -224,6 +224,7 @@ func TestPersistentVolumeKeepsDataAcrossInstances(t *testing.T) {
 }
 
 func TestPersistentVolumeSurvivesCrash(t *testing.T) {
+	// Serial: it crashes the instance and counts volumes in the shared storage class.
 	admin := adminClient(t)
 	kube := templateClient(t)
 	name := volumeTemplate(t, kube, "e2e-pv-crash", retainStorageClass)

@@ -92,6 +92,7 @@ func runningLeader(t *testing.T, admin *kubernetes.Clientset) string {
 }
 
 func TestLeaderChangeRecovery(t *testing.T) {
+	// Serial: it kills the leader.
 	admin := adminClient(t)
 
 	t.Run("the leader deletes an instance namespace with no instance row", func(t *testing.T) {

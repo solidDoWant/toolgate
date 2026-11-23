@@ -36,6 +36,8 @@ const connectorRedirect = "http://127.0.0.1:1/callback"
 // protected resource metadata, signs in with the connector client using
 // PKCE, and connects with the access token.
 func TestConnectorSignIn(t *testing.T) {
+	t.Parallel()
+
 	provider := oidcProvider(t)
 	admin := adminClient(t)
 

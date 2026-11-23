@@ -28,6 +28,8 @@ import (
 // page in headless Chromium, signs in as a chosen user with chosen groups,
 // and gets an ID token for them through the UI client.
 func TestBrowserSignsInThroughGatewayIdP(t *testing.T) {
+	t.Parallel()
+
 	provider := oidcProvider(t)
 	browser := testutil.StartBrowser(t)
 

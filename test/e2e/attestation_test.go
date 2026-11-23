@@ -192,6 +192,8 @@ func connectWithHeader(t *testing.T, endpoint string, header http.Header) *gatew
 }
 
 func TestAttestedUserSessions(t *testing.T) {
+	t.Parallel()
+
 	namespace := workloadNamespace(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)

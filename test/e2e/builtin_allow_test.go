@@ -156,6 +156,8 @@ func scopeOfSession(scopes gateway.ListScopesResult, session string) (gateway.Se
 }
 
 func TestToolgateAllow(t *testing.T) {
+	t.Parallel()
+
 	namespace := workloadNamespace(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)

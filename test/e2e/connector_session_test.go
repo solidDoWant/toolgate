@@ -107,6 +107,8 @@ func initializeConnector(t *testing.T, endpoint, user string) string {
 }
 
 func TestSessionsWithoutHelper(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	name := createApprovalTemplate(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
