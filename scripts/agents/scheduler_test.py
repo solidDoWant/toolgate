@@ -287,7 +287,7 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(plan.arms, [])
 
     def test_renovate_prs_are_routed_only_when_enabled(self):
-        bot = dict(author="infra-mk3-renovate-operator", branch="renovate/go-modules")
+        bot = dict(author="app/infra-mk3-renovate-operator", branch="renovate/go-modules")
         # Off (the default): Renovate PRs are ignored entirely.
         plan = plan_for(snap([], [pr(20, None, check="failure", **bot)]))
         self.assertEqual((keys(plan), plan.arms), ([], []))
@@ -450,6 +450,20 @@ class SessionTest(unittest.TestCase):
 
 
 class ParseTest(unittest.TestCase):
+    def test_bot_authors_take_the_app_form(self):
+        # GraphQL gives the agents' App bot as "ghgate" (__typename Bot); the
+        # config lists and gh use "app/ghgate". A user named "ghgate" is not
+        # the bot and must not match it.
+        def node(author):
+            return {"number": 1, "title": "t", "author": author, "labels": {"nodes": []},
+                    "milestone": None, "parent": None, "blockedBy": {"nodes": []}}
+        self.assertEqual(s.parse_issue(node({"login": "ghgate", "__typename": "Bot"})).author, "app/ghgate")
+        self.assertEqual(s.parse_issue(node({"login": "ghgate", "__typename": "User"})).author, "ghgate")
+        self.assertEqual(s.parse_issue(node({"login": "solidDoWant", "__typename": "User"})).author, "solidDoWant")
+        self.assertEqual(s.parse_issue(node(None)).author, "ghost")
+        self.assertEqual(s.actor_login({"login": "infra-mk3-renovate-operator", "__typename": "Bot"}),
+                         "app/infra-mk3-renovate-operator")
+
     def test_limit_reset(self):
         cases = [
             ("You've hit your session limit · resets 3am (UTC)", NOW.replace(hour=3), True),
