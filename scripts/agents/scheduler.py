@@ -505,13 +505,17 @@ class GitHub:
         prs = {n["number"]: parse_pr(n, self.cfg) for n in pr_nodes}
         return Snapshot(issues=issues, prs=prs, milestones=milestones)
 
-    def pm_comments(self, since: str) -> list:
+    def pm_comments(self, since: str) -> tuple[list, str | None]:
         """Issue and PR conversation comments updated since `since` that are
-        human instructions: by the human, first line starting with /pm.
+        human instructions (by the human, first line starting with /pm), and
+        the newest `updated_at` of any comment read, for the caller's cursor.
 
         `since` goes out as `...Z`, URL-encoded: a raw `+00:00` offset decodes
         to a space and GitHub then returns no comments at all. Every page is
-        read, because the caller's cursor only advances on a /pm comment."""
+        read. The cursor must follow every comment, not only /pm ones: GitHub's
+        next-page links address the repository by ID (/repositories/<id>/...),
+        which githubgate refuses, so a window past one page (100 comments)
+        fails on every cycle and no /pm comment is ever read again."""
         stamp = parse_iso(since)
         if stamp:
             since = stamp.astimezone(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -521,14 +525,16 @@ class GitHub:
             f"repos/{self.cfg['repo']}/issues/comments?since={since_q}&sort=updated&direction=asc&per_page=100",
         )
         found = []
+        newest = None
         for c in (c for page in json.loads(out) for c in page):
+            newest = max(newest or "", c.get("updated_at") or "") or None
             if (c.get("user") or {}).get("login") != self.cfg["human"]:
                 continue
             if not (c.get("body") or "").lstrip().startswith("/pm"):
                 continue
             found.append({"id": c["id"], "url": c["html_url"], "updated_at": c["updated_at"],
                           "line": c["body"].strip().splitlines()[0][:200]})
-        return found
+        return found, newest
 
     # Writes -------------------------------------------------------------
 
@@ -1675,7 +1681,10 @@ class Scheduler:
             try:
                 since = p.get("comments_since") or iso(now_utc() - dt.timedelta(hours=1))
                 seen = set(p.get("seen_comments", []))
-                for c in self.github.pm_comments(since):
+                found, newest = self.github.pm_comments(since)
+                if newest:
+                    p["comments_since"] = max(p.get("comments_since") or "", newest)
+                for c in found:
                     if c["id"] not in seen:
                         self.planner_reason(f"/pm instruction {c['url']}: {c['line']}")
                         seen.add(c["id"])
