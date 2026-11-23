@@ -31,7 +31,7 @@ The image holds only the binary at `/bin/toolgate` and the CA certificates at `/
 
 We use Nix `dockerTools` and not `ko`. Nix pins the CA certificates through `flake.lock`, and the image needs no base image from a registry. Nix reads the binary that Go built, so the flake has no `vendorHash` to update when Go modules change. For this reason, the build uses `nix build --impure`.
 
-If you set `PUSH_ALL=true`, the target also pushes both images and a multi-architecture index to `$IMAGE:$VERSION` with `crane`. Only releases do this. `scripts/build-images_test.sh` tests the target. `make test` runs it, and it skips when Nix or Docker is not available.
+If you set `PUSH_ALL=true`, the target also pushes both images and a multi-architecture index to `$IMAGE:$VERSION` with `crane`. Only releases do this. `scripts/build-images_test.sh` tests the target. `make test-release` runs it, and it skips when Nix or Docker is not available.
 
 ## Making a release
 
@@ -49,7 +49,7 @@ If you set `PUSH_ALL=true`, the script publishes the release. Before it builds, 
 
 The tag starts the Tekton release run (`.tekton/release.yaml`, infra-mk3's shared release Pipeline, with the `release` section of `ci.yaml`). The run pushes the image `ghcr.io/soliddowant/toolgate:x.y.z` and the chart `oci://ghcr.io/soliddowant/charts/toolgate`, and for a final version also tags the image `latest`. Then it builds the CLI binaries (`scripts/ci/build-release-assets.sh`) and creates the GitHub release `vx.y.z`. The release notes are the `CHANGELOG.md` section, never the notes that GitHub generates. The release has the CLI binaries and `checksums.txt` attached. A release candidate is marked as a pre-release. Only the release-manager agent publishes releases.
 
-`scripts/release_test.sh` tests the script in a copy of the repository with a local remote and a stub for `gh`, which it must never call. `make test` runs it.
+`scripts/release_test.sh` tests the script in a copy of the repository with a local remote and a stub for `gh`, which it must never call. `make test-release` runs it. CI runs it only when release files change.
 
 ## The web UI's styles and components
 

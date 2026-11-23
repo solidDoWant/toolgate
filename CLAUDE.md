@@ -52,6 +52,7 @@ Run `make help` for the full list, and keep it and this section current as targe
 - `make build-images`: build the gateway image (amd64, arm64) with Nix, check the binaries with `govulncheck -mode=binary`, load it into Docker; `PUSH_ALL=true` also pushes (releases only).
 - `make fmt` / `make lint` (`lint-fix`): format; run every linter and check, reporting all failures before exiting non-zero.
 - `make test`: unit tests with `-race`.
+- `make test-release`: the image build and release script tests (slow; CI runs them only when release files change).
 - `make generate` / `make check-generate`: regenerate CRDs, deepcopy and sqlc code, or fail on drift.
 - `make ui-css`: build the web UI's stylesheet with the Tailwind CSS standalone CLI. `make generate` runs it too.
 - `make ui-screenshots`: render every web UI page with seeded data (light and dark, 1280×800 and 390×844) into PNGs in `bin/ui-screenshots`. CI uploads them on PRs that change `internal/ui/`.

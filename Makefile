@@ -40,16 +40,19 @@ lint-fix: ## Run golangci-lint and apply its fixes.
 	golangci-lint run --fix ./...
 
 .PHONY: test
-test: ## Run unit tests: Go (race detector; GO_TEST_JSON=file also writes the go test -json events there), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, and the image build and release tests.
+test: ## Run unit tests: Go (race detector; GO_TEST_JSON=file also writes the go test -json events there), the agent scheduler and wait-ci tests, the test guard and the acceptance scoreboard. The image build and release script tests are in `make test-release`.
 	./scripts/ci/go-test-json.sh -race -count=1 ./...
-	./scripts/build-images_test.sh
-	./scripts/release_test.sh
 	./scripts/agents/scheduler_test.py
 	./scripts/agents/wait-ci_test.sh
 	./scripts/ci/test-guard_test.py
 	./scripts/acceptance-scoreboard_test.py
 	./scripts/check-images_test.py
 	./scripts/check-tracking-ids_test.py
+
+.PHONY: test-release
+test-release: ## Run the image build and release script tests (a release dry run builds the chart package and the CLI binaries, so it is slow; CI runs it only when release files change).
+	./scripts/build-images_test.sh
+	./scripts/release_test.sh
 
 .PHONY: test-guard
 test-guard: ## Fail if HEAD deletes, unlists or skips a test named on a `Tests:` line of a checklist since its merge base with BASE (default origin/master; CI passes the PR labels).
