@@ -96,8 +96,16 @@ func newFixture(t *testing.T, options auth.Options, requireSession bool) fixture
 func (f fixture) do(t *testing.T, token string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return f.doFrom(t, "192.0.2.10:40000", token, headers)
+}
+
+// doFrom is do from the given remote address. The refusal rate limiter
+// counts per address.
+func (f fixture) doFrom(t *testing.T, remoteAddress, token string, headers map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
 	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mcp", nil)
-	request.RemoteAddr = "192.0.2.10:40000"
+	request.RemoteAddr = remoteAddress
 
 	if token != "" {
 		request.Header.Set("Authorization", "Bearer "+token)

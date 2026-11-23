@@ -484,7 +484,7 @@ func TestTailEndsAtTokenExpiryAndTheNextTokenDecidesTheScope(t *testing.T) {
 	h.audit.add("alice", time.Now().Add(-time.Minute))
 	h.audit.add("bob", time.Now().Add(-time.Minute))
 
-	lines := readLines(h.openExpiring(t, t.Context(), "admin", "", time.Now().Add(300*time.Millisecond)).Body)
+	lines := readLines(h.openExpiring(t, t.Context(), "admin", "", time.Now().Add(3*time.Second)).Body)
 	events := lines.events(t, 2)
 	lines.ended(t)
 

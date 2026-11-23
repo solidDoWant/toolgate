@@ -188,9 +188,16 @@ func newSPIFFEFixture(t *testing.T, clock *fakeClock, domains ...auth.SPIFFETrus
 func waitForBundle(t *testing.T, f fixture, token string) {
 	t.Helper()
 
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.Equal(collect, http.StatusOK, f.do(t, token, nil).Code)
-	}, 10*time.Second, 20*time.Millisecond)
+	// A plain loop from its own address: EventuallyWithT can leave a slow
+	// attempt running after it returns and recording a refusal late, and the
+	// refusals of a slow start would use up the rate limit of the test's
+	// own address.
+	deadline := time.Now().Add(10 * time.Second)
+
+	for f.doFrom(t, "192.0.2.99:40000", token, nil).Code != http.StatusOK {
+		require.True(t, time.Now().Before(deadline), "the SPIFFE bundle didn't load")
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 const allowedID = "spiffe://allowed.test/owner/alice/workspace/dev"
