@@ -69,6 +69,8 @@ func embeddingState(t *testing.T, pool *pgxpool.Pool, uid string) (model string,
 // setting makes no call, an endpoint that fails leaves an empty vector and is
 // retried, and a changed model embeds the rows again.
 func TestSearchRowsEmbeddings(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())
 	require.NoError(t, err)

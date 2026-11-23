@@ -129,6 +129,8 @@ func (f *stopFixture) endIdleMCPSessions(t *testing.T) {
 }
 
 func TestMCPSessionEnderEndsIdleConnectorSessionWithItsToolgateSession(t *testing.T) {
+	t.Parallel()
+
 	f := newStopFixture(t)
 	events := f.listen(t)
 
@@ -154,6 +156,8 @@ func TestMCPSessionEnderEndsIdleConnectorSessionWithItsToolgateSession(t *testin
 }
 
 func TestMCPSessionEnderNeverEndsHelperSession(t *testing.T) {
+	t.Parallel()
+
 	f := newStopFixture(t)
 
 	helper := f.session(t, "alice", "helper-session", "alice@example.com")
@@ -166,6 +170,8 @@ func TestMCPSessionEnderNeverEndsHelperSession(t *testing.T) {
 }
 
 func TestSessionEndEndsItsMCPSessions(t *testing.T) {
+	t.Parallel()
+
 	f := newStopFixture(t)
 	events := f.listen(t)
 
@@ -198,6 +204,8 @@ func TestSessionEndEndsItsMCPSessions(t *testing.T) {
 }
 
 func TestEndMCPSession(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name           string
 		sessionID      string

@@ -19,6 +19,8 @@ import (
 // The reconciler's pass deletes stale rows, then runs the wrapped pass even
 // when that pass fails.
 func TestRowCleanupRunsOnThePass(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), pg.ConnString())

@@ -144,6 +144,8 @@ func (f *volumeStartFixture) drainUntilMarker(t *testing.T, events <-chan store.
 }
 
 func TestStartOrderWithVolumesAndExchanges(t *testing.T) {
+	t.Parallel()
+
 	fixture := newVolumeStartFixture(t)
 
 	t.Run("the exchange rows stay closed while the volume waits, and the leader opens them when it is free", func(t *testing.T) {

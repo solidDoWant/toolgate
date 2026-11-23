@@ -58,6 +58,8 @@ func (f *stopFixture) expiryStops(t *testing.T, instance db.Instance) int {
 }
 
 func TestResolverExpiryReplacement(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	now := time.Now().Truncate(time.Second)
 	fixture.setNow(now)
@@ -144,6 +146,8 @@ func TestResolverExpiryReplacement(t *testing.T) {
 }
 
 func TestMarkStartingRecordsResolvedExpiry(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	template := fixture.template("mark-expiry", "per-user", time.Hour, v1alpha1.Access{Groups: []string{"staff"}})
 	instance := fixture.instance(t, template, "user:mark-expiry-user", "mark-expiry-user", "pending")

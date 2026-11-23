@@ -240,6 +240,8 @@ func step(t *testing.T, started *volumeStarter, f *volumeStartFixture, id string
 }
 
 func TestVolumeClaimIsExclusive(t *testing.T) {
+	t.Parallel()
+
 	fixture := newVolumeStartFixture(t)
 
 	t.Run("a replacement waits until the old instance is stopped", func(t *testing.T) {
@@ -321,6 +323,8 @@ func TestVolumeClaimIsExclusive(t *testing.T) {
 }
 
 func TestVolumeLimitPerUser(t *testing.T) {
+	t.Parallel()
+
 	fixture := newVolumeStartFixture(t)
 
 	// fill gives the principal a per-user volume of another template.
@@ -419,6 +423,8 @@ func TestVolumeLimitPerUser(t *testing.T) {
 }
 
 func TestVolumeTemplateChanges(t *testing.T) {
+	t.Parallel()
+
 	fixture := newVolumeStartFixture(t)
 
 	t.Run("size and class changes keep the row's values", func(t *testing.T) {
@@ -540,6 +546,8 @@ func (f *volumeStartFixture) recordedVolume(t *testing.T, template *v1alpha1.MCP
 }
 
 func TestVolumeStartWaitsAndFailures(t *testing.T) {
+	t.Parallel()
+
 	fixture := newVolumeStartFixture(t)
 
 	t.Run("a PV bound to an old claim waits, then times out", func(t *testing.T) {

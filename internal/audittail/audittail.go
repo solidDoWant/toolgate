@@ -45,8 +45,11 @@ const (
 	// poll period, the idle time before a keepalive line, and the longest
 	// stream.
 	DefaultPollInterval = 2 * time.Second
-	DefaultKeepalive    = 15 * time.Second
-	DefaultMaxDuration  = time.Hour
+	// DefaultSettle is how long a row waits before the tail reads it, so a
+	// row that commits after a newer one is still read in key order.
+	DefaultSettle      = 5 * time.Second
+	DefaultKeepalive   = 15 * time.Second
+	DefaultMaxDuration = time.Hour
 	// writeTimeout bounds each write to the client.
 	writeTimeout = 30 * time.Second
 )
@@ -131,8 +134,11 @@ type Options struct {
 	AdminGroup   string
 	Log          *slog.Logger
 	PollInterval time.Duration
-	Keepalive    time.Duration
-	MaxDuration  time.Duration
+	// Settle is the age a row needs before the tail streams it; it
+	// defaults to DefaultSettle.
+	Settle      time.Duration
+	Keepalive   time.Duration
+	MaxDuration time.Duration
 	// Now returns the current time; it defaults to time.Now.
 	Now func() time.Time
 }
@@ -151,6 +157,10 @@ type Handler struct {
 
 // New returns a Handler.
 func New(options Options) *Handler {
+	if options.Settle <= 0 {
+		options.Settle = DefaultSettle
+	}
+
 	if options.PollInterval <= 0 {
 		options.PollInterval = DefaultPollInterval
 	}
@@ -300,9 +310,10 @@ func (h *Handler) backlog(ctx context.Context, stream *stream, principal string,
 	since := now.Add(-BacklogAge)
 
 	rows, err := h.options.Queries.ListAuditTailBacklog(ctx, db.ListAuditTailBacklogParams{
-		Since:     pgtype.Timestamptz{Time: since, Valid: true},
-		Principal: principal,
-		MaxRows:   BacklogEvents,
+		Since:         pgtype.Timestamptz{Time: since, Valid: true},
+		Principal:     principal,
+		MaxRows:       BacklogEvents,
+		SettleSeconds: h.options.Settle.Seconds(),
 	})
 	if err != nil {
 		return cursor{}, err
@@ -329,10 +340,11 @@ func (h *Handler) follow(ctx context.Context, stream *stream, principal string, 
 	for {
 		for {
 			rows, err := h.options.Queries.ListAuditTail(ctx, db.ListAuditTailParams{
-				AfterAt:   pgtype.Timestamptz{Time: current.at, Valid: true},
-				AfterID:   current.id,
-				Principal: principal,
-				MaxRows:   MaxRowsPerQuery,
+				AfterAt:       pgtype.Timestamptz{Time: current.at, Valid: true},
+				AfterID:       current.id,
+				Principal:     principal,
+				MaxRows:       MaxRowsPerQuery,
+				SettleSeconds: h.options.Settle.Seconds(),
 			})
 			if err != nil {
 				if ctx.Err() == nil {

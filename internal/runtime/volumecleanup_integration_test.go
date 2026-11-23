@@ -105,6 +105,8 @@ func (f *stopFixture) volumeEvent(event string) float64 {
 }
 
 func TestVolumeCleanup(t *testing.T) {
+	t.Parallel()
+
 	t.Run("deletes the volume of a deleted template after the reclaim wait", func(t *testing.T) {
 		fixture := newStopFixture(t)
 		template := fixture.template("gone", "per-user", time.Hour, v1alpha1.Access{})
@@ -379,6 +381,8 @@ func countAudit(t *testing.T, pool *pgxpool.Pool, kind, reason string) int {
 }
 
 func TestVolumeCleanupRacesStart(t *testing.T) {
+	t.Parallel()
+
 	fixture := newVolumeStartFixture(t)
 	template := fixture.volumeTemplate("data")
 	principal := fixture.principal()
@@ -507,6 +511,8 @@ func newVolumeFault(base client.WithWatch, limit int64) *volumeFault {
 const maxFaultPoints = 40
 
 func TestVolumeStepsRepeatAfterLeaderChange(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a start stopped after any step is finished by a fresh starter", func(t *testing.T) {
 		fixture := newVolumeStartFixture(t)
 
@@ -627,6 +633,8 @@ func TestVolumeStepsRepeatAfterLeaderChange(t *testing.T) {
 }
 
 func TestVolumeFeatureOff(t *testing.T) {
+	t.Parallel()
+
 	fixture := newVolumeStartFixture(t)
 	template := fixture.volumeTemplate("data")
 	validator := catalog.Validator{PersistentVolumes: false}

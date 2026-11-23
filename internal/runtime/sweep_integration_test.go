@@ -84,6 +84,8 @@ func (h listHook) List(ctx context.Context, list client.ObjectList, options ...c
 }
 
 func TestRestartRecovery(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 

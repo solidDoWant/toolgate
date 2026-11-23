@@ -14,6 +14,8 @@ import (
 )
 
 func TestApprovalExpiry(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	session := fixture.session(t, "approver", "s1", "", "staff")
 
@@ -75,6 +77,8 @@ func TestApprovalExpiry(t *testing.T) {
 }
 
 func TestAccessRequestExpiry(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 
 	insert := func(t *testing.T, id string, ago time.Duration) {

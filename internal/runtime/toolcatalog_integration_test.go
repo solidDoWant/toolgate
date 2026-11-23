@@ -40,6 +40,8 @@ func insertInstance(t *testing.T, queries *db.Queries, id, uid string, generatio
 }
 
 func TestStartStoreLearnsTools(t *testing.T) {
+	t.Parallel()
+
 	queries, startStore := catalogPool(t)
 	insertInstance(t, queries, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "uid-1", 3)
 
@@ -79,6 +81,8 @@ func TestStartStoreLearnsTools(t *testing.T) {
 }
 
 func TestStartStoreLearnsNothingForDeclaredTools(t *testing.T) {
+	t.Parallel()
+
 	queries, startStore := catalogPool(t)
 	startStore.DeclaresTools = func(instance db.Instance) bool { return instance.TemplateUid == "uid-declared" }
 
@@ -104,6 +108,8 @@ func TestStartStoreLearnsNothingForDeclaredTools(t *testing.T) {
 }
 
 func TestStartStoreToolCatalogSizeLimit(t *testing.T) {
+	t.Parallel()
+
 	queries, startStore := catalogPool(t)
 
 	// jsonb's text form adds a space after each colon and comma, so a list
@@ -128,6 +134,8 @@ func TestStartStoreToolCatalogSizeLimit(t *testing.T) {
 }
 
 func TestCatalogCleaner(t *testing.T) {
+	t.Parallel()
+
 	queries, _ := catalogPool(t)
 
 	for _, row := range []struct {

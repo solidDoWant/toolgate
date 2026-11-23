@@ -23,6 +23,8 @@ import (
 // The PostgreSQL start store's writes are compare-and-sets that notify only
 // when they change the row: a late ready after a timeout changes nothing.
 func TestPostgresStartStoreCompareAndSet(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), pg.ConnString())
@@ -96,6 +98,8 @@ func expectEvent(t *testing.T, events <-chan store.Event) {
 // A pending instance's used secrets are stored with the time each was set,
 // and read back unchanged.
 func TestPostgresStartStoreRecordsSecretsUsed(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), pg.ConnString())
@@ -125,6 +129,8 @@ func TestPostgresStartStoreRecordsSecretsUsed(t *testing.T) {
 // The ready write stores the instance's MCP revision and records it in
 // instance.ready. Later writes of the ready row keep it.
 func TestPostgresStartStoreMarkReadyStoresTheRevision(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), pg.ConnString())
@@ -177,6 +183,8 @@ func TestPostgresStartStoreMarkReadyStoresTheRevision(t *testing.T) {
 
 // Finished starts and health failures raise the operational metrics.
 func TestPostgresStartStoreCountsStartsAndHealthFailures(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), pg.ConnString())

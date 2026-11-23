@@ -54,6 +54,8 @@ func (f *stopFixture) foundToolCount(t *testing.T, session db.Session) int {
 }
 
 func TestSessionScopeEntriesEndAndForget(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 
 	t.Run("rows 229, 240: ending deletes the allow entries and found tools, and forgetting deletes the deny entries", func(t *testing.T) {

@@ -302,6 +302,8 @@ func (f *stopFixture) requireOneStopEvent(t *testing.T, instance db.Instance, re
 }
 
 func TestStopDecisions(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 
@@ -527,6 +529,8 @@ func TestStopDecisions(t *testing.T) {
 }
 
 func TestTeardown(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 
@@ -650,6 +654,8 @@ func TestTeardown(t *testing.T) {
 }
 
 func TestStopDeciderDecidesNothingBeforeTheCatalogLoaded(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 
 	// The template is in the database but not read into this catalog yet.
