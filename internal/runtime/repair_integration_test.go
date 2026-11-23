@@ -142,6 +142,8 @@ func (f *stopFixture) enabledCount(t *testing.T, template *v1alpha1.MCPServerTem
 }
 
 func TestRepair(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}, Environments: "any"}
 

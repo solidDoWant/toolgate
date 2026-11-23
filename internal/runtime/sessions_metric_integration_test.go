@@ -13,6 +13,8 @@ import (
 )
 
 func TestSessionsGaugeCountsOpenSessions(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 
 	// sessions sums over the tool search label.
@@ -44,6 +46,8 @@ func TestSessionsGaugeCountsOpenSessions(t *testing.T) {
 }
 
 func TestSessionsGaugeSplitsByToolSearch(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 
 	for _, row := range []struct {

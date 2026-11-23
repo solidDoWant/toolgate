@@ -52,6 +52,14 @@ import (
 	"github.com/solidDoWant/toolgate/internal/workspacesapi"
 )
 
+// auditTailPollInterval is how often an open audit tail looks for new
+// events. Zero keeps the default; integration tests set it lower.
+var auditTailPollInterval time.Duration
+
+// auditTailSettle is how old an audit row must be before a tail streams it.
+// Zero keeps the default; integration tests set it lower.
+var auditTailSettle time.Duration
+
 // serve runs the gateway until SIGTERM or SIGINT and returns the exit code.
 func serve(args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -122,6 +130,9 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		Queries:    db.New(server.Database()),
 		AdminGroup: cfg.AdminGroup,
 		Log:        logger,
+		// Zero means the handler's default; tests shorten it.
+		PollInterval: auditTailPollInterval,
+		Settle:       auditTailSettle,
 	})
 	tail.Register(server, func(next http.Handler) http.Handler {
 		return authenticator.Middleware(next, false)

@@ -29,6 +29,8 @@ func (f *stopFixture) updateStops(t *testing.T, instance db.Instance) int {
 }
 
 func TestUpdatePolicyReplacesOutdatedInstances(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	now := time.Now().Truncate(time.Second)
 	fixture.setNow(now)
@@ -98,6 +100,8 @@ func TestUpdatePolicyReplacesOutdatedInstances(t *testing.T) {
 }
 
 func TestReapplyMissingAppliesDeletedObjectsAgain(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	now := time.Now().Truncate(time.Second)
 	fixture.setNow(now)

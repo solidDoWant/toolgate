@@ -151,6 +151,8 @@ func holdingLease() *fakeFence {
 }
 
 func TestEmbeddingsScalerStartsServerOnDemandAndPublishesState(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, desired := fixture.leader(&now, holdingLease())
@@ -175,6 +177,8 @@ func TestEmbeddingsScalerStartsServerOnDemandAndPublishesState(t *testing.T) {
 }
 
 func TestEmbeddingsScalerIgnoresSessionsWithoutToolSearch(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, _ := fixture.leader(&now, holdingLease())
@@ -190,6 +194,8 @@ func TestEmbeddingsScalerIgnoresSessionsWithoutToolSearch(t *testing.T) {
 }
 
 func TestEmbeddingsScalerStartsServerOnRecordedDemand(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, _ := fixture.leader(&now, holdingLease())
@@ -203,6 +209,8 @@ func TestEmbeddingsScalerStartsServerOnRecordedDemand(t *testing.T) {
 }
 
 func TestEmbeddingsScalerStopsServerAfterIdleTimeout(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 1)
 	now := fixture.start
 	demand := &runtime.EmbeddingsDemand{Pool: fixture.pool, Now: func() time.Time { return now }}
@@ -224,6 +232,8 @@ func TestEmbeddingsScalerStopsServerAfterIdleTimeout(t *testing.T) {
 }
 
 func TestEmbeddingsScalerStopsServerWhileIdleToolSearchSessionLives(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, _ := fixture.leader(&now, holdingLease())
@@ -249,6 +259,8 @@ func TestEmbeddingsScalerStopsServerWhileIdleToolSearchSessionLives(t *testing.T
 }
 
 func TestEmbeddingsScalerLeaderFailoverKeepsIdleTimeout(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	fixture.demandAt(t, now)
@@ -285,6 +297,8 @@ func TestEmbeddingsScalerLeaderFailoverKeepsIdleTimeout(t *testing.T) {
 }
 
 func TestEmbeddingsScalerDoesNothingWithoutLease(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	fixture.demandAt(t, now)
@@ -308,6 +322,8 @@ func TestEmbeddingsScalerDoesNothingWithoutLease(t *testing.T) {
 }
 
 func TestEmbeddingsScalerOnlyGetsDeploymentAndPatchesScale(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	scaler, _ := fixture.leader(&now, holdingLease())
@@ -336,6 +352,8 @@ func TestEmbeddingsScalerOnlyGetsDeploymentAndPatchesScale(t *testing.T) {
 }
 
 func TestEmbeddingsDemandWritesAtMostOncePerInterval(t *testing.T) {
+	t.Parallel()
+
 	fixture := newScalerFixture(t, 0)
 	now := fixture.start
 	demand := &runtime.EmbeddingsDemand{Pool: fixture.pool, Interval: 5 * time.Second, Now: func() time.Time { return now }}

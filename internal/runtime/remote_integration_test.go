@@ -21,6 +21,8 @@ import (
 )
 
 func TestStarterConnectsToRemoteServersWithTheUsersHeaders(t *testing.T) {
+	t.Parallel()
+
 	const aliceKey = "ma_alice_integration_key"
 
 	tests := []struct {
@@ -134,6 +136,8 @@ func TestStarterConnectsToRemoteServersWithTheUsersHeaders(t *testing.T) {
 }
 
 func TestTeardownStopsARemoteInstanceWithoutKubernetes(t *testing.T) {
+	t.Parallel()
+
 	queries, startStore := catalogPool(t)
 
 	_, err := queries.InsertInstance(t.Context(), db.InsertInstanceParams{

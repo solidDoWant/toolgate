@@ -79,6 +79,8 @@ func (f *stopFixture) restartStops(t *testing.T, instance db.Instance) int {
 }
 
 func TestReplace(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}, Environments: "any"}
 

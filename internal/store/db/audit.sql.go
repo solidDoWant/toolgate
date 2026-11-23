@@ -421,17 +421,18 @@ SELECT id, occurred_at, type, principal, workspace, session, attestation,
        server, tool, trace_id, request_id, details
 FROM audit_events
 WHERE (occurred_at, id) > ($1::timestamptz, $2::bigint)
-  AND occurred_at <= now() - interval '5 seconds'
-  AND ($3::text = '' OR principal = $3)
+  AND occurred_at <= now() - make_interval(secs => $3::float8)
+  AND ($4::text = '' OR principal = $4)
 ORDER BY occurred_at, id
-LIMIT $4
+LIMIT $5
 `
 
 type ListAuditTailParams struct {
-	AfterAt   pgtype.Timestamptz
-	AfterID   int64
-	Principal string
-	MaxRows   int32
+	AfterAt       pgtype.Timestamptz
+	AfterID       int64
+	SettleSeconds float64
+	Principal     string
+	MaxRows       int32
 }
 
 type ListAuditTailRow struct {
@@ -451,12 +452,13 @@ type ListAuditTailRow struct {
 
 // Lists at most max_rows audit events after the (after_at, after_id) cursor,
 // oldest first, for the audit tail. An empty principal matches every
-// principal. Rows from the last 5 seconds are left for a later query, so a
+// principal. Rows from the last settle_seconds are left for a later query, so a
 // row that commits after a newer one is still read in key order.
 func (q *Queries) ListAuditTail(ctx context.Context, arg ListAuditTailParams) ([]ListAuditTailRow, error) {
 	rows, err := q.db.Query(ctx, listAuditTail,
 		arg.AfterAt,
 		arg.AfterID,
+		arg.SettleSeconds,
 		arg.Principal,
 		arg.MaxRows,
 	)
@@ -496,16 +498,17 @@ SELECT id, occurred_at, type, principal, workspace, session, attestation,
        server, tool, trace_id, request_id, details
 FROM audit_events
 WHERE occurred_at > $1::timestamptz
-  AND occurred_at <= now() - interval '5 seconds'
-  AND ($2::text = '' OR principal = $2)
+  AND occurred_at <= now() - make_interval(secs => $2::float8)
+  AND ($3::text = '' OR principal = $3)
 ORDER BY occurred_at DESC, id DESC
-LIMIT $3
+LIMIT $4
 `
 
 type ListAuditTailBacklogParams struct {
-	Since     pgtype.Timestamptz
-	Principal string
-	MaxRows   int32
+	Since         pgtype.Timestamptz
+	SettleSeconds float64
+	Principal     string
+	MaxRows       int32
 }
 
 type ListAuditTailBacklogRow struct {
@@ -524,10 +527,15 @@ type ListAuditTailBacklogRow struct {
 }
 
 // Lists the newest max_rows audit events since since, newest first, for the
-// start of an audit tail. It leaves out the same last 5 seconds as
+// start of an audit tail. It leaves out the same last settle_seconds as
 // ListAuditTail. An empty principal matches every principal.
 func (q *Queries) ListAuditTailBacklog(ctx context.Context, arg ListAuditTailBacklogParams) ([]ListAuditTailBacklogRow, error) {
-	rows, err := q.db.Query(ctx, listAuditTailBacklog, arg.Since, arg.Principal, arg.MaxRows)
+	rows, err := q.db.Query(ctx, listAuditTailBacklog,
+		arg.Since,
+		arg.SettleSeconds,
+		arg.Principal,
+		arg.MaxRows,
+	)
 	if err != nil {
 		return nil, err
 	}

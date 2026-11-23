@@ -94,6 +94,8 @@ func deliveryFor(instance db.Instance, token string, issuedAt time.Time, lifetim
 func newExchangeKube() client.Client { return clientfake.NewClientBuilder().Build() }
 
 func TestRefreshDropsOlderDelivery(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	kube := newExchangeKube()
 	issued := time.Now().Add(-10 * time.Minute).Truncate(time.Microsecond)
@@ -131,6 +133,8 @@ func TestRefreshDropsOlderDelivery(t *testing.T) {
 }
 
 func TestRefreshUsesRenderedTargets(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	kube := newExchangeKube()
 	issued := time.Now().Add(-10 * time.Minute).Truncate(time.Microsecond)
@@ -148,6 +152,8 @@ func TestRefreshUsesRenderedTargets(t *testing.T) {
 }
 
 func TestRefreshPatchFailureKeepsRow(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	issued := time.Now().Add(-10 * time.Minute).Truncate(time.Microsecond)
 
@@ -177,6 +183,8 @@ func TestRefreshPatchFailureKeepsRow(t *testing.T) {
 }
 
 func TestExpiredExchangeStopsEnabledInstance(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	kube := newExchangeKube()
 	now := time.Now().Truncate(time.Microsecond)
@@ -199,6 +207,8 @@ func TestExpiredExchangeStopsEnabledInstance(t *testing.T) {
 }
 
 func TestUnconfiguredExchangeStopsAtExpiry(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	kube := newExchangeKube()
 	now := time.Now().Truncate(time.Microsecond)
@@ -221,6 +231,8 @@ func TestUnconfiguredExchangeStopsAtExpiry(t *testing.T) {
 }
 
 func TestNewLeaderStopsOnRowExpiry(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	kube := newExchangeKube()
 	now := time.Now().Truncate(time.Microsecond)
@@ -250,6 +262,8 @@ func exchangeTemplate(template *v1alpha1.MCPServerTemplate, volumes bool) {
 }
 
 func TestReplacementWaitsForExchangedToken(t *testing.T) {
+	t.Parallel()
+
 	for name, volumes := range map[string]bool{"without volumes": false, "with volumes": true} {
 		t.Run(name, func(t *testing.T) {
 			fixture := newStopFixture(t)
@@ -286,6 +300,8 @@ func TestReplacementWaitsForExchangedToken(t *testing.T) {
 }
 
 func TestReapplyReplacesInstanceWithExchange(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	kube := newExchangeKube()
 	now := time.Now().Truncate(time.Microsecond)
@@ -310,6 +326,8 @@ func TestReapplyReplacesInstanceWithExchange(t *testing.T) {
 }
 
 func TestSweepMarksExchangeWanted(t *testing.T) {
+	t.Parallel()
+
 	for name, volumes := range map[string]bool{"without volumes": false, "with volumes": true} {
 		t.Run(name, func(t *testing.T) {
 			fixture := newStopFixture(t)

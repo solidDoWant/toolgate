@@ -88,6 +88,8 @@ func volumeRepairSetup(t *testing.T, fixture *stopFixture, name string, pvLabels
 }
 
 func TestReapplyRecreatesVolumeClaims(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	defer fixture.setNow(time.Now())
 
@@ -113,6 +115,8 @@ func TestReapplyRecreatesVolumeClaims(t *testing.T) {
 }
 
 func TestReapplyFailsWhenRecordedVolumeHasWrongLabels(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	defer fixture.setNow(time.Now())
 

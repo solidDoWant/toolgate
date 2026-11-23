@@ -17,6 +17,8 @@ import (
 
 // The pending gauge counts unexpired pending requests by kind, the leader
 // gauge is 1 after a pass, and an expired request counts once by its kind.
+// This test reads a process-wide counter that other tests also move, so it
+// runs before the parallel ones resume.
 func TestApprovalMetricsFollowRequests(t *testing.T) {
 	fixture := newStopFixture(t)
 	session := fixture.session(t, "approver", "s1", "", "staff")

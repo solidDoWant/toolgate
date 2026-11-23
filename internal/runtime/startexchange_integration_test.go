@@ -22,6 +22,8 @@ import (
 // The exchange rows of a pending instance follow the generation the leader
 // renders, and the starting write records each token's targets and times.
 func TestPostgresStartStoreKeepsExchangeRows(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), pg.ConnString())
@@ -124,6 +126,8 @@ func TestPostgresStartStoreKeepsExchangeRows(t *testing.T) {
 // Every replica listens on the credentials channel, and a subscriber gets
 // each payload as it was sent.
 func TestListenerPassesCredentialPayloads(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 
 	pool, err := store.Open(t.Context(), pg.ConnString())

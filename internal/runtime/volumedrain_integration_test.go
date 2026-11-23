@@ -88,6 +88,8 @@ func (f *stopFixture) holder(t *testing.T, volumeID string) pgtype.Text {
 }
 
 func TestTeardownDrainsVolumePods(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	template := fixture.template("drain", "per-user", time.Hour, v1alpha1.Access{})
 	replicas := int32(2)
@@ -245,6 +247,8 @@ func TestTeardownDrainsVolumePods(t *testing.T) {
 }
 
 func TestSweepSkipsStoppingNamespaces(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	template := fixture.template("sweepstop", "per-user", time.Hour, v1alpha1.Access{})
 

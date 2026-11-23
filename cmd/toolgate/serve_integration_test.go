@@ -22,7 +22,11 @@ import (
 // with a fake identity provider. It returns the gateway's output and
 // its exit code channel, once the gateway logged that it started.
 // Several tests here run serve, and so its controllers, in this one process.
-func init() { skipControllerNameValidation = true }
+func init() {
+	skipControllerNameValidation = true
+	auditTailPollInterval = 50 * time.Millisecond
+	auditTailSettle = time.Second
+}
 
 func startServe(t *testing.T, databaseURL string) (*lockedBuffer, *lockedBuffer, chan int) {
 	t.Helper()

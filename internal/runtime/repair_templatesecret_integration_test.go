@@ -19,6 +19,8 @@ import (
 )
 
 func TestReapplyRendersCurrentTemplateSecret(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}, Environments: "any"}
 

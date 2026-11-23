@@ -143,6 +143,8 @@ func (f *updateFixture) outcome(outcome string) float64 {
 }
 
 func TestTemplateSecretChangeUpdatesRunningInstances(t *testing.T) {
+	t.Parallel()
+
 	fixture := newUpdateFixture(t)
 	version := fixture.setSource(t, map[string][]byte{"api-key": []byte("v1")})
 
@@ -171,6 +173,8 @@ func TestTemplateSecretChangeUpdatesRunningInstances(t *testing.T) {
 }
 
 func TestTemplateSecretUpdateIsLevelBased(t *testing.T) {
+	t.Parallel()
+
 	fixture := newUpdateFixture(t)
 	rendered := fixture.setSource(t, map[string][]byte{"api-key": []byte("v1")})
 
@@ -193,6 +197,8 @@ func TestTemplateSecretUpdateIsLevelBased(t *testing.T) {
 }
 
 func TestTemplateSecretDeletedKeepsCopies(t *testing.T) {
+	t.Parallel()
+
 	fixture := newUpdateFixture(t)
 	fixture.setSource(t, map[string][]byte{"api-key": []byte("v0")})
 	// The fake API server numbers a new object from 999 again, so the
@@ -226,6 +232,8 @@ func TestTemplateSecretDeletedKeepsCopies(t *testing.T) {
 }
 
 func TestTemplateSecretUpdateIgnoresTemplateChanges(t *testing.T) {
+	t.Parallel()
+
 	fixture := newUpdateFixture(t)
 	version := fixture.setSource(t, map[string][]byte{"api-key": []byte("v1")})
 	instance := fixture.liveInstance(t, "update-template-change", "ready", version, "stringData")
@@ -241,6 +249,8 @@ func TestTemplateSecretUpdateIgnoresTemplateChanges(t *testing.T) {
 }
 
 func TestTemplateSecretUpdateSkipsStoppedInstances(t *testing.T) {
+	t.Parallel()
+
 	fixture := newUpdateFixture(t)
 	version := fixture.setSource(t, map[string][]byte{"api-key": []byte("v1")})
 
@@ -262,6 +272,8 @@ func TestTemplateSecretUpdateSkipsStoppedInstances(t *testing.T) {
 }
 
 func TestNewLeaderCatchesUpTemplateSecrets(t *testing.T) {
+	t.Parallel()
+
 	fixture := newUpdateFixture(t)
 	version := fixture.setSource(t, map[string][]byte{"api-key": []byte("v1")})
 	instance := fixture.liveInstance(t, "update-new-leader", "ready", version, "stringData")
@@ -283,6 +295,8 @@ func TestNewLeaderCatchesUpTemplateSecrets(t *testing.T) {
 }
 
 func TestTemplateSecretUpdateChecksUTF8(t *testing.T) {
+	t.Parallel()
+
 	fixture := newUpdateFixture(t)
 	version := fixture.setSource(t, map[string][]byte{"api-key": []byte("v1")})
 	instance := fixture.liveInstance(t, "update-utf8", "ready", version, "stringData", "data")
@@ -303,6 +317,8 @@ func TestTemplateSecretUpdateChecksUTF8(t *testing.T) {
 }
 
 func TestTemplateSecretNamespaceChangeKeepsCopies(t *testing.T) {
+	t.Parallel()
+
 	const reason = "the template secrets namespace changed"
 
 	setup := func(t *testing.T) (*updateFixture, db.Instance) {

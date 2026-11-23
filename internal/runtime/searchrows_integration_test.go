@@ -48,6 +48,8 @@ func searchNames(t *testing.T, queries *db.Queries, uid string) []string {
 
 // Two ready writes of one template at once.
 func TestConcurrentReadyWritesRebuildSearchRows(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())
 	require.NoError(t, err)
@@ -99,6 +101,8 @@ func TestConcurrentReadyWritesRebuildSearchRows(t *testing.T) {
 }
 
 func TestRebuildToolSearchRows(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())
 	require.NoError(t, err)
@@ -196,6 +200,8 @@ func assertNotified(t *testing.T, events <-chan store.Event, uid string) {
 
 // A new leader rebuilds every template's rows.
 func TestNewLeaderRebuildsAllSearchRows(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())
 	require.NoError(t, err)
@@ -232,6 +238,8 @@ func TestNewLeaderRebuildsAllSearchRows(t *testing.T) {
 }
 
 func TestSearchRebuilderWritesOnlyWhileElected(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool, err := store.Open(t.Context(), pg.ConnString())
 	require.NoError(t, err)

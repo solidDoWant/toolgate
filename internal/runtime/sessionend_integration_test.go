@@ -90,6 +90,8 @@ func (f *stopFixture) sessionEnds(t *testing.T, session db.Session) int {
 }
 
 func TestSessionIdleExpiry(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 
@@ -162,6 +164,8 @@ func TestSessionIdleExpiry(t *testing.T) {
 }
 
 func TestSessionResumeWindowForgetsEnabledSet(t *testing.T) {
+	t.Parallel()
+
 	fixture := newStopFixture(t)
 	everyone := v1alpha1.Access{Groups: []string{"staff"}}
 

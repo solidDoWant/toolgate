@@ -175,6 +175,8 @@ func (h *healthHarness) waitForInstanceEvent(t *testing.T) {
 // The upstream announces `list_changed`. The reconciler re-lists,
 // checks and stores the tools, and notifies `instance:<id>`.
 func TestMonitorUpstreamToolListChanged(t *testing.T) {
+	t.Parallel()
+
 	harness := newHealthHarness(t)
 
 	addTool(harness.upstream, "fetch")
@@ -200,6 +202,8 @@ func TestMonitorUpstreamToolListChanged(t *testing.T) {
 // ready fails after 3 health checks in a row, with a reason, and notifies.
 // The session keeps the server enabled.
 func TestMonitorInstanceFailsAfterReady(t *testing.T) {
+	t.Parallel()
+
 	harness := newHealthHarness(t)
 
 	harness.http.CloseClientConnections()

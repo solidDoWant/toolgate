@@ -116,6 +116,8 @@ func (f *sweepFixture) exec(t *testing.T, sql string, args ...any) {
 }
 
 func TestInstanceStopRemovesRowsWithoutDelete(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		stop string
@@ -142,6 +144,8 @@ func TestInstanceStopRemovesRowsWithoutDelete(t *testing.T) {
 }
 
 func TestSweepEndsRemoteUpstreamSessionAfterStop(t *testing.T) {
+	t.Parallel()
+
 	f := newSweepFixture(t)
 	f.instance(t, instanceID, "")
 	id := f.store(t, instanceID)
@@ -166,6 +170,8 @@ func TestSweepEndsRemoteUpstreamSessionAfterStop(t *testing.T) {
 }
 
 func TestSweepSendsNothingWhenRemoteHeadersCannotBeFilled(t *testing.T) {
+	t.Parallel()
+
 	f := newSweepFixture(t)
 	f.instance(t, instanceID, "")
 	f.store(t, instanceID)
@@ -181,6 +187,8 @@ func TestSweepSendsNothingWhenRemoteHeadersCannotBeFilled(t *testing.T) {
 }
 
 func TestSweepDeletesUpstreamSessionOfLiveInstanceOnce(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		end  string
@@ -211,6 +219,8 @@ func TestSweepDeletesUpstreamSessionOfLiveInstanceOnce(t *testing.T) {
 }
 
 func TestSweepKeepsRowsOfValidPairs(t *testing.T) {
+	t.Parallel()
+
 	f := newSweepFixture(t)
 	f.instance(t, instanceID, "tg-one")
 	f.store(t, instanceID)
@@ -223,6 +233,8 @@ func TestSweepKeepsRowsOfValidPairs(t *testing.T) {
 }
 
 func TestSweepAfterLeaderChangeIsSafeToRepeat(t *testing.T) {
+	t.Parallel()
+
 	f := newSweepFixture(t)
 	f.instance(t, instanceID, "tg-one")
 	id := f.store(t, instanceID)
@@ -255,6 +267,8 @@ func TestSweepAfterLeaderChangeIsSafeToRepeat(t *testing.T) {
 }
 
 func TestSweepRunsOnlyOnTheLeaseHolder(t *testing.T) {
+	t.Parallel()
+
 	sweeper := &runtime.UpstreamSessionSweeper{}
 
 	assert.True(t, sweeper.NeedLeaderElection())
