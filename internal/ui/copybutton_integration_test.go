@@ -11,6 +11,8 @@ import (
 	"github.com/chromedp/chromedp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/solidDoWant/toolgate/internal/testutil"
 )
 
 // layoutScript returns the bounding boxes of every element in main, the copy
@@ -39,7 +41,7 @@ func TestCopyButtonDoesNotMoveThePage(t *testing.T) {
 
 			buttons := `main button[data-copy-text]`
 			require.NoError(t, chromedp.Do(ctx,
-				chromedp.Navigate(env.server.URL+"/ui/approvals/"+approvalID(1)),
+				testutil.Navigate(env.server.URL+"/ui/approvals/"+approvalID(1)),
 				chromedp.WaitVisible(chromedp.CSS(buttons)),
 			))
 			_, err := chromedp.Run(ctx, chromedp.Evaluate[any](`Object.defineProperty(navigator, "clipboard", {value: {writeText: function () { return `+outcome.stub+`; }}, configurable: true})`))
