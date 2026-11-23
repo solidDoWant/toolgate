@@ -198,12 +198,22 @@ func TestSessionsWithoutHelper(t *testing.T) {
 		assert.Equal(t, "mcp-session-delete", sessionEnds(auth.MCPSessionPrefix+mcpSessionID),
 			"the session ends at once, before the DELETE returns")
 	})
+}
 
-	t.Run("the idle release of the MCP session ends the session with session.end", func(t *testing.T) {
-		mcpSessionID := initializeConnector(t, endpoint, "alice")
+// TestIdleConnectorSessionEnds waits out the scaled idle timeout, so it runs
+// beside the other tests; it needs no web UI and uses only its own session.
+func TestIdleConnectorSessionEnds(t *testing.T) {
+	t.Parallel()
 
-		require.Eventually(t, func() bool {
-			return sessionEnds(auth.MCPSessionPrefix+mcpSessionID) == "mcp-session-idle"
-		}, scaled(30*time.Minute)+time.Minute, 5*time.Second)
-	})
+	admin := adminClient(t)
+	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
+	mcpSessionID := initializeConnector(t, endpoint, "e2e-connector-idle-"+rand.String(6))
+	session := auth.MCPSessionPrefix + mcpSessionID
+
+	require.Eventually(t, func() bool {
+		reason := strings.TrimSpace(gatewayQuery(t, admin, "SELECT details->>'reason' FROM audit_events WHERE session = '"+
+			session+"' AND type = 'session.end'"))
+
+		return reason == "mcp-session-idle"
+	}, scaled(30*time.Minute)+time.Minute, 5*time.Second)
 }
