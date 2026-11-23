@@ -144,6 +144,8 @@ func (f *mcpFixture) sessionPK(t *testing.T, principal string) int64 {
 }
 
 func TestExchangeTemplateRefusesNonUserIdentities(t *testing.T) {
+	t.Parallel()
+
 	fixture, clients := newNonUserFixture(t)
 
 	for _, client := range clients {

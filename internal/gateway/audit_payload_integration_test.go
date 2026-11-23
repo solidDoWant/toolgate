@@ -73,6 +73,8 @@ func withPayloads(payloads *audit.Payloads) func(*gateway.MCPOptions) {
 }
 
 func TestCallAuditPayloads(t *testing.T) {
+	t.Parallel()
+
 	t.Run("with payloads on, small arguments and results are stored inline", func(t *testing.T) {
 		server := toolgatetest.StartS3(t)
 		fixture := newMCPFixture(t, withPayloads(newPayloads(t, server.Client(), server.Bucket)))

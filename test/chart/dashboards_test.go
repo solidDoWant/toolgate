@@ -144,6 +144,8 @@ func metricNames(expression string) []string {
 }
 
 func TestDashboardsAreValidAndComplete(t *testing.T) {
+	t.Parallel()
+
 	loaded := loadDashboards(t)
 	require.Len(t, loaded, len(dashboardUIDs)+1)
 
@@ -178,6 +180,8 @@ func TestDashboardsAreValidAndComplete(t *testing.T) {
 }
 
 func TestDashboardQueriesUseRegisteredMetrics(t *testing.T) {
+	t.Parallel()
+
 	registered := registeredMetricNames(t)
 	used := map[string]bool{}
 
@@ -214,6 +218,8 @@ func TestDashboardQueriesUseRegisteredMetrics(t *testing.T) {
 // metrics with a server label are counters, so per-server panels use topk and
 // never a histogram.
 func TestDashboardQueriesKeepSeriesCardinalityBounded(t *testing.T) {
+	t.Parallel()
+
 	missingLabel := regexp.MustCompile(`\b(user|session|workspace|tool|request)\b\s*(=|!=|=~|!~)|by \([^)]*\b(user|session|workspace|tool|request)\b`)
 	serverGrouping := regexp.MustCompile(`by \([^)]*\bserver\b`)
 
@@ -236,6 +242,8 @@ func TestDashboardQueriesKeepSeriesCardinalityBounded(t *testing.T) {
 }
 
 func TestDashboardsRenderAsConfigMaps(t *testing.T) {
+	t.Parallel()
+
 	for _, candidate := range renderQuickStart(t) {
 		assert.NotContains(t, candidate.Metadata.Name, "dashboard")
 		assert.NotEqual(t, "GrafanaDashboard", candidate.Kind)
@@ -292,6 +300,8 @@ func TestDashboardsRenderAsConfigMaps(t *testing.T) {
 }
 
 func TestDashboardsRenderAsGrafanaOperatorResources(t *testing.T) {
+	t.Parallel()
+
 	_, err := render(t, quickStartValues, "--set", "dashboards.grafanaOperator.enabled=true")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "instanceSelector")
@@ -330,6 +340,8 @@ func TestDashboardsRenderAsGrafanaOperatorResources(t *testing.T) {
 }
 
 func TestUsageDashboardHasItsVariablesAndNoGatewayMetrics(t *testing.T) {
+	t.Parallel()
+
 	board, ok := loadDashboards(t)[usageDashboard]
 	require.True(t, ok)
 	assert.Equal(t, "toolgate-usage", board.UID)
@@ -356,6 +368,8 @@ func TestUsageDashboardHasItsVariablesAndNoGatewayMetrics(t *testing.T) {
 // of a short session's usage in the first export. increase() doesn't count a
 // new series' first value, so the usage dashboard must count from zero.
 func TestUsageDashboardCountsNewSeriesFromZero(t *testing.T) {
+	t.Parallel()
+
 	board, ok := loadDashboards(t)[usageDashboard]
 	require.True(t, ok)
 
@@ -406,6 +420,8 @@ func loadUsagePanels(t *testing.T) []usagePanel {
 // the newest point up to one interval in the past, so fresh usage is missing
 // from the time series for minutes, and short ranges show no point at all.
 func TestUsageDashboardTimeSeriesShowUsageWithinAMinute(t *testing.T) {
+	t.Parallel()
+
 	for _, panel := range loadUsagePanels(t) {
 		for _, target := range panel.Targets {
 			if !strings.Contains(target.Expr, "$__interval") {
@@ -420,6 +436,8 @@ func TestUsageDashboardTimeSeriesShowUsageWithinAMinute(t *testing.T) {
 // Adding up a ratio's points gives a meaningless number (a cache read share
 // of 253%). Ratios are worked out once over the whole time range instead.
 func TestUsageDashboardNeverSumsRatios(t *testing.T) {
+	t.Parallel()
+
 	ratios := 0
 
 	for _, panel := range loadUsagePanels(t) {
@@ -443,6 +461,8 @@ func TestUsageDashboardNeverSumsRatios(t *testing.T) {
 // Daily cost bars show nothing on a range shorter than a day, so the cost
 // over the selected range is shown too.
 func TestUsageDashboardShowsCostOverTheRange(t *testing.T) {
+	t.Parallel()
+
 	found := false
 
 	for _, panel := range loadUsagePanels(t) {
@@ -464,6 +484,8 @@ func TestUsageDashboardShowsCostOverTheRange(t *testing.T) {
 // session. Joining on the verified user.id as well means a title can only
 // name the sender's own sessions, and sessions without a title still show.
 func TestUsageDashboardJoinsTitlesOnSessionAndUser(t *testing.T) {
+	t.Parallel()
+
 	sessionTables := 0
 
 	for _, panel := range loadUsagePanels(t) {
@@ -486,12 +508,16 @@ func TestUsageDashboardJoinsTitlesOnSessionAndUser(t *testing.T) {
 }
 
 func TestOverviewLinksToUsageDashboard(t *testing.T) {
+	t.Parallel()
+
 	raw, err := os.ReadFile(filepath.Join(chartDir, "dashboards", "overview.json"))
 	require.NoError(t, err)
 	assert.Contains(t, string(raw), "/d/toolgate-usage")
 }
 
 func TestChartPassesPerSignalOTLPSettings(t *testing.T) {
+	t.Parallel()
+
 	env := gatewayEnv(t, renderQuickStart(t,
 		"--set", "config.otlpIngest=true",
 		"--set", "config.otlpMetricsEndpoint=http://vm:8428/opentelemetry",
@@ -507,6 +533,8 @@ func TestChartPassesPerSignalOTLPSettings(t *testing.T) {
 }
 
 func TestChartPassesAllowContent(t *testing.T) {
+	t.Parallel()
+
 	env := gatewayEnv(t, renderQuickStart(t, "--set", "config.allowContent=true"))
 
 	assert.Equal(t, "true", env["TOOLGATE_TELEMETRY_ALLOW_CONTENT"])

@@ -97,6 +97,8 @@ func (p *patchedTokens) contains(token string) bool {
 }
 
 func TestCacheHitRefreshesExchangedToken(t *testing.T) {
+	t.Parallel()
+
 	scene := newCachedRefreshScene(t)
 
 	first := scene.echo(t)
@@ -147,6 +149,8 @@ func TestCacheHitRefreshesExchangedToken(t *testing.T) {
 }
 
 func TestRefusedExchangeEndsCacheHits(t *testing.T) {
+	t.Parallel()
+
 	scene := newCachedRefreshScene(t)
 
 	require.False(t, scene.echo(t).IsError)

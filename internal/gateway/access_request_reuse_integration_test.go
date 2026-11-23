@@ -34,6 +34,8 @@ func workspaceAllow(servers ...string) workspacesapi.Change {
 // A repeated request for the same change waits on the pending one instead
 // of adding another request for the user to decide.
 func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
+	t.Parallel()
+
 	t.Run("two identical workspace allows give one pending request with one ID and URL", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
@@ -165,6 +167,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 // Approving one request closes the user's other pending requests that it
 // made redundant, so the user isn't asked twice for one effect.
 func TestApprovalClosesRequestsItMadeRedundant(t *testing.T) {
+	t.Parallel()
+
 	t.Run("approving a scope allow closes a change request for the same servers", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)

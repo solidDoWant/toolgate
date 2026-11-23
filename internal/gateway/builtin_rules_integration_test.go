@@ -20,6 +20,8 @@ import (
 // toolgate__<tool>. Either refuses its
 // calls and leaves it out of tools/list and toolgate_find_tools.
 func TestBuiltinToolRules(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		name    string
 		glob    string

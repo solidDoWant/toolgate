@@ -85,6 +85,8 @@ func admissionPolicyText(t *testing.T, manifests []manifest) string {
 }
 
 func TestEmbeddingsScaleToZeroEnabled(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t, scaleToZeroValues...)
 
 	t.Run("the embeddings Deployment has no replicas field", func(t *testing.T) {
@@ -138,6 +140,8 @@ func TestEmbeddingsScaleToZeroEnabled(t *testing.T) {
 }
 
 func TestEmbeddingsScaleToZeroDisabled(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		args []string
@@ -170,6 +174,8 @@ func TestEmbeddingsScaleToZeroDisabled(t *testing.T) {
 }
 
 func TestEmbeddingsScaleToZeroIdleTimeout(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		timeout      string
 		errAssertion require.ErrorAssertionFunc
@@ -207,6 +213,8 @@ func TestEmbeddingsScaleToZeroIdleTimeout(t *testing.T) {
 }
 
 func TestEmbeddingsScaleToZeroRefusesAHandSetURL(t *testing.T) {
+	t.Parallel()
+
 	set := append([]string{
 		"embeddings.server.enabled=true", "embeddings.server.scaleToZero.enabled=true",
 		"config.toolSearchEmbeddings.url=http://external:80",
@@ -223,6 +231,8 @@ func refusedAtTemplateTime(message string) require.ErrorAssertionFunc {
 }
 
 func TestOwnerDetailsOnInstanceObjectsCanBeTurnedOff(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		args []string
@@ -241,6 +251,8 @@ func TestOwnerDetailsOnInstanceObjectsCanBeTurnedOff(t *testing.T) {
 }
 
 func TestStepUpMaxAgeMustBeFromOneMinuteToOneHour(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		value        string
 		errAssertion require.ErrorAssertionFunc
@@ -270,5 +282,7 @@ func TestStepUpMaxAgeMustBeFromOneMinuteToOneHour(t *testing.T) {
 }
 
 func TestStepUpMaxAgeDefaultsToFiveMinutes(t *testing.T) {
+	t.Parallel()
+
 	assert.Equal(t, "5m", gatewayEnv(t, renderQuickStart(t))["TOOLGATE_STEP_UP_MAX_AGE"])
 }

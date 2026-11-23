@@ -104,6 +104,8 @@ func (a *workspaceAPI) sessionsList(t *testing.T, client user) sessionsapi.List 
 }
 
 func TestScopeDenyThroughTheAPI(t *testing.T) {
+	t.Parallel()
+
 	t.Run("workspace, server: removes it from the list, inserts a deny entry and deletes its allow entries", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)

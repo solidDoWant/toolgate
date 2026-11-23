@@ -80,6 +80,8 @@ func startAllow(t *testing.T, client *elicitingClient, arguments map[string]any)
 }
 
 func TestBuiltinAllow(t *testing.T) {
+	t.Parallel()
+
 	t.Run("without elicitation an allow inserts one pending scope request, returns its link and changes nothing", func(t *testing.T) {
 		fixture := newBuiltinFixture(t)
 		curatedGithub(fixture)
@@ -320,6 +322,8 @@ func TestBuiltinAllow(t *testing.T) {
 }
 
 func TestBuiltinToolsAllowed(t *testing.T) {
+	t.Parallel()
+
 	calls := []struct {
 		tool      string
 		arguments map[string]any

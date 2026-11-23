@@ -18,6 +18,8 @@ import (
 )
 
 func TestForwardStartsNewUpstreamSessionAfterRestart(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]struct {
 		notFoundBody string
 	}{
@@ -64,6 +66,8 @@ func TestForwardStartsNewUpstreamSessionAfterRestart(t *testing.T) {
 }
 
 func TestForwardRetriesOnlyOnceAfterNotFound(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -84,6 +88,8 @@ func TestForwardRetriesOnlyOnceAfterNotFound(t *testing.T) {
 }
 
 func TestConcurrentNotFoundOnTwoReplicasKeepsOneRow(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -118,6 +124,8 @@ func TestConcurrentNotFoundOnTwoReplicasKeepsOneRow(t *testing.T) {
 }
 
 func TestSessionlessFactIsForgottenWhenInstanceLeavesReady(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -164,6 +172,8 @@ func TestSessionlessFactIsForgottenWhenInstanceLeavesReady(t *testing.T) {
 }
 
 func TestDisableReleasesCopyOnEveryReplica(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -186,6 +196,8 @@ func TestDisableReleasesCopyOnEveryReplica(t *testing.T) {
 }
 
 func TestIdleCopyIsReleasedWithoutDelete(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})

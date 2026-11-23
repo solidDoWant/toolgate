@@ -17,6 +17,8 @@ import (
 const toolDeny = "toolgate_deny"
 
 func TestBuiltinToolsDenied(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		name string
 		// target is the deny's target argument: workspace or session.

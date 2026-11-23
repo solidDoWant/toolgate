@@ -60,6 +60,8 @@ func (f *mcpFixture) discoverInstructions(t *testing.T, client user) string {
 }
 
 func TestCatalogSummary(t *testing.T) {
+	t.Parallel()
+
 	t.Run("instructions list the usable servers with the admin description and never upstream text", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		kube := fixture.addEnableTemplate("kubesearch", "per-user", anyone)

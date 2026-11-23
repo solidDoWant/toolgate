@@ -22,6 +22,8 @@ import (
 // model behind it was swapped, as text-embeddings-inference ignores the model
 // field) must not fail the search: the search falls back to words.
 func TestFindToolsVectorDimensionMismatch(t *testing.T) {
+	t.Parallel()
+
 	var dimensions atomic.Int32
 
 	dimensions.Store(2)

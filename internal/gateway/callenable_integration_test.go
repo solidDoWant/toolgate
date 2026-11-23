@@ -17,6 +17,8 @@ import (
 )
 
 func TestCallEnables(t *testing.T) {
+	t.Parallel()
+
 	t.Run("two calls at once to a server that isn't enabled write one server.enable", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)

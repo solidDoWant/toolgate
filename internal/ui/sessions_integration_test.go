@@ -78,6 +78,8 @@ func decisionTools(page string) []string {
 }
 
 func TestSessionPages(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	user := env.insertSession(t, "sessions-user", nil)
 	admin := env.insertSession(t, "sessions-admin", []string{"admins"})
@@ -150,6 +152,8 @@ func TestSessionPages(t *testing.T) {
 // servers and last decisions, gets 404 for another user's session, and an
 // admin sees all.
 func TestSessionsPage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.insertSession(t, "ac-user", nil)
 	env.insertSession(t, "ac-admin", []string{"admins"})
@@ -234,6 +238,8 @@ func (e *uiEnv) insertCallEvent(t *testing.T, eventType, principal, sessionID, s
 }
 
 func TestSessionPageSections(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	user := env.insertSession(t, "sections-user", nil)
 

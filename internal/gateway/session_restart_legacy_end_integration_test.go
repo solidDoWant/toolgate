@@ -18,6 +18,8 @@ import (
 // before that pass, the entries must still not apply to the restarted
 // session, and the pass must still remove them.
 func TestSessionRestartAfterLegacyEndClearsAllowEntries(t *testing.T) {
+	t.Parallel()
+
 	fixture := newAdditionFixture(t)
 	fixture.setVerifiedDefault(t, policy.ScopeDefaultNone)
 

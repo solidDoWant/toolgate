@@ -230,6 +230,8 @@ func (f *mcpFixture) requireSession(t *testing.T, client user, workspace, attest
 }
 
 func TestWorkspaceKeySessionBinding(t *testing.T) {
+	t.Parallel()
+
 	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
 
@@ -282,6 +284,8 @@ func TestWorkspaceKeySessionBinding(t *testing.T) {
 }
 
 func TestWorkspaceKeysOff(t *testing.T) {
+	t.Parallel()
+
 	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
 
@@ -332,6 +336,8 @@ func TestWorkspaceKeysOff(t *testing.T) {
 }
 
 func TestWorkspaceKeysOffWithoutAttestation(t *testing.T) {
+	t.Parallel()
+
 	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
 
@@ -350,6 +356,8 @@ func TestWorkspaceKeysOffWithoutAttestation(t *testing.T) {
 }
 
 func TestWorkspaceKeyAssertionExpiry(t *testing.T) {
+	t.Parallel()
+
 	var offset atomic.Int64
 
 	clock := func() time.Time { return time.Now().Add(time.Duration(offset.Load())) }

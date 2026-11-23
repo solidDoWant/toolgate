@@ -54,6 +54,8 @@ func rowFor(page, link string) string {
 }
 
 func TestSessionsListShowsEachSessionState(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	user := env.insertSession(t, "list-user", nil)
 
@@ -141,6 +143,8 @@ func TestSessionsListShowsEachSessionState(t *testing.T) {
 }
 
 func TestSessionsListHidesOtherUsersFromNonAdmins(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	user := env.insertSession(t, "scope-user", nil)
 	admin := env.insertSession(t, "scope-admin", []string{"admins"})

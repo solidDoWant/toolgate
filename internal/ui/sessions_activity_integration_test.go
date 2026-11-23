@@ -35,6 +35,8 @@ func (e *uiEnv) insertDecisionWith(t *testing.T, principal, sessionID, decision 
 }
 
 func TestSessionsListShowsServersAndActivityOfEachSession(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	user := env.insertSessionOf(t, "frank", "activity-user", nil)
 

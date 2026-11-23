@@ -21,6 +21,8 @@ import (
 // A different SVID on an open MCP session doesn't match the session's
 // binding, so it gets 404.
 func TestDifferentSVIDOnMCPSessionGets404(t *testing.T) {
+	t.Parallel()
+
 	domain := testutil.NewSPIFFETrustDomain(t, "allowed.test")
 	bundleServer := httptest.NewTLSServer(domain.BundleHandler(t))
 	t.Cleanup(bundleServer.Close)

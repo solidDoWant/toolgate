@@ -22,6 +22,8 @@ func (f *mcpFixture) curate(t *testing.T, server string, change func(*v1alpha1.M
 }
 
 func TestToolCuration(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a hidden tool is absent from the list and refused by either name, recorded and not forwarded", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)

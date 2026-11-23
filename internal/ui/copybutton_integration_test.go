@@ -24,6 +24,8 @@ const layoutScript = `JSON.stringify({
 })`
 
 func TestCopyButtonDoesNotMoveThePage(t *testing.T) {
+	t.Parallel()
+
 	for _, outcome := range []struct{ name, stub, title, state string }{
 		{"copy still running", `new Promise(function () {})`, "Copy the full ID", ""},
 		{"copy done", `Promise.resolve()`, "Copied", "done"},

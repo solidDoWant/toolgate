@@ -28,6 +28,8 @@ func enabledIn(t *testing.T, session *mcp.ClientSession) []string {
 }
 
 func TestReconnectKeepsTheSession(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a client reconnecting with the same session ID finds its servers enabled and listed", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -46,6 +48,8 @@ func TestReconnectKeepsTheSession(t *testing.T) {
 }
 
 func TestReplicaLossKeepsTheSession(t *testing.T) {
+	t.Parallel()
+
 	t.Run("when the replica holding the stream goes away, the client continues on another with no duplicate instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		github := fixture.addEnableTemplate("github", "per-user", anyone)

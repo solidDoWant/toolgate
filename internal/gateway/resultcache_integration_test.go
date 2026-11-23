@@ -246,6 +246,8 @@ func cacheAge(result *mcp.CallToolResult) (string, bool) {
 }
 
 func TestRepeatedCallIsServedFromTheCache(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	instanceID := fixture.enable(t, client, "user:alice", "echo")
@@ -299,6 +301,8 @@ func TestRepeatedCallIsServedFromTheCache(t *testing.T) {
 }
 
 func TestErrorsAreNotCached(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	fixture.enable(t, client, "user:alice", "fails", "missing")
@@ -324,6 +328,8 @@ func TestErrorsAreNotCached(t *testing.T) {
 }
 
 func TestToolWithoutReadOnlyHintIsNotCached(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	instanceID := fixture.enable(t, client, "user:alice")
@@ -354,6 +360,8 @@ func TestToolWithoutReadOnlyHintIsNotCached(t *testing.T) {
 }
 
 func TestOutdatedInstanceSkipsTheCache(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	fixture.enable(t, client, "user:alice", "echo")
@@ -376,6 +384,8 @@ func TestOutdatedInstanceSkipsTheCache(t *testing.T) {
 }
 
 func TestCacheFailuresForwardTheCall(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	fixture.enable(t, client, "user:alice", "echo")
@@ -408,6 +418,8 @@ func TestCacheFailuresForwardTheCall(t *testing.T) {
 }
 
 func TestArgumentsWithoutKeyAreForwarded(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	fixture.enable(t, client, "user:alice", "echo")
@@ -427,6 +439,8 @@ func TestArgumentsWithoutKeyAreForwarded(t *testing.T) {
 }
 
 func TestToolWithoutCacheSettingsHasNoCacheFields(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	fixture.enable(t, client, "user:alice", "plain")
@@ -441,6 +455,8 @@ func TestToolWithoutCacheSettingsHasNoCacheFields(t *testing.T) {
 }
 
 func TestPolicyRunsBeforeTheCache(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		refuse func(t *testing.T, fixture *cacheFixture)
@@ -483,6 +499,8 @@ func TestPolicyRunsBeforeTheCache(t *testing.T) {
 }
 
 func TestApprovalRunsBeforeTheCache(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20, withApprovalURL)
 	fixture.change(func(template *v1alpha1.MCPServerTemplate) {
 		template.Spec.Tools["echo"] = v1alpha1.ToolOverride{Approval: "required", Cache: &v1alpha1.ToolCache{}}
@@ -519,6 +537,8 @@ func TestApprovalRunsBeforeTheCache(t *testing.T) {
 }
 
 func TestEntriesStayInTheirScope(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name          string
 		templateScope string
@@ -573,6 +593,8 @@ func TestEntriesStayInTheirScope(t *testing.T) {
 }
 
 func TestSessionEndDeletesItsEntries(t *testing.T) {
+	t.Parallel()
+
 	setUp := func(t *testing.T) (*cacheFixture, user) {
 		fixture := newCacheFixture(t, 1<<20, 64<<20)
 		fixture.change(func(template *v1alpha1.MCPServerTemplate) {
@@ -627,6 +649,8 @@ func TestSessionEndDeletesItsEntries(t *testing.T) {
 }
 
 func TestSizeLimits(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1024, 4096)
 	client := fixture.connectObserved(t, alice())
 	fixture.enable(t, client, "user:alice", "sized")
@@ -656,6 +680,8 @@ func TestSizeLimits(t *testing.T) {
 }
 
 func TestTemplateChangeInvalidatesEntries(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a new generation doesn't read the old generation's entries", func(t *testing.T) {
 		fixture := newCacheFixture(t, 1<<20, 64<<20)
 		client := fixture.connectObserved(t, alice())
@@ -738,6 +764,8 @@ func TestTemplateChangeInvalidatesEntries(t *testing.T) {
 }
 
 func TestInstanceReplaceKeepsEntries(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	oldID := fixture.enable(t, client, "user:alice", "echo")
@@ -758,6 +786,8 @@ func TestInstanceReplaceKeepsEntries(t *testing.T) {
 }
 
 func TestOnCallServerStartsThenHits(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCacheFixture(t, 1<<20, 64<<20)
 	client := fixture.connectObserved(t, alice())
 	oldID := fixture.enable(t, client, "user:alice", "echo")

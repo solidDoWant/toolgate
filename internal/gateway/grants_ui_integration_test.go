@@ -106,6 +106,8 @@ func (g grantsUI) create(t *testing.T, f *mcpFixture, principal string, form url
 // revoked or expires, enabling is refused, and an already enabled server's
 // tools are withdrawn within 5 s.
 func TestGrantEnablesOptInServer(t *testing.T) {
+	t.Parallel()
+
 	t.Run("revoked", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", optInForAlice)
@@ -175,6 +177,8 @@ func TestGrantEnablesOptInServer(t *testing.T) {
 // A grant narrowed to one session on the Grants page lets that
 // session enable the server and no other session of the same user.
 func TestSessionNarrowedGrant(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", optInForAlice)
 	fixture.startUpstream(t, "github")

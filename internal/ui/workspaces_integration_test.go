@@ -74,6 +74,8 @@ func (e *uiEnv) accessRequestStatus(t *testing.T, id string) string {
 // step-up, a narrowing one without, and refuses a POST without the CSRF token
 // or a UI session.
 func TestWorkspacesPage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 
@@ -305,6 +307,8 @@ func TestWorkspacesPage(t *testing.T) {
 // A change request's page shows the change before and after, only
 // to its owner, and approving it with a fresh step-up applies the change.
 func TestChangeApprovalPage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.addGrantTemplates()
 
@@ -396,6 +400,8 @@ func TestChangeApprovalPage(t *testing.T) {
 }
 
 func TestWorkspacesPageIsOffWithoutTheWorkspaces(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnvConfigured(t, "", toolgatetest.OIDCOptions{}, func(options *ui.Options) { options.Workspaces = nil })
 	browser := env.insertSession(t, "ws-off", []string{"dev"})
 
