@@ -145,7 +145,9 @@ func TestSharedNamespaceSecretsAreDeleted(t *testing.T) {
 
 	t.Run("the sweep deletes the Secret of an instance that isn't live", func(t *testing.T) {
 		id := rand.String(32)
-		labels := map[string]string{runtime.LabelManagedBy: runtime.ManagedByValue, runtime.LabelInstance: id}
+		labels := map[string]string{
+			runtime.LabelManagedBy: runtime.ManagedByValue, runtime.LabelInstance: id, runtime.LabelInstall: installID(t, admin),
+		}
 
 		anchor, err := admin.CoreV1().ConfigMaps(e2eSharedNamespace).Create(t.Context(), &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: runtime.AnchorName(id), Labels: labels},

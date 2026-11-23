@@ -34,6 +34,14 @@ func leaderPod(ctx context.Context, admin *kubernetes.Clientset) (string, error)
 	return pod, nil
 }
 
+// installID returns the gateway install's ID, which the sweep needs on an
+// object before it may delete it.
+func installID(t *testing.T, admin *kubernetes.Clientset) string {
+	t.Helper()
+
+	return strings.TrimSpace(gatewayQuery(t, admin, "SELECT id FROM install"))
+}
+
 // orphanNamespace creates an instance namespace that no instance row
 // belongs to.
 func orphanNamespace(t *testing.T, admin *kubernetes.Clientset, id string) string {
@@ -41,8 +49,10 @@ func orphanNamespace(t *testing.T, admin *kubernetes.Clientset, id string) strin
 
 	name := runtime.NamespacePrefix + id
 	_, err := admin.CoreV1().Namespaces().Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
-		Name:   name,
-		Labels: map[string]string{runtime.LabelManagedBy: runtime.ManagedByValue, runtime.LabelInstance: id},
+		Name: name,
+		Labels: map[string]string{
+			runtime.LabelManagedBy: runtime.ManagedByValue, runtime.LabelInstance: id, runtime.LabelInstall: installID(t, admin),
+		},
 	}}, metav1.CreateOptions{})
 	require.NoError(t, err)
 
