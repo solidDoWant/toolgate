@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/chromedp/chromedp"
@@ -58,6 +59,10 @@ func StartBrowser(tb testing.TB, extra ...chromedp.ExecAllocatorOption) context.
 		// aborts; /tmp has room.
 		chromedp.Flag("disable-dev-shm-usage", true),
 	)
+	// Chromium's own output, logged when the test fails: "browser process
+	// exited" alone doesn't say why.
+	output := &tailBuffer{limit: 8 << 10}
+	options = append(options, chromedp.CombinedOutput(output))
 	options = append(options, extra...)
 
 	allocator, cancelAllocator := chromedp.NewExecAllocator(context.WithoutCancel(tb.Context()), options...)
@@ -66,6 +71,10 @@ func StartBrowser(tb testing.TB, extra ...chromedp.ExecAllocatorOption) context.
 	tb.Cleanup(func() {
 		cancelBrowser()
 		cancelAllocator()
+
+		if tb.Failed() {
+			tb.Logf("Chromium output (last %d bytes):\n%s", output.limit, output.String())
+		}
 	})
 
 	// Start the browser now, so a broken one fails here. The first run
@@ -95,4 +104,30 @@ func SignInToOIDC(user OIDCUser) chromedp.Action[chromedp.Void] {
 		chromedp.SetValue(chromedp.ID("groups"), strings.Join(user.Groups, ",")),
 		chromedp.Click(chromedp.ID("sign-in")),
 	)
+}
+
+// tailBuffer keeps the last limit bytes written to it.
+type tailBuffer struct {
+	mu    sync.Mutex
+	limit int
+	data  []byte
+}
+
+func (b *tailBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.data = append(b.data, p...)
+	if extra := len(b.data) - b.limit; extra > 0 {
+		b.data = b.data[extra:]
+	}
+
+	return len(p), nil
+}
+
+func (b *tailBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return string(b.data)
 }

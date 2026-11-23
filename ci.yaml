@@ -64,7 +64,7 @@ stages:
     # there.
     run: >-
       mkdir -p /lib64 &&
-      ln -sfn "$(nix build --inputs-from . --no-link --print-out-paths nixpkgs#glibc)/lib/ld-linux-x86-64.so.2" /lib64/ld-linux-x86-64.so.2 &&
+      ln -sfn "$(nix build --inputs-from . --no-link --print-out-paths "nixpkgs#glibc^out")/lib/ld-linux-x86-64.so.2" /lib64/ld-linux-x86-64.so.2 &&
       nix shell --inputs-from . nixpkgs#nodejs -c sh -c '
       npm install --global --prefix "$XDG_CACHE_HOME/claude-code" --allow-scripts=@anthropic-ai/claude-code @anthropic-ai/claude-code@2.1.318 >/dev/null &&
       PATH="$XDG_CACHE_HOME/claude-code/bin:$PATH" make plugin-check'
