@@ -17,6 +17,8 @@ import (
 )
 
 func TestReplyNotificationReachesReplySubscribersOnly(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 

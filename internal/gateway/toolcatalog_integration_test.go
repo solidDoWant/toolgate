@@ -79,6 +79,8 @@ func TestToolCatalogLists(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a starting instance lists the catalog list; a different real list reaches the session and other scope keys", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startOnEnable(template)
@@ -111,6 +113,8 @@ func TestToolCatalogLists(t *testing.T) {
 	})
 
 	t.Run("with no row for the current generation the list falls back to the newest older row", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startOnEnable(template)
@@ -125,6 +129,8 @@ func TestToolCatalogLists(t *testing.T) {
 	})
 
 	t.Run("declared tools are listed while others start and nothing is learned from a ready instance", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startOnEnable(template)
@@ -156,6 +162,8 @@ func TestToolCatalogLists(t *testing.T) {
 	})
 
 	t.Run("a failed instance of the current generation lists no tools; of an older generation it lists the catalog", func(t *testing.T) {
+		t.Parallel()
+
 		for _, test := range []struct {
 			name       string
 			generation int64
@@ -191,6 +199,8 @@ func TestToolCatalogLists(t *testing.T) {
 	})
 
 	t.Run("an instance that was ready before and is pending again withdraws the tools", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startOnEnable(template)

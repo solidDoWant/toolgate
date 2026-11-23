@@ -28,6 +28,8 @@ const phase2Version = 5
 const insertPhase2Session = `INSERT INTO sessions (principal, session_id, workspace, attestation) VALUES ($1, $2, 'w', $3)`
 
 func TestScopingMigrationBackfillsSessionKind(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool := openPool(t, pg.ConnString())
 	ctx := t.Context()
@@ -100,6 +102,8 @@ func TestScopingMigrationBackfillsSessionKind(t *testing.T) {
 }
 
 func TestScopingConstraints(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)
@@ -152,6 +156,8 @@ func TestScopingConstraints(t *testing.T) {
 }
 
 func TestScopingReadQueries(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)
@@ -207,6 +213,8 @@ func TestScopingReadQueries(t *testing.T) {
 }
 
 func TestEnsureUserScope(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)

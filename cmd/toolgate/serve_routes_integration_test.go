@@ -22,6 +22,8 @@ import (
 var pathParameter = regexp.MustCompile(`\{[^}]+\}`)
 
 func TestServeMountsEveryDocumentedAPIRoute(t *testing.T) {
+	t.Parallel()
+
 	gateway := startServeWithSecrets(t)
 	defer stopServe(t, gateway.stderr, gateway.done)
 
@@ -43,6 +45,8 @@ func TestServeMountsEveryDocumentedAPIRoute(t *testing.T) {
 }
 
 func TestServeSettingsRouteReturnsTheMatchingProfile(t *testing.T) {
+	t.Parallel()
+
 	gateway := startServeWithSecrets(t)
 	defer stopServe(t, gateway.stderr, gateway.done)
 

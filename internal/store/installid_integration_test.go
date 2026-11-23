@@ -13,6 +13,8 @@ import (
 )
 
 func TestInstallIDIsGeneratedOnceAndStable(t *testing.T) {
+	t.Parallel()
+
 	pool := openPool(t, testutil.StartPostgres(t).ConnString())
 
 	first, err := store.InstallID(t.Context(), pool)

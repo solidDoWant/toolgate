@@ -60,6 +60,26 @@ func (f *mcpFixture) insertGrant(t *testing.T, principal, server, tool, session 
 	return id, expiresAt
 }
 
+// shortenGrant moves a grant's expires_at to lifetime from now and sends
+// grant:<id>, as a grant created with that lifetime would, so a test need not
+// wait for the shortest lifetime a page offers.
+func (f *mcpFixture) shortenGrant(t *testing.T, id string, lifetime time.Duration) time.Time {
+	t.Helper()
+
+	var expiresAt time.Time
+
+	require.NoError(t, pgx.BeginFunc(t.Context(), f.pool, func(tx pgx.Tx) error {
+		if err := tx.QueryRow(t.Context(), `UPDATE grants SET expires_at = now() + make_interval(secs => $2) WHERE id = $1 RETURNING expires_at`,
+			id, lifetime.Seconds()).Scan(&expiresAt); err != nil {
+			return err
+		}
+
+		return store.Notify(t.Context(), tx, store.KindGrant, id)
+	}))
+
+	return expiresAt
+}
+
 // revokeGrant revokes a grant and sends grant:<id>.
 func (f *mcpFixture) revokeGrant(t *testing.T, id string) {
 	t.Helper()

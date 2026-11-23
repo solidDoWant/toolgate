@@ -74,11 +74,12 @@ func pendingMessage(id string) string {
 	return fmt.Sprintf("Tool `github__echo` needs approval. Approve request `%s` at %s%s, then call the tool again with the same arguments.", id, approvalBaseURL, id)
 }
 
-// Runs serially: it sets a process-wide test hook that parallel tests would also trigger.
 func TestApprovalRequest(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a call needing approval inserts a pending approval, writes approval.request and refuses with the link", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		result := callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi", "a": 1})
@@ -108,6 +109,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("without the web UI the call fails with the no web UI message", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t)
 
 		result := callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -120,6 +123,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("the same call again finds the pending approval", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		first := callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -137,6 +142,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("a usable approval lets the call through once and records it", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -159,6 +166,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("the upstream receives exactly the canonical bytes that were hashed", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		arguments := json.RawMessage(`{"text": "a", "n": 1.50, "text": "b"}`)
@@ -184,6 +193,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("a used approval lets no second call through; that call gets a new pending approval", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -204,6 +215,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("when another call uses the approval first, the call starts again once and gets a new pending approval", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -212,7 +225,7 @@ func TestApprovalRequest(t *testing.T) {
 
 		// The other call's compare-and-set commits between this call's
 		// lookup and its use.
-		t.Cleanup(gateway.SetBeforeApprovalUse(func() {
+		t.Cleanup(gateway.SetBeforeApprovalUse(fixture.pool, func() {
 			_, err := fixture.pool.Exec(t.Context(), `UPDATE approvals SET used_at = now() WHERE id = $1`, first)
 			assert.NoError(t, err)
 		}))
@@ -227,6 +240,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("a RequestState naming another principal's approval finds nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		bobClient := fixture.connectObserved(t, bob())
@@ -249,6 +264,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("a RequestState naming the caller's expired approval refuses with approval-timeout", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -269,6 +286,8 @@ func TestApprovalRequest(t *testing.T) {
 	})
 
 	t.Run("once the template drops approval: required, the call needs no approval", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
@@ -320,8 +339,9 @@ func TestApprovalPendingLimit(t *testing.T) {
 	}
 }
 
-// Runs serially: it sets a process-wide test hook that parallel tests would also trigger.
 func TestApprovalUseRechecks(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		change func(t *testing.T, fixture *approvalFixture)
@@ -380,13 +400,15 @@ func TestApprovalUseRechecks(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newApprovalFixture(t, withApprovalURL)
 
 			callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
 			id := fixture.approvals(t)[0].ID
 			fixture.approve(t, id)
 
-			t.Cleanup(gateway.SetBeforeApprovalUse(func() { test.change(t, fixture) }))
+			t.Cleanup(gateway.SetBeforeApprovalUse(fixture.pool, func() { test.change(t, fixture) }))
 
 			result := callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
 			require.True(t, result.IsError)

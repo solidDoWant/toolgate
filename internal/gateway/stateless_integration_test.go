@@ -111,6 +111,8 @@ func TestStatelessClient(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a 2026-07-28 client lists, enables, calls and disables on the stateless handler", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -154,6 +156,8 @@ func TestStatelessClient(t *testing.T) {
 	})
 
 	t.Run("a 2026-07-28 request without X-Toolgate-Session gets 400 with a plain invalid request error", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		response := fixture.postModern(t, alice(), "tools/list", func(header http.Header) { header.Del(auth.SessionHeader) })
@@ -174,6 +178,8 @@ func TestStatelessClient(t *testing.T) {
 	})
 
 	t.Run("a 2026-07-28 request without a token gets 401", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		response := fixture.postModern(t, alice(), "tools/list", func(header http.Header) { header.Del("Authorization") })
@@ -181,6 +187,8 @@ func TestStatelessClient(t *testing.T) {
 	})
 
 	t.Run("server/discover without X-Toolgate-Session lists the older revisions and makes no session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		response := fixture.postModern(t, alice(), "server/discover", func(header http.Header) { header.Del(auth.SessionHeader) })
@@ -204,6 +212,8 @@ func TestStatelessClient(t *testing.T) {
 	})
 
 	t.Run("server/discover still needs a token", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		response := fixture.postModern(t, alice(), "server/discover", func(header http.Header) {
@@ -214,6 +224,8 @@ func TestStatelessClient(t *testing.T) {
 	})
 
 	t.Run("a go-sdk client at its default ends on 2025-11-25", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		session := fixture.connect(t, alice())
@@ -221,6 +233,8 @@ func TestStatelessClient(t *testing.T) {
 	})
 
 	t.Run("a stateless binding is held while its listen stream is open and released when idle", func(t *testing.T) {
+		t.Parallel()
+
 		const idle = 300 * time.Millisecond
 
 		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.MCPSessionIdleTimeout = idle })
@@ -240,6 +254,8 @@ func TestStatelessClient(t *testing.T) {
 	})
 
 	t.Run("list_changed reaches a listen stream on another replica", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		other := fixture.replica(t)

@@ -47,6 +47,8 @@ func migratedPool(t *testing.T) (*testutil.Postgres, *pgxpool.Pool) {
 }
 
 func TestMigrateCreatesSchema(t *testing.T) {
+	t.Parallel()
+
 	pool := openPool(t, testutil.StartPostgresEmpty(t).ConnString())
 	require.NoError(t, store.Migrate(t.Context(), pool))
 	ctx := t.Context()
@@ -82,6 +84,8 @@ func TestMigrateCreatesSchema(t *testing.T) {
 }
 
 func TestLiveInstanceUniqueIndex(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)
@@ -114,6 +118,8 @@ func TestLiveInstanceUniqueIndex(t *testing.T) {
 }
 
 func TestMigrateConcurrently(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgresEmpty(t)
 
 	const gateways = 5
@@ -154,6 +160,8 @@ func TestMigrateConcurrently(t *testing.T) {
 }
 
 func TestMigrateWaitsForAnotherGatewaysMigration(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgresEmpty(t)
 	ctx := t.Context()
 
@@ -192,6 +200,8 @@ func TestMigrateWaitsForAnotherGatewaysMigration(t *testing.T) {
 }
 
 func TestNotifyReachesOtherConnections(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 
 	events, stop := startListener(t, pool)
@@ -218,6 +228,8 @@ func TestNotifyReachesOtherConnections(t *testing.T) {
 }
 
 func TestListenerReconnectsAndReportsMissed(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 
 	events, stop := startListener(t, pool)
@@ -240,6 +252,8 @@ func TestListenerReconnectsAndReportsMissed(t *testing.T) {
 }
 
 func TestNewConnectionsUseRotatedClientCertificate(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	ctx := t.Context()
 

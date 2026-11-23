@@ -50,6 +50,8 @@ func setMCPSessionTime(t *testing.T, pool *pgxpool.Pool, id, column string, ago 
 }
 
 func TestMCPSessionRowKeepsBindingAndParams(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	queries := db.New(pool)
 
@@ -80,6 +82,8 @@ func TestMCPSessionRowKeepsBindingAndParams(t *testing.T) {
 }
 
 func TestMCPSessionTouchAndIdleEndExcludeEachOther(t *testing.T) {
+	t.Parallel()
+
 	idleTimeout := pgtype.Interval{Microseconds: (30 * time.Minute).Microseconds(), Valid: true}
 
 	t.Run("touch first keeps the session", func(t *testing.T) {
@@ -114,6 +118,8 @@ func TestMCPSessionTouchAndIdleEndExcludeEachOther(t *testing.T) {
 }
 
 func TestDeleteStaleRowsDeletesMCPSessionsAnHourAfterTheyEnded(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	queries := db.New(pool)
 

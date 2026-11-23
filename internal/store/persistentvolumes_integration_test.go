@@ -27,6 +27,8 @@ func insertTestInstance(t *testing.T, queries *db.Queries, id string) {
 }
 
 func TestMigrateKeepsStoppingInstancesWithoutStoppingTime(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool := openPool(t, pg.ConnString())
 	ctx := t.Context()
@@ -54,6 +56,8 @@ func TestMigrateKeepsStoppingInstancesWithoutStoppingTime(t *testing.T) {
 }
 
 func TestPersistentVolumeChecksRefuseBadRows(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 
 	const insert = `INSERT INTO persistent_volumes (id, template_ns, template_name, template_uid, volume_name, scope, scope_id, storage_class, size_bytes, delete_reason)
@@ -100,6 +104,8 @@ func TestPersistentVolumeChecksRefuseBadRows(t *testing.T) {
 }
 
 func TestStoppedWriteReleasesHeldVolumes(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)

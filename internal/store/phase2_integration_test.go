@@ -71,6 +71,8 @@ func newSession(t *testing.T, queries *db.Queries, principal string) int64 {
 }
 
 func TestPhase2MigrationSchema(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 
@@ -131,6 +133,8 @@ func TestPhase2MigrationSchema(t *testing.T) {
 }
 
 func TestPhase2MigrationKeepsPhase1Rows(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool := openPool(t, pg.ConnString())
 	ctx := t.Context()
@@ -301,6 +305,8 @@ func limitCases(t *testing.T, pool *pgxpool.Pool) []limitCase {
 }
 
 func TestRowLimitsHoldUnderConcurrentInserts(t *testing.T) {
+	t.Parallel()
+
 	for index := range 3 {
 		_, pool := migratedPool(t)
 		test := limitCases(t, pool)[index]
@@ -338,6 +344,8 @@ func TestRowLimitsHoldUnderConcurrentInserts(t *testing.T) {
 }
 
 func TestPhase2CompareAndSetWrites(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)
@@ -439,6 +447,8 @@ func TestPhase2CompareAndSetWrites(t *testing.T) {
 }
 
 func TestDeleteStaleRows(t *testing.T) {
+	t.Parallel()
+
 	_, pool := migratedPool(t)
 	ctx := t.Context()
 	queries := db.New(pool)
