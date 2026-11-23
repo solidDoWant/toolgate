@@ -60,6 +60,9 @@ type gatewayInstallOptions struct {
 	// Embeddings keeps the bundled embeddings server. It is off by default
 	// because starting it is the slowest part of an install.
 	Embeddings bool
+	// Replicas is the number of gateway pods; 0 keeps the harness's. Only a
+	// test that does not depend on a second pod sets it.
+	Replicas int
 }
 
 // gatewayInstall is a toolgate install that one test owns.
@@ -149,6 +152,13 @@ func installGateway(t *testing.T, options gatewayInstallOptions) *gatewayInstall
 	}
 	if !options.Embeddings {
 		overrides["embeddings"] = map[string]any{"server": map[string]any{"enabled": false}}
+	}
+
+	if options.Replicas > 0 {
+		overrides["config"].(map[string]any)["replicas"] = options.Replicas
+
+		ownReplicas.Store(top, options.Replicas)
+		t.Cleanup(func() { ownReplicas.Delete(top) })
 	}
 
 	mergeValues(overrides, options.Values)

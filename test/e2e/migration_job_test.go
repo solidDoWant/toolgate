@@ -131,7 +131,7 @@ func (o *jobObservation) observe(t *testing.T, admin *kubernetes.Clientset, stop
 func TestSeparateMigrationCredential(t *testing.T) {
 	// It changes the chart settings, so it runs on its own install.
 	t.Parallel()
-	install := installGateway(t, gatewayInstallOptions{})
+	install := installGateway(t, gatewayInstallOptions{Replicas: 1})
 
 	image := mcpServerImage(t)
 	admin := adminClient(t)

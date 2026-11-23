@@ -90,7 +90,7 @@ func searchTools(t *testing.T, session *gatewaySession, query string) gateway.Fi
 func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
 	// It watches an embeddings server scale, so it runs on its own install with its own server.
 	t.Parallel()
-	installGateway(t, gatewayInstallOptions{Embeddings: true})
+	installGateway(t, gatewayInstallOptions{Embeddings: true, Replicas: 1})
 
 	admin := adminClient(t)
 	kube := templateClient(t)

@@ -203,7 +203,7 @@ func gatewayPods(t *testing.T, admin *kubernetes.Clientset) []string {
 			}
 		}
 
-		assert.Len(collect, names, 2, "two gateway replicas are ready")
+		assert.Len(collect, names, gatewayReplicas(t), "all gateway replicas are ready")
 	}, 3*time.Minute, 2*time.Second)
 
 	slices.Sort(names)
