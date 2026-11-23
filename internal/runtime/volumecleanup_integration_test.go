@@ -275,6 +275,28 @@ func TestVolumeCleanup(t *testing.T) {
 		assert.InDelta(t, 0, fixture.volumeEvent(runtime.VolumeEventDeleted), 0, "nothing was deleted by toolgate")
 	})
 
+	t.Run("never touches a PV that carries another install's label", func(t *testing.T) {
+		fixture := newStopFixture(t)
+		template := fixture.template("other-install", "per-user", time.Hour, v1alpha1.Access{})
+		fixture.setNow(time.Now())
+		fixture.catalog.Delete(types.NamespacedName{Namespace: template.Namespace, Name: template.Name})
+
+		row := fixture.freeVolume(t, template, "pv-other-install")
+		pv := fixture.createPV(t, row, corev1.VolumeAvailable)
+		pv.Labels[runtime.LabelInstall] = otherInstall
+		require.NoError(t, fixture.kube.Update(t.Context(), pv))
+
+		cleaner := fixture.volumeCleaner()
+		cleaner.InstallID = ownInstall
+		require.NoError(t, cleaner.Run(t.Context()))
+
+		after, found := fixture.getPV(t, "pv-other-install")
+		require.True(t, found)
+		assert.Equal(t, corev1.PersistentVolumeReclaimRetain, after.Spec.PersistentVolumeReclaimPolicy)
+		assert.Equal(t, otherInstall, after.Labels[runtime.LabelInstall])
+		assert.InDelta(t, 0, fixture.volumeEvent(runtime.VolumeEventDeleted), 0)
+	})
+
 	t.Run("never touches a PV without toolgate's labels and forgets its row", func(t *testing.T) {
 		fixture := newStopFixture(t)
 		template := fixture.template("labels", "per-user", time.Hour, v1alpha1.Access{})

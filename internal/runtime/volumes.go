@@ -265,7 +265,7 @@ func preBind(ctx context.Context, writer client.Client, pv *corev1.PersistentVol
 // the one a provisioner made for that claim, labels it. The caller writes
 // the returned PVName and SizeBytes to the row with a compare-and-set.
 func recordVolume(ctx context.Context, reader client.Reader, writer client.Client, row db.PersistentVolume,
-	instance db.Instance, template *v1alpha1.MCPServerTemplate,
+	instance db.Instance, template *v1alpha1.MCPServerTemplate, installID string,
 ) (volumeStep, error) {
 	var claim corev1.PersistentVolumeClaim
 
@@ -327,6 +327,10 @@ func recordVolume(ctx context.Context, reader client.Reader, writer client.Clien
 	pv.Labels[LabelTemplateUID] = row.TemplateUid
 	pv.Labels[LabelVolume] = row.VolumeName
 	pv.Labels[LabelVolumeID] = row.ID
+
+	if installID != "" {
+		pv.Labels[LabelInstall] = installID
+	}
 
 	patch := client.MergeFromWithOptions(old, client.MergeFromWithOptimisticLock{})
 	if err := writer.Patch(ctx, &pv, patch); err != nil {

@@ -222,7 +222,7 @@ func (s *Starter) recordHeldVolumes(ctx context.Context, instance db.Instance, t
 			continue
 		}
 
-		step, err := recordVolume(ctx, s.volumeReader(), s.Client, row, instance, template)
+		step, err := recordVolume(ctx, s.volumeReader(), s.Client, row, instance, template, s.InstallID)
 		if err != nil {
 			return false, err
 		}

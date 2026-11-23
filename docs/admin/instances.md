@@ -120,12 +120,18 @@ toolgate sets these keys when it creates an object. Instances that were created 
 
 The replica that holds the leader Lease compares Kubernetes with the database every 30 seconds. It does this also when it takes the Lease after a restart or after the previous holder stopped. It lists the instance namespaces first, and then reads the instance records:
 
-- If a namespace has the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/instance`, but no running instance has that ID, toolgate deletes the namespace.
+- If a namespace has the labels `app.kubernetes.io/managed-by: toolgate` and `toolgate.soliddowant.dev/instance`, but no running instance has that ID, toolgate deletes the namespace. It does this only for namespaces with its own `toolgate.soliddowant.dev/install` label. See "Several installs in one cluster" below.
 - If the namespace of a starting or ready instance is missing, toolgate starts the instance again from the current version of its template.
 - If an instance was stopping, toolgate deletes its namespace again. The sweep skips the namespace of a stopping instance, so the drain is not cut short. Teardown deletes it.
 - In the shared namespace, toolgate deletes each object with the label `toolgate.soliddowant.dev/instance` when no running instance has that ID. The garbage collector then deletes the Secrets that the deleted anchor owns. toolgate never deletes the shared namespace.
 
 Do not put the label `toolgate.soliddowant.dev/instance` on namespaces that you make yourself. toolgate deletes them.
+
+### Several installs in one cluster
+
+You can run more than one toolgate install in a cluster, for example staging and production. Each install has an install ID. toolgate makes the ID once and keeps it in the install's database, so it does not change when pods restart or you rename the release. toolgate puts the ID in the label `toolgate.soliddowant.dev/install` on every namespace, shared-namespace object and PersistentVolume that it creates. The sweep and the volume clean-up touch only objects that carry their own install's ID. They never touch objects of another install.
+
+When you upgrade from a version that did not set this label, objects have no install label yet. toolgate does not delete an object without an install label unless a running instance in its own database names it. In the shared namespace, toolgate adds its label to the objects of its own instances. An unlabeled object that no instance of the install names stays in the cluster, and toolgate writes one warning to its log for it. You can delete such an object yourself.
 
 ## Upstream sessions
 

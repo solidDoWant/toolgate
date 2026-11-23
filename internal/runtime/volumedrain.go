@@ -90,7 +90,7 @@ func (t *Teardown) recordHeldVolumes(ctx context.Context, instance db.Instance, 
 			continue
 		}
 
-		step, err := recordVolume(ctx, t.Reader, t.Writer, row, instance, template)
+		step, err := recordVolume(ctx, t.Reader, t.Writer, row, instance, template, t.InstallID)
 		if err != nil {
 			t.Log.WarnContext(ctx, "record volume at stop failed", slog.String("instance", instance.ID),
 				slog.String("volume", row.VolumeName), slog.Any("error", err))

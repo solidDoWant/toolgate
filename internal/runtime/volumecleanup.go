@@ -42,7 +42,10 @@ const (
 // VolumeCleaner decides which persistent volumes to delete and deletes their
 // PVs. Only the leader runs it, on its full passes.
 type VolumeCleaner struct {
-	Pool *pgxpool.Pool
+	// InstallID is this install's ID. A PV that carries another install's
+	// ID is never touched. Empty turns the check off.
+	InstallID string
+	Pool      *pgxpool.Pool
 	// Reader reads PVs without a cache; Writer patches and deletes them.
 	Reader client.Reader
 	Writer client.Client
@@ -255,7 +258,7 @@ func (c *VolumeCleaner) deleteOne(ctx context.Context, queries *db.Queries, row 
 	}
 
 	if pv.Labels[LabelVolumeID] != row.ID || pv.Labels[LabelTemplateUID] != row.TemplateUid ||
-		pv.Labels[LabelManagedBy] != ManagedByValue {
+		pv.Labels[LabelManagedBy] != ManagedByValue || foreignInstall(pv.Labels, c.InstallID) {
 		return c.refuseForeignPV(ctx, queries, row, pv.Name)
 	}
 
@@ -431,4 +434,13 @@ func (c *VolumeCleaner) setGauges(ctx context.Context, queries *db.Queries) erro
 	}
 
 	return nil
+}
+
+// foreignInstall reports whether labels name an install other than
+// installID. Objects without an install label, and a check with no install
+// ID, are not foreign.
+func foreignInstall(labels map[string]string, installID string) bool {
+	owner, found := labels[LabelInstall]
+
+	return installID != "" && found && owner != installID
 }

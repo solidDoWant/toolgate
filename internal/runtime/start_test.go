@@ -266,8 +266,9 @@ func newStarterFixture(t *testing.T, template *v1alpha1.MCPServerTemplate, statu
 	}
 
 	fixture.starter = &runtime.Starter{
-		Store:  fixture.store,
-		Client: fixture.kube,
+		InstallID: testInstallID,
+		Store:     fixture.store,
+		Client:    fixture.kube,
 		Template: func(key types.NamespacedName) (*v1alpha1.MCPServerTemplate, bool) {
 			if key != (types.NamespacedName{Namespace: template.Namespace, Name: template.Name}) {
 				return nil, false
@@ -323,6 +324,8 @@ func fakeApply(ctx context.Context, kube client.WithWatch, object k8sruntime.App
 	return kube.Create(ctx, policy)
 }
 
+const testInstallID = "0123456789abcdef0123456789abcdef"
+
 func instanceLabels() map[string]string {
 	return map[string]string{runtime.LabelInstance: instanceID, runtime.LabelManagedBy: runtime.ManagedByValue}
 }
@@ -351,6 +354,7 @@ func TestStarterPendingPreparesNamespaceAndApplies(t *testing.T) {
 	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Name: instanceNamespace}, namespace))
 	assert.Equal(t, "toolgate", namespace.Labels["app.kubernetes.io/managed-by"])
 	assert.Equal(t, instanceID, namespace.Labels["toolgate.soliddowant.dev/instance"])
+	assert.Equal(t, testInstallID, namespace.Labels[runtime.LabelInstall], "the namespace carries the install label")
 	assert.Equal(t, "true", namespace.Labels["toolgate.soliddowant.dev/writable"])
 	assert.Equal(t, "restricted", namespace.Labels["pod-security.kubernetes.io/enforce"])
 
@@ -381,6 +385,7 @@ func TestStarterPendingPreparesNamespaceAndApplies(t *testing.T) {
 	require.NoError(t, fixture.kube.Get(t.Context(), client.ObjectKey{Namespace: instanceNamespace, Name: "settings"}, configMap))
 	assert.Equal(t, "alice@example.com", configMap.Data["email"], "rendered with the render_session snapshot")
 	assert.Equal(t, instanceID, configMap.Labels[runtime.LabelInstance])
+	assert.Equal(t, testInstallID, configMap.Labels[runtime.LabelInstall], "rendered objects carry the install label")
 
 	managers := map[string]bool{}
 	for _, field := range configMap.ManagedFields {
@@ -799,6 +804,7 @@ func TestStarterOwnsSharedNamespaceObjectsByAnchor(t *testing.T) {
 	assert.Equal(t, map[string]string{
 		runtime.LabelManagedBy: runtime.ManagedByValue,
 		runtime.LabelInstance:  instanceID,
+		runtime.LabelInstall:   testInstallID,
 		runtime.LabelTemplate:  template.Name,
 		runtime.LabelScope:     "shared", runtime.LabelTemplateNamespace: "catalog",
 	}, anchor.Labels)
