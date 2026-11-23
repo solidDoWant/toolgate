@@ -16,4 +16,8 @@ if [[ "${E2E_SKIP_ACCEPTANCE:-false}" == true ]]; then
 fi
 
 # Tests that call t.Parallel() run together once the serial ones are done.
-timeout 60m ./scripts/ci/go-test-json.sh -count=1 -tags e2e -timeout 55m "${args[@]}" ./...
+# A hung test must fail in minutes, with go test's goroutine dump, not hold the
+# CI slot for the pipeline's hour. The limit is a small multiple of the suite's
+# run time: lower it as the suite gets faster. E2E_TEST_TIMEOUT overrides it.
+test_timeout="${E2E_TEST_TIMEOUT:-30m}"
+timeout "$((${test_timeout%m} + 3))m" ./scripts/ci/go-test-json.sh -count=1 -tags e2e -timeout "$test_timeout" "${args[@]}" ./...
