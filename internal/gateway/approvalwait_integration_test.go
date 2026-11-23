@@ -280,9 +280,8 @@ func TestApprovalElicitation(t *testing.T) {
 	})
 }
 
+// Runs serially: it sets a process-wide wait interval that parallel tests also read.
 func TestApprovalWait(t *testing.T) {
-	t.Parallel()
-
 	t.Run("a denial fails the waiting call", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
