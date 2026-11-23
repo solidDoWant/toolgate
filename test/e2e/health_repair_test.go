@@ -136,6 +136,8 @@ func requireToolsBack(t *testing.T, session *gatewaySession, name string) {
 }
 
 func TestHealthCheckRepair(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	kube := templateClient(t)
 	pods := gatewayPods(t, admin)

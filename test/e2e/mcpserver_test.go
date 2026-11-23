@@ -66,6 +66,8 @@ func structuredResult(t *testing.T, session *mcp.ClientSession, tool string, res
 // The harness's test MCP server image runs in the cluster and reports the
 // environment and mounted Secret it was given, with the configured tools.
 func TestHarnessMCPServerImage(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	config := adminConfig(t)
 	admin := adminClient(t)

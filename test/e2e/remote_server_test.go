@@ -111,6 +111,8 @@ func createRemoteTemplate(t *testing.T, url string) string {
 // A remote template connects to a server outside the gateway's control with
 // headers built from the calling user's own secret.
 func TestRemoteServerWithBearerToken(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 

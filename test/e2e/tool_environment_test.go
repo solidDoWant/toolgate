@@ -97,6 +97,8 @@ func connectWithToken(t *testing.T, endpoint, token, session string) *gatewaySes
 }
 
 func TestPerToolEnvironment(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	namespace := workloadNamespace(t)
 	admin := adminClient(t)

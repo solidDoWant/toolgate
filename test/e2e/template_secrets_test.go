@@ -75,6 +75,8 @@ func templateSecretResources(t *testing.T, image, source string) []k8sruntime.Ra
 // starts, and the gateway patches a changed value into the instance's Secret
 // without a restart.
 func TestTemplateSecretSharedInstance(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

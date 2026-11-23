@@ -46,6 +46,8 @@ func gatewayQuery(t *testing.T, admin *kubernetes.Clientset, sql string) string 
 }
 
 func TestObjectHealthAfterReady(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

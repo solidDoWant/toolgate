@@ -40,7 +40,7 @@ lint-fix: ## Run golangci-lint and apply its fixes.
 	golangci-lint run --fix ./...
 
 .PHONY: test
-test: ## Run unit tests: Go (race detector; GO_TEST_JSON=file also writes the go test -json events there), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, the e2e shard selection, and the image build and release tests.
+test: ## Run unit tests: Go (race detector; GO_TEST_JSON=file also writes the go test -json events there), the agent scheduler and wait-ci tests, the test guard, the acceptance scoreboard, and the image build and release tests.
 	./scripts/ci/go-test-json.sh -race -count=1 ./...
 	./scripts/build-images_test.sh
 	./scripts/release_test.sh
@@ -50,7 +50,6 @@ test: ## Run unit tests: Go (race detector; GO_TEST_JSON=file also writes the go
 	./scripts/acceptance-scoreboard_test.py
 	./scripts/check-images_test.py
 	./scripts/check-tracking-ids_test.py
-	./scripts/e2e/shard_test.py
 
 .PHONY: test-guard
 test-guard: ## Fail if HEAD deletes, unlists or skips a test named on a `Tests:` line of a checklist since its merge base with BASE (default origin/master; CI passes the PR labels).
@@ -73,11 +72,11 @@ search-eval: ## Score the tool search fixture against any embeddings endpoint: m
 	SEARCH_EVAL_EMBED_URL='$(EMBED_URL)' SEARCH_EVAL_EMBED_MODEL='$(EMBED_MODEL)' timeout 15m go test -tags integration -count=1 -v -timeout 14m -run '^TestSearchEval$$' ./internal/gateway/
 
 .PHONY: test-e2e
-test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server), then delete it. E2E_SHARD=i/n runs shard i of n only.
+test-e2e: ## Run the e2e-tagged tests on a new kind cluster (Flux, PostgreSQL, S3, the chart with a fresh gateway image, the fake IdP and the test MCP server), then delete it.
 	./scripts/e2e/run.sh ./scripts/test-e2e.sh
 
 .PHONY: acceptance
-acceptance: ## Run every test named on a checklist `Tests:` line on a new kind cluster (as test-e2e) and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/). E2E_SHARD=i/n runs shard i of n only.
+acceptance: ## Run every test named on a checklist `Tests:` line on a new kind cluster (as test-e2e) and print the scoreboard for docs/acceptance/phase-$(PHASE).md (written to build/acceptance/).
 	PHASE=$(PHASE) ./scripts/e2e/run.sh ./scripts/acceptance.sh
 
 .PHONY: docs-check

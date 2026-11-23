@@ -152,7 +152,7 @@ log "creating kind cluster $cluster"
 if command -v ci-kind-config >/dev/null; then
 	# Tekton CI: the nodes pull through the CI cluster's registrygate and keep
 	# their image cache between builds, keyed by the cluster's name (ci.yaml
-	# gives each shard a fixed one).
+	# gives the e2e stage a fixed one).
 	ci-kind-config --name "$cluster" --image "$kind_node_image" |
 		kind create cluster --kubeconfig "$KUBECONFIG" --wait 3m --config=- >&2
 else
