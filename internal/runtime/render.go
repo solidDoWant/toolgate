@@ -27,6 +27,9 @@ const (
 	LabelInstance  = "toolgate.soliddowant.dev/instance"
 	LabelTemplate  = "toolgate.soliddowant.dev/template"
 	LabelManagedBy = "app.kubernetes.io/managed-by"
+	// LabelInstall is the ID of the install that created an object. An
+	// install's sweep and clean-up touch only objects with its own value.
+	LabelInstall = "toolgate.soliddowant.dev/install"
 	// LabelOwner is the hashed owner principal of an instance namespace.
 	LabelOwner = "toolgate.soliddowant.dev/owner"
 

@@ -107,7 +107,10 @@ var statusKinds = []schema.GroupVersionKind{
 // failed, and marks a ready instance unhealthy while one of its objects has
 // failed.
 type Starter struct {
-	Store StartStore
+	// InstallID is stamped on every object the starter creates, in the
+	// label every install's sweep selects on. Empty adds no label.
+	InstallID string
+	Store     StartStore
 	// Client applies, reads and lists instance objects.
 	Client client.Client
 	// Template returns the template an instance is started from.
@@ -462,7 +465,12 @@ func (s *Starter) identity(ctx context.Context, instance db.Instance) (Identity,
 
 // metadata returns the labels and annotations of an instance's objects.
 func (s *Starter) metadata(instance db.Instance, template *v1alpha1.MCPServerTemplate, identity Identity) InstanceMetadata {
-	return NewInstanceMetadata(instance, template, identity, s.GatewayVersion, s.OmitOwnerDetails)
+	meta := NewInstanceMetadata(instance, template, identity, s.GatewayVersion, s.OmitOwnerDetails)
+	if s.InstallID != "" {
+		meta.Labels[LabelInstall] = s.InstallID
+	}
+
+	return meta
 }
 
 func (s *Starter) timedOut(instance db.Instance, template *v1alpha1.MCPServerTemplate) bool {

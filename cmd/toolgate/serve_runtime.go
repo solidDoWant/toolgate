@@ -220,12 +220,18 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 		return nil, fmt.Errorf("kubernetes manager: %w", err)
 	}
 
+	installID, err := store.InstallID(ctx, pool)
+	if err != nil {
+		return nil, err
+	}
+
 	teardown := &runtime.Teardown{
-		Pool:    pool,
-		Reader:  mgr.GetClient(),
-		Deleter: reconciler,
-		Log:     logger,
-		Metrics: metrics,
+		InstallID: installID,
+		Pool:      pool,
+		Reader:    mgr.GetClient(),
+		Deleter:   reconciler,
+		Log:       logger,
+		Metrics:   metrics,
 
 		Writer:         mgr.GetClient(),
 		VolumesEnabled: cfg.PersistentVolumesEnabled,
@@ -234,6 +240,8 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	// The sweep deletes namespaces that belong to no live instance on every
 	// pass, starting with the pass on gaining the Lease.
 	sweep := &runtime.Sweep{
+		InstallID:       installID,
+		Writer:          mgr.GetClient(),
 		Pool:            pool,
 		Reader:          mgr.GetAPIReader(),
 		Deleter:         reconciler,
@@ -282,6 +290,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	}
 
 	starter := &runtime.Starter{
+		InstallID:        installID,
 		Store:            startStore,
 		Client:           mgr.GetClient(),
 		Template:         options.catalog.Running,
@@ -383,7 +392,7 @@ func startRuntime(ctx context.Context, options runtimeOptions) (<-chan error, er
 	queries := db.New(pool)
 	catalogCleaner := &runtime.CatalogCleaner{Queries: queries, TemplateUIDs: options.catalog.UIDs}
 	volumeCleaner := &runtime.VolumeCleaner{
-		Pool: pool, Reader: mgr.GetAPIReader(), Writer: mgr.GetClient(), Template: options.catalog.Running,
+		Pool: pool, Reader: mgr.GetAPIReader(), Writer: mgr.GetClient(), Template: options.catalog.Running, InstallID: installID,
 		Enabled: cfg.PersistentVolumesEnabled, UnusedRetention: time.Duration(cfg.PersistentVolumesUnusedRetention),
 		Metrics: metrics, AuditOutput: options.auditOutput, Log: logger,
 	}

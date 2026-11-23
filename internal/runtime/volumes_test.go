@@ -226,7 +226,7 @@ func recordRefused(t *testing.T, fixture recordCase, reason string) {
 	var before corev1.PersistentVolume
 	require.NoError(t, writer.Get(t.Context(), types.NamespacedName{Name: fixture.pv.Name}, &before))
 
-	step, err := runtime.RecordVolume(t.Context(), writer, writer, row, instance, template)
+	step, err := runtime.RecordVolume(t.Context(), writer, writer, row, instance, template, "")
 	require.NoError(t, err)
 	assert.Equal(t, runtime.VolumeFail, step.Outcome)
 	assert.Equal(t, reason, step.Reason)
@@ -273,7 +273,7 @@ func TestRecordVolumeLabelsProvisionedPV(t *testing.T) {
 	fixture := recordFixture(row)
 	writer := fake.NewClientBuilder().WithObjects(fixture.pv, fixture.claim).Build()
 
-	step, err := runtime.RecordVolume(t.Context(), writer, writer, row, instance, template)
+	step, err := runtime.RecordVolume(t.Context(), writer, writer, row, instance, template, "")
 	require.NoError(t, err)
 	assert.Equal(t, runtime.VolumeGoOn, step.Outcome)
 	assert.Equal(t, "pvc-claim-uid", step.PVName)
@@ -293,7 +293,7 @@ func TestRecordVolumeWaitsForUnboundClaim(t *testing.T) {
 	fixture.claim.Status.Phase = corev1.ClaimPending
 	writer := fake.NewClientBuilder().WithObjects(fixture.pv, fixture.claim).Build()
 
-	step, err := runtime.RecordVolume(t.Context(), writer, writer, row, instance, template)
+	step, err := runtime.RecordVolume(t.Context(), writer, writer, row, instance, template, "")
 	require.NoError(t, err)
 	assert.Equal(t, runtime.VolumeWait, step.Outcome)
 }

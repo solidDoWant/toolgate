@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,7 +28,10 @@ import (
 // second, so a namespace or object applied after the rows were read can't be taken
 // for an orphan.
 type Sweep struct {
-	Pool *pgxpool.Pool
+	// InstallID is this install's ID. The sweep selects and deletes only
+	// objects that carry it, and labels objects it adopts with it.
+	InstallID string
+	Pool      *pgxpool.Pool
 	// Reader lists instance namespaces. It must read the API server, not a
 	// cache that may lag behind it.
 	Reader  client.Reader
@@ -41,6 +45,12 @@ type Sweep struct {
 	// and never the namespace. Empty means there is none.
 	SharedNamespace string
 	Log             *slog.Logger
+	// Writer patches the install label onto objects the sweep adopts. Nil
+	// turns adoption off.
+	Writer client.Client
+
+	// unowned remembers the unlabeled objects already logged.
+	unowned sync.Map
 }
 
 // Pass wraps a full pass so that the sweep runs before it.
@@ -58,6 +68,10 @@ func (s *Sweep) Pass(pass func(ctx context.Context) error) func(ctx context.Cont
 // sends every live starting or ready instance whose namespace is missing back
 // to pending at its template's current generation.
 func (s *Sweep) Run(ctx context.Context) error {
+	// Adoption comes first, so an instance's own, still unlabeled namespace
+	// counts as present in this pass.
+	adoptErr := s.adoptUnlabeled(ctx)
+
 	namespaces := &corev1.NamespaceList{}
 	if err := s.Reader.List(ctx, namespaces, client.MatchingLabels{LabelManagedBy: ManagedByValue},
 		client.HasLabels{LabelInstance}); err != nil {
@@ -67,7 +81,7 @@ func (s *Sweep) Run(ctx context.Context) error {
 	var sharedObjects []*unstructured.Unstructured
 
 	if s.SharedNamespace != "" {
-		objects, err := listInstanceObjects(ctx, s.Reader, s.SharedNamespace, client.HasLabels{LabelInstance})
+		objects, err := listInstanceObjects(ctx, s.Reader, s.SharedNamespace, client.HasLabels{LabelInstance}, s.ownSelector())
 		if err != nil {
 			return fmt.Errorf("list instance objects: %w", err)
 		}
@@ -103,6 +117,18 @@ func (s *Sweep) Run(ctx context.Context) error {
 
 		if namespace.Name == s.SharedNamespace {
 			// The shared namespace is never deleted, whatever its labels.
+			continue
+		}
+
+		// Another install's namespace is never touched. A namespace with no
+		// install label is this install's only when one of its rows names it;
+		// the gateway has no right to patch namespaces, so it isn't labelled.
+		if install, labelled := namespace.Labels[LabelInstall]; s.InstallID != "" && (labelled && install != s.InstallID ||
+			!labelled && !s.rowNames(live, stopping, id, namespace.Name)) {
+			if !labelled {
+				s.logUnowned(ctx, "Namespace", "", namespace.Name, id)
+			}
+
 			continue
 		}
 
@@ -164,7 +190,7 @@ func (s *Sweep) Run(ctx context.Context) error {
 		}
 	}
 
-	return errors.Join(problems...)
+	return errors.Join(append(problems, adoptErr)...)
 }
 
 // restart sends an instance whose objects are missing back to pending, at
@@ -206,4 +232,15 @@ func (s *Sweep) restart(ctx context.Context, instance db.Instance) error {
 	}
 
 	return nil
+}
+
+// rowNames reports whether a live or stopping instance row has the ID and the namespace.
+func (s *Sweep) rowNames(live map[string]db.Instance, stopping map[string]string, id, namespace string) bool {
+	if instance, found := live[id]; found && instance.Namespace == namespace {
+		return true
+	}
+
+	stoppingNamespace, found := stopping[id]
+
+	return found && stoppingNamespace == namespace
 }

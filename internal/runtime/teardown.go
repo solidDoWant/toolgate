@@ -45,7 +45,9 @@ type Deleter interface {
 // Teardown moves failed and stopped instances through stopping to stopped,
 // deleting their namespaces.
 type Teardown struct {
-	Pool *pgxpool.Pool
+	// InstallID is stamped on the PVs the teardown labels. Empty adds no label.
+	InstallID string
+	Pool      *pgxpool.Pool
 	// Reader reads instance namespaces.
 	Reader  client.Reader
 	Deleter Deleter
@@ -427,15 +429,16 @@ var sharedNamespaceKinds = []schema.GroupVersionKind{
 
 // listInstanceObjects lists the objects of sharedNamespaceKinds in namespace
 // that carry toolgate's label and match selector.
-func listInstanceObjects(ctx context.Context, reader client.Reader, namespace string, selector client.ListOption) ([]*unstructured.Unstructured, error) {
+func listInstanceObjects(ctx context.Context, reader client.Reader, namespace string, selectors ...client.ListOption) ([]*unstructured.Unstructured, error) {
 	var objects []*unstructured.Unstructured
 
 	for _, kind := range sharedNamespaceKinds {
 		list := &unstructured.UnstructuredList{}
 		list.SetGroupVersionKind(kind.GroupVersion().WithKind(kind.Kind + "List"))
 
-		if err := reader.List(ctx, list, client.InNamespace(namespace),
-			client.MatchingLabels{LabelManagedBy: ManagedByValue}, selector); err != nil {
+		options := append([]client.ListOption{client.InNamespace(namespace), client.MatchingLabels{LabelManagedBy: ManagedByValue}}, selectors...)
+
+		if err := reader.List(ctx, list, options...); err != nil {
 			return nil, fmt.Errorf("list %s in %s: %w", kind.Kind, namespace, err)
 		}
 

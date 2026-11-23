@@ -78,6 +78,12 @@ type Grant struct {
 	RevokedBy    pgtype.Text
 }
 
+type Install struct {
+	OnlyRow   bool
+	ID        string
+	CreatedAt pgtype.Timestamptz
+}
+
 type Instance struct {
 	ID                 string
 	TemplateNs         string
