@@ -210,9 +210,9 @@ func TestApproveNeedsAFreshStepUp(t *testing.T) {
 	assert.Empty(t, env.approvalEvents(t, "approval.approve", id))
 }
 
+// This test is not parallel: it compares the process-wide approval counter,
+// and parallel tests only resume after every serial test has finished.
 func TestApproveAndDeny(t *testing.T) {
-	t.Parallel()
-
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "decide-session", nil)
 	env.ageSignIn(t, "decide-session", time.Minute)
