@@ -18,6 +18,8 @@ func kindsNamed(manifests []manifest) map[string]bool {
 }
 
 func TestModelServersAreOffByDefault(t *testing.T) {
+	t.Parallel()
+
 	names := kindsNamed(renderQuickStart(t))
 
 	for name := range names {
@@ -26,6 +28,8 @@ func TestModelServersAreOffByDefault(t *testing.T) {
 }
 
 func TestModelServersRenderAndWireTheGateway(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t, "--set", "embeddings.server.enabled=true")
 	names := kindsNamed(manifests)
 
@@ -51,6 +55,8 @@ func TestModelServersRenderAndWireTheGateway(t *testing.T) {
 }
 
 func TestModelServerURLSetByTheAdminWins(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t, "--set", "embeddings.server.enabled=true", "--set", "config.toolSearchEmbeddings.url=http://external:80")
 
 	var all strings.Builder
@@ -63,12 +69,16 @@ func TestModelServerURLSetByTheAdminWins(t *testing.T) {
 }
 
 func TestModelServerNeedsAPinnedRevision(t *testing.T) {
+	t.Parallel()
+
 	_, err := render(t, append([]string{"embeddings.server.enabled=true", "embeddings.server.modelRevision=main"}, quickStartValues...))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "modelRevision")
 }
 
 func TestChartRendersNoNetworkPolicies(t *testing.T) {
+	t.Parallel()
+
 	configurations := map[string][]string{
 		"defaults":      nil,
 		"split roles":   {"--set", "config.database.migrateOnStart=false", "--set", "config.database.migrationSecret=toolgate-migrator"},

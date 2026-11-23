@@ -83,6 +83,8 @@ func (e *uiEnv) insertInlinePayloadEvent(t *testing.T, principal, raw string) st
 }
 
 func TestAuditEventPayloadView(t *testing.T) {
+	t.Parallel()
+
 	env, payloads := startPayloadEnv(t)
 
 	// A payload over the inline limit goes to S3; one under it stays inline.
@@ -141,6 +143,8 @@ func TestAuditEventPayloadView(t *testing.T) {
 }
 
 func TestAuditEventPayloadIsCutAtOneMiB(t *testing.T) {
+	t.Parallel()
+
 	env, payloads := startPayloadEnv(t)
 
 	key := env.insertPayloadEvent(t, payloads, "tool.result", "dave", strings.Repeat("a", ui.MaxShownPayloadBytes+100), `{}`)
@@ -155,6 +159,8 @@ func TestAuditEventPayloadIsCutAtOneMiB(t *testing.T) {
 }
 
 func TestApprovalPageShowsArguments(t *testing.T) {
+	t.Parallel()
+
 	env, payloads := startPayloadEnv(t)
 	id := approvalID(0)
 	env.insertApproval(t, id, "dave", approvalTimeout)

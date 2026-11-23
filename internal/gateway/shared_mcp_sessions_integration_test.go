@@ -114,6 +114,8 @@ func (f *mcpFixture) endIdleMCPSessions(t *testing.T) {
 }
 
 func TestSharedMCPSessions(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a session served by two replicas round-robin never gets 404", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		other := fixture.replica(t)

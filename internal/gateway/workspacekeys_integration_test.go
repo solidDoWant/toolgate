@@ -169,6 +169,8 @@ func (a *keyAPI) insertActiveKeys(t *testing.T, principal string, count int) {
 }
 
 func TestWorkspaceKeyRegistration(t *testing.T) {
+	t.Parallel()
+
 	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
 
@@ -304,6 +306,8 @@ func TestWorkspaceKeyRegistration(t *testing.T) {
 }
 
 func TestWorkspaceKeyApproval(t *testing.T) {
+	t.Parallel()
+
 	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
 
@@ -527,6 +531,8 @@ func TestWorkspaceKeyApproval(t *testing.T) {
 }
 
 func TestWorkspaceKeyRevocation(t *testing.T) {
+	t.Parallel()
+
 	fixture, refusals := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
 

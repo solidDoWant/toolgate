@@ -74,6 +74,8 @@ func (e *uiEnv) requestStatusOf(t *testing.T, id string) string {
 // after a fresh sign-in, always for the workspace. A second session doesn't
 // get the session-only addition, and ending the session removes it.
 func TestSessionAddition(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 
 	browser := toolgatetest.StartBrowser(t, chromedp.Flag("ignore-certificate-errors", true))

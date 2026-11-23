@@ -202,6 +202,8 @@ func (f *mcpFixture) auditRows(t *testing.T, eventType string) []auditRow {
 }
 
 func TestCallForwarding(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a call returns the upstream result and writes tool.decision and tool.result with full identity", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -346,6 +348,8 @@ func TestCallForwarding(t *testing.T) {
 }
 
 func TestCallLimits(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a result of exactly 16 MiB is forwarded", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -427,6 +431,8 @@ func TestCallLimits(t *testing.T) {
 }
 
 func TestCallInteractions(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a disable while a call is in flight lets the call finish, refuses later calls with not-enabled and withdraws the tools", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)

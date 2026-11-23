@@ -21,8 +21,8 @@ import (
 func (f *mcpFixture) insertOwnedInstance(t *testing.T, template *v1alpha1.MCPServerTemplate, owner string, generation int64) string {
 	t.Helper()
 
-	instanceCounter++
-	id := fmt.Sprintf("%032x", instanceCounter)
+	counter := instanceCounter.Add(1)
+	id := fmt.Sprintf("%032x", counter)
 
 	scopeKey := "shared"
 	if owner != "" {
@@ -40,6 +40,8 @@ func (f *mcpFixture) insertOwnedInstance(t *testing.T, template *v1alpha1.MCPSer
 }
 
 func TestCatalogViewServersMatchListServersForAUser(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addTemplate("by-subject", "per-user", v1alpha1.Access{Users: []string{"alice"}, Environments: "any"})
 	fixture.addTemplate("attested-only", "per-user", v1alpha1.Access{Users: []string{"alice"}, Environments: "attested"})
@@ -63,6 +65,8 @@ func TestCatalogViewServersMatchListServersForAUser(t *testing.T) {
 }
 
 func TestCatalogViewLiveInstances(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	perUser := fixture.addTemplate("per-user", "per-user", v1alpha1.Access{Users: []string{"alice", "bob"}, Environments: "any"})
 	shared := fixture.addTemplate("shared", "shared", v1alpha1.Access{Users: []string{"alice"}, Environments: "any"})

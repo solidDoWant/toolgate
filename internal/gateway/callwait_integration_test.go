@@ -133,8 +133,8 @@ func (f *mcpFixture) resumePending(t *testing.T, template *v1alpha1.MCPServerTem
 func (f *mcpFixture) replaceInstance(t *testing.T, old db.Instance) string {
 	t.Helper()
 
-	instanceCounter++
-	id := fmt.Sprintf("%032x", instanceCounter)
+	counter := instanceCounter.Add(1)
+	id := fmt.Sprintf("%032x", counter)
 
 	require.NoError(t, pgx.BeginFunc(t.Context(), f.pool, func(tx pgx.Tx) error {
 		queries := db.New(tx)
@@ -163,6 +163,8 @@ func (f *mcpFixture) replaceInstance(t *testing.T, old db.Instance) string {
 }
 
 func TestCallWaitsForStartingInstance(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a call to a restored server that is still pending waits, with progress, and is forwarded once it is ready", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)

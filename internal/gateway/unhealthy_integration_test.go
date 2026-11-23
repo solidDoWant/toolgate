@@ -32,6 +32,8 @@ func (f *mcpFixture) setHealth(t *testing.T, id string, healthy bool, reason str
 }
 
 func TestUnhealthyInstance(t *testing.T) {
+	t.Parallel()
+
 	t.Run("an instance that becomes unhealthy lets the call in flight finish, refuses later calls with not-ready and withdraws the tools", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)

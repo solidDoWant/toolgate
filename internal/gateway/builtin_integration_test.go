@@ -62,6 +62,8 @@ func listScopesResult(t *testing.T, text string) gateway.ListScopesResult {
 }
 
 func TestBuiltinServer(t *testing.T) {
+	t.Parallel()
+
 	t.Run("without the web UI the server isn't in the catalog and its tools are refused with not-offered", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -205,6 +207,8 @@ func TestBuiltinServer(t *testing.T) {
 }
 
 func TestBuiltinServerSearchRows(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a new leader writes the built-in server's search rows and the cleanup keeps them", func(t *testing.T) {
 		fixture := newBuiltinFixture(t)
 		queries := db.New(fixture.pool)

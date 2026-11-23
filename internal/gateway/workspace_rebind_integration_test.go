@@ -88,6 +88,8 @@ func (f *mcpFixture) requireRebound(t *testing.T, client user, id int64, previou
 }
 
 func TestNewMCPSessionMovesToTheNewWorkspace(t *testing.T) {
+	t.Parallel()
+
 	fixture, _ := newKeyFixture(t)
 	api := newKeyAPI(t, fixture, true)
 

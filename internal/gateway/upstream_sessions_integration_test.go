@@ -350,6 +350,8 @@ func (f *mcpFixture) sessionfulInstance(t *testing.T, client *observedClient, se
 }
 
 func TestForwardUsesOneUpstreamSessionAcrossReplicas(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -382,6 +384,8 @@ func TestForwardUsesOneUpstreamSessionAcrossReplicas(t *testing.T) {
 }
 
 func TestEachToolgateSessionGetsItsOwnUpstreamSession(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "shared", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -402,6 +406,8 @@ func TestEachToolgateSessionGetsItsOwnUpstreamSession(t *testing.T) {
 }
 
 func TestFirstForwardRaceKeepsOneUpstreamSession(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{hold: true})
@@ -436,6 +442,8 @@ func TestFirstForwardRaceKeepsOneUpstreamSession(t *testing.T) {
 }
 
 func TestConcurrentFirstForwardsOnOneReplicaInitializeOnce(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{hold: true})
@@ -466,6 +474,8 @@ func TestConcurrentFirstForwardsOnOneReplicaInitializeOnce(t *testing.T) {
 }
 
 func TestDisableEndsUpstreamSession(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -483,6 +493,8 @@ func TestDisableEndsUpstreamSession(t *testing.T) {
 }
 
 func TestEnableAfterDisableStartsNewUpstreamSession(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "shared", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -504,6 +516,8 @@ func TestEnableAfterDisableStartsNewUpstreamSession(t *testing.T) {
 }
 
 func TestDisableDuringFirstForwardLeavesNoLiveRow(t *testing.T) {
+	t.Parallel()
+
 	for name, end := range map[string]func(t *testing.T, fixture *mcpFixture, client *observedClient){
 		"a disable commits while initialize is in flight": func(t *testing.T, _ *mcpFixture, client *observedClient) {
 			disable(t, client.session, "github")
@@ -538,6 +552,8 @@ func TestDisableDuringFirstForwardLeavesNoLiveRow(t *testing.T) {
 }
 
 func TestSessionEndEndsItsUpstreamSessions(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	fixture.addEnableTemplate("jira", "per-user", anyone)
@@ -559,6 +575,8 @@ func TestSessionEndEndsItsUpstreamSessions(t *testing.T) {
 }
 
 func TestResumedSessionGetsNewUpstreamSession(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "shared", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -581,6 +599,8 @@ func TestResumedSessionGetsNewUpstreamSession(t *testing.T) {
 }
 
 func TestPerSessionInstanceHasOneUpstreamSession(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-session", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -595,6 +615,8 @@ func TestPerSessionInstanceHasOneUpstreamSession(t *testing.T) {
 }
 
 func TestSessionlessUpstreamStoresNothing(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "shared", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{sessionID: func() string { return "" }})
@@ -612,6 +634,8 @@ func TestSessionlessUpstreamStoresNothing(t *testing.T) {
 }
 
 func TestStatelessRevisionUpstreamStoresNothing(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "shared", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{stateless: true})
@@ -644,6 +668,8 @@ func TestStatelessRevisionUpstreamStoresNothing(t *testing.T) {
 const invalidIDMarker = "zqxbad"
 
 func TestInvalidUpstreamSessionIDFailsTheCall(t *testing.T) {
+	t.Parallel()
+
 	for name, test := range map[string]struct {
 		options sessionUpstreamOptions
 		deleted bool
@@ -733,6 +759,8 @@ func (f *mcpFixture) addClaimTrigger(t *testing.T, skip bool) func() {
 }
 
 func TestFailedClaimLeavesNoRow(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -756,6 +784,8 @@ func TestFailedClaimLeavesNoRow(t *testing.T) {
 }
 
 func TestLostRaceWithNoLiveRowForwardsOnceAndEnds(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	fixture.addEnableTemplate("github", "per-user", anyone)
 	upstream := fixture.startSessionUpstream(t, "github", sessionUpstreamOptions{})
@@ -779,6 +809,8 @@ func TestLostRaceWithNoLiveRowForwardsOnceAndEnds(t *testing.T) {
 }
 
 func TestRemoteServerUsesOneUpstreamSessionAcrossReplicas(t *testing.T) {
+	t.Parallel()
+
 	setUp := func(t *testing.T) (*remoteFixture, *observedClient, *observedClient) {
 		t.Helper()
 

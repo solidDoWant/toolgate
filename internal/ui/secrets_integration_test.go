@@ -102,6 +102,8 @@ func (e *uiEnv) secretValue(t *testing.T, principal, name string) string {
 }
 
 func TestSecretsPageSetsListsAndDeletes(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "secrets-session", nil)
 	token := csrfTokenOf("secrets-session")
@@ -165,6 +167,8 @@ func TestSecretsPageSetsListsAndDeletes(t *testing.T) {
 }
 
 func TestSecretsPageOnlyActsOnTheSessionsPrincipal(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "own-session", nil)
 
@@ -179,6 +183,8 @@ func TestSecretsPageOnlyActsOnTheSessionsPrincipal(t *testing.T) {
 }
 
 func TestSecretsRoutesRefuseUnauthenticatedRequests(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	anonymous := env.browser(t)
 
@@ -195,6 +201,8 @@ func TestSecretsRoutesRefuseUnauthenticatedRequests(t *testing.T) {
 }
 
 func TestSecretFormWithoutCSRFTokenChangesNothing(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "csrf-secret", nil)
 
@@ -205,6 +213,8 @@ func TestSecretFormWithoutCSRFTokenChangesNothing(t *testing.T) {
 }
 
 func TestSecretValueNewlinesAndFiles(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "newline-session", nil)
 
@@ -242,6 +252,8 @@ func TestSecretValueNewlinesAndFiles(t *testing.T) {
 }
 
 func TestSecretValueLimitIsFourMiB(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "limit-secret", nil)
 
@@ -267,6 +279,8 @@ func TestSecretValueLimitIsFourMiB(t *testing.T) {
 }
 
 func TestSecretFormBodyLimitIsFourMiBPlus64KiB(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "body-limit", nil)
 
@@ -293,6 +307,8 @@ func TestSecretFormBodyLimitIsFourMiBPlus64KiB(t *testing.T) {
 // In a browser, a user sets, replaces and deletes a secret, and
 // after saving the value appears in no page.
 func TestSecretsInBrowser(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.insertSession(t, "browser-secrets", nil)
 
@@ -367,6 +383,8 @@ func TestSecretsInBrowser(t *testing.T) {
 // Without JavaScript the Set a secret link goes to a page with the form, and
 // only a signed-in user may open it.
 func TestSecretFormPageShowsTheFormAndRefusesAnonymousUsers(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "secret-form-session", nil)
 

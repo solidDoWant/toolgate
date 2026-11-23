@@ -39,6 +39,8 @@ func validBlock(token string) url.Values {
 }
 
 func TestBlocksPage(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a non-admin gets 403 from the page and the form, and has no Blocks link", func(t *testing.T) {
 		env := startUIEnv(t, "toolgate-admins")
 		user := env.insertSession(t, "user-session", []string{"dev"})

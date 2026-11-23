@@ -199,6 +199,8 @@ func (e *uiEnv) probe(path string) *atomic.Int32 {
 }
 
 func TestPostsNeedTheSessionCSRFToken(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	handled := env.probe("/ui/probe")
 	browser := env.insertSession(t, "csrf-session", nil)
@@ -262,6 +264,8 @@ func TestPostsNeedTheSessionCSRFToken(t *testing.T) {
 }
 
 func TestLogoutWithoutTokenKeepsSession(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "logout-csrf", nil)
 
@@ -272,6 +276,8 @@ func TestLogoutWithoutTokenKeepsSession(t *testing.T) {
 }
 
 func TestFormBodiesAreLimited(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	handled := env.probe("/ui/probe")
 	browser := env.insertSession(t, "limit-session", nil)
@@ -310,6 +316,8 @@ func TestFormBodiesAreLimited(t *testing.T) {
 }
 
 func TestServersPage(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		groups     []string
@@ -353,6 +361,8 @@ func TestServersPage(t *testing.T) {
 }
 
 func TestRestartInstance(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	browser := env.insertSession(t, "restart-session", []string{"admins"})
 	form := url.Values{ui.CSRFField: {csrfTokenOf("restart-session")}}
@@ -408,6 +418,8 @@ func pageShows(ctx context.Context, text string) bool {
 // In a browser, a form submitted without the session's CSRF token
 // is refused and changes nothing.
 func TestFormWithoutCSRFTokenIsRefused(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.insertSession(t, "browser-csrf", nil)
 

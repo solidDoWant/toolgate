@@ -146,6 +146,8 @@ func find[T any](t *testing.T, manifests []manifest, kind string) T {
 }
 
 func TestChartRendersTheGateway(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t)
 
 	var crds []string
@@ -220,6 +222,8 @@ func TestChartRendersTheGateway(t *testing.T) {
 }
 
 func TestChartRequiresTheDatabaseAndTheIdentityProvider(t *testing.T) {
+	t.Parallel()
+
 	for _, required := range []string{"config.database.existingSecret", "config.oidc.issuerURL", "config.oidc.audience"} {
 		t.Run(required, func(t *testing.T) {
 			var set []string
@@ -238,6 +242,8 @@ func TestChartRequiresTheDatabaseAndTheIdentityProvider(t *testing.T) {
 }
 
 func TestClusterRoleIsExactlyTheDesignedOne(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t)
 	role := find[rbacv1.ClusterRole](t, manifests, "ClusterRole")
 
@@ -270,6 +276,8 @@ func TestClusterRoleIsExactlyTheDesignedOne(t *testing.T) {
 }
 
 func TestClusterRoleAddsExtraRules(t *testing.T) {
+	t.Parallel()
+
 	defaultRole := find[rbacv1.ClusterRole](t, renderQuickStart(t), "ClusterRole")
 
 	manifests, err := render(t, append([]string{
@@ -304,6 +312,8 @@ func findNamed[T any](t *testing.T, manifests []manifest, kind, name string) T {
 }
 
 func TestRoleCoversOnlyTheReleaseNamespace(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t)
 	role := findNamed[rbacv1.Role](t, manifests, "Role", releaseName)
 	assert.Equal(t, releaseNamespace, role.Namespace)
@@ -318,6 +328,8 @@ func TestRoleCoversOnlyTheReleaseNamespace(t *testing.T) {
 }
 
 func TestTokenExchangeRolesCoverOnlyTheCatalogNamespaces(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name           string
 		set            []string
@@ -388,6 +400,8 @@ func TestTokenExchangeRolesCoverOnlyTheCatalogNamespaces(t *testing.T) {
 }
 
 func TestChartTokenExchangeAllowedTokenURLs(t *testing.T) {
+	t.Parallel()
+
 	configFile := func(t *testing.T, set []string) map[string]any {
 		t.Helper()
 
@@ -432,6 +446,8 @@ func TestChartTokenExchangeAllowedTokenURLs(t *testing.T) {
 }
 
 func TestAdmissionPolicyAppliesToEveryWriteByTheGateway(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t)
 	policy := find[admissionv1.ValidatingAdmissionPolicy](t, manifests, "ValidatingAdmissionPolicy")
 
@@ -460,6 +476,8 @@ func TestAdmissionPolicyAppliesToEveryWriteByTheGateway(t *testing.T) {
 }
 
 func TestSharedNamespace(t *testing.T) {
+	t.Parallel()
+
 	t.Run("none by default", func(t *testing.T) {
 		manifests := renderQuickStart(t)
 		for _, candidate := range manifests {
@@ -504,6 +522,8 @@ func TestSharedNamespace(t *testing.T) {
 }
 
 func TestInstanceLimits(t *testing.T) {
+	t.Parallel()
+
 	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
 		t.Helper()
 
@@ -544,6 +564,8 @@ func TestInstanceLimits(t *testing.T) {
 }
 
 func TestOIDCAudienceSetting(t *testing.T) {
+	t.Parallel()
+
 	gatewayEnv := func(t *testing.T, extraArgs ...string) map[string]string {
 		t.Helper()
 
@@ -571,6 +593,8 @@ func TestOIDCAudienceSetting(t *testing.T) {
 }
 
 func TestOIDCCLISettings(t *testing.T) {
+	t.Parallel()
+
 	env := func(t *testing.T, extraArgs ...string) map[string]string {
 		t.Helper()
 
@@ -600,6 +624,8 @@ func TestOIDCCLISettings(t *testing.T) {
 }
 
 func TestWebUISettings(t *testing.T) {
+	t.Parallel()
+
 	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
 		t.Helper()
 
@@ -646,6 +672,8 @@ func TestWebUISettings(t *testing.T) {
 }
 
 func TestMCPPublicURLSetting(t *testing.T) {
+	t.Parallel()
+
 	gatewayEnv := func(t *testing.T, set ...string) map[string]string {
 		t.Helper()
 
@@ -673,6 +701,8 @@ func TestMCPPublicURLSetting(t *testing.T) {
 }
 
 func TestAuditPayloadSettings(t *testing.T) {
+	t.Parallel()
+
 	gatewayEnv := func(t *testing.T, set ...string) map[string]corev1.EnvVar {
 		t.Helper()
 
@@ -730,6 +760,8 @@ func TestAuditPayloadSettings(t *testing.T) {
 }
 
 func TestResolverSettings(t *testing.T) {
+	t.Parallel()
+
 	resolverValues := filepath.Join(t.TempDir(), "resolvers.yaml")
 	require.NoError(t, os.WriteFile(resolverValues, []byte(`config:
   resolvers:
@@ -798,6 +830,8 @@ func TestResolverSettings(t *testing.T) {
 }
 
 func TestSPIFFETrustDomainSettings(t *testing.T) {
+	t.Parallel()
+
 	spiffeValues := filepath.Join(t.TempDir(), "spiffe.yaml")
 	require.NoError(t, os.WriteFile(spiffeValues, []byte(`config:
   spiffe:
@@ -834,6 +868,8 @@ func TestSPIFFETrustDomainSettings(t *testing.T) {
 }
 
 func TestWorkspaceAttestationSetting(t *testing.T) {
+	t.Parallel()
+
 	values := filepath.Join(t.TempDir(), "attestation.yaml")
 	require.NoError(t, os.WriteFile(values, []byte(`config:
   workspaceAttestation:
@@ -859,6 +895,8 @@ func TestWorkspaceAttestationSetting(t *testing.T) {
 }
 
 func TestOIDCAdditionalIssuersSetting(t *testing.T) {
+	t.Parallel()
+
 	issuerValues := filepath.Join(t.TempDir(), "issuers.yaml")
 	require.NoError(t, os.WriteFile(issuerValues, []byte(`config:
   oidc:
@@ -905,6 +943,8 @@ func TestOIDCAdditionalIssuersSetting(t *testing.T) {
 }
 
 func TestChartRefusesTheRemovedTokenExchangesValue(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "exchanges.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(`config:
   tokenExchanges:
@@ -921,6 +961,8 @@ func TestChartRefusesTheRemovedTokenExchangesValue(t *testing.T) {
 }
 
 func TestChartTemplateSecretsRole(t *testing.T) {
+	t.Parallel()
+
 	const secretsNamespace = "toolgate-template-secrets"
 
 	readsSecrets := func(rule rbacv1.PolicyRule) bool {

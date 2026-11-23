@@ -308,6 +308,8 @@ func (f *exchangeFixture) exchangeEvents(t *testing.T, server string) []map[stri
 }
 
 func TestEnableRendersExchangedTokenBeforeOtherObjects(t *testing.T) {
+	t.Parallel()
+
 	fixture := newExchangeStartFixture(t)
 	template := fixture.addTokenTemplate("temporal-mcp")
 	session := fixture.connect(t, alice())
@@ -360,6 +362,8 @@ func TestEnableRendersExchangedTokenBeforeOtherObjects(t *testing.T) {
 }
 
 func TestEnableFailsWithExchangeErrorCode(t *testing.T) {
+	t.Parallel()
+
 	fixture := newExchangeStartFixture(t)
 	fixture.endpoint.refuse.Store("invalid_grant")
 
@@ -396,6 +400,8 @@ func TestEnableFailsWithExchangeErrorCode(t *testing.T) {
 }
 
 func TestConcurrentStartsExchangeOnce(t *testing.T) {
+	t.Parallel()
+
 	fixture := newExchangeStartFixture(t)
 	template := fixture.addTokenTemplate("temporal-mcp")
 
@@ -428,6 +434,8 @@ func TestConcurrentStartsExchangeOnce(t *testing.T) {
 }
 
 func TestLostDeliveryIsRetriedByWaitingRequest(t *testing.T) {
+	t.Parallel()
+
 	fixture := newExchangeStartFixture(t)
 	fixture.dropDeliveries.Store(1)
 
@@ -466,6 +474,8 @@ func TestLostDeliveryIsRetriedByWaitingRequest(t *testing.T) {
 }
 
 func TestTwoUsersGetTheirOwnTokens(t *testing.T) {
+	t.Parallel()
+
 	fixture := newExchangeStartFixture(t)
 	template := fixture.addTokenTemplate("temporal-mcp")
 
@@ -498,6 +508,8 @@ func TestTwoUsersGetTheirOwnTokens(t *testing.T) {
 // A template with persistent volumes waits for its volumes before anyone
 // exchanges: the enable inserts closed exchange rows and runs no exchange.
 func TestEnableWithVolumesInsertsClosedExchangeRows(t *testing.T) {
+	t.Parallel()
+
 	fixture := newExchangeStartFixture(t)
 	template := fixture.addTokenTemplate("temporal-mcp")
 	template.Spec.PersistentVolumes = []v1alpha1.PersistentVolume{{Name: "data", Size: "1Gi"}}

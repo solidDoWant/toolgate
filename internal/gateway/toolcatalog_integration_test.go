@@ -76,6 +76,8 @@ func (f *mcpFixture) startOnEnable(template *v1alpha1.MCPServerTemplate) {
 }
 
 func TestToolCatalogLists(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a starting instance lists the catalog list; a different real list reaches the session and other scope keys", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)

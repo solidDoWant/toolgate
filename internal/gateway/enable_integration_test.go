@@ -320,6 +320,8 @@ func (f *mcpFixture) auditEvents(t *testing.T, eventType, server string) []map[s
 }
 
 func TestEnableServer(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a per-session enable gets progress, then list_changed, and tools named server__tool", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-session", anyone)
@@ -535,6 +537,8 @@ func (f *mcpFixture) catalogTemplate(t *testing.T, name string) *v1alpha1.MCPSer
 }
 
 func TestEnableInteractions(t *testing.T) {
+	t.Parallel()
+
 	t.Run("two sessions of one user enabling a per-user server at once share one instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
@@ -684,6 +688,8 @@ func TestEnableInteractions(t *testing.T) {
 }
 
 func TestDisableServer(t *testing.T) {
+	t.Parallel()
+
 	t.Run("disable removes the tools and sends list_changed to that session only", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
@@ -724,6 +730,8 @@ func TestDisableServer(t *testing.T) {
 }
 
 func TestProxiedToolList(t *testing.T) {
+	t.Parallel()
+
 	t.Run("tools/list leaves out tools the policy refuses and servers without a ready instance", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		github := fixture.addEnableTemplate("github", "per-user", anyone)
@@ -774,6 +782,8 @@ func serverStatus(t *testing.T, session *mcp.ClientSession, name string) gateway
 }
 
 func TestTemplateChange(t *testing.T) {
+	t.Parallel()
+
 	t.Run("new instances use the edited template and server_status shows the running one as outdated", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		original := fixture.addEnableTemplate("github", "per-session", anyone)

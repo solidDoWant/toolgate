@@ -39,6 +39,8 @@ func unverifiedDefaults(value string) workspacesapi.Change {
 // session lists and can enable only those servers. Adding a server needs an
 // approved request; removing one withdraws it within 5 s.
 func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
+	t.Parallel()
+
 	t.Run("list with two servers: an unverified session lists and enables only those", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		for _, name := range []string{"github", "gitlab", "jira"} {

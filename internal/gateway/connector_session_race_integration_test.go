@@ -29,6 +29,8 @@ func (f *mcpFixture) runningInstances(t *testing.T, session string) int {
 }
 
 func TestConnectorSessionEndRaces(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a request racing the DELETE of the MCP session doesn't resume the ended mcp. session", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 

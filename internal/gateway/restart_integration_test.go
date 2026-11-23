@@ -35,6 +35,8 @@ func (f *mcpFixture) readyInstance(t *testing.T, template *v1alpha1.MCPServerTem
 }
 
 func TestRequestRestart(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	// Each instance gets its own template: only one instance of a template
 	// and scope key is live.
@@ -158,6 +160,8 @@ func TestRequestRestart(t *testing.T) {
 }
 
 func TestEnableFollowsAReplacement(t *testing.T) {
+	t.Parallel()
+
 	t.Run("an enable waiting on a replaced instance waits on the new live row", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.catalog.MarkLoaded()

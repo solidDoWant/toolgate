@@ -75,6 +75,8 @@ func awaitStarted(t *testing.T, upstream *upstreamServer) {
 }
 
 func TestRuleChanges(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a rule blocking a tool for one user withdraws it from that user's open session within 5 s and refuses its calls with the rule's reason; other users keep it", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -180,6 +182,8 @@ func TestRuleChanges(t *testing.T) {
 }
 
 func TestAccessAndFailureChanges(t *testing.T) {
+	t.Parallel()
+
 	t.Run("access removed from a user refuses calls at once and withdraws the tools from open sessions", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)

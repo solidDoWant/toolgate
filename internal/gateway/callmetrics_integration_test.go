@@ -15,6 +15,8 @@ import (
 )
 
 func TestCallMetrics(t *testing.T) {
+	t.Parallel()
+
 	metrics := runtime.NewMetrics()
 	fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.Metrics = metrics })
 	fixture.addEnableTemplate("github", "per-user", anyone)

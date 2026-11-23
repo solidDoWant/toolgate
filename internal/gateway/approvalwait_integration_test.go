@@ -193,6 +193,8 @@ func awaitOutcome(t *testing.T, outcomes <-chan callOutcome, bound time.Duration
 }
 
 func TestApprovalElicitation(t *testing.T) {
+	t.Parallel()
+
 	for _, revision := range []string{revisionElicitCreate, modernRevision} {
 		t.Run("on "+revision+" the client opens the approval page, an approval from another replica lets the call through", func(t *testing.T) {
 			fixture := newApprovalFixture(t, withApprovalURL)
@@ -279,6 +281,8 @@ func TestApprovalElicitation(t *testing.T) {
 }
 
 func TestApprovalWait(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a denial fails the waiting call", func(t *testing.T) {
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})

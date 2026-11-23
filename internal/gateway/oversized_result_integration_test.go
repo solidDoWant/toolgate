@@ -22,6 +22,7 @@ import (
 // with a 256 MiB `application/json` body. The gateway must stop reading it
 // soon after the 16 MiB limit and refuse the call as too large, so its heap
 // doesn't grow with the body.
+// This test is not parallel: it reads process-wide memory statistics.
 func TestOversizedJSONResultIsNotReadWhole(t *testing.T) {
 	const size = 256 << 20
 

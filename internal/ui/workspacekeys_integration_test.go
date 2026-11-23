@@ -52,6 +52,8 @@ func (e *uiEnv) activeKeys(t *testing.T, name string) int {
 // Only a browser session with a fresh sign-in approves a key request: the
 // approval route reads the UI session cookie, never a bearer token.
 func TestWorkspaceKeyApproval(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.workspaces.SetWorkspaceKeys(true, "")
 
@@ -131,6 +133,8 @@ func (e *uiEnv) keyStatuses(t *testing.T, principal, name string) []string {
 }
 
 func TestWorkspaceKeysCard(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 
 	card := func(t *testing.T, cookie string) (int, string) {
@@ -191,6 +195,8 @@ func TestWorkspaceKeysCard(t *testing.T) {
 }
 
 func TestWorkspaceKeyRevokeForm(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.workspaces.SetWorkspaceKeys(true, "")
 
@@ -241,6 +247,8 @@ func TestWorkspaceKeyRevokeForm(t *testing.T) {
 }
 
 func TestKeyRequestPages(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.workspaces.SetWorkspaceKeys(true, "custom")
 	browser := env.insertSession(t, "key-page", []string{"dev"})

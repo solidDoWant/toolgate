@@ -62,6 +62,8 @@ func newAttestationClient() *fake.Clientset {
 }
 
 func TestAttestedMCPSessionBinding(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixtureWithAuth(t, &auth.Options{Attestation: &auth.AttestationOptions{
 		Client:      newAttestationClient(),
 		Namespaces:  []string{"coder"},

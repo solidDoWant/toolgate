@@ -357,6 +357,8 @@ func signInFailedPage(t *testing.T, response *http.Response, retry string) strin
 
 // A sign-in started on one replica completes on another.
 func TestSignInCompletesOnAnotherReplica(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "toolgate-admins")
 	browser := env.browser(t)
 
@@ -422,6 +424,8 @@ func TestSignInCompletesOnAnotherReplica(t *testing.T) {
 }
 
 func TestSignInDropsUnverifiedEmail(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -437,6 +441,8 @@ func TestSignInDropsUnverifiedEmail(t *testing.T) {
 }
 
 func TestSignInReturnsOnlyToUIPaths(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -451,6 +457,8 @@ func TestSignInReturnsOnlyToUIPaths(t *testing.T) {
 // A callback whose state is not this browser's never completes: the browser
 // starts its own sign-in, which keeps the old one's return path.
 func TestSignInCallbackFromAnotherBrowserRestartsTheSignIn(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	victim := env.browser(t)
 	attacker := env.browser(t)
@@ -485,6 +493,8 @@ func TestSignInCallbackFromAnotherBrowserRestartsTheSignIn(t *testing.T) {
 }
 
 func TestSignInStateMismatchWithoutASignInRestartsAtTheHomePage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -499,6 +509,8 @@ func TestSignInStateMismatchWithoutASignInRestartsAtTheHomePage(t *testing.T) {
 // A restarted sign-in whose state again does not match shows the page, so a
 // browser that drops the state cookie never loops.
 func TestSignInRestartsOnceAfterAStateMismatch(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -531,6 +543,8 @@ func TestSignInRestartsOnceAfterAStateMismatch(t *testing.T) {
 }
 
 func TestSignInStateWorksOnce(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -558,6 +572,8 @@ func TestSignInStateWorksOnce(t *testing.T) {
 }
 
 func TestFailedSignInsFollowTheRefusalRateRule(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -571,6 +587,8 @@ func TestFailedSignInsFollowTheRefusalRateRule(t *testing.T) {
 }
 
 func TestLoginIsRefusedOverPendingLimit(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -639,6 +657,8 @@ func hashOf(value string) []byte {
 // A session idle for 1 h or older than 8 h no longer works:
 // a GET redirects to sign-in and a POST gets 401.
 func TestEndedSessionsAreRefused(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 
 	tests := []struct {
@@ -671,6 +691,8 @@ func TestEndedSessionsAreRefused(t *testing.T) {
 }
 
 func TestSessionLastSeenMovesAtMostOnceAMinute(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "touch-session", nil)
 
@@ -697,6 +719,8 @@ func TestSessionLastSeenMovesAtMostOnceAMinute(t *testing.T) {
 }
 
 func TestAdminRoutes(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		adminGroup string
@@ -726,6 +750,8 @@ func TestAdminRoutes(t *testing.T) {
 }
 
 func TestLogoutDeletesSession(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.insertSession(t, "logout-session", nil)
 
@@ -753,6 +779,8 @@ func TestLogoutDeletesSession(t *testing.T) {
 }
 
 func TestSignInWithAnotherNonceIsRefused(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
