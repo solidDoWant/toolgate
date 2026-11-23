@@ -45,38 +45,42 @@ func attestationGateway(t *testing.T) (string, func() []string) {
 	}
 }
 
-func setupAttestedClient(t *testing.T) (string, func() []string) {
+func setupAttestedClient(t *testing.T, env environment) (string, func() []string) {
 	t.Helper()
-	isolateUserConfig(t)
+	isolateUserConfig(t, env)
 
 	gatewayURL, sents := attestationGateway(t)
 
-	t.Setenv("TOOLGATE_GATEWAY", gatewayURL)
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo user-token")
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "dev")
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Setenv("CLAUDE_CODE_SESSION_ID", "session-1")
+	env.set("TOOLGATE_GATEWAY", gatewayURL)
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo user-token")
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "dev")
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
+	env.set("CLAUDE_CODE_SESSION_ID", "session-1")
 
 	file := filepath.Join(t.TempDir(), "token")
 	require.NoError(t, os.WriteFile(file, []byte("workload-one\n"), 0o600))
-	t.Setenv("TOOLGATE_ATTESTATION_TOKEN_FILE", file)
+	env.set("TOOLGATE_ATTESTATION_TOKEN_FILE", file)
 
 	return file, sents
 }
 
 func TestAttestationTokenFileIsSentByEveryGatewayCommand(t *testing.T) {
-	file, sents := setupAttestedClient(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	file, sents := setupAttestedClient(t, env)
 
 	for _, command := range [][]string{{"sessions"}, {"secret", "list"}} {
-		code, _, stderr := runCLI(t, "", command...)
+		code, _, stderr := runCLI(t, env, "", command...)
 		require.Equal(t, 0, code, "%v: %s", command, stderr)
 	}
 
 	tail := tailer{stdout: &strings.Builder{}, stderr: &strings.Builder{}}
-	require.NoError(t, tail.once(t.Context()))
+	require.NoError(t, tail.once(t.Context(), env.get))
 
-	code, _, stderr := runCLI(t, `{"session_id":"session-1"}`, "hook", "session-start")
+	code, _, stderr := runCLI(t, env, `{"session_id":"session-1"}`, "hook", "session-start")
 	require.Equal(t, 0, code, stderr)
 
 	for _, sent := range sents() {
@@ -86,7 +90,7 @@ func TestAttestationTokenFileIsSentByEveryGatewayCommand(t *testing.T) {
 	assert.Len(t, sents(), 4)
 
 	for _, command := range []string{"headers", "otel-headers"} {
-		code, stdout, stderr := runCLI(t, "", command)
+		code, stdout, stderr := runCLI(t, env, "", command)
 		require.Equal(t, 0, code, stderr)
 
 		var values map[string]string
@@ -98,17 +102,21 @@ func TestAttestationTokenFileIsSentByEveryGatewayCommand(t *testing.T) {
 	// The file is read on each run.
 	require.NoError(t, os.WriteFile(file, []byte("workload-two"), 0o600))
 
-	code, stdout, stderr := runCLI(t, "", "headers")
+	code, stdout, stderr := runCLI(t, env, "", "headers")
 	require.Equal(t, 0, code, stderr)
 	assert.Contains(t, stdout, "workload-two")
 }
 
 func TestAttestationFailureFallsBackToUnverified(t *testing.T) {
-	file, sents := setupAttestedClient(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	file, sents := setupAttestedClient(t, env)
 	require.NoError(t, os.Remove(file))
 
 	for _, command := range []string{"headers", "otel-headers"} {
-		code, stdout, stderr := runCLI(t, "", command)
+		code, stdout, stderr := runCLI(t, env, "", command)
 		require.Equal(t, 0, code, "%s: %s", command, stderr)
 
 		var values map[string]string
@@ -120,7 +128,7 @@ func TestAttestationFailureFallsBackToUnverified(t *testing.T) {
 	}
 
 	for _, command := range [][]string{{"sessions"}, {"secret", "list"}} {
-		code, _, stderr := runCLI(t, "", command...)
+		code, _, stderr := runCLI(t, env, "", command...)
 		assert.Equal(t, 0, code, "%v: %s", command, stderr)
 	}
 
@@ -130,7 +138,7 @@ func TestAttestationFailureFallsBackToUnverified(t *testing.T) {
 
 	// The hook sends no settings request: it would change the session's attestation.
 	before := len(sents())
-	code, stdout, _ := runCLI(t, `{"session_id":"session-1"}`, "hook", "session-start")
+	code, stdout, _ := runCLI(t, env, `{"session_id":"session-1"}`, "hook", "session-start")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stdout, "attestation failed")
 	assert.Len(t, sents(), before)
@@ -160,14 +168,18 @@ func TestAttestationKeyFileProblemsFallBackToUnverified(t *testing.T) {
 
 	for name, prepare := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, _ = setupAttestedClient(t)
-			t.Setenv("TOOLGATE_ATTESTATION_TOKEN_FILE", "")
+			t.Parallel()
+
+			env := testEnv{}
+
+			_, _ = setupAttestedClient(t, env)
+			env.set("TOOLGATE_ATTESTATION_TOKEN_FILE", "")
 
 			path := filepath.Join(t.TempDir(), "key.pem")
 			prepare(t, path)
-			t.Setenv("TOOLGATE_ATTESTATION_SIGNER_FILE", path)
+			env.set("TOOLGATE_ATTESTATION_SIGNER_FILE", path)
 
-			code, stdout, stderr := runCLI(t, "", "headers")
+			code, stdout, stderr := runCLI(t, env, "", "headers")
 			require.Equal(t, 0, code, stderr)
 			assert.NotContains(t, stdout, "X-Toolgate-Attestation")
 			assert.Contains(t, stdout, "Bearer user-token")
@@ -178,22 +190,34 @@ func TestAttestationKeyFileProblemsFallBackToUnverified(t *testing.T) {
 }
 
 func TestAttestationVariablesConflict(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	t.Run("two attestation variables", func(t *testing.T) {
-		t.Setenv("TOOLGATE_ATTESTATION_TOKEN_FILE", "/x")
-		t.Setenv("TOOLGATE_ATTESTATION_TOKEN_REQUEST", "/y")
+		t.Parallel()
 
-		code, _, stderr := runCLI(t, "", "sessions")
+		env := testEnv{}
+
+		env.set("TOOLGATE_ATTESTATION_TOKEN_FILE", "/x")
+		env.set("TOOLGATE_ATTESTATION_TOKEN_REQUEST", "/y")
+
+		code, _, stderr := runCLI(t, env, "", "sessions")
 		assert.Equal(t, 1, code)
 		assert.Equal(t, "Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET, TOOLGATE_ATTESTATION_TOKEN_REQUEST and TOOLGATE_ATTESTATION_SIGNER_FILE.\n", stderr)
 	})
 
 	t.Run("with TOOLGATE_SPIFFE_SOCKET", func(t *testing.T) {
-		t.Setenv("TOOLGATE_ATTESTATION_TOKEN_FILE", "/x")
-		t.Setenv("TOOLGATE_SPIFFE_SOCKET", "unix:///nowhere")
+		t.Parallel()
 
-		code, _, stderr := runCLI(t, "", "headers")
+		env := testEnv{}
+
+		env.set("TOOLGATE_ATTESTATION_TOKEN_FILE", "/x")
+		env.set("TOOLGATE_SPIFFE_SOCKET", "unix:///nowhere")
+
+		code, _, stderr := runCLI(t, env, "", "headers")
 		assert.Equal(t, 1, code)
 		assert.Contains(t, stderr, "TOOLGATE_SPIFFE_SOCKET")
 		assert.Contains(t, stderr, "TOOLGATE_ATTESTATION_TOKEN_FILE")
@@ -201,13 +225,17 @@ func TestAttestationVariablesConflict(t *testing.T) {
 }
 
 func TestAttestationSPIFFESocketFetchesAnSVID(t *testing.T) {
-	_, sents := setupAttestedClient(t)
-	t.Setenv("TOOLGATE_ATTESTATION_TOKEN_FILE", "")
+	t.Parallel()
+
+	env := testEnv{}
+
+	_, sents := setupAttestedClient(t, env)
+	env.set("TOOLGATE_ATTESTATION_TOKEN_FILE", "")
 
 	socket, fake := startWorkloadAPI(t, false)
-	t.Setenv("TOOLGATE_ATTESTATION_SPIFFE_SOCKET", socket)
+	env.set("TOOLGATE_ATTESTATION_SPIFFE_SOCKET", socket)
 
-	code, _, stderr := runCLI(t, "", "sessions")
+	code, _, stderr := runCLI(t, env, "", "sessions")
 	require.Equal(t, 0, code, stderr)
 	require.Len(t, sents(), 1)
 	assert.True(t, strings.HasPrefix(sents()[0], "ey"))
@@ -217,9 +245,9 @@ func TestAttestationSPIFFESocketFetchesAnSVID(t *testing.T) {
 	fake.mu.Unlock()
 
 	failing, _ := startWorkloadAPI(t, true)
-	t.Setenv("TOOLGATE_ATTESTATION_SPIFFE_SOCKET", failing)
+	env.set("TOOLGATE_ATTESTATION_SPIFFE_SOCKET", failing)
 
-	code, stdout, stderr := runCLI(t, "", "headers")
+	code, stdout, stderr := runCLI(t, env, "", "headers")
 	assert.Equal(t, 0, code)
 	assert.Contains(t, stderr, "attestation JWT-SVID")
 	assert.NotContains(t, stdout, "X-Toolgate-Attestation")

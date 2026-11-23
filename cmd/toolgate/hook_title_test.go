@@ -43,11 +43,11 @@ func (g *titleGateway) seen() ([]*http.Request, [][]byte) {
 
 // titleHookSetup signs in through a token command against a fake gateway,
 // turns telemetry on, and returns the gateway and a transcript path.
-func titleHookSetup(t *testing.T, transcriptLines ...string) (*titleGateway, string) {
+func titleHookSetup(t *testing.T, env environment, transcriptLines ...string) (*titleGateway, string) {
 	t.Helper()
 
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
 
 	gateway := &titleGateway{}
 	gateway.status.Store(http.StatusOK)
@@ -64,11 +64,11 @@ func titleHookSetup(t *testing.T, transcriptLines ...string) (*titleGateway, str
 	}))
 	t.Cleanup(server.Close)
 
-	t.Setenv("TOOLGATE_GATEWAY", server.URL)
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+commandJWT("hook", time.Now().Add(time.Hour)))
-	t.Setenv("TOOLGATE_WORKSPACE", "dev-box")
-	t.Setenv("CLAUDE_CODE_ENABLE_TELEMETRY", "1")
-	t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+	env.set("TOOLGATE_GATEWAY", server.URL)
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo "+commandJWT("hook", time.Now().Add(time.Hour)))
+	env.set("TOOLGATE_WORKSPACE", "dev-box")
+	env.set("CLAUDE_CODE_ENABLE_TELEMETRY", "1")
+	env.set("OTEL_METRICS_EXPORTER", "otlp")
 
 	path := filepath.Join(t.TempDir(), hookSession+".jsonl")
 	require.NoError(t, os.WriteFile(path, []byte(strings.Join(transcriptLines, "\n")+"\n"), 0o600))
@@ -90,21 +90,25 @@ func hookStdin(sessionID, transcript string) string {
 
 // runTitleHook runs `toolgate hook <event>` and checks that it printed
 // nothing and exited 0, as every run must.
-func runTitleHook(t *testing.T, event, input string) {
+func runTitleHook(t *testing.T, env environment, event, input string) {
 	t.Helper()
 
 	var stdout, stderr strings.Builder
 
-	code := runWithInput([]string{"hook", event}, strings.NewReader(input), &stdout, &stderr)
+	code := runWithInput(env.get, []string{"hook", event}, strings.NewReader(input), &stdout, &stderr)
 	assert.Equal(t, 0, code)
 	assert.Empty(t, stdout.String())
 	assert.Empty(t, stderr.String())
 }
 
 func TestStopHookSendsTheSessionTitleToTheIngest(t *testing.T) {
-	gateway, transcript := titleHookSetup(t, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
+	t.Parallel()
 
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	env := testEnv{}
+
+	gateway, transcript := titleHookSetup(t, env, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
+
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
 	requests, bodies := gateway.seen()
 	require.Len(t, requests, 1)
@@ -137,9 +141,13 @@ func TestStopHookSendsTheSessionTitleToTheIngest(t *testing.T) {
 }
 
 func TestSessionEndHookSendsARenameMadeWithoutAnotherTurn(t *testing.T) {
-	gateway, transcript := titleHookSetup(t, titleRecord("ai-title", "aiTitle", "Generated"))
+	t.Parallel()
 
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	env := testEnv{}
+
+	gateway, transcript := titleHookSetup(t, env, titleRecord("ai-title", "aiTitle", "Generated"))
+
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
 	file, err := os.OpenFile(transcript, os.O_APPEND|os.O_WRONLY, 0)
 	require.NoError(t, err)
@@ -147,7 +155,7 @@ func TestSessionEndHookSendsARenameMadeWithoutAnotherTurn(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
-	runTitleHook(t, "session-end", hookStdin(hookSession, transcript))
+	runTitleHook(t, env, "session-end", hookStdin(hookSession, transcript))
 
 	_, bodies := gateway.seen()
 	require.Len(t, bodies, 2)
@@ -160,74 +168,98 @@ func TestSessionEndHookSendsARenameMadeWithoutAnotherTurn(t *testing.T) {
 }
 
 func TestTitleHooksSendNothingWhenTelemetryIsOff(t *testing.T) {
-	gateway, transcript := titleHookSetup(t, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
+	t.Parallel()
 
-	t.Setenv("CLAUDE_CODE_ENABLE_TELEMETRY", "0")
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	env := testEnv{}
 
-	t.Setenv("CLAUDE_CODE_ENABLE_TELEMETRY", "1")
-	t.Setenv("OTEL_METRICS_EXPORTER", "console")
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	gateway, transcript := titleHookSetup(t, env, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
+
+	env.set("CLAUDE_CODE_ENABLE_TELEMETRY", "0")
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
+
+	env.set("CLAUDE_CODE_ENABLE_TELEMETRY", "1")
+	env.set("OTEL_METRICS_EXPORTER", "console")
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
 	requests, _ := gateway.seen()
 	assert.Empty(t, requests)
 }
 
 func TestTitleHooksSendNothingWithoutATitleOrAUUIDSession(t *testing.T) {
-	gateway, transcript := titleHookSetup(t, `{"type":"user","sessionId":"`+hookSession+`"}`)
+	t.Parallel()
 
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
-	runTitleHook(t, "stop", hookStdin("../not-a-uuid", transcript))
-	runTitleHook(t, "stop", hookStdin(hookSession, filepath.Join(t.TempDir(), "missing.jsonl")))
-	runTitleHook(t, "stop", "not json")
+	env := testEnv{}
+
+	gateway, transcript := titleHookSetup(t, env, `{"type":"user","sessionId":"`+hookSession+`"}`)
+
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
+	runTitleHook(t, env, "stop", hookStdin("../not-a-uuid", transcript))
+	runTitleHook(t, env, "stop", hookStdin(hookSession, filepath.Join(t.TempDir(), "missing.jsonl")))
+	runTitleHook(t, env, "stop", "not json")
 
 	requests, _ := gateway.seen()
 	assert.Empty(t, requests)
 }
 
 func TestStopHookSendsAnUnchangedTitleOnlyAfterAnHour(t *testing.T) {
-	gateway, transcript := titleHookSetup(t, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
+	t.Parallel()
+
+	env := testEnv{}
+
+	gateway, transcript := titleHookSetup(t, env, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
 	start := time.Now()
 
-	sendSessionTitle(t.Context(), strings.NewReader(hookStdin(hookSession, transcript)), start)
-	sendSessionTitle(t.Context(), strings.NewReader(hookStdin(hookSession, transcript)), start.Add(30*time.Minute))
+	sendSessionTitle(t.Context(), env.get, strings.NewReader(hookStdin(hookSession, transcript)), start)
+	sendSessionTitle(t.Context(), env.get, strings.NewReader(hookStdin(hookSession, transcript)), start.Add(30*time.Minute))
 
 	requests, _ := gateway.seen()
 	assert.Len(t, requests, 1, "unchanged and sent half an hour ago")
 
-	sendSessionTitle(t.Context(), strings.NewReader(hookStdin(hookSession, transcript)), start.Add(61*time.Minute))
+	sendSessionTitle(t.Context(), env.get, strings.NewReader(hookStdin(hookSession, transcript)), start.Add(61*time.Minute))
 
 	requests, _ = gateway.seen()
 	assert.Len(t, requests, 2, "sent again after an hour")
 }
 
 func TestStopHookTriesAFailedSendAgainAtTheNextTurn(t *testing.T) {
-	gateway, transcript := titleHookSetup(t, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
+	t.Parallel()
+
+	env := testEnv{}
+
+	gateway, transcript := titleHookSetup(t, env, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
 
 	gateway.status.Store(http.StatusServiceUnavailable)
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
 	gateway.status.Store(http.StatusOK)
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
 	requests, _ := gateway.seen()
 	assert.Len(t, requests, 2, "the failed send is tried again; the sent title isn't")
 }
 
 func TestStopHookRetriesOnceAfterA401AndStaysQuiet(t *testing.T) {
-	gateway, transcript := titleHookSetup(t, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
+	t.Parallel()
+
+	env := testEnv{}
+
+	gateway, transcript := titleHookSetup(t, env, titleRecord("ai-title", "aiTitle", "Fix the login redirect"))
 
 	gateway.status.Store(http.StatusUnauthorized)
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
 	requests, _ := gateway.seen()
 	assert.Len(t, requests, 2, "one refresh and one retry")
 }
 
 func TestStopHookGivesUpOnASlowGatewayWithinItsTimeout(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
 
 	release := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
@@ -237,18 +269,18 @@ func TestStopHookGivesUpOnASlowGatewayWithinItsTimeout(t *testing.T) {
 		server.Close()
 	})
 
-	t.Setenv("TOOLGATE_GATEWAY", server.URL)
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+commandJWT("hook", time.Now().Add(time.Hour)))
-	t.Setenv("TOOLGATE_WORKSPACE", "dev-box")
-	t.Setenv("CLAUDE_CODE_ENABLE_TELEMETRY", "1")
-	t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+	env.set("TOOLGATE_GATEWAY", server.URL)
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo "+commandJWT("hook", time.Now().Add(time.Hour)))
+	env.set("TOOLGATE_WORKSPACE", "dev-box")
+	env.set("CLAUDE_CODE_ENABLE_TELEMETRY", "1")
+	env.set("OTEL_METRICS_EXPORTER", "otlp")
 
 	transcript := filepath.Join(t.TempDir(), "t.jsonl")
 	require.NoError(t, os.WriteFile(transcript, []byte(titleRecord("ai-title", "aiTitle", "Slow")+"\n"), 0o600))
 
 	started := time.Now()
 
-	runTitleHook(t, "stop", hookStdin(hookSession, transcript))
+	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
 	assert.Less(t, time.Since(started), titleSendTimeout+2*time.Second)
 }

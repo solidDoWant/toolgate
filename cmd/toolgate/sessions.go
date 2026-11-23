@@ -23,7 +23,7 @@ const maxSessionsBody = 4 << 20
 
 // sessions runs `toolgate sessions`: it prints the signed-in user's open
 // sessions and their enabled servers. It returns the exit code.
-func sessions(args []string, stdout, stderr io.Writer) int {
+func sessions(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "toolgate sessions: unexpected argument %q\n", args[0])
 
@@ -33,7 +33,7 @@ func sessions(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := listSessions(ctx, stdout); err != nil {
+	if err := listSessions(ctx, getenv, stdout); err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate sessions: %v\n", err)
 
 		return 1
@@ -42,8 +42,8 @@ func sessions(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func listSessions(ctx context.Context, stdout io.Writer) error {
-	return withAccess(ctx, func(access gatewayAccess) error { return listSessionsWith(ctx, access, stdout) })
+func listSessions(ctx context.Context, getenv func(string) string, stdout io.Writer) error {
+	return withAccess(ctx, getenv, func(access gatewayAccess) error { return listSessionsWith(ctx, access, stdout) })
 }
 
 func listSessionsWith(ctx context.Context, access gatewayAccess, stdout io.Writer) error {

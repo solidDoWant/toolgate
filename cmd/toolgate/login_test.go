@@ -28,22 +28,33 @@ import (
 
 var userCodePattern = regexp.MustCompile(`the code (\S+)$`)
 
-// isolateUserConfig points os.UserConfigDir at a new directory and the
-// keychain at an in-memory mock, and returns toolgate's directory in it.
-func isolateUserConfig(t *testing.T) string {
+// isolateUserConfig points the configuration directory in env at a new
+// directory and returns toolgate's directory in it.
+func isolateUserConfig(t *testing.T, env environment) string {
 	t.Helper()
 
-	keyring.MockInit()
-
 	home := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", home)
-	t.Setenv("HOME", home)
-	t.Setenv("AppData", home)
 
-	dir, err := configDir()
+	env.set(tokenStoreEnv, "file")
+	env.set("XDG_CONFIG_HOME", home)
+	env.set("HOME", home)
+	env.set("AppData", home)
+
+	dir, err := configDir(env.get)
 	require.NoError(t, err)
 
 	return dir
+}
+
+// useKeychain gives the test the in-memory keychain with nothing in it and
+// signs in to it. The keychain is process-wide, so the test must not call
+// t.Parallel.
+func useKeychain(t *testing.T, env environment) {
+	t.Helper()
+
+	keyring.MockInit()
+	t.Cleanup(keyring.MockInit)
+	env.set(tokenStoreEnv, "")
 }
 
 // startGateway serves the gateway's main handler for the fake IdP.
@@ -81,7 +92,7 @@ func startGateway(t *testing.T, provider *testutil.OIDCProvider, clientID string
 
 // signInApproving runs `toolgate login` with args and approves the user code
 // it prints as subject. It returns the exit code and the output.
-func signInApproving(t *testing.T, provider *testutil.OIDCProvider, subject string, args ...string) (int, string, string) {
+func signInApproving(t *testing.T, env environment, provider *testutil.OIDCProvider, subject string, args ...string) (int, string, string) {
 	t.Helper()
 
 	reader, writer := io.Pipe()
@@ -91,7 +102,7 @@ func signInApproving(t *testing.T, provider *testutil.OIDCProvider, subject stri
 	result := make(chan int, 1)
 
 	go func() {
-		code := run(append([]string{"login"}, args...), writer, &stderr)
+		code := run(env.get, append([]string{"login"}, args...), writer, &stderr)
 		_ = writer.Close()
 
 		result <- code
@@ -121,13 +132,17 @@ func signInApproving(t *testing.T, provider *testutil.OIDCProvider, subject stri
 
 func TestLoginThenStatusShowsEmail(t *testing.T) {
 	t.Run("login with the device flow, then status shows the email", func(t *testing.T) {
-		dir := isolateUserConfig(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		dir := isolateUserConfig(t, env)
 
 		provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 		provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 		gatewayURL := startGateway(t, provider, provider.ClientID)
 
-		code, output, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+		code, output, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 		require.Equal(t, 0, code, "stderr: %s", stderr)
 		assert.Contains(t, output, "Signed in as alice@example.com (sub alice).")
 
@@ -141,7 +156,7 @@ func TestLoginThenStatusShowsEmail(t *testing.T) {
 
 		var stdout, statusErr strings.Builder
 
-		require.Equal(t, 0, run([]string{"status"}, &stdout, &statusErr), "stderr: %s", statusErr.String())
+		require.Equal(t, 0, run(env.get, []string{"status"}, &stdout, &statusErr), "stderr: %s", statusErr.String())
 		assert.Contains(t, stdout.String(), "Gateway:   "+gatewayURL)
 		assert.Contains(t, stdout.String(), "Principal: alice@example.com (sub alice)\n")
 		assert.NotContains(t, stdout.String(), "Email:")
@@ -149,51 +164,67 @@ func TestLoginThenStatusShowsEmail(t *testing.T) {
 }
 
 func TestStatusMarksUnverifiedEmail(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "bob", Email: "bob@example.com"})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "bob", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "bob", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	var stdout, statusErr strings.Builder
 
-	require.Equal(t, 0, run([]string{"status"}, &stdout, &statusErr), "stderr: %s", statusErr.String())
+	require.Equal(t, 0, run(env.get, []string{"status"}, &stdout, &statusErr), "stderr: %s", statusErr.String())
 	assert.Contains(t, stdout.String(), "Email:     bob@example.com (unverified)\n")
 }
 
 func TestLoginClientIDFlagOverridesGateway(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "carol", Email: "carol@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, "")
 
-	code, _, stderr := signInApproving(t, provider, "carol", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "carol", "--gateway", gatewayURL)
 	require.Equal(t, 1, code)
 	assert.Contains(t, stderr, "pass --client-id")
 
-	code, _, stderr = signInApproving(t, provider, "carol", "--gateway", gatewayURL, "--client-id", provider.ClientID)
+	code, _, stderr = signInApproving(t, env, provider, "carol", "--gateway", gatewayURL, "--client-id", provider.ClientID)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	// A second login without --gateway reuses the saved gateway.
-	code, _, stderr = signInApproving(t, provider, "carol", "--client-id", provider.ClientID)
+	code, _, stderr = signInApproving(t, env, provider, "carol", "--client-id", provider.ClientID)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 }
 
 func TestStatusWithoutSignIn(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	var stdout, stderr strings.Builder
 
-	assert.Equal(t, 1, run([]string{"status"}, &stdout, &stderr))
+	assert.Equal(t, 1, run(env.get, []string{"status"}, &stdout, &stderr))
 	assert.Contains(t, stdout.String(), "Not signed in. Run toolgate login.")
 }
 
 func TestLoginAcceptsBareHostAndPort(t *testing.T) {
-	dir := isolateUserConfig(t)
+	// It replaces http.DefaultTransport, which is process-wide, so it does not
+	// call t.Parallel.
+	env := testEnv{}
+
+	dir := isolateUserConfig(t, env)
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "dave", Email: "dave@example.com", EmailVerified: true})
@@ -210,7 +241,7 @@ func TestLoginAcceptsBareHostAndPort(t *testing.T) {
 
 	bare := strings.TrimPrefix(front.URL, "https://")
 
-	code, _, stderr := signInApproving(t, provider, "dave", "--gateway", bare)
+	code, _, stderr := signInApproving(t, env, provider, "dave", "--gateway", bare)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	settingsFile, err := os.ReadFile(filepath.Join(dir, "config.json"))
@@ -219,17 +250,21 @@ func TestLoginAcceptsBareHostAndPort(t *testing.T) {
 }
 
 func TestConfigureNormalisesGateway(t *testing.T) {
-	dir := isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	dir := isolateUserConfig(t, env)
 
 	var stdout, stderr strings.Builder
 
-	require.Equal(t, 0, run([]string{"configure", "--gateway", "Toolgate.Example.com:8443/"}, &stdout, &stderr), stderr.String())
+	require.Equal(t, 0, run(env.get, []string{"configure", "--gateway", "Toolgate.Example.com:8443/"}, &stdout, &stderr), stderr.String())
 
 	settingsFile, err := os.ReadFile(filepath.Join(dir, "config.json"))
 	require.NoError(t, err)
 	assert.Contains(t, string(settingsFile), `"gateway": "https://toolgate.example.com:8443"`)
 
 	stderr.Reset()
-	assert.Equal(t, 2, run([]string{"configure", "--gateway", "toolgate.example.com/mcp"}, &stdout, &stderr))
+	assert.Equal(t, 2, run(env.get, []string{"configure", "--gateway", "toolgate.example.com/mcp"}, &stdout, &stderr))
 	assert.Contains(t, stderr.String(), "must not have a path")
 }

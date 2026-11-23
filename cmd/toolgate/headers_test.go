@@ -18,12 +18,12 @@ import (
 )
 
 // runHeaders runs `toolgate headers` and returns the exit code and output.
-func runHeaders(t *testing.T) (int, string, string) {
+func runHeaders(t *testing.T, env environment) (int, string, string) {
 	t.Helper()
 
 	var stdout, stderr strings.Builder
 
-	code := run([]string{"headers"}, &stdout, &stderr)
+	code := run(env.get, []string{"headers"}, &stdout, &stderr)
 
 	return code, stdout.String(), stderr.String()
 }
@@ -55,15 +55,19 @@ func identityThroughGateway(t *testing.T, provider *testutil.OIDCProvider, heade
 
 func TestHeadersRefreshesTheAccessToken(t *testing.T) {
 	t.Run("after sign-in, toolgate headers prints a working token each time without a new sign-in", func(t *testing.T) {
-		isolateUserConfig(t)
-		t.Setenv("TOOLGATE_SESSION", "session-1")
-		t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
+		t.Parallel()
+
+		env := testEnv{}
+
+		isolateUserConfig(t, env)
+		env.set("TOOLGATE_SESSION", "session-1")
+		env.set("TOOLGATE_WORKSPACE", "laptop-widgets")
 
 		provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 		provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 		gatewayURL := startGateway(t, provider, provider.ClientID)
 
-		code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+		code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 		require.Equal(t, 0, code, "stderr: %s", stderr)
 
 		// toolgate keeps no access token: each run gets a new one with the
@@ -72,7 +76,7 @@ func TestHeadersRefreshesTheAccessToken(t *testing.T) {
 		tokens := map[string]bool{}
 
 		for range 2 {
-			code, stdout, stderr := runHeaders(t)
+			code, stdout, stderr := runHeaders(t, env)
 			require.Equal(t, 0, code, "stderr: %s", stderr)
 
 			var headers map[string]string
@@ -96,25 +100,29 @@ func TestHeadersRefreshesTheAccessToken(t *testing.T) {
 }
 
 func TestHeadersReadsTheSessionFileOfTheParentProcess(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	runtimeDir := t.TempDir()
-	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
-	t.Setenv("TOOLGATE_SESSION", "")
-	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
+	env.set("XDG_RUNTIME_DIR", runtimeDir)
+	env.set("TOOLGATE_SESSION", "")
+	env.set("TOOLGATE_WORKSPACE", "laptop-widgets")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	dir := filepath.Join(runtimeDir, "toolgate")
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, strconv.Itoa(os.Getppid())), []byte("from-hook\n"), 0o600))
 
-	code, stdout, stderr := runHeaders(t)
+	code, stdout, stderr := runHeaders(t, env)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	var headers map[string]string
@@ -123,19 +131,23 @@ func TestHeadersReadsTheSessionFileOfTheParentProcess(t *testing.T) {
 }
 
 func TestHeadersWithoutSessionPrintsCredentialHeaders(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Setenv("TOOLGATE_SESSION", "")
-	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
+	env.set("TOOLGATE_SESSION", "")
+	env.set("TOOLGATE_WORKSPACE", "laptop-widgets")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
-	code, stdout, stderr := runHeaders(t)
+	code, stdout, stderr := runHeaders(t, env)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.Contains(t, stderr, "no Claude Code session found")
 
@@ -152,42 +164,54 @@ func TestHeadersWithoutSessionPrintsCredentialHeaders(t *testing.T) {
 }
 
 func TestHeadersWithoutSessionOrSignIn(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Setenv("TOOLGATE_SESSION", "")
+	t.Parallel()
 
-	code, stdout, stderr := runHeaders(t)
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
+	env.set("TOOLGATE_SESSION", "")
+
+	code, stdout, stderr := runHeaders(t, env)
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "not signed in")
 }
 
 func TestHeadersWithoutSignIn(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("TOOLGATE_SESSION", "session-1")
+	t.Parallel()
 
-	code, stdout, stderr := runHeaders(t)
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("TOOLGATE_SESSION", "session-1")
+
+	code, stdout, stderr := runHeaders(t, env)
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "Run toolgate login.")
 }
 
 func TestOtelHeadersPrintsTokenAndWorkspaceWithoutSession(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Setenv("TOOLGATE_SESSION", "")
-	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
+	env.set("TOOLGATE_SESSION", "")
+	env.set("TOOLGATE_WORKSPACE", "laptop-widgets")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	var stdout, errOut strings.Builder
 
-	code = run([]string{"otel-headers"}, &stdout, &errOut)
+	code = run(env.get, []string{"otel-headers"}, &stdout, &errOut)
 	require.Equal(t, 0, code, "stderr: %s", errOut.String())
 
 	var headers map[string]string
@@ -204,11 +228,15 @@ func TestOtelHeadersPrintsTokenAndWorkspaceWithoutSession(t *testing.T) {
 }
 
 func TestOtelHeadersWithoutSignIn(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	var stdout, stderr strings.Builder
 
-	code := run([]string{"otel-headers"}, &stdout, &stderr)
+	code := run(env.get, []string{"otel-headers"}, &stdout, &stderr)
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, stderr.String(), "Run toolgate login.")

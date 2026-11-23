@@ -16,19 +16,24 @@ import (
 	"github.com/solidDoWant/toolgate/internal/client/headers"
 )
 
-// sessionDir points the runtime directory at a new directory and returns
-// the directory session files go in.
-func sessionDir(t *testing.T) string {
+// envMap is a fixed environment for one test.
+type envMap map[string]string
+
+func (e envMap) get(name string) string { return e[name] }
+
+// sessionDir points the runtime directory of a new environment at a new
+// directory and returns the directory session files go in and the
+// environment.
+func sessionDir(t *testing.T) (string, envMap) {
 	t.Helper()
 
 	runtimeDir := t.TempDir()
-	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
-	t.Setenv(headers.SessionEnv, "")
+	env := envMap{"XDG_RUNTIME_DIR": runtimeDir}
 
 	dir := filepath.Join(runtimeDir, "toolgate")
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 
-	return dir
+	return dir, env
 }
 
 func writeSession(t *testing.T, dir string, pid int, session string) {
@@ -55,54 +60,62 @@ func grandparent(t *testing.T) int {
 }
 
 func TestRuntimeDir(t *testing.T) {
-	t.Setenv("XDG_RUNTIME_DIR", "/run/user/1000")
+	t.Parallel()
 
-	dir, err := headers.RuntimeDir()
+	dir, err := headers.RuntimeDir(envMap{"XDG_RUNTIME_DIR": "/run/user/1000"}.get)
 	require.NoError(t, err)
 	assert.Equal(t, "/run/user/1000/toolgate", dir)
 
-	t.Setenv("XDG_RUNTIME_DIR", "")
-	t.Setenv("XDG_CACHE_HOME", "/home/alice/.cache")
-	t.Setenv("HOME", "/home/alice")
-	t.Setenv("LocalAppData", "/home/alice/.cache")
-
-	dir, err = headers.RuntimeDir()
+	dir, err = headers.RuntimeDir(envMap{
+		"XDG_CACHE_HOME": "/home/alice/.cache",
+		"HOME":           "/home/alice",
+		"LocalAppData":   "/home/alice/.cache",
+	}.get)
 	require.NoError(t, err)
 	assert.Equal(t, filepath.Join("/home/alice/.cache", "toolgate", "run"), dir)
 }
 
 func TestFindSession(t *testing.T) {
 	t.Run("TOOLGATE_SESSION wins over a session file", func(t *testing.T) {
-		dir := sessionDir(t)
-		writeSession(t, dir, os.Getpid(), "from-file")
-		t.Setenv(headers.SessionEnv, "from-env")
+		t.Parallel()
 
-		session, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid()})
+		dir, env := sessionDir(t)
+		writeSession(t, dir, os.Getpid(), "from-file")
+
+		env[headers.SessionEnv] = "from-env"
+
+		session, err := headers.FindSession(t.Context(), env.get, headers.SessionOptions{StartPID: os.Getpid()})
 		require.NoError(t, err)
 		assert.Equal(t, "from-env", session)
 	})
 
 	t.Run("the file of an ancestor further up is found", func(t *testing.T) {
-		dir := sessionDir(t)
+		t.Parallel()
+
+		dir, env := sessionDir(t)
 		writeSession(t, dir, grandparent(t), "from-grandparent\n")
 
-		session, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid()})
+		session, err := headers.FindSession(t.Context(), env.get, headers.SessionOptions{StartPID: os.Getpid()})
 		require.NoError(t, err)
 		assert.Equal(t, "from-grandparent", session)
 	})
 
 	t.Run("the nearest ancestor with a file wins", func(t *testing.T) {
-		dir := sessionDir(t)
+		t.Parallel()
+
+		dir, env := sessionDir(t)
 		writeSession(t, dir, grandparent(t), "from-grandparent")
 		writeSession(t, dir, os.Getppid(), "from-parent")
 
-		session, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid()})
+		session, err := headers.FindSession(t.Context(), env.get, headers.SessionOptions{StartPID: os.Getpid()})
 		require.NoError(t, err)
 		assert.Equal(t, "from-parent", session)
 	})
 
 	t.Run("a process that is not an ancestor is ignored", func(t *testing.T) {
-		dir := sessionDir(t)
+		t.Parallel()
+
+		dir, env := sessionDir(t)
 
 		other := exec.CommandContext(t.Context(), "sleep", "30")
 		require.NoError(t, other.Start())
@@ -113,12 +126,14 @@ func TestFindSession(t *testing.T) {
 
 		writeSession(t, dir, other.Process.Pid, "not-mine")
 
-		_, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid(), Wait: 200 * time.Millisecond})
+		_, err := headers.FindSession(t.Context(), env.get, headers.SessionOptions{StartPID: os.Getpid(), Wait: 200 * time.Millisecond})
 		require.ErrorIs(t, err, headers.ErrNoSession)
 	})
 
 	t.Run("a file written while waiting is found", func(t *testing.T) {
-		dir := sessionDir(t)
+		t.Parallel()
+
+		dir, env := sessionDir(t)
 
 		written := make(chan struct{})
 
@@ -129,7 +144,7 @@ func TestFindSession(t *testing.T) {
 			assert.NoError(t, os.WriteFile(filepath.Join(dir, strconv.Itoa(os.Getppid())), []byte("late"), 0o600))
 		}()
 
-		session, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid(), Wait: 10 * time.Second})
+		session, err := headers.FindSession(t.Context(), env.get, headers.SessionOptions{StartPID: os.Getpid(), Wait: 10 * time.Second})
 
 		<-written
 		require.NoError(t, err)
@@ -137,19 +152,23 @@ func TestFindSession(t *testing.T) {
 	})
 
 	t.Run("no file within the bound", func(t *testing.T) {
-		sessionDir(t)
+		t.Parallel()
+
+		_, env := sessionDir(t)
 
 		start := time.Now()
-		_, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid(), Wait: 200 * time.Millisecond})
+		_, err := headers.FindSession(t.Context(), env.get, headers.SessionOptions{StartPID: os.Getpid(), Wait: 200 * time.Millisecond})
 		require.ErrorIs(t, err, headers.ErrNoSession)
 		assert.GreaterOrEqual(t, time.Since(start), 200*time.Millisecond)
 	})
 
 	t.Run("an invalid session ID is refused", func(t *testing.T) {
-		dir := sessionDir(t)
+		t.Parallel()
+
+		dir, env := sessionDir(t)
 		writeSession(t, dir, os.Getpid(), "not valid/")
 
-		_, err := headers.FindSession(t.Context(), headers.SessionOptions{StartPID: os.Getpid()})
+		_, err := headers.FindSession(t.Context(), env.get, headers.SessionOptions{StartPID: os.Getpid()})
 		require.ErrorContains(t, err, "invalid session ID")
 	})
 }
@@ -197,7 +216,9 @@ func TestWorkspace(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			t.Setenv(headers.WorkspaceEnv, test.env)
+			t.Parallel()
+
+			env := envMap{headers.WorkspaceEnv: test.env}
 
 			dir := filepath.Join(t.TempDir(), test.dirName)
 			require.NoError(t, os.Mkdir(dir, 0o700))
@@ -211,7 +232,7 @@ func TestWorkspace(t *testing.T) {
 				test.assertion = require.NoError
 			}
 
-			workspace, err := headers.Workspace(t.Context(), dir)
+			workspace, err := headers.Workspace(t.Context(), env.get, dir)
 			test.assertion(t, err)
 			assert.Equal(t, test.want, workspace)
 		})

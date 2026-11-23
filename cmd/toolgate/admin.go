@@ -25,7 +25,7 @@ Commands:
 `
 
 // admin runs an admin command and returns the exit code.
-func admin(args []string, stdout, stderr io.Writer) int {
+func admin(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, adminUsage)
 
@@ -36,7 +36,7 @@ func admin(args []string, stdout, stderr io.Writer) int {
 	case "rewrap":
 		return rewrap(args[1:], stdout, stderr)
 	case "volumes":
-		return adminVolumes(args[1:], stdout, stderr)
+		return adminVolumes(getenv, args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, adminUsage)
 

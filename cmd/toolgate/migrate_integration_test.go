@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,7 @@ func TestMigrateCommandAppliesMigrationsAndCreatesPartitions(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	require.Equal(t, 0, run([]string{"migrate"}, &stdout, &stderr), "stderr: %s", stderr.String())
+	require.Equal(t, 0, run(os.Getenv, []string{"migrate"}, &stdout, &stderr), "stderr: %s", stderr.String())
 
 	pool := openPool(t, pg.ConnString())
 	database, binary, err := store.CheckSchemaVersion(t.Context(), pool)
@@ -39,7 +40,7 @@ func TestMigrateCommandExitsOneOnFailure(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	assert.Equal(t, 1, run([]string{"migrate"}, &stdout, &stderr))
+	assert.Equal(t, 1, run(os.Getenv, []string{"migrate"}, &stdout, &stderr))
 }
 
 func TestServeWithoutMigrateOnStartRefusesAnOlderDatabase(t *testing.T) {
@@ -97,7 +98,7 @@ func runServeExpectingExit(t *testing.T, databaseURL string) (string, string) {
 	t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
 
 	stdout, stderr := &lockedBuffer{}, &lockedBuffer{}
-	code := run([]string{"serve"}, stdout, stderr)
+	code := run(os.Getenv, []string{"serve"}, stdout, stderr)
 
 	assert.Equal(t, 1, code)
 	assert.NotContains(t, stdout.String(), `"msg":"gateway started"`)

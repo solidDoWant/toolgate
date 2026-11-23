@@ -69,13 +69,13 @@ var disallowedCharacters = regexp.MustCompile(`[^A-Za-z0-9._-]`)
 
 // RuntimeDir is the directory that holds the session files:
 // $XDG_RUNTIME_DIR/toolgate when that variable is set, and otherwise
-// os.UserCacheDir()/toolgate/run.
-func RuntimeDir() (string, error) {
-	if runtimeDir := os.Getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
+// the user cache directory/toolgate/run.
+func RuntimeDir(getenv func(string) string) (string, error) {
+	if runtimeDir := getenv("XDG_RUNTIME_DIR"); runtimeDir != "" {
 		return filepath.Join(runtimeDir, tokenstore.DirName), nil
 	}
 
-	cacheDir, err := os.UserCacheDir()
+	cacheDir, err := tokenstore.CacheDir(getenv)
 	if err != nil {
 		return "", fmt.Errorf("find the user cache directory: %w", err)
 	}
@@ -165,12 +165,12 @@ type SessionOptions struct {
 // session file of the first ancestor process that has one in RuntimeDir. It
 // waits up to the bound for the file to appear and returns ErrNoSession when
 // none does.
-func FindSession(ctx context.Context, options SessionOptions) (string, error) {
-	if session := os.Getenv(SessionEnv); session != "" {
+func FindSession(ctx context.Context, getenv func(string) string, options SessionOptions) (string, error) {
+	if session := getenv(SessionEnv); session != "" {
 		return session, nil
 	}
 
-	dir, err := RuntimeDir()
+	dir, err := RuntimeDir(getenv)
 	if err != nil {
 		return "", err
 	}
@@ -273,8 +273,8 @@ func readSessionFile(dir string, pids []int) (string, bool, error) {
 // pattern: every character outside [A-Za-z0-9._-] becomes "-", and the value
 // is cut to 128 characters. The repository is the name of the git remote
 // "origin", or the directory's name when there is none.
-func Workspace(ctx context.Context, dir string) (string, error) {
-	if workspace := os.Getenv(WorkspaceEnv); workspace != "" {
+func Workspace(ctx context.Context, getenv func(string) string, dir string) (string, error) {
+	if workspace := getenv(WorkspaceEnv); workspace != "" {
 		return workspace, nil
 	}
 
@@ -328,12 +328,12 @@ func normalise(value string) string {
 // WriteSessionFile writes session to the session file of the Claude Code
 // process pid in RuntimeDir, atomically. The directory gets mode 0700 and
 // the file 0600.
-func WriteSessionFile(pid int, session string) error {
+func WriteSessionFile(getenv func(string) string, pid int, session string) error {
 	if !headerValuePattern.MatchString(session) {
 		return errors.New("the session ID is invalid")
 	}
 
-	dir, err := RuntimeDir()
+	dir, err := RuntimeDir(getenv)
 	if err != nil {
 		return err
 	}

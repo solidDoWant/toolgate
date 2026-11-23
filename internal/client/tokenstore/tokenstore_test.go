@@ -157,14 +157,13 @@ func TestDefaultUsesUserConfigDir(t *testing.T) {
 	keyring.MockInitWithError(errNoKeychain)
 
 	configDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configDir)
-	t.Setenv("HOME", configDir)
-	t.Setenv("AppData", configDir)
+	env := map[string]string{"XDG_CONFIG_HOME": configDir, "HOME": configDir, "AppData": configDir}
+	getenv := func(name string) string { return env[name] }
 
-	userConfigDir, err := os.UserConfigDir()
+	userConfigDir, err := tokenstore.ConfigDir(getenv)
 	require.NoError(t, err)
 
-	store, err := tokenstore.Default()
+	store, err := tokenstore.Default(getenv)
 	require.NoError(t, err)
 	require.NoError(t, store.Save("refresh-4"))
 

@@ -38,14 +38,14 @@ type titleHookInput struct {
 
 // telemetryOn reports whether Claude Code's metrics go to OTLP in this
 // session, from the env that Claude Code passes to its hooks.
-func telemetryOn() bool {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("CLAUDE_CODE_ENABLE_TELEMETRY"))) {
+func telemetryOn(getenv func(string) string) bool {
+	switch strings.ToLower(strings.TrimSpace(getenv("CLAUDE_CODE_ENABLE_TELEMETRY"))) {
 	case "1", "true":
 	default:
 		return false
 	}
 
-	exporters := strings.Split(os.Getenv("OTEL_METRICS_EXPORTER"), ",")
+	exporters := strings.Split(getenv("OTEL_METRICS_EXPORTER"), ",")
 	for index := range exporters {
 		exporters[index] = strings.TrimSpace(exporters[index])
 	}
@@ -55,8 +55,8 @@ func telemetryOn() bool {
 
 // sendSessionTitle sends the session's title to the gateway's OTLP ingest
 // when it is due. Every failure is dropped: the next Stop tries again.
-func sendSessionTitle(ctx context.Context, stdin io.Reader, now time.Time) {
-	if !telemetryOn() {
+func sendSessionTitle(ctx context.Context, getenv func(string) string, stdin io.Reader, now time.Time) {
+	if !telemetryOn(getenv) {
 		return
 	}
 
@@ -70,7 +70,7 @@ func sendSessionTitle(ctx context.Context, stdin io.Reader, now time.Time) {
 		return
 	}
 
-	runtimeDir, err := headers.RuntimeDir()
+	runtimeDir, err := headers.RuntimeDir(getenv)
 	if err != nil {
 		return
 	}
@@ -101,12 +101,12 @@ func sendSessionTitle(ctx context.Context, stdin io.Reader, now time.Time) {
 		}
 	}
 
-	workspace, err := headers.Workspace(ctx, workingDir)
+	workspace, err := headers.Workspace(ctx, getenv, workingDir)
 	if err != nil {
 		return
 	}
 
-	err = withAccess(ctx, func(access gatewayAccess) error {
+	err = withAccess(ctx, getenv, func(access gatewayAccess) error {
 		return postTitle(ctx, access, workspace, body)
 	})
 	if err != nil {

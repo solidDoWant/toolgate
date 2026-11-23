@@ -32,7 +32,7 @@ const maxVolumesBody = 4 << 20
 
 // adminVolumes runs `toolgate admin volumes`. The commands call the gateway
 // as the signed-in user; they need no gateway configuration file.
-func adminVolumes(args []string, stdout, stderr io.Writer) int {
+func adminVolumes(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, adminVolumesUsage)
 
@@ -44,9 +44,9 @@ func adminVolumes(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "list":
-		return volumesList(ctx, args[1:], stdout, stderr)
+		return volumesList(ctx, getenv, args[1:], stdout, stderr)
 	case "delete":
-		return volumesDelete(ctx, args[1:], stdout, stderr)
+		return volumesDelete(ctx, getenv, args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, adminVolumesUsage)
 
@@ -58,7 +58,7 @@ func adminVolumes(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-func volumesList(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func volumesList(ctx context.Context, getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("admin volumes list", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	owner := flags.String("owner", "", "only the per-user volumes of this principal")
@@ -74,7 +74,7 @@ func volumesList(ctx context.Context, args []string, stdout, stderr io.Writer) i
 		return 2
 	}
 
-	err := withAccess(ctx, func(access gatewayAccess) error {
+	err := withAccess(ctx, getenv, func(access gatewayAccess) error {
 		return listVolumesWith(ctx, access, *owner, *asJSON, stdout, stderr)
 	})
 	if err != nil {
@@ -213,7 +213,7 @@ func formatSize(size int64) string {
 	return fmt.Sprintf("%.1f%s", value, units[unit])
 }
 
-func volumesDelete(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func volumesDelete(ctx context.Context, getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, "toolgate admin volumes delete: give at least one volume ID\n")
 
@@ -222,7 +222,7 @@ func volumesDelete(ctx context.Context, args []string, stdout, stderr io.Writer)
 
 	missing := false
 
-	err := withAccess(ctx, func(access gatewayAccess) error {
+	err := withAccess(ctx, getenv, func(access gatewayAccess) error {
 		var err error
 
 		missing, err = deleteVolumesWith(ctx, access, args, stdout)

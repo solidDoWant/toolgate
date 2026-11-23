@@ -75,17 +75,17 @@ type Source struct {
 }
 
 // FromEnv reads the sources from the environment.
-func FromEnv() Source {
-	kubeAPI := strings.TrimSpace(os.Getenv(KubeAPIEnv))
+func FromEnv(getenv func(string) string) Source {
+	kubeAPI := strings.TrimSpace(getenv(KubeAPIEnv))
 	if kubeAPI == "" {
 		kubeAPI = DefaultKubeAPI
 	}
 
 	return Source{
-		TokenFile:    strings.TrimSpace(os.Getenv(TokenFileEnv)),
-		SPIFFESocket: strings.TrimSpace(os.Getenv(SPIFFESocketEnv)),
-		TokenRequest: strings.TrimSpace(os.Getenv(TokenRequestEnv)),
-		KeyFile:      strings.TrimSpace(os.Getenv(SignerFileEnv)),
+		TokenFile:    strings.TrimSpace(getenv(TokenFileEnv)),
+		SPIFFESocket: strings.TrimSpace(getenv(SPIFFESocketEnv)),
+		TokenRequest: strings.TrimSpace(getenv(TokenRequestEnv)),
+		KeyFile:      strings.TrimSpace(getenv(SignerFileEnv)),
 		KubeAPI:      kubeAPI,
 	}
 }

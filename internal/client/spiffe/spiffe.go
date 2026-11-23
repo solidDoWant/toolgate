@@ -4,7 +4,6 @@ package spiffe
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -31,8 +30,8 @@ const (
 
 // Socket returns the configured Workload API address, or "" when the SPIFFE
 // credential is not in use.
-func Socket() string {
-	return strings.TrimSpace(os.Getenv(SocketEnv))
+func Socket(getenv func(string) string) string {
+	return strings.TrimSpace(getenv(SocketEnv))
 }
 
 // FetchToken gets a fresh JWT-SVID for the toolgate audience.

@@ -56,7 +56,7 @@ func TestServeRejectsInvalidConfiguration(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := run([]string{"serve", "--config", path}, &stdout, &stderr)
+	code := run(os.Getenv, []string{"serve", "--config", path}, &stdout, &stderr)
 
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr.String(), "databaseURL: required")
@@ -76,7 +76,7 @@ func TestServeExitsWhenTheDatabaseIsUnreachable(t *testing.T) {
 	stderr := &lockedBuffer{}
 	done := make(chan int, 1)
 
-	go func() { done <- run([]string{"serve"}, stdout, stderr) }()
+	go func() { done <- run(os.Getenv, []string{"serve"}, stdout, stderr) }()
 
 	select {
 	case code := <-done:

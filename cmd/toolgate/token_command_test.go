@@ -63,8 +63,12 @@ func tokenGateway(t *testing.T, revoked map[string]bool) (string, func() []strin
 }
 
 func TestTokenCommandRetriesOnceOn401(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
 
 	exp := time.Now().Add(time.Hour)
 	first, second := commandJWT("first", exp), commandJWT("second", exp)
@@ -74,46 +78,54 @@ func TestTokenCommandRetriesOnceOn401(t *testing.T) {
 
 	gatewayURL, bearers := tokenGateway(t, map[string]bool{first: true})
 
-	t.Setenv("TOOLGATE_GATEWAY", gatewayURL)
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", command)
+	env.set("TOOLGATE_GATEWAY", gatewayURL)
+	env.set("TOOLGATE_TOKEN_COMMAND", command)
 
-	code, _, stderr := runCLI(t, "", "sessions")
+	code, _, stderr := runCLI(t, env, "", "sessions")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, []string{first, second}, bearers(), "one retry with the fresh token")
 
 	// The fresh token is now cached: the next command doesn't run the command.
-	code, _, stderr = runCLI(t, "", "sessions")
+	code, _, stderr = runCLI(t, env, "", "sessions")
 	require.Equal(t, 0, code, stderr)
 	assert.Equal(t, []string{first, second, second}, bearers())
 }
 
 func TestTokenCommandRetriesOnlyOnce(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
 
 	exp := time.Now().Add(time.Hour)
 	bad := commandJWT("bad", exp)
 	gatewayURL, bearers := tokenGateway(t, map[string]bool{bad: true})
 
-	t.Setenv("TOOLGATE_GATEWAY", gatewayURL)
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+bad)
+	env.set("TOOLGATE_GATEWAY", gatewayURL)
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo "+bad)
 
-	code, _, stderr := runCLI(t, "", "sessions")
+	code, _, stderr := runCLI(t, env, "", "sessions")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "401")
 	assert.Len(t, bearers(), 2)
 }
 
 func TestTokenCommandHeadersUseTheCachedTokenAndNeverRetry(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "dev")
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "dev")
 
 	token := commandJWT("t", time.Now().Add(time.Hour))
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+token)
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo "+token)
 
-	code, stdout, stderr := runCLI(t, "", "headers")
+	code, stdout, stderr := runCLI(t, env, "", "headers")
 	require.Equal(t, 0, code, stderr)
 
 	var values map[string]string
@@ -122,25 +134,33 @@ func TestTokenCommandHeadersUseTheCachedTokenAndNeverRetry(t *testing.T) {
 }
 
 func TestTokenCommandFailureSendsNoHeaders(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "dev")
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo 'link your account' >&2; exit 1")
+	t.Parallel()
 
-	code, stdout, stderr := runCLI(t, "", "headers")
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("XDG_RUNTIME_DIR", t.TempDir())
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "dev")
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo 'link your account' >&2; exit 1")
+
+	code, stdout, stderr := runCLI(t, env, "", "headers")
 	assert.Equal(t, 1, code)
 	assert.Empty(t, stdout)
 	assert.Contains(t, stderr, "TOOLGATE_TOKEN_COMMAND exited with status 1.")
 }
 
 func TestTokenCommandWithSPIFFESocketIsRefused(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("TOOLGATE_SPIFFE_SOCKET", "unix:///nonexistent")
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo abc")
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("TOOLGATE_SPIFFE_SOCKET", "unix:///nonexistent")
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo abc")
 
 	for _, command := range [][]string{{"headers"}, {"otel-headers"}, {"servers"}, {"secret", "list"}, {"sessions"}, {"hook", "session-start"}} {
-		code, stdout, stderr := runCLI(t, "{}", command...)
+		code, stdout, stderr := runCLI(t, env, "{}", command...)
 		assert.Equal(t, 1, code, "%v", command)
 		assert.Empty(t, stdout, "%v", command)
 		assert.Equal(t, "Set only one of TOOLGATE_SPIFFE_SOCKET and TOOLGATE_TOKEN_COMMAND.\n", stderr, "%v", command)
@@ -148,11 +168,15 @@ func TestTokenCommandWithSPIFFESocketIsRefused(t *testing.T) {
 }
 
 func TestTokenCommandNeedsAGatewayURL(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("TOOLGATE_GATEWAY", "")
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo abc")
+	t.Parallel()
 
-	code, _, stderr := runCLI(t, "", "sessions")
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("TOOLGATE_GATEWAY", "")
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo abc")
+
+	code, _, stderr := runCLI(t, env, "", "sessions")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "TOOLGATE_GATEWAY")
 }

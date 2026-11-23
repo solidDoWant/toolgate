@@ -17,15 +17,18 @@ import (
 )
 
 func TestLoginTokenStoreFileIsRecordedAndUsedAlone(t *testing.T) {
-	dir := isolateUserConfig(t)
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "ws")
+	env := testEnv{}
+
+	dir := isolateUserConfig(t, env)
+	useKeychain(t, env)
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "ws")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, output, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL, "--token-store", "file")
+	code, output, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL, "--token-store", "file")
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	lines := strings.Split(strings.TrimSpace(output), "\n")
@@ -48,39 +51,46 @@ func TestLoginTokenStoreFileIsRecordedAndUsedAlone(t *testing.T) {
 
 	var stdout, headersErr strings.Builder
 
-	require.Equal(t, 0, run([]string{"headers"}, &stdout, &headersErr), "stderr: %s", headersErr.String())
+	require.Equal(t, 0, run(env.get, []string{"headers"}, &stdout, &headersErr), "stderr: %s", headersErr.String())
 
 	// With the file gone, the keychain token is not used either.
 	require.NoError(t, os.Remove(filepath.Join(dir, tokenstore.FileName)))
 
 	stdout.Reset()
 	headersErr.Reset()
-	assert.Equal(t, 1, run([]string{"headers"}, &stdout, &headersErr))
+	assert.Equal(t, 1, run(env.get, []string{"headers"}, &stdout, &headersErr))
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, headersErr.String(), "not signed in")
 }
 
 func TestLoginTokenStoreFromEnvironment(t *testing.T) {
-	dir := isolateUserConfig(t)
-	t.Setenv("TOOLGATE_TOKEN_STORE", "file")
+	t.Parallel()
+
+	env := testEnv{}
+
+	dir := isolateUserConfig(t, env)
+	env.set("TOOLGATE_TOKEN_STORE", "file")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.FileExists(t, filepath.Join(dir, tokenstore.FileName))
 }
 
 func TestLoginTokenStoreAutoRecordsTheStoreUsed(t *testing.T) {
-	dir := isolateUserConfig(t)
+	env := testEnv{}
+
+	dir := isolateUserConfig(t, env)
+	useKeychain(t, env)
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, output, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, output, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.Contains(t, output, "The refresh token is stored in the OS keychain.\n")
 
@@ -91,7 +101,7 @@ func TestLoginTokenStoreAutoRecordsTheStoreUsed(t *testing.T) {
 	// Auto falls back to the file when the keychain fails.
 	keyring.MockInitWithError(assert.AnError)
 
-	code, output, stderr = signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, output, stderr = signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 	assert.Contains(t, output, "The refresh token is stored in "+filepath.Join(dir, tokenstore.FileName)+".")
 
@@ -101,15 +111,18 @@ func TestLoginTokenStoreAutoRecordsTheStoreUsed(t *testing.T) {
 }
 
 func TestHeadersWithUnusableKeychainSaysToSignInWithFile(t *testing.T) {
-	dir := isolateUserConfig(t)
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "ws")
+	env := testEnv{}
+
+	dir := isolateUserConfig(t, env)
+	useKeychain(t, env)
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "ws")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL, "--token-store", "keychain")
+	code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL, "--token-store", "keychain")
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	// A file token exists, but the recorded store is the keychain, which is now unusable.
@@ -118,30 +131,37 @@ func TestHeadersWithUnusableKeychainSaysToSignInWithFile(t *testing.T) {
 
 	var stdout, headersErr strings.Builder
 
-	assert.Equal(t, 1, run([]string{"headers"}, &stdout, &headersErr))
+	assert.Equal(t, 1, run(env.get, []string{"headers"}, &stdout, &headersErr))
 	assert.Empty(t, stdout.String())
 	assert.Contains(t, headersErr.String(), "sign in again with `toolgate login --token-store file`")
 }
 
 func TestLoginRejectsUnknownTokenStore(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	var stdout, stderr strings.Builder
 
-	assert.Equal(t, 2, run([]string{"login", "--token-store", "vault"}, &stdout, &stderr))
+	assert.Equal(t, 2, run(env.get, []string{"login", "--token-store", "vault"}, &stdout, &stderr))
 	assert.Contains(t, stderr.String(), "unknown token store")
 }
 
 func TestHeadersWithoutTokenStoreKeepsKeychainThenFile(t *testing.T) {
-	dir := isolateUserConfig(t)
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "ws")
+	env := testEnv{}
+
+	dir := isolateUserConfig(t, env)
+	useKeychain(t, env)
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "ws")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	// Make config.json look like it came from 0.2.
@@ -161,7 +181,7 @@ func TestHeadersWithoutTokenStoreKeepsKeychainThenFile(t *testing.T) {
 	// Keychain first.
 	var stdout, headersErr strings.Builder
 
-	require.Equal(t, 0, run([]string{"headers"}, &stdout, &headersErr), "stderr: %s", headersErr.String())
+	require.Equal(t, 0, run(env.get, []string{"headers"}, &stdout, &headersErr), "stderr: %s", headersErr.String())
 
 	// Then the file, once the keychain is empty.
 	token, err := tokenstore.New(dir).Load()
@@ -171,19 +191,23 @@ func TestHeadersWithoutTokenStoreKeepsKeychainThenFile(t *testing.T) {
 
 	stdout.Reset()
 	headersErr.Reset()
-	require.Equal(t, 0, run([]string{"headers"}, &stdout, &headersErr), "stderr: %s", headersErr.String())
+	require.Equal(t, 0, run(env.get, []string{"headers"}, &stdout, &headersErr), "stderr: %s", headersErr.String())
 }
 
 func TestHeadersWithRevokedRefreshTokenSaysSignInAgain(t *testing.T) {
-	isolateUserConfig(t)
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "ws")
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "ws")
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
 
-	code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+	code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 	require.Equal(t, 0, code, "stderr: %s", stderr)
 
 	provider.RevokeRefreshTokens("alice")
@@ -191,14 +215,18 @@ func TestHeadersWithRevokedRefreshTokenSaysSignInAgain(t *testing.T) {
 	for _, command := range []string{"headers", "otel-headers"} {
 		var stdout, headersErr strings.Builder
 
-		assert.Equal(t, 1, run([]string{command}, &stdout, &headersErr), command)
+		assert.Equal(t, 1, run(env.get, []string{command}, &stdout, &headersErr), command)
 		assert.Empty(t, stdout.String(), command)
 		assert.Equal(t, "Sign in again: run `toolgate login`.\n", headersErr.String(), command)
 	}
 }
 
 func TestLoginExpiredCodeExitsOne(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{DeviceCodeLifetime: 2 * time.Second})
 	gatewayURL := startGateway(t, provider, provider.ClientID)
@@ -206,7 +234,7 @@ func TestLoginExpiredCodeExitsOne(t *testing.T) {
 	var stdout, stderr strings.Builder
 
 	// Nobody approves the code.
-	assert.Equal(t, 1, run([]string{"login", "--gateway", gatewayURL}, &stdout, &stderr))
+	assert.Equal(t, 1, run(env.get, []string{"login", "--gateway", gatewayURL}, &stdout, &stderr))
 	assert.Equal(t, "The sign-in code expired. Run `toolgate login` again.\n", stderr.String())
 	assert.Contains(t, stdout.String(), "The code expires in 2 seconds.")
 }

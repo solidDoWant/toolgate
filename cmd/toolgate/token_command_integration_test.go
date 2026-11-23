@@ -20,7 +20,9 @@ import (
 const coderAudience = "coder-toolgate"
 
 func TestSignInThroughTokenCommand(t *testing.T) {
-	isolateUserConfig(t)
+	env := processEnv{t}
+
+	isolateUserConfig(t, env)
 
 	served := startServeWithAudiences(t, coderAudience)
 	defer stopServe(t, served.stderr, served.done)
@@ -44,7 +46,7 @@ func TestSignInThroughTokenCommand(t *testing.T) {
 	connect := func(t *testing.T) *mcp.ClientSession {
 		t.Helper()
 
-		code, stdout, stderr := runCLI(t, "", "headers")
+		code, stdout, stderr := runCLI(t, env, "", "headers")
 		require.Equal(t, 0, code, stderr)
 
 		var values map[string]string
@@ -75,11 +77,13 @@ func TestSignInThroughTokenCommand(t *testing.T) {
 	}
 
 	t.Run("a token from TOOLGATE_TOKEN_COMMAND signs the CLI in as the user, with no saved sign-in", func(t *testing.T) {
+		env := processEnv{t}
+
 		t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo "+mint(alice))
 
 		session := connect(t)
 
-		code, stdout, stderr := runCLI(t, "", "sessions")
+		code, stdout, stderr := runCLI(t, env, "", "sessions")
 		require.Equal(t, 0, code, stderr)
 		assert.Contains(t, stdout, "coder-session", "the session is the user's own")
 

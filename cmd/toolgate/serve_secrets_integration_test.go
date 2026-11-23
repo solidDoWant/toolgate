@@ -47,7 +47,7 @@ func TestServeMountsTheSecretsAPIBehindAuthentication(t *testing.T) {
 	stderr := &lockedBuffer{}
 	done := make(chan int, 1)
 
-	go func() { done <- run([]string{"serve"}, stdout, stderr) }()
+	go func() { done <- run(os.Getenv, []string{"serve"}, stdout, stderr) }()
 
 	var address string
 

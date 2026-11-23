@@ -128,17 +128,21 @@ func recordingGateway(t *testing.T) (string, func() []string) {
 
 func TestClientCommandsSendAJWTSVID(t *testing.T) {
 	t.Run("with TOOLGATE_SPIFFE_SOCKET every client command sends a fresh JWT-SVID", func(t *testing.T) {
-		isolateUserConfig(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		isolateUserConfig(t, env)
 
 		socket, fake := startWorkloadAPI(t, false)
 		gatewayURL, bearers := recordingGateway(t)
 
-		t.Setenv("TOOLGATE_SPIFFE_SOCKET", socket)
-		t.Setenv("TOOLGATE_GATEWAY", gatewayURL)
-		t.Setenv("TOOLGATE_SESSION", "session-1")
-		t.Setenv("TOOLGATE_WORKSPACE", "dev")
-		t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
-		t.Setenv("CLAUDE_CODE_SESSION_ID", "session-1")
+		env.set("TOOLGATE_SPIFFE_SOCKET", socket)
+		env.set("TOOLGATE_GATEWAY", gatewayURL)
+		env.set("TOOLGATE_SESSION", "session-1")
+		env.set("TOOLGATE_WORKSPACE", "dev")
+		env.set("XDG_RUNTIME_DIR", t.TempDir())
+		env.set("CLAUDE_CODE_SESSION_ID", "session-1")
 
 		gatewayCommands := [][]string{
 			{"servers"},
@@ -148,7 +152,7 @@ func TestClientCommandsSendAJWTSVID(t *testing.T) {
 
 		for _, command := range gatewayCommands {
 			before := len(bearers())
-			code, _, stderr := runCLI(t, "", command...)
+			code, _, stderr := runCLI(t, env, "", command...)
 			// `servers` speaks MCP, which the plain fake gateway doesn't, so
 			// only the credential it sent is checked for that one.
 			if command[0] != "servers" {
@@ -162,11 +166,11 @@ func TestClientCommandsSendAJWTSVID(t *testing.T) {
 		// directly.
 		before := len(bearers())
 		tail := tailer{stdout: &strings.Builder{}, stderr: &strings.Builder{}}
-		require.NoError(t, tail.once(t.Context()))
+		require.NoError(t, tail.once(t.Context(), env.get))
 		require.Len(t, bearers()[before:], 1)
 
 		for _, command := range [][]string{{"headers"}, {"otel-headers"}} {
-			code, stdout, stderr := runCLI(t, "", command...)
+			code, stdout, stderr := runCLI(t, env, "", command...)
 			require.Equal(t, 0, code, "%v: %s", command, stderr)
 
 			var values map[string]string
@@ -174,7 +178,7 @@ func TestClientCommandsSendAJWTSVID(t *testing.T) {
 			assert.True(t, strings.HasPrefix(values["Authorization"], "Bearer ey"), "%v", command)
 		}
 
-		code, _, stderr := runCLI(t, `{"session_id":"session-1"}`, "hook", "session-start")
+		code, _, stderr := runCLI(t, env, `{"session_id":"session-1"}`, "hook", "session-start")
 		require.Equal(t, 0, code, stderr)
 
 		sent := bearers()
@@ -201,22 +205,26 @@ func TestClientCommandsSendAJWTSVID(t *testing.T) {
 }
 
 func TestSpiffeFetchFailureNeverFallsBackToTheSignIn(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	socket, _ := startWorkloadAPI(t, true)
 	gatewayURL, bearers := recordingGateway(t)
 
 	// A saved sign-in exists but must not be used.
-	settingsDir, err := configDir()
+	settingsDir, err := configDir(env.get)
 	require.NoError(t, err)
 	require.NoError(t, login.SaveSettings(settingsDir, login.Settings{Gateway: gatewayURL}))
 
-	t.Setenv("TOOLGATE_SPIFFE_SOCKET", socket)
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "dev")
+	env.set("TOOLGATE_SPIFFE_SOCKET", socket)
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "dev")
 
 	for _, command := range [][]string{{"servers"}, {"sessions"}, {"secret", "list"}, {"headers"}, {"otel-headers"}} {
-		code, stdout, stderr := runCLI(t, "", command...)
+		code, stdout, stderr := runCLI(t, env, "", command...)
 		assert.Equal(t, 1, code, "%v", command)
 		assert.Empty(t, stdout, "%v", command)
 		assert.Contains(t, stderr, "JWT-SVID", "%v", command)
@@ -227,21 +235,25 @@ func TestSpiffeFetchFailureNeverFallsBackToTheSignIn(t *testing.T) {
 }
 
 func TestSpiffeNeedsAGatewayURLForGatewayCommands(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	socket, _ := startWorkloadAPI(t, false)
 
-	t.Setenv("TOOLGATE_SPIFFE_SOCKET", socket)
-	t.Setenv("TOOLGATE_GATEWAY", "")
+	env.set("TOOLGATE_SPIFFE_SOCKET", socket)
+	env.set("TOOLGATE_GATEWAY", "")
 
-	code, _, stderr := runCLI(t, "", "sessions")
+	code, _, stderr := runCLI(t, env, "", "sessions")
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr, "TOOLGATE_GATEWAY")
 
 	// headers works without the gateway URL.
-	t.Setenv("TOOLGATE_SESSION", "session-1")
-	t.Setenv("TOOLGATE_WORKSPACE", "dev")
+	env.set("TOOLGATE_SESSION", "session-1")
+	env.set("TOOLGATE_WORKSPACE", "dev")
 
-	code, _, stderr = runCLI(t, "", "headers")
+	code, _, stderr = runCLI(t, env, "", "headers")
 	assert.Equal(t, 0, code, stderr)
 }

@@ -62,8 +62,8 @@ func failure(format string, args ...any) error {
 }
 
 // Command returns the configured command, or "" when it is not in use.
-func Command() string {
-	return strings.TrimSpace(os.Getenv(Env))
+func Command(getenv func(string) string) string {
+	return strings.TrimSpace(getenv(Env))
 }
 
 // Source runs one command. The zero values of the optional fields mean the
@@ -73,6 +73,8 @@ type Source struct {
 	Command string
 	// Dir holds the cache and the lock. Default: headers.RuntimeDir().
 	Dir string
+	// Getenv reads the environment for the default Dir. Default: os.Getenv.
+	Getenv func(string) string
 	// Stderr receives the command's standard error, cut at MaxStderr.
 	// Default: os.Stderr.
 	Stderr io.Writer
@@ -83,8 +85,8 @@ type Source struct {
 }
 
 // FromEnv returns a Source for the command in the environment.
-func FromEnv() Source {
-	return Source{Command: Command()}
+func FromEnv(getenv func(string) string) Source {
+	return Source{Command: Command(getenv), Getenv: getenv}
 }
 
 // Token returns the cached token while it has more than 60 s to live, and
@@ -154,7 +156,12 @@ func (s Source) dir() (string, error) {
 	if dir == "" {
 		var err error
 
-		dir, err = headers.RuntimeDir()
+		getenv := s.Getenv
+		if getenv == nil {
+			getenv = os.Getenv
+		}
+
+		dir, err = headers.RuntimeDir(getenv)
 		if err != nil {
 			return "", err
 		}

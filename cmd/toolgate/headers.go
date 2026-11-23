@@ -23,14 +23,14 @@ const noSessionMessage = "toolgate headers: no Claude Code session found. Sendin
 
 // printHeaders runs `toolgate headers`: it prints the headers for Claude
 // Code's headersHelper as a JSON object and returns the exit code.
-func printHeaders(args []string, stdout, stderr io.Writer) int {
+func printHeaders(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "toolgate headers: unexpected argument %q\n", args[0])
 
 		return 2
 	}
 
-	values, err := buildHeaders(context.Background(), stderr)
+	values, err := buildHeaders(context.Background(), getenv, stderr)
 	if errors.Is(err, headers.ErrSignInAgain) {
 		_, _ = fmt.Fprintln(stderr, headers.SignInAgainMessage)
 
@@ -58,11 +58,11 @@ func printHeaders(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func buildHeaders(ctx context.Context, stderr io.Writer) (map[string]string, error) {
+func buildHeaders(ctx context.Context, getenv func(string) string, stderr io.Writer) (map[string]string, error) {
 	// The session is looked up first, and waited for: a real Claude Code
 	// session must not run untied because its hook was slow. Only when no
 	// session file appears does the helper fall back to credential headers.
-	session, err := headers.FindSession(ctx, headers.SessionOptions{})
+	session, err := headers.FindSession(ctx, getenv, headers.SessionOptions{})
 	if errors.Is(err, headers.ErrNoSession) {
 		_, _ = fmt.Fprintln(stderr, noSessionMessage)
 
@@ -73,7 +73,7 @@ func buildHeaders(ctx context.Context, stderr io.Writer) (map[string]string, err
 		return nil, err
 	}
 
-	values, err := credentialHeaders(ctx, stderr)
+	values, err := credentialHeaders(ctx, getenv, stderr)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +82,7 @@ func buildHeaders(ctx context.Context, stderr io.Writer) (map[string]string, err
 		values[auth.SessionHeader] = session
 	}
 
-	if mode := toolSearchMode(os.Getenv(headers.ToolSearchEnv)); mode != "" {
+	if mode := toolSearchMode(getenv(headers.ToolSearchEnv)); mode != "" {
 		values[auth.ToolSearchHeader] = mode
 	}
 
@@ -91,15 +91,15 @@ func buildHeaders(ctx context.Context, stderr io.Writer) (map[string]string, err
 
 // credentialHeaders returns the Authorization and workspace headers shared
 // by `toolgate headers` and `toolgate otel-headers`.
-func credentialHeaders(ctx context.Context, stderr io.Writer) (map[string]string, error) {
-	accessToken, err := bearerToken(ctx)
+func credentialHeaders(ctx context.Context, getenv func(string) string, stderr io.Writer) (map[string]string, error) {
+	accessToken, err := bearerToken(ctx, getenv)
 	if err != nil {
 		return nil, err
 	}
 
 	// A broken attestation source must not cost the session its credentials:
 	// the gateway serves the request unverified.
-	attested, err := attestationSource().Token(ctx)
+	attested, err := attestationSource(getenv).Token(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate: the attestation is skipped and the session is unverified: %v\n", err)
 
@@ -111,7 +111,7 @@ func credentialHeaders(ctx context.Context, stderr io.Writer) (map[string]string
 		return nil, fmt.Errorf("read the working directory: %w", err)
 	}
 
-	workspace, err := headers.Workspace(ctx, workingDir)
+	workspace, err := headers.Workspace(ctx, getenv, workingDir)
 	if err != nil {
 		return nil, err
 	}
@@ -131,16 +131,16 @@ func credentialHeaders(ctx context.Context, stderr io.Writer) (map[string]string
 // bearerToken returns the token for the gateway: a fresh JWT-SVID when
 // TOOLGATE_SPIFFE_SOCKET is set, otherwise the stored sign-in's access token.
 // A failed fetch never falls back to the sign-in.
-func bearerToken(ctx context.Context) (string, error) {
-	if source := tokenCommandSource(); source.Command != "" {
+func bearerToken(ctx context.Context, getenv func(string) string) (string, error) {
+	if source := tokenCommandSource(getenv); source.Command != "" {
 		return source.Token(ctx)
 	}
 
-	if socket := spiffe.Socket(); socket != "" {
+	if socket := spiffe.Socket(getenv); socket != "" {
 		return spiffe.FetchToken(ctx, socket)
 	}
 
-	dir, err := configDir()
+	dir, err := configDir(getenv)
 	if err != nil {
 		return "", err
 	}
@@ -156,14 +156,14 @@ func bearerToken(ctx context.Context) (string, error) {
 // printOtelHeaders runs `toolgate otel-headers`: it prints the headers for
 // Claude Code's otelHeadersHelper as a JSON object and returns the exit
 // code. It doesn't wait for a session file.
-func printOtelHeaders(args []string, stdout, stderr io.Writer) int {
+func printOtelHeaders(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "toolgate otel-headers: unexpected argument %q\n", args[0])
 
 		return 2
 	}
 
-	values, err := credentialHeaders(context.Background(), stderr)
+	values, err := credentialHeaders(context.Background(), getenv, stderr)
 	if errors.Is(err, headers.ErrSignInAgain) {
 		_, _ = fmt.Fprintln(stderr, headers.SignInAgainMessage)
 

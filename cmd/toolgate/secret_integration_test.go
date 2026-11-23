@@ -178,7 +178,9 @@ func objectsHolding(t *testing.T, kube client.Client, value string) []string {
 }
 
 func TestSecretCommands(t *testing.T) {
-	isolateUserConfig(t)
+	env := processEnv{t}
+
+	isolateUserConfig(t, env)
 	t.Setenv("TOOLGATE_SESSION", "session-cli")
 	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
 
@@ -187,18 +189,22 @@ func TestSecretCommands(t *testing.T) {
 
 	served.provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true, Groups: []string{"eng"}})
 
-	code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
+	code, _, signInStderr := signInApproving(t, env, served.provider, "alice", "--gateway", served.url)
 	require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 	t.Run("toolgate secret set reads the value from stdin and never echoes it", func(t *testing.T) {
-		code, out, errOut := runCLI(t, secretValue, "secret", "set", "github-token")
+		env := processEnv{t}
+
+		code, out, errOut := runCLI(t, env, secretValue, "secret", "set", "github-token")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 		assert.Contains(t, out, "github-token")
 		assert.NotContains(t, out+errOut, secretValue)
 	})
 
 	t.Run("toolgate secret list shows the name and dates only", func(t *testing.T) {
-		code, out, errOut := runCLI(t, "", "secret", "list")
+		env := processEnv{t}
+
+		code, out, errOut := runCLI(t, env, "", "secret", "list")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 		assert.NotContains(t, out, secretValue)
 
@@ -211,6 +217,8 @@ func TestSecretCommands(t *testing.T) {
 	})
 
 	t.Run("toolgate servers lists what toolgate_list_servers returns for the CLI user", func(t *testing.T) {
+		env := processEnv{t}
+
 		session := served.connectAs(t, "session-cli", "laptop-widgets")
 
 		require.Eventually(t, func() bool {
@@ -219,7 +227,7 @@ func TestSecretCommands(t *testing.T) {
 			return len(names) == 1 && names[0] == "github"
 		}, time.Minute, 50*time.Millisecond, "the template is offered; stderr: %s", served.stderr.String())
 
-		code, out, errOut := runCLI(t, "", "servers")
+		code, out, errOut := runCLI(t, env, "", "servers")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 
 		lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -278,10 +286,12 @@ func TestSecretCommands(t *testing.T) {
 	})
 
 	t.Run("toolgate secret delete removes the secret", func(t *testing.T) {
-		code, _, errOut := runCLI(t, "", "secret", "delete", "github-token")
+		env := processEnv{t}
+
+		code, _, errOut := runCLI(t, env, "", "secret", "delete", "github-token")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 
-		code, out, errOut := runCLI(t, "", "secret", "list")
+		code, out, errOut := runCLI(t, env, "", "secret", "list")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 		assert.NotContains(t, out, "github-token")
 	})
