@@ -35,7 +35,7 @@ const (
 )
 
 // auditCommand runs an audit command and returns the exit code.
-func auditCommand(args []string, stdout, stderr io.Writer) int {
+func auditCommand(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, auditUsage)
 
@@ -44,7 +44,7 @@ func auditCommand(args []string, stdout, stderr io.Writer) int {
 
 	switch args[0] {
 	case "tail":
-		return auditTail(args[1:], stdout, stderr)
+		return auditTail(getenv, args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, auditUsage)
 
@@ -57,7 +57,7 @@ func auditCommand(args []string, stdout, stderr io.Writer) int {
 }
 
 // auditTail runs `toolgate audit tail` until Ctrl-C.
-func auditTail(args []string, stdout, stderr io.Writer) int {
+func auditTail(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("audit tail", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	after := flags.String("after", "", "start after this event key")
@@ -85,7 +85,7 @@ func auditTail(args []string, stdout, stderr io.Writer) int {
 	defer stop()
 
 	tail := tailer{after: *after, raw: *raw, stdout: stdout, stderr: stderr, minBackoff: tailMinBackoff, maxBackoff: tailMaxBackoff}
-	if err := tail.run(ctx); err != nil {
+	if err := tail.run(ctx, getenv); err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate audit tail: %v\n", err)
 
 		return 1
@@ -111,11 +111,11 @@ type tailer struct {
 // run streams until ctx ends. After a clean end of a stream it reconnects
 // at once with a fresh token and the last key; after an error it waits,
 // doubling the wait from minBackoff up to maxBackoff.
-func (t *tailer) run(ctx context.Context) error {
+func (t *tailer) run(ctx context.Context, getenv func(string) string) error {
 	backoff := t.minBackoff
 
 	for {
-		err := t.once(ctx)
+		err := t.once(ctx, getenv)
 
 		switch {
 		case ctx.Err() != nil:
@@ -142,8 +142,8 @@ func (t *tailer) run(ctx context.Context) error {
 
 // once opens one stream and prints its events until it ends. It returns nil
 // when the gateway ended the stream cleanly.
-func (t *tailer) once(ctx context.Context) error {
-	return withAccess(ctx, func(access gatewayAccess) error { return t.onceWith(ctx, access) })
+func (t *tailer) once(ctx context.Context, getenv func(string) string) error {
+	return withAccess(ctx, getenv, func(access gatewayAccess) error { return t.onceWith(ctx, access) })
 }
 
 func (t *tailer) onceWith(ctx context.Context, access gatewayAccess) error {

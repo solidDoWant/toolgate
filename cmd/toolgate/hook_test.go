@@ -21,6 +21,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 	"github.com/solidDoWant/toolgate/internal/config"
 	"github.com/solidDoWant/toolgate/internal/gateway"
 	"github.com/solidDoWant/toolgate/internal/settings"
@@ -28,12 +29,12 @@ import (
 )
 
 // runHook runs `toolgate hook session-start` with input on standard input.
-func runHook(t *testing.T, input string) (int, string, string) {
+func runHook(t *testing.T, env environment, input string) (int, string, string) {
 	t.Helper()
 
 	var stdout, stderr strings.Builder
 
-	code := runWithInput([]string{"hook", "session-start"}, strings.NewReader(input), &stdout, &stderr)
+	code := runWithInput(env.get, []string{"hook", "session-start"}, strings.NewReader(input), &stdout, &stderr)
 
 	return code, stdout.String(), stderr.String()
 }
@@ -122,8 +123,12 @@ func writeSettingsFile(t *testing.T, path string, values map[string]any) {
 
 func TestSettingsSync(t *testing.T) {
 	t.Run("the SessionStart hook writes the profile's keys, leaves user edits, removes dropped keys and keeps other keys", func(t *testing.T) {
-		isolateUserConfig(t)
-		t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+		t.Parallel()
+
+		env := testEnv{}
+
+		isolateUserConfig(t, env)
+		env.set("XDG_RUNTIME_DIR", t.TempDir())
 
 		provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 		provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true, Groups: []string{"dev"}})
@@ -137,17 +142,17 @@ func TestSettingsSync(t *testing.T) {
 
 		gatewayURL := startGatewayWithProfiles(t, provider, kube)
 
-		code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL)
+		code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL)
 		require.Equal(t, 0, code, "stderr: %s", stderr)
 
-		home, err := os.UserHomeDir()
+		home, err := tokenstore.HomeDir(env.get)
 		require.NoError(t, err)
 
 		settingsPath := filepath.Join(home, ".claude", "settings.json")
 		require.NoError(t, os.MkdirAll(filepath.Dir(settingsPath), 0o700))
 		writeSettingsFile(t, settingsPath, map[string]any{"editor": "vim", "env": map[string]any{"MINE": "x"}})
 
-		code, stdout, stderr := runHook(t, `{"session_id":"session-1"}`)
+		code, stdout, stderr := runHook(t, env, `{"session_id":"session-1"}`)
 		require.Equal(t, 0, code, "stderr: %s", stderr)
 		assert.NotContains(t, hookContext(t, stdout), "changed by hand")
 
@@ -167,7 +172,7 @@ func TestSettingsSync(t *testing.T) {
 		devProfile.Spec.Settings.Raw = []byte(`{"model":"haiku","env":{"FOO":"3"},"permissions":{"deny":["Bash(rm:*)"]}}`)
 		require.NoError(t, kube.Update(t.Context(), devProfile))
 
-		code, stdout, stderr = runHook(t, `{"session_id":"session-2"}`)
+		code, stdout, stderr = runHook(t, env, `{"session_id":"session-2"}`)
 		require.Equal(t, 0, code, "stderr: %s", stderr)
 		assert.Contains(t, hookContext(t, stdout), "model", "the user-changed key is reported")
 
@@ -181,13 +186,17 @@ func TestSettingsSync(t *testing.T) {
 }
 
 func TestHookSignedOutTellsTheUserToSignIn(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
+
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
 
 	runtimeDir := t.TempDir()
-	t.Setenv("XDG_RUNTIME_DIR", runtimeDir)
-	t.Setenv("CLAUDE_PID", "4242")
+	env.set("XDG_RUNTIME_DIR", runtimeDir)
+	env.set("CLAUDE_PID", "4242")
 
-	code, stdout, stderr := runHook(t, `{"session_id":"session-1","hook_event_name":"SessionStart"}`)
+	code, stdout, stderr := runHook(t, env, `{"session_id":"session-1","hook_event_name":"SessionStart"}`)
 	assert.Equal(t, 0, code, "the hook never blocks the session")
 	assert.Empty(t, stderr)
 	assert.Contains(t, hookContext(t, stdout), "Run `toolgate login`")

@@ -23,9 +23,13 @@ func TestRun(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			env := testEnv{}
+
 			var stdout, stderr bytes.Buffer
 
-			code := run(test.args, &stdout, &stderr)
+			code := run(env.get, test.args, &stdout, &stderr)
 
 			require.Equal(t, test.wantCode, code, "stderr: %s", stderr.String())
 			assert.Contains(t, stdout.String(), test.wantStdout)

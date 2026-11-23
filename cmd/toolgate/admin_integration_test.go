@@ -73,7 +73,7 @@ func TestAdminRewrapReencryptsEveryRowUnderThePrimaryKey(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := run([]string{"admin", "rewrap"}, &stdout, &stderr)
+	code := run(os.Getenv, []string{"admin", "rewrap"}, &stdout, &stderr)
 	require.Equal(t, 0, code, "stderr: %s", stderr.String())
 	assert.Contains(t, stdout.String(), "Re-encrypted 6 secrets")
 
@@ -109,7 +109,7 @@ func TestAdminRewrapNeedsTheKeyset(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := run([]string{"admin", "rewrap"}, &stdout, &stderr)
+	code := run(os.Getenv, []string{"admin", "rewrap"}, &stdout, &stderr)
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr.String(), "secretsKeysetFile is not set")
 }

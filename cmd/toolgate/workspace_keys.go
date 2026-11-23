@@ -204,7 +204,7 @@ func (e workspaceEnv) configDirectory() (string, error) {
 		return e.configDir()
 	}
 
-	return configDir()
+	return configDir(e.getenv)
 }
 
 // loadOrCreateKey loads the key at path, or makes and saves a new one.

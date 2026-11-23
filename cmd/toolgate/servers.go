@@ -23,7 +23,7 @@ import (
 
 // servers runs `toolgate servers`: it calls toolgate_list_servers as the
 // signed-in user and prints the result. It returns the exit code.
-func servers(args []string, stdout, stderr io.Writer) int {
+func servers(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 {
 		_, _ = fmt.Fprintf(stderr, "toolgate servers: unexpected argument %q\n", args[0])
 
@@ -33,7 +33,7 @@ func servers(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	result, err := listServers(ctx)
+	result, err := listServers(ctx, getenv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate servers: %v\n", err)
 
@@ -93,13 +93,13 @@ func (t identityTransport) RoundTrip(request *http.Request) (*http.Response, err
 // toolgate_list_servers. The session is TOOLGATE_SESSION when it is set, and
 // otherwise a new one for this command; the workspace is the one
 // `toolgate headers` would send from this directory.
-func listServers(ctx context.Context) (gateway.ListServersResult, error) {
+func listServers(ctx context.Context, getenv func(string) string) (gateway.ListServersResult, error) {
 	var result gateway.ListServersResult
 
-	err := withAccess(ctx, func(access gatewayAccess) error {
+	err := withAccess(ctx, getenv, func(access gatewayAccess) error {
 		var err error
 
-		result, err = listServersWith(ctx, access)
+		result, err = listServersWith(ctx, getenv, access)
 
 		return err
 	})
@@ -107,8 +107,8 @@ func listServers(ctx context.Context) (gateway.ListServersResult, error) {
 	return result, err
 }
 
-func listServersWith(ctx context.Context, access gatewayAccess) (gateway.ListServersResult, error) {
-	session := os.Getenv(headers.SessionEnv)
+func listServersWith(ctx context.Context, getenv func(string) string, access gatewayAccess) (gateway.ListServersResult, error) {
+	session := getenv(headers.SessionEnv)
 	if session == "" {
 		session = "cli-" + rand.Text()
 	}
@@ -118,7 +118,7 @@ func listServersWith(ctx context.Context, access gatewayAccess) (gateway.ListSer
 		return gateway.ListServersResult{}, fmt.Errorf("read the working directory: %w", err)
 	}
 
-	workspace, err := headers.Workspace(ctx, workingDir)
+	workspace, err := headers.Workspace(ctx, getenv, workingDir)
 	if err != nil {
 		return gateway.ListServersResult{}, err
 	}

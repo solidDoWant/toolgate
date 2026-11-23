@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -40,7 +41,7 @@ func startTail(t *testing.T, after string) *runningTail {
 		minBackoff: 50 * time.Millisecond, maxBackoff: 200 * time.Millisecond,
 	}
 
-	go func() { tail.done <- runner.run(ctx) }()
+	go func() { tail.done <- runner.run(ctx, os.Getenv) }()
 
 	t.Cleanup(tail.stop)
 
@@ -92,7 +93,9 @@ func insertEvent(t *testing.T, queries *db.Queries, eventType, principal string)
 }
 
 func TestAuditTail(t *testing.T) {
-	isolateUserConfig(t)
+	env := processEnv{t}
+
+	isolateUserConfig(t, env)
 	t.Setenv("TOOLGATE_ADMIN_GROUP", tailAdminGroup)
 
 	served := startServeWithSecrets(t)
@@ -128,7 +131,9 @@ func TestAuditTail(t *testing.T) {
 	})
 
 	t.Run("toolgate audit tail streams the user's own events, and all events for an admin", func(t *testing.T) {
-		code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
+		env := processEnv{t}
+
+		code, _, signInStderr := signInApproving(t, env, served.provider, "alice", "--gateway", served.url)
 		require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 		tail := startTail(t, "")
@@ -145,7 +150,7 @@ func TestAuditTail(t *testing.T) {
 
 		assert.NotContains(t, tail.stdout.String(), "payload-never-streamed")
 
-		code, _, signInStderr = signInApproving(t, served.provider, "root", "--gateway", served.url)
+		code, _, signInStderr = signInApproving(t, env, served.provider, "root", "--gateway", served.url)
 		require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 		admin := startTail(t, "")
@@ -164,7 +169,9 @@ func TestAuditTail(t *testing.T) {
 	})
 
 	t.Run("a row that commits after a newer one is streamed in key order", func(t *testing.T) {
-		code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
+		env := processEnv{t}
+
+		code, _, signInStderr := signInApproving(t, env, served.provider, "alice", "--gateway", served.url)
 		require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 		tail := startTail(t, "")
@@ -208,7 +215,9 @@ func TestAuditTail(t *testing.T) {
 	})
 
 	t.Run("the CLI reconnects after a gateway restart with no duplicates", func(t *testing.T) {
-		code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
+		env := processEnv{t}
+
+		code, _, signInStderr := signInApproving(t, env, served.provider, "alice", "--gateway", served.url)
 		require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 		tail := startTail(t, "")
@@ -227,7 +236,7 @@ func TestAuditTail(t *testing.T) {
 		stdout, stderr := &lockedBuffer{}, &lockedBuffer{}
 		done = make(chan int, 1)
 
-		go func() { done <- run([]string{"serve"}, stdout, stderr) }()
+		go func() { done <- run(os.Getenv, []string{"serve"}, stdout, stderr) }()
 
 		served.stderr = stderr
 

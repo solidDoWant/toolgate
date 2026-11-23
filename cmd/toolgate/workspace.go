@@ -51,6 +51,9 @@ const messageNoWorkspace = "This machine has no verified workspace. Pass --works
 type workspaceEnv struct {
 	stdout, stderr io.Writer
 
+	// getenv reads the environment.
+	getenv func(string) string
+
 	// wait blocks for d or until ctx ends.
 	wait func(ctx context.Context, d time.Duration) error
 
@@ -61,8 +64,9 @@ type workspaceEnv struct {
 	configDir func() (string, error)
 }
 
-func realWorkspaceEnv(stdout, stderr io.Writer) workspaceEnv {
+func realWorkspaceEnv(getenv func(string) string, stdout, stderr io.Writer) workspaceEnv {
 	return workspaceEnv{
+		getenv: getenv,
 		stdout: stdout,
 		stderr: stderr,
 		now:    time.Now,
@@ -81,7 +85,7 @@ func realWorkspaceEnv(stdout, stderr io.Writer) workspaceEnv {
 }
 
 // workspace runs `toolgate workspace`. It returns the exit code.
-func workspace(args []string, stdout, stderr io.Writer) int {
+func workspace(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, workspaceUsage)
 
@@ -91,10 +95,10 @@ func workspace(args []string, stdout, stderr io.Writer) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	env := realWorkspaceEnv(stdout, stderr)
+	env := realWorkspaceEnv(getenv, stdout, stderr)
 
 	return runWorkspace(ctx, env, args, func(call func(gatewayAccess) error) error {
-		return withAccess(ctx, call)
+		return withAccess(ctx, getenv, call)
 	})
 }
 

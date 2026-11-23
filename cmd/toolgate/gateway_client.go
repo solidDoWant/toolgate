@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
@@ -47,15 +46,15 @@ func setCredentials(header http.Header, accessToken, attestation string) {
 
 // signedInGateway loads the sign-in settings and gets a new access token with
 // the stored refresh token.
-func signedInGateway(ctx context.Context) (gatewayAccess, error) {
-	access, err := userGateway(ctx)
+func signedInGateway(ctx context.Context, getenv func(string) string) (gatewayAccess, error) {
+	access, err := userGateway(ctx, getenv)
 	if err != nil {
 		return gatewayAccess{}, err
 	}
 
 	// These commands only call the API, which works without an attestation:
 	// a broken source leaves the request unverified instead of failing it.
-	access.attestation, err = attestationSource().Token(ctx)
+	access.attestation, err = attestationSource(getenv).Token(ctx)
 	if err != nil {
 		access.attestation = ""
 	}
@@ -64,16 +63,16 @@ func signedInGateway(ctx context.Context) (gatewayAccess, error) {
 }
 
 // userGateway gets the gateway URL and the user's token.
-func userGateway(ctx context.Context) (gatewayAccess, error) {
-	if source := tokenCommandSource(); source.Command != "" {
-		return tokenCommandGateway(ctx, source)
+func userGateway(ctx context.Context, getenv func(string) string) (gatewayAccess, error) {
+	if source := tokenCommandSource(getenv); source.Command != "" {
+		return tokenCommandGateway(ctx, getenv, source)
 	}
 
-	if socket := spiffe.Socket(); socket != "" {
-		return spiffeGateway(ctx, socket)
+	if socket := spiffe.Socket(getenv); socket != "" {
+		return spiffeGateway(ctx, getenv, socket)
 	}
 
-	dir, err := configDir()
+	dir, err := configDir(getenv)
 	if err != nil {
 		return gatewayAccess{}, err
 	}
@@ -102,8 +101,8 @@ func userGateway(ctx context.Context) (gatewayAccess, error) {
 // spiffeGateway gets a JWT-SVID from the Workload API. It never falls back
 // to the stored sign-in. The gateway URL comes from the saved sign-in, or
 // from TOOLGATE_GATEWAY when none is saved.
-func spiffeGateway(ctx context.Context, socket string) (gatewayAccess, error) {
-	gateway, err := spiffeGatewayURL()
+func spiffeGateway(ctx context.Context, getenv func(string) string, socket string) (gatewayAccess, error) {
+	gateway, err := spiffeGatewayURL(getenv)
 	if err != nil {
 		return gatewayAccess{}, err
 	}
@@ -118,8 +117,8 @@ func spiffeGateway(ctx context.Context, socket string) (gatewayAccess, error) {
 
 // tokenCommandGateway gets the user token from TOOLGATE_TOKEN_COMMAND. The
 // stored sign-in is ignored, apart from the gateway URL.
-func tokenCommandGateway(ctx context.Context, source tokencommand.Source) (gatewayAccess, error) {
-	gateway, err := spiffeGatewayURL()
+func tokenCommandGateway(ctx context.Context, getenv func(string) string, source tokencommand.Source) (gatewayAccess, error) {
+	gateway, err := spiffeGatewayURL(getenv)
 	if err != nil {
 		return gatewayAccess{}, err
 	}
@@ -148,8 +147,8 @@ var errUnauthorized = errors.New("the gateway refused the token")
 // withAccess runs call with the user's access token. When the token came
 // from TOOLGATE_TOKEN_COMMAND and the gateway answers 401, it deletes the
 // cached token, runs the command once more and calls again, once.
-func withAccess(ctx context.Context, call func(gatewayAccess) error) error {
-	access, err := signedInGateway(ctx)
+func withAccess(ctx context.Context, getenv func(string) string, call func(gatewayAccess) error) error {
+	access, err := signedInGateway(ctx, getenv)
 	if err != nil {
 		return err
 	}
@@ -159,7 +158,7 @@ func withAccess(ctx context.Context, call func(gatewayAccess) error) error {
 		return err
 	}
 
-	token, refreshErr := refreshedToken(ctx)
+	token, refreshErr := refreshedToken(ctx, getenv)
 	if refreshErr != nil {
 		return err
 	}
@@ -171,8 +170,8 @@ func withAccess(ctx context.Context, call func(gatewayAccess) error) error {
 
 // refreshedToken deletes the cached command token and runs the command
 // again. It fails when TOOLGATE_TOKEN_COMMAND is not in use.
-func refreshedToken(ctx context.Context) (string, error) {
-	source := tokenCommandSource()
+func refreshedToken(ctx context.Context, getenv func(string) string) (string, error) {
+	source := tokenCommandSource(getenv)
 	if source.Command == "" {
 		return "", errors.New("no token command")
 	}
@@ -186,15 +185,15 @@ func refreshedToken(ctx context.Context) (string, error) {
 
 // spiffeGatewayURL returns the gateway URL for a command that uses the SPIFFE
 // credential.
-func spiffeGatewayURL() (string, error) {
-	if dir, err := configDir(); err == nil {
+func spiffeGatewayURL(getenv func(string) string) (string, error) {
+	if dir, err := configDir(getenv); err == nil {
 		settings, err := login.LoadSettings(dir)
 		if err == nil && settings.Gateway != "" {
 			return login.NormalizeGatewayURL(settings.Gateway)
 		}
 	}
 
-	gateway := strings.TrimSpace(os.Getenv(spiffe.GatewayEnv))
+	gateway := strings.TrimSpace(getenv(spiffe.GatewayEnv))
 	if gateway == "" {
 		return "", fmt.Errorf("no gateway URL: sign in with toolgate login, or set %s", spiffe.GatewayEnv)
 	}

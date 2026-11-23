@@ -34,9 +34,13 @@ func TestSecretCommandChecksItsInputBeforeCallingTheGateway(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			isolateUserConfig(t)
+			t.Parallel()
 
-			code, stdout, stderr := runCLI(t, test.stdin, test.args...)
+			env := testEnv{}
+
+			isolateUserConfig(t, env)
+
+			code, stdout, stderr := runCLI(t, env, test.stdin, test.args...)
 
 			require.Equal(t, test.wantCode, code, "stderr: %s", stderr)
 			assert.Contains(t, stderr, test.wantStderr)
@@ -46,30 +50,38 @@ func TestSecretCommandChecksItsInputBeforeCallingTheGateway(t *testing.T) {
 }
 
 func TestSecretSetAtTheLimitNeedsSignIn(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
 
-	code, _, stderr := runCLI(t, strings.Repeat("x", secrets.MaxValueBytes), "secret", "set", strings.Repeat("a", 128))
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+
+	code, _, stderr := runCLI(t, env, strings.Repeat("x", secrets.MaxValueBytes), "secret", "set", strings.Repeat("a", 128))
 
 	require.Equal(t, 1, code)
 	assert.Contains(t, stderr, "not signed in. Run toolgate login")
 }
 
 func TestServersWithoutSignIn(t *testing.T) {
-	isolateUserConfig(t)
+	t.Parallel()
 
-	code, _, stderr := runCLI(t, "", "servers")
+	env := testEnv{}
+
+	isolateUserConfig(t, env)
+
+	code, _, stderr := runCLI(t, env, "", "servers")
 
 	require.Equal(t, 1, code)
 	assert.Contains(t, stderr, "not signed in. Run toolgate login")
 }
 
 // runCLI runs one CLI command with stdin and returns the exit code and output.
-func runCLI(t *testing.T, stdin string, args ...string) (int, string, string) {
+func runCLI(t *testing.T, env environment, stdin string, args ...string) (int, string, string) {
 	t.Helper()
 
 	var stdout, stderr strings.Builder
 
-	code := runWithInput(args, strings.NewReader(stdin), &stdout, &stderr)
+	code := runWithInput(env.get, args, strings.NewReader(stdin), &stdout, &stderr)
 
 	return code, stdout.String(), stderr.String()
 }
@@ -78,9 +90,13 @@ func TestSecretSetAndDeletePrintUsageForHelpWords(t *testing.T) {
 	for _, command := range []string{"set", "delete"} {
 		for _, word := range []string{"--help", "-h", "help"} {
 			t.Run(command+" "+word, func(t *testing.T) {
-				isolateUserConfig(t)
+				t.Parallel()
 
-				code, stdout, stderr := runCLI(t, "", "secret", command, word)
+				env := testEnv{}
+
+				isolateUserConfig(t, env)
+
+				code, stdout, stderr := runCLI(t, env, "", "secret", command, word)
 
 				require.Equal(t, 0, code, "stderr: %s", stderr)
 				assert.Contains(t, stdout, "Usage: toolgate secret")

@@ -32,7 +32,7 @@ Commands:
 const secretsPath = "/api/v1/secrets"
 
 // secret runs a `toolgate secret` command and returns the exit code.
-func secret(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func secret(getenv func(string) string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, secretUsage)
 
@@ -83,11 +83,11 @@ func secret(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	switch command {
 	case "set":
-		err = setSecret(ctx, rest[0], stdin, stderr, stdout)
+		err = setSecret(ctx, getenv, rest[0], stdin, stderr, stdout)
 	case "delete":
-		err = deleteSecret(ctx, rest[0], stdout)
+		err = deleteSecret(ctx, getenv, rest[0], stdout)
 	default:
-		err = listSecrets(ctx, stdout)
+		err = listSecrets(ctx, getenv, stdout)
 	}
 
 	if err != nil {
@@ -137,13 +137,13 @@ func readSecretValue(name string, stdin io.Reader, prompt io.Writer) ([]byte, er
 	return value, nil
 }
 
-func setSecret(ctx context.Context, name string, stdin io.Reader, prompt, stdout io.Writer) error {
+func setSecret(ctx context.Context, getenv func(string) string, name string, stdin io.Reader, prompt, stdout io.Writer) error {
 	value, err := readSecretValue(name, stdin, prompt)
 	if err != nil {
 		return err
 	}
 
-	err = withAccess(ctx, func(access gatewayAccess) error {
+	err = withAccess(ctx, getenv, func(access gatewayAccess) error {
 		response, err := access.do(ctx, http.MethodPut, secretsPath+"/"+url.PathEscape(name), bytes.NewReader(value))
 		if err != nil {
 			return err
@@ -162,8 +162,8 @@ func setSecret(ctx context.Context, name string, stdin io.Reader, prompt, stdout
 	return nil
 }
 
-func deleteSecret(ctx context.Context, name string, stdout io.Writer) error {
-	err := withAccess(ctx, func(access gatewayAccess) error {
+func deleteSecret(ctx context.Context, getenv func(string) string, name string, stdout io.Writer) error {
+	err := withAccess(ctx, getenv, func(access gatewayAccess) error {
 		response, err := access.do(ctx, http.MethodDelete, secretsPath+"/"+url.PathEscape(name), nil)
 		if err != nil {
 			return err
@@ -186,8 +186,8 @@ func deleteSecret(ctx context.Context, name string, stdout io.Writer) error {
 // name and two dates fit.
 const maxSecretListBody = 4 << 20
 
-func listSecrets(ctx context.Context, stdout io.Writer) error {
-	return withAccess(ctx, func(access gatewayAccess) error { return listSecretsWith(ctx, access, stdout) })
+func listSecrets(ctx context.Context, getenv func(string) string, stdout io.Writer) error {
+	return withAccess(ctx, getenv, func(access gatewayAccess) error { return listSecretsWith(ctx, access, stdout) })
 }
 
 func listSecretsWith(ctx context.Context, access gatewayAccess, stdout io.Writer) error {

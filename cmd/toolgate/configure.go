@@ -16,8 +16,8 @@ import (
 // savedSettings returns config.json, or empty settings when there is none or
 // it can't be read. It is the fallback for settings the environment doesn't
 // set.
-func savedSettings() login.Settings {
-	dir, err := configDir()
+func savedSettings(getenv func(string) string) login.Settings {
+	dir, err := configDir(getenv)
 	if err != nil {
 		return login.Settings{}
 	}
@@ -32,23 +32,23 @@ func savedSettings() login.Settings {
 
 // tokenCommandSource returns the token command from TOOLGATE_TOKEN_COMMAND,
 // or else from config.json.
-func tokenCommandSource() tokencommand.Source {
-	if source := tokencommand.FromEnv(); source.Command != "" {
+func tokenCommandSource(getenv func(string) string) tokencommand.Source {
+	if source := tokencommand.FromEnv(getenv); source.Command != "" {
 		return source
 	}
 
-	return tokencommand.Source{Command: strings.TrimSpace(savedSettings().TokenCommand)}
+	return tokencommand.Source{Command: strings.TrimSpace(savedSettings(getenv).TokenCommand)}
 }
 
 // attestationSource returns the attestation source from the environment
 // when any attestation variable is set, and otherwise from config.json.
-func attestationSource() attestation.Source {
-	source := attestation.FromEnv()
+func attestationSource(getenv func(string) string) attestation.Source {
+	source := attestation.FromEnv(getenv)
 	if source.Configured() {
 		return source
 	}
 
-	saved := savedSettings()
+	saved := savedSettings(getenv)
 	source.TokenFile = strings.TrimSpace(saved.AttestationTokenFile)
 	source.TokenRequest = strings.TrimSpace(saved.AttestationTokenRequest)
 	source.KeyFile = strings.TrimSpace(saved.AttestationKeyFile)
@@ -59,7 +59,7 @@ func attestationSource() attestation.Source {
 // configure runs `toolgate configure`: it saves the given settings in
 // config.json, keeps the others, and returns the exit code. A flag given
 // with an empty value removes its setting.
-func configure(args []string, stdout, stderr io.Writer) int {
+func configure(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("configure", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	flags.String("gateway", "", "gateway URL or host[:port]; https:// is added when there is no scheme")
@@ -86,7 +86,7 @@ func configure(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	dir, err := configDir()
+	dir, err := configDir(getenv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate configure: %v\n", err)
 

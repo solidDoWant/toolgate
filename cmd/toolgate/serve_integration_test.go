@@ -52,7 +52,7 @@ func startServeWith(t *testing.T, databaseURL string, provider *testutil.OIDCPro
 	stderr := &lockedBuffer{}
 	done := make(chan int, 1)
 
-	go func() { done <- run([]string{"serve"}, stdout, stderr) }()
+	go func() { done <- run(os.Getenv, []string{"serve"}, stdout, stderr) }()
 
 	require.Eventually(t, func() bool {
 		select {

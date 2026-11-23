@@ -35,17 +35,17 @@ Commands:
 `
 
 func main() {
-	os.Exit(runWithInput(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(runWithInput(os.Getenv, os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // run executes one command with no standard input and returns the process
 // exit code.
-func run(args []string, stdout, stderr io.Writer) int {
-	return runWithInput(args, strings.NewReader(""), stdout, stderr)
+func run(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
+	return runWithInput(getenv, args, strings.NewReader(""), stdout, stderr)
 }
 
 // runWithInput executes one command and returns the process exit code.
-func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runWithInput(getenv func(string) string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprint(stderr, usage)
 
@@ -53,7 +53,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	}
 
 	if args[0] != "version" && args[0] != "help" && args[0] != "-h" && args[0] != "--help" {
-		if err := checkCredentialChoice(); err != nil {
+		if err := checkCredentialChoice(getenv); err != nil {
 			_, _ = fmt.Fprintln(stderr, err)
 
 			return 1
@@ -66,35 +66,35 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 
 		return 0
 	case "login":
-		return signIn(args[1:], stdout, stderr)
+		return signIn(getenv, args[1:], stdout, stderr)
 	case "configure":
-		return configure(args[1:], stdout, stderr)
+		return configure(getenv, args[1:], stdout, stderr)
 	case "status":
-		return status(stdout, stderr)
+		return status(getenv, stdout, stderr)
 	case "headers":
-		return printHeaders(args[1:], stdout, stderr)
+		return printHeaders(getenv, args[1:], stdout, stderr)
 	case "otel-headers":
-		return printOtelHeaders(args[1:], stdout, stderr)
+		return printOtelHeaders(getenv, args[1:], stdout, stderr)
 	case "hook":
-		return hook(args[1:], stdin, stdout, stderr)
+		return hook(getenv, args[1:], stdin, stdout, stderr)
 	case "logout":
-		return logout(stdout, stderr)
+		return logout(getenv, stdout, stderr)
 	case "secret":
-		return secret(args[1:], stdin, stdout, stderr)
+		return secret(getenv, args[1:], stdin, stdout, stderr)
 	case "servers":
-		return servers(args[1:], stdout, stderr)
+		return servers(getenv, args[1:], stdout, stderr)
 	case "workspace":
-		return workspace(args[1:], stdout, stderr)
+		return workspace(getenv, args[1:], stdout, stderr)
 	case "sessions":
-		return sessions(args[1:], stdout, stderr)
+		return sessions(getenv, args[1:], stdout, stderr)
 	case "serve":
 		return serve(args[1:], stdout, stderr)
 	case "migrate":
 		return migrate(args[1:], stdout, stderr)
 	case "audit":
-		return auditCommand(args[1:], stdout, stderr)
+		return auditCommand(getenv, args[1:], stdout, stderr)
 	case "admin":
-		return admin(args[1:], stdout, stderr)
+		return admin(getenv, args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprint(stdout, usage)
 
@@ -108,17 +108,17 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 
 // checkCredentialChoice refuses a setup that names two sources for the user
 // token.
-func checkCredentialChoice() error {
-	if spiffe.Socket() != "" && tokenCommandSource().Command != "" {
+func checkCredentialChoice(getenv func(string) string) error {
+	if spiffe.Socket(getenv) != "" && tokenCommandSource(getenv).Command != "" {
 		return fmt.Errorf("Set only one of %s and %s.", spiffe.SocketEnv, tokencommand.Env) //nolint:staticcheck // user-facing sentence
 	}
 
-	source := attestationSource()
+	source := attestationSource(getenv)
 	if err := source.Validate(); err != nil {
 		return err
 	}
 
-	if spiffe.Socket() != "" && source.Configured() {
+	if spiffe.Socket(getenv) != "" && source.Configured() {
 		return fmt.Errorf("Set only one of %s and %s.", spiffe.SocketEnv, strings.Join(source.Names(), " and ")) //nolint:staticcheck // user-facing sentence
 	}
 

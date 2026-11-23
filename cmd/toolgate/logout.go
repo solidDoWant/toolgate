@@ -9,8 +9,8 @@ import (
 
 // logout removes the stored refresh token from the keychain and the fallback
 // file.
-func logout(stdout, stderr io.Writer) int {
-	store, err := tokenstore.Default()
+func logout(getenv func(string) string, stdout, stderr io.Writer) int {
+	store, err := tokenstore.Default(getenv)
 	if err == nil {
 		err = store.Delete()
 	}

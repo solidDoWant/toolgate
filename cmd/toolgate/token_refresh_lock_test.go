@@ -62,7 +62,11 @@ func TestConcurrentRefreshesNeverReuseARotatedRefreshToken(t *testing.T) {
 
 	for _, store := range []string{"file", "keychain"} {
 		t.Run(store+" store", func(t *testing.T) {
-			dir := isolateUserConfig(t)
+			t.Parallel()
+
+			env := testEnv{}
+
+			dir := isolateUserConfig(t, env)
 
 			// The fake IdP rotates the refresh token on every refresh and
 			// refuses the old one from then on.
@@ -70,7 +74,7 @@ func TestConcurrentRefreshesNeverReuseARotatedRefreshToken(t *testing.T) {
 			provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true})
 			gatewayURL := startGateway(t, provider, provider.ClientID)
 
-			code, _, stderr := signInApproving(t, provider, "alice", "--gateway", gatewayURL, "--token-store", store)
+			code, _, stderr := signInApproving(t, env, provider, "alice", "--gateway", gatewayURL, "--token-store", store)
 			require.Equal(t, 0, code, "stderr: %s", stderr)
 
 			settings, err := login.LoadSettings(dir)

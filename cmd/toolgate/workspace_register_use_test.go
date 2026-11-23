@@ -18,7 +18,11 @@ func approvedGateway(body string) *keysGateway {
 
 func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 	t.Run("saves the key when no source is configured, and headers then sign", func(t *testing.T) {
-		dir := keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		dir := keySourceEnvironment(t, env)
 		run := runKeys(t, approvedGateway(pendingBody), dir, "x", "register", "dev")
 		require.Equal(t, 0, run.code, run.stderr)
 
@@ -29,13 +33,17 @@ func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 		assert.Contains(t, run.stdout, "The key is now in use")
 		assert.Contains(t, run.stdout, "Claude Code uses it when it next connects: run /mcp to reconnect a running session, or start a new one.")
 
-		code, stdout, stderr := runCLI(t, "", "headers")
+		code, stdout, stderr := runCLI(t, env, "", "headers")
 		require.Equal(t, 0, code, stderr)
 		assert.NotEmpty(t, headerValues(t, stdout)["X-Toolgate-Attestation"])
 	})
 
 	t.Run("keeps another source and prints the switch command", func(t *testing.T) {
-		dir := keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		dir := keySourceEnvironment(t, env)
 		require.NoError(t, login.SaveSettings(dir, login.Settings{AttestationTokenFile: "/run/token"}))
 
 		run := runKeys(t, approvedGateway(pendingBody), dir, "x", "register", "dev")
@@ -50,7 +58,11 @@ func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 	})
 
 	t.Run("--use replaces another source", func(t *testing.T) {
-		dir := keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		dir := keySourceEnvironment(t, env)
 		require.NoError(t, login.SaveSettings(dir, login.Settings{AttestationTokenFile: "/run/token"}))
 
 		run := runKeys(t, approvedGateway(pendingBody), dir, "x", "register", "dev", "--use")
@@ -63,7 +75,11 @@ func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 	})
 
 	t.Run("--no-use leaves config.json alone", func(t *testing.T) {
-		dir := keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		dir := keySourceEnvironment(t, env)
 		run := runKeys(t, approvedGateway(pendingBody), dir, "x", "register", "dev", "--no-use")
 		require.Equal(t, 0, run.code, run.stderr)
 
@@ -81,8 +97,12 @@ func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 	})
 
 	t.Run("stopping before approval changes nothing and prints the command", func(t *testing.T) {
+		t.Parallel()
+
+		env := testEnv{}
+
 		for _, status := range []string{"expired", "pending"} {
-			dir := keySourceEnvironment(t)
+			dir := keySourceEnvironment(t, env)
 			gateway := &keysGateway{postCode: 202, postBody: pendingBody, statuses: []string{status}}
 
 			if status == "pending" {
@@ -102,7 +122,11 @@ func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 	})
 
 	t.Run("switches when the replaced key was the configured source", func(t *testing.T) {
-		dir := keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		dir := keySourceEnvironment(t, env)
 		_, oldPath := newWorkspaceKey(t)
 		require.NoError(t, login.SaveSettings(dir, login.Settings{AttestationKeyFile: oldPath}))
 
@@ -119,7 +143,11 @@ func TestWorkspaceRegisterUsesApprovedKey(t *testing.T) {
 	})
 
 	t.Run("keeps a configured key that is not the replaced one", func(t *testing.T) {
-		dir := keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		dir := keySourceEnvironment(t, env)
 		_, otherPath := newWorkspaceKey(t)
 		require.NoError(t, login.SaveSettings(dir, login.Settings{AttestationKeyFile: otherPath}))
 

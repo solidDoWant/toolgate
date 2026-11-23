@@ -15,10 +15,10 @@ import (
 	"github.com/solidDoWant/toolgate/internal/client/tokenstore"
 )
 
-// configDir is os.UserConfigDir()/toolgate, which holds config.json and the
+// configDir is the user configuration directory/toolgate, which holds config.json and the
 // token store's fallback file.
-func configDir() (string, error) {
-	userConfigDir, err := os.UserConfigDir()
+func configDir(getenv func(string) string) (string, error) {
+	userConfigDir, err := tokenstore.ConfigDir(getenv)
 	if err != nil {
 		return "", fmt.Errorf("find the user configuration directory: %w", err)
 	}
@@ -27,14 +27,14 @@ func configDir() (string, error) {
 }
 
 // signIn runs `toolgate login` and returns the exit code.
-func signIn(args []string, stdout, stderr io.Writer) int {
+func signIn(getenv func(string) string, args []string, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("login", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	gateway := flags.String("gateway", "", "gateway URL or host[:port]; https:// is added when there is no scheme (default: the gateway of the last sign-in)")
 	issuer := flags.String("issuer", "", "IdP issuer URL, instead of the gateway's (for testing)")
 	clientID := flags.String("client-id", "", "IdP client ID, instead of the gateway's (for testing)")
 	scopes := flags.String("scopes", "", "space-separated scopes, instead of the gateway's (for testing)")
-	tokenStore := flags.String("token-store", os.Getenv(tokenStoreEnv), "where to keep the refresh token: auto, keychain or file (env "+tokenStoreEnv+")")
+	tokenStore := flags.String("token-store", getenv(tokenStoreEnv), "where to keep the refresh token: auto, keychain or file (env "+tokenStoreEnv+")")
 
 	if err := flags.Parse(args); err != nil {
 		return 2
@@ -53,7 +53,7 @@ func signIn(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	if err := runSignIn(*gateway, *issuer, *clientID, strings.Fields(*scopes), mode, stdout); err != nil {
+	if err := runSignIn(getenv, *gateway, *issuer, *clientID, strings.Fields(*scopes), mode, stdout); err != nil {
 		if errors.Is(err, login.ErrCodeExpired) {
 			_, _ = fmt.Fprintln(stderr, err)
 
@@ -68,8 +68,8 @@ func signIn(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runSignIn(gateway, issuer, clientID string, scopes []string, mode tokenstore.Mode, stdout io.Writer) error {
-	dir, err := configDir()
+func runSignIn(getenv func(string) string, gateway, issuer, clientID string, scopes []string, mode tokenstore.Mode, stdout io.Writer) error {
+	dir, err := configDir(getenv)
 	if err != nil {
 		return err
 	}
@@ -119,8 +119,8 @@ func runSignIn(gateway, issuer, clientID string, scopes []string, mode tokenstor
 }
 
 // status runs `toolgate status` and returns the exit code.
-func status(stdout, stderr io.Writer) int {
-	dir, err := configDir()
+func status(getenv func(string) string, stdout, stderr io.Writer) int {
+	dir, err := configDir(getenv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "toolgate status: %v\n", err)
 

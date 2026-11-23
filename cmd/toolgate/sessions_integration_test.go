@@ -14,17 +14,21 @@ import (
 )
 
 func TestSessionsCommand(t *testing.T) {
-	isolateUserConfig(t)
+	env := processEnv{t}
+
+	isolateUserConfig(t, env)
 
 	served := startServeWithSecrets(t)
 	defer stopServe(t, served.stderr, served.done)
 
 	served.provider.AddUser(testutil.OIDCUser{Subject: "alice", Email: "alice@example.com", EmailVerified: true, Groups: []string{"eng"}})
 
-	code, _, signInStderr := signInApproving(t, served.provider, "alice", "--gateway", served.url)
+	code, _, signInStderr := signInApproving(t, env, served.provider, "alice", "--gateway", served.url)
 	require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 	t.Run("toolgate sessions lists the user's open sessions and their enabled servers", func(t *testing.T) {
+		env := processEnv{t}
+
 		_ = served.connectAs(t, "session-one", "laptop-widgets")
 		_ = served.connectAs(t, "session-two", "")
 
@@ -45,7 +49,7 @@ func TestSessionsCommand(t *testing.T) {
 		_, err = conn.Exec(t.Context(), `INSERT INTO sessions (principal, session_id, workspace, attestation, ended_at) VALUES ('alice', 'session-ended', 'w', 'user', now())`)
 		require.NoError(t, err)
 
-		code, out, errOut := runCLI(t, "", "sessions")
+		code, out, errOut := runCLI(t, env, "", "sessions")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 
 		lines := strings.Split(strings.TrimSpace(out), "\n")

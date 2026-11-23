@@ -60,23 +60,27 @@ func expectedKeyID(public ed25519.PublicKey) string {
 
 // keySourceEnvironment is the helper's environment with a user token, so
 // that only the attestation decides the outcome.
-func keySourceEnvironment(t *testing.T) string {
+func keySourceEnvironment(t *testing.T, env environment) string {
 	t.Helper()
 
-	dir := pluginHelperEnvironment(t)
-	t.Setenv("TOOLGATE_TOKEN_COMMAND", "echo user-token")
+	dir := pluginHelperEnvironment(t, env)
+	env.set("TOOLGATE_TOKEN_COMMAND", "echo user-token")
 
 	return dir
 }
 
 func TestWorkspaceKeySource(t *testing.T) {
 	t.Run("assertion header and claims", func(t *testing.T) {
-		keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		keySourceEnvironment(t, env)
 		public, path := newWorkspaceKey(t)
-		t.Setenv(attestation.SignerFileEnv, path)
+		env.set(attestation.SignerFileEnv, path)
 
 		before := time.Now().Truncate(time.Second)
-		code, stdout, stderr := runCLI(t, "", "headers")
+		code, stdout, stderr := runCLI(t, env, "", "headers")
 		require.Equal(t, 0, code, stderr)
 
 		token := headerValues(t, stdout)["X-Toolgate-Attestation"]
@@ -107,7 +111,7 @@ func TestWorkspaceKeySource(t *testing.T) {
 		require.NoError(t, err)
 		assert.Len(t, nonce, 16)
 
-		code, stdout, stderr = runCLI(t, "", "headers")
+		code, stdout, stderr = runCLI(t, env, "", "headers")
 		require.Equal(t, 0, code, stderr)
 
 		second, err := jwt.ParseSigned(headerValues(t, stdout)["X-Toolgate-Attestation"], []jose.SignatureAlgorithm{jose.EdDSA})
@@ -121,12 +125,16 @@ func TestWorkspaceKeySource(t *testing.T) {
 	t.Run("conflict with each other source", func(t *testing.T) {
 		for _, other := range []string{"TOOLGATE_ATTESTATION_TOKEN_FILE", "TOOLGATE_ATTESTATION_SPIFFE_SOCKET", "TOOLGATE_ATTESTATION_TOKEN_REQUEST"} {
 			t.Run(other, func(t *testing.T) {
-				keySourceEnvironment(t)
-				_, path := newWorkspaceKey(t)
-				t.Setenv(attestation.SignerFileEnv, path)
-				t.Setenv(other, "/somewhere")
+				t.Parallel()
 
-				code, stdout, stderr := runCLI(t, "", "headers")
+				env := testEnv{}
+
+				keySourceEnvironment(t, env)
+				_, path := newWorkspaceKey(t)
+				env.set(attestation.SignerFileEnv, path)
+				env.set(other, "/somewhere")
+
+				code, stdout, stderr := runCLI(t, env, "", "headers")
 				assert.NotEqual(t, 0, code)
 				assert.Empty(t, stdout, "no headers")
 				assert.Contains(t, stderr, "Set only one of TOOLGATE_ATTESTATION_TOKEN_FILE, TOOLGATE_ATTESTATION_SPIFFE_SOCKET, TOOLGATE_ATTESTATION_TOKEN_REQUEST and TOOLGATE_ATTESTATION_SIGNER_FILE.")
@@ -135,15 +143,19 @@ func TestWorkspaceKeySource(t *testing.T) {
 	})
 
 	t.Run("group-readable key file is refused", func(t *testing.T) {
-		keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		keySourceEnvironment(t, env)
 
 		_, private, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
 		path := writeKeyFile(t, private, 0o640)
-		t.Setenv(attestation.SignerFileEnv, path)
+		env.set(attestation.SignerFileEnv, path)
 
-		code, stdout, stderr := runCLI(t, "", "headers")
+		code, stdout, stderr := runCLI(t, env, "", "headers")
 		assert.Equal(t, 0, code, stderr)
 		assert.NotContains(t, stdout, "X-Toolgate-Attestation", "unverified headers")
 		assert.Contains(t, stderr, "The key file "+path+" can be read by other users. Run chmod 600 "+path+".")
@@ -162,10 +174,14 @@ func TestWorkspaceKeySource(t *testing.T) {
 			"empty file": writeEmpty(t),
 		} {
 			t.Run(name, func(t *testing.T) {
-				keySourceEnvironment(t)
-				t.Setenv(attestation.SignerFileEnv, path)
+				t.Parallel()
 
-				code, stdout, stderr := runCLI(t, "", "headers")
+				env := testEnv{}
+
+				keySourceEnvironment(t, env)
+				env.set(attestation.SignerFileEnv, path)
+
+				code, stdout, stderr := runCLI(t, env, "", "headers")
 				assert.Equal(t, 0, code, stderr)
 				assert.NotContains(t, stdout, "X-Toolgate-Attestation", "unverified headers")
 				assert.Contains(t, stderr, "The key file "+path+" doesn't hold an Ed25519 private key.")
@@ -174,16 +190,20 @@ func TestWorkspaceKeySource(t *testing.T) {
 	})
 
 	t.Run("environment variable wins over config.json", func(t *testing.T) {
-		keySourceEnvironment(t)
+		t.Parallel()
+
+		env := testEnv{}
+
+		keySourceEnvironment(t, env)
 		_, configured := newWorkspaceKey(t)
 		fromEnv, envPath := newWorkspaceKey(t)
 
-		code, _, stderr := runCLI(t, "", "configure", "--token-command", "echo user-token", "--attestation-key-file", configured)
+		code, _, stderr := runCLI(t, env, "", "configure", "--token-command", "echo user-token", "--attestation-key-file", configured)
 		require.Equal(t, 0, code, stderr)
 
-		t.Setenv(attestation.SignerFileEnv, envPath)
+		env.set(attestation.SignerFileEnv, envPath)
 
-		code, stdout, stderr := runCLI(t, "", "headers")
+		code, stdout, stderr := runCLI(t, env, "", "headers")
 		require.Equal(t, 0, code, stderr)
 
 		parsed, err := jwt.ParseSigned(headerValues(t, stdout)["X-Toolgate-Attestation"], []jose.SignatureAlgorithm{jose.EdDSA})
@@ -212,12 +232,14 @@ func mapKeys(values map[string]any) []string {
 
 func TestConfigureAttestationKeyFile(t *testing.T) {
 	t.Run("saves the absolute path and prints the fingerprint", func(t *testing.T) {
-		dir := pluginHelperEnvironment(t)
+		env := testEnv{}
+
+		dir := pluginHelperEnvironment(t, env)
 		public, path := newWorkspaceKey(t)
 
 		t.Chdir(filepath.Dir(path))
 
-		code, stdout, stderr := runCLI(t, "", "configure", "--token-command", "echo user-token", "--attestation-key-file", filepath.Base(path))
+		code, stdout, stderr := runCLI(t, env, "", "configure", "--token-command", "echo user-token", "--attestation-key-file", filepath.Base(path))
 		require.Equal(t, 0, code, stderr)
 		assert.Equal(t, "Saved the settings in "+dir+". The key's fingerprint is SHA256:"+expectedKeyID(public)+". Claude Code uses it when it next connects: run /mcp to reconnect a running session, or start a new one.\n", stdout)
 
@@ -232,7 +254,7 @@ func TestConfigureAttestationKeyFile(t *testing.T) {
 		assert.Equal(t, resolved, saved)
 
 		// Without the variable, the helper signs with the configured key.
-		code, stdout, stderr = runCLI(t, "", "headers")
+		code, stdout, stderr = runCLI(t, env, "", "headers")
 		require.Equal(t, 0, code, stderr)
 
 		parsed, err := jwt.ParseSigned(headerValues(t, stdout)["X-Toolgate-Attestation"], []jose.SignatureAlgorithm{jose.EdDSA})
@@ -241,14 +263,16 @@ func TestConfigureAttestationKeyFile(t *testing.T) {
 	})
 
 	t.Run("refuses a key file it can't load", func(t *testing.T) {
-		dir := pluginHelperEnvironment(t)
+		env := testEnv{}
+
+		dir := pluginHelperEnvironment(t, env)
 
 		_, private, err := ed25519.GenerateKey(rand.Reader)
 		require.NoError(t, err)
 
 		path := writeKeyFile(t, private, 0o644)
 
-		code, _, stderr := runCLI(t, "", "configure", "--attestation-key-file", path)
+		code, _, stderr := runCLI(t, env, "", "configure", "--attestation-key-file", path)
 		assert.NotEqual(t, 0, code)
 		assert.Contains(t, stderr, "can be read by other users")
 		assert.NoFileExists(t, filepath.Join(dir, login.SettingsFileName))
@@ -257,13 +281,15 @@ func TestConfigureAttestationKeyFile(t *testing.T) {
 	t.Run("refuses a second source", func(t *testing.T) {
 		for _, other := range []string{"--attestation-token-file", "--attestation-token-request"} {
 			t.Run(other, func(t *testing.T) {
-				dir := pluginHelperEnvironment(t)
+				env := testEnv{}
+
+				dir := pluginHelperEnvironment(t, env)
 				_, path := newWorkspaceKey(t)
 
-				code, _, stderr := runCLI(t, "", "configure", other, "/run/token")
+				code, _, stderr := runCLI(t, env, "", "configure", other, "/run/token")
 				require.Equal(t, 0, code, stderr)
 
-				code, _, stderr = runCLI(t, "", "configure", "--attestation-key-file", path)
+				code, _, stderr = runCLI(t, env, "", "configure", "--attestation-key-file", path)
 				assert.Equal(t, 2, code)
 				assert.Contains(t, stderr, "set only one of --attestation-token-file, --attestation-token-request and --attestation-key-file")
 
@@ -272,20 +298,22 @@ func TestConfigureAttestationKeyFile(t *testing.T) {
 				assert.Empty(t, settings.AttestationKeyFile)
 
 				// The user removes the other source in the same command.
-				code, _, stderr = runCLI(t, "", "configure", other, "", "--attestation-key-file", path)
+				code, _, stderr = runCLI(t, env, "", "configure", other, "", "--attestation-key-file", path)
 				require.Equal(t, 0, code, stderr)
 			})
 		}
 	})
 
 	t.Run("removes the setting with an empty value", func(t *testing.T) {
-		dir := pluginHelperEnvironment(t)
+		env := testEnv{}
+
+		dir := pluginHelperEnvironment(t, env)
 		_, path := newWorkspaceKey(t)
 
-		code, _, stderr := runCLI(t, "", "configure", "--token-command", "echo user-token", "--attestation-key-file", path)
+		code, _, stderr := runCLI(t, env, "", "configure", "--token-command", "echo user-token", "--attestation-key-file", path)
 		require.Equal(t, 0, code, stderr)
 
-		code, stdout, stderr := runCLI(t, "", "configure", "--attestation-key-file", "")
+		code, stdout, stderr := runCLI(t, env, "", "configure", "--attestation-key-file", "")
 		require.Equal(t, 0, code, stderr)
 		assert.Equal(t, "Saved the settings in "+dir+".\n", stdout)
 

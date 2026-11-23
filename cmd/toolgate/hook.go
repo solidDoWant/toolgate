@@ -51,7 +51,7 @@ type hookOutput struct {
 }
 
 // hook runs `toolgate hook <event>`.
-func hook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func hook(getenv func(string) string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 1 && (args[0] == "stop" || args[0] == "session-end") {
 		// These hooks print nothing and always exit 0: a Stop hook's output
 		// could stop Claude Code from finishing its turn, and a title must
@@ -59,7 +59,7 @@ func hook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		ctx, cancel := context.WithTimeout(context.Background(), titleHookTimeout)
 		defer cancel()
 
-		sendSessionTitle(ctx, stdin, time.Now())
+		sendSessionTitle(ctx, getenv, stdin, time.Now())
 
 		return 0
 	}
@@ -75,7 +75,7 @@ func hook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// The hook never blocks the session: every problem becomes context for
 	// the session, and the exit code is 0.
-	message := sessionStart(ctx, stdin)
+	message := sessionStart(ctx, getenv, stdin)
 
 	var output hookOutput
 
@@ -91,31 +91,31 @@ func hook(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 
 // sessionStart writes the session file, then syncs the settings, and returns
 // the context to give the session.
-func sessionStart(ctx context.Context, stdin io.Reader) string {
+func sessionStart(ctx context.Context, getenv func(string) string, stdin io.Reader) string {
 	var notes []string
 
 	// The session file comes first: `toolgate headers` runs at the same time
 	// and waits for it.
-	if err := writeSessionFile(stdin); err != nil {
+	if err := writeSessionFile(getenv, stdin); err != nil {
 		notes = append(notes, "toolgate: the session could not be recorded, so the toolgate MCP servers may not connect: "+err.Error())
 	}
 
 	// A failed attestation sends nothing: the request would change the
 	// session's attestation.
-	attested, err := attestationSource().Token(ctx)
+	attested, err := attestationSource(getenv).Token(ctx)
 	if err != nil {
 		return strings.Join(append(notes, "toolgate: the attestation failed, so the settings profile was not fetched ("+err.Error()+")."), "\n")
 	}
 
-	if source := tokenCommandSource(); source.Command != "" {
-		return strings.Join(append(notes, tokenCommandSettingsNotes(ctx, source, attested)...), "\n")
+	if source := tokenCommandSource(getenv); source.Command != "" {
+		return strings.Join(append(notes, tokenCommandSettingsNotes(ctx, getenv, source, attested)...), "\n")
 	}
 
-	if socket := spiffe.Socket(); socket != "" {
-		return strings.Join(append(notes, spiffeSettingsNotes(ctx, socket, attested)...), "\n")
+	if socket := spiffe.Socket(getenv); socket != "" {
+		return strings.Join(append(notes, spiffeSettingsNotes(ctx, getenv, socket, attested)...), "\n")
 	}
 
-	dir, err := configDir()
+	dir, err := configDir(getenv)
 	if err != nil {
 		return strings.Join(append(notes, "toolgate: "+err.Error()), "\n")
 	}
@@ -126,7 +126,7 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 
 		accessToken, err = headers.AccessToken(ctx, nil, clientSettings, tokenStoreFor(dir, clientSettings))
 		if err == nil {
-			notes = append(notes, syncSettings(ctx, clientSettings.Gateway, accessToken, attested, dir)...)
+			notes = append(notes, syncSettings(ctx, getenv, clientSettings.Gateway, accessToken, attested, dir)...)
 
 			return strings.Join(notes, "\n")
 		}
@@ -141,39 +141,39 @@ func sessionStart(ctx context.Context, stdin io.Reader) string {
 
 // spiffeSettingsNotes syncs the settings with a JWT-SVID. It never falls
 // back to the stored sign-in.
-func spiffeSettingsNotes(ctx context.Context, socket, attested string) []string {
-	access, err := spiffeGateway(ctx, socket)
+func spiffeSettingsNotes(ctx context.Context, getenv func(string) string, socket, attested string) []string {
+	access, err := spiffeGateway(ctx, getenv, socket)
 	if err != nil {
 		return []string{"toolgate: the SPIFFE sign-in failed (" + err.Error() + ")."}
 	}
 
-	dir, err := configDir()
+	dir, err := configDir(getenv)
 	if err != nil {
 		return []string{"toolgate: " + err.Error()}
 	}
 
-	return syncSettings(ctx, access.gateway, access.accessToken, attested, dir)
+	return syncSettings(ctx, getenv, access.gateway, access.accessToken, attested, dir)
 }
 
 // tokenCommandSettingsNotes syncs the settings with the token from
 // TOOLGATE_TOKEN_COMMAND. It never falls back to the stored sign-in.
-func tokenCommandSettingsNotes(ctx context.Context, source tokencommand.Source, attested string) []string {
-	access, err := tokenCommandGateway(ctx, source)
+func tokenCommandSettingsNotes(ctx context.Context, getenv func(string) string, source tokencommand.Source, attested string) []string {
+	access, err := tokenCommandGateway(ctx, getenv, source)
 	if err != nil {
 		return []string{"toolgate: the token command failed (" + err.Error() + ")."}
 	}
 
-	dir, err := configDir()
+	dir, err := configDir(getenv)
 	if err != nil {
 		return []string{"toolgate: " + err.Error()}
 	}
 
-	return syncSettings(ctx, access.gateway, access.accessToken, attested, dir)
+	return syncSettings(ctx, getenv, access.gateway, access.accessToken, attested, dir)
 }
 
 // writeSessionFile writes the session ID from the hook input to the session
 // file of the Claude Code process.
-func writeSessionFile(stdin io.Reader) error {
+func writeSessionFile(getenv func(string) string, stdin io.Reader) error {
 	content, err := io.ReadAll(io.LimitReader(stdin, maxHookInputBytes))
 	if err != nil {
 		return fmt.Errorf("read the hook input: %w", err)
@@ -185,7 +185,7 @@ func writeSessionFile(stdin io.Reader) error {
 	}
 
 	if input.SessionID == "" {
-		input.SessionID = os.Getenv("CLAUDE_CODE_SESSION_ID")
+		input.SessionID = getenv("CLAUDE_CODE_SESSION_ID")
 	}
 
 	if input.SessionID == "" {
@@ -193,19 +193,19 @@ func writeSessionFile(stdin io.Reader) error {
 	}
 
 	pid := os.Getppid()
-	if value, err := strconv.Atoi(os.Getenv(claudePIDEnv)); err == nil && value > 0 {
+	if value, err := strconv.Atoi(getenv(claudePIDEnv)); err == nil && value > 0 {
 		pid = value
 	}
 
-	return headers.WriteSessionFile(pid, input.SessionID)
+	return headers.WriteSessionFile(getenv, pid, input.SessionID)
 }
 
 // syncSettings fetches the merged settings profile and merges it into
 // ~/.claude/settings.json. It returns the notes for the session.
-func syncSettings(ctx context.Context, gateway, accessToken, attested, dir string) []string {
+func syncSettings(ctx context.Context, getenv func(string) string, gateway, accessToken, attested, dir string) []string {
 	profile, err := fetchSettings(ctx, gateway, accessToken, attested)
 	if errors.Is(err, errUnauthorized) {
-		if token, refreshErr := refreshedToken(ctx); refreshErr == nil {
+		if token, refreshErr := refreshedToken(ctx, getenv); refreshErr == nil {
 			profile, err = fetchSettings(ctx, gateway, token, attested)
 		}
 	}
@@ -214,7 +214,7 @@ func syncSettings(ctx context.Context, gateway, accessToken, attested, dir strin
 		return []string{"toolgate: the settings profile could not be fetched: " + err.Error()}
 	}
 
-	home, err := os.UserHomeDir()
+	home, err := tokenstore.HomeDir(getenv)
 	if err != nil {
 		return []string{"toolgate: " + err.Error()}
 	}

@@ -14,17 +14,11 @@ import (
 )
 
 func TestLogoutRemovesTokenFromKeychainAndFile(t *testing.T) {
-	keyring.MockInit()
+	env := testEnv{}
 
-	configDir := t.TempDir()
-	t.Setenv("XDG_CONFIG_HOME", configDir)
-	t.Setenv("HOME", configDir)
-	t.Setenv("AppData", configDir)
+	tokenDir := isolateUserConfig(t, env)
+	useKeychain(t, env)
 
-	userConfigDir, err := os.UserConfigDir()
-	require.NoError(t, err)
-
-	tokenDir := filepath.Join(userConfigDir, tokenstore.DirName)
 	require.NoError(t, os.MkdirAll(tokenDir, 0o700))
 	tokenFile := filepath.Join(tokenDir, tokenstore.FileName)
 	require.NoError(t, os.WriteFile(tokenFile, []byte("in-file"), 0o600))
@@ -32,12 +26,12 @@ func TestLogoutRemovesTokenFromKeychainAndFile(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	code := run([]string{"logout"}, &stdout, &stderr)
+	code := run(env.get, []string{"logout"}, &stdout, &stderr)
 
 	require.Equal(t, 0, code, "stderr: %s", stderr.String())
 	assert.Contains(t, stdout.String(), "Signed out.")
 
-	_, err = keyring.Get(tokenstore.KeychainService, tokenstore.KeychainUser)
+	_, err := keyring.Get(tokenstore.KeychainService, tokenstore.KeychainUser)
 	require.ErrorIs(t, err, keyring.ErrNotFound)
 	assert.NoFileExists(t, tokenFile)
 }

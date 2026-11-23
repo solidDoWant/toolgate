@@ -93,9 +93,9 @@ func (s *Store) Path() string {
 	return s.path()
 }
 
-// Default returns a Store whose fallback file lives in os.UserConfigDir()/toolgate.
-func Default() (*Store, error) {
-	configDir, err := os.UserConfigDir()
+// Default returns a Store whose fallback file lives in ConfigDir()/toolgate.
+func Default(getenv func(string) string) (*Store, error) {
+	configDir, err := ConfigDir(getenv)
 	if err != nil {
 		return nil, fmt.Errorf("find the user configuration directory: %w", err)
 	}
