@@ -29,6 +29,10 @@ const (
 	sessionIDTool = "session_id"
 	// liveSessionsTool returns how many sessions the server holds.
 	liveSessionsTool = "live_sessions"
+	// liveSessionIDsTool returns the IDs of the sessions the server holds,
+	// one per line, so a test can tell whether one given session is still
+	// alive whatever other clients do.
+	liveSessionIDsTool = "live_session_ids"
 	// writeNoteTool writes its text argument to the note file in the data
 	// directory, and readNoteTool returns the note, or an empty text when
 	// there is none.
@@ -160,6 +164,13 @@ func newServer(options options) (*mcp.Server, error) {
 					options.Calls.add(name)
 
 					return textResult(strconv.Itoa(countSessions(server))), nil, nil
+				})
+		case liveSessionIDsTool:
+			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Returns the IDs of the sessions the server holds."},
+				func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+					options.Calls.add(name)
+
+					return textResult(liveSessionIDs(server)), nil, nil
 				})
 		case writeNoteTool:
 			mcp.AddTool(server, &mcp.Tool{Name: name, Description: "Writes the text to the note file in the data directory."},

@@ -7,6 +7,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -208,6 +209,19 @@ func countSessions(server *mcp.Server) int {
 	return count
 }
 
+// liveSessionIDs returns the IDs of the initialized sessions, one per line.
+func liveSessionIDs(server *mcp.Server) string {
+	var ids []string
+
+	for session := range server.Sessions() {
+		if session.InitializeParams() != nil {
+			ids = append(ids, session.ID())
+		}
+	}
+
+	return strings.Join(ids, "\n")
+}
+
 // handler counts the call and echoes the arguments.
 func (s *toolSet) handler(name string) mcp.ToolHandler {
 	return func(_ context.Context, request *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -218,6 +232,8 @@ func (s *toolSet) handler(name string) mcp.ToolHandler {
 			return textResult(request.Session.ID()), nil
 		case liveSessionsTool:
 			return textResult(strconv.Itoa(countSessions(s.server))), nil
+		case liveSessionIDsTool:
+			return textResult(liveSessionIDs(s.server)), nil
 		}
 
 		arguments := map[string]any{}

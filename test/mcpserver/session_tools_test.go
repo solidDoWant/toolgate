@@ -24,6 +24,23 @@ func callText(t *testing.T, session *mcp.ClientSession, name string) string {
 	return text.Text
 }
 
+func TestLiveSessionIDsListsOnlyOpenSessions(t *testing.T) {
+	server := startHandler(t, handlerConfig{Mode: mode2025Only, Tools: "session_id,live_session_ids"})
+
+	first, err := connectHTTP(t, server)
+	require.NoError(t, err)
+
+	second, err := connectHTTP(t, server)
+	require.NoError(t, err)
+
+	live := strings.Fields(callText(t, second, "live_session_ids"))
+	assert.ElementsMatch(t, []string{first.ID(), second.ID()}, live)
+
+	require.NoError(t, first.Close())
+
+	assert.Equal(t, []string{second.ID()}, strings.Fields(callText(t, second, "live_session_ids")))
+}
+
 func TestSessionToolsReportSessionIDAndLiveSessions(t *testing.T) {
 	// Both ways of building the server: a configured tool list, and the
 	// default mode with named tools.

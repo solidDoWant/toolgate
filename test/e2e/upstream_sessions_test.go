@@ -5,7 +5,6 @@ package e2e
 import (
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -85,27 +84,26 @@ func TestStatefulServerKeepsOneUpstreamSessionAcrossReplicas(t *testing.T) {
 	assert.Equal(t, idOnFirstReplica, idOnSecondReplica, "both replicas use one upstream session")
 	assert.NotEqual(t, idOnFirstReplica, sessionID(second), "another toolgate session gets its own upstream session")
 
-	liveSessions := func() int {
-		text, isError := toolCall(t, second, server+"__live_sessions", nil)
+	// The gateway holds sessions of its own, for the tool catalog, and may
+	// open more while this test waits, so the test follows its own upstream
+	// session by ID and not the count.
+	liveIDs := func() []string {
+		text, isError := toolCall(t, second, server+"__live_session_ids", nil)
 		require.False(t, isError, text)
 
-		count, err := strconv.Atoi(strings.TrimSpace(text))
-		require.NoError(t, err, text)
-
-		return count
+		return strings.Fields(text)
 	}
 
-	// The gateway holds sessions of its own, for the tool catalog, so only
-	// the change is exact.
-	before := liveSessions()
-	require.GreaterOrEqual(t, before, 2, "the server holds a session for each toolgate session")
+	require.Contains(t, liveIDs(), idOnFirstReplica, "the server holds the first session's upstream session")
 
 	result := callServerTool(t.Context(), first, gateway.ToolDisableServer, server)
 	require.Empty(t, result.err)
 
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		assert.Less(collect, liveSessions(), before)
+		assert.NotContains(collect, liveIDs(), idOnFirstReplica)
 	}, time.Minute, time.Second, "disable ends the upstream session of the first toolgate session")
+
+	assert.Contains(t, liveIDs(), sessionID(second), "the second toolgate session keeps its upstream session")
 
 	assert.Zero(t, firstTransport.notFound.Load(), "the session got no 404")
 }
@@ -116,6 +114,6 @@ func statefulSessionTemplate(t *testing.T, kube client.Client) string {
 	t.Helper()
 
 	return createTemplate(t, kube, "e2e-upsess", "per-user",
-		testServerResourcesWithTools(t, mcpServerImage(t), []string{"echo", "session_id", "live_sessions"}, 0,
+		testServerResourcesWithTools(t, mcpServerImage(t), []string{"echo", "session_id", "live_session_ids"}, 0,
 			map[string]string{"MCPSERVER_MODE": "2025-only"}))
 }
