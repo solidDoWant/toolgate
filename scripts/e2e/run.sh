@@ -97,7 +97,7 @@ embeddings_image="$embeddings_repository:$image_tag"
 work="$(mktemp -d)"
 export KUBECONFIG="$work/kubeconfig"
 
-log() { echo "e2e: $*" >&2; }
+log() { echo "e2e: [$(date +%T)] $*" >&2; }
 
 cleanup() {
 	local status=$?
@@ -170,10 +170,12 @@ if ! wait "$build_pid"; then
 	exit 1
 fi
 cat "$work/build-images.log" >&2
-kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
 
+# Flux installs while the images load and the dependencies start; nothing
+# before the tests needs it.
 log "installing Flux"
-flux install --timeout 5m >&2
+flux install --timeout 5m >"$work/flux-install.log" 2>&1 &
+flux_pid=$!
 
 log "installing PostgreSQL and S3"
 postgres_password="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
@@ -190,22 +192,15 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 ' test/e2e/manifests/dependencies.yaml | kubectl -n "$deps_namespace" apply -f - >&2
 kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
 kubectl apply -f test/e2e/manifests/storageclass.yaml >&2
-kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry deployment/otel-lgtm --timeout 5m >&2
+kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
+kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry --timeout 5m >&2
+# The telemetry backend is only needed by the tests; it finishes starting
+# while the chart installs.
+kubectl -n "$deps_namespace" rollout status deployment/otel-lgtm --timeout 5m >"$work/lgtm-rollout.log" 2>&1 &
+lgtm_rollout_pid=$!
 
-# Port-forwards to the telemetry test backend, alive until the script exits.
-free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 lgtm_forwards=()
-for lgtm_port in 4318 9090 3100 3200; do
-	local_port="$(free_port)"
-	kubectl -n "$deps_namespace" port-forward --address 127.0.0.1 service/otel-lgtm "$local_port:$lgtm_port" >"$work/lgtm-forward-$lgtm_port.log" 2>&1 &
-	lgtm_forwards+=("$!")
-	case "$lgtm_port" in
-		4318) export TOOLGATE_E2E_OTLP_FORWARD_TO="http://127.0.0.1:$local_port" ;;
-		9090) export TOOLGATE_E2E_PROMETHEUS_URL="http://127.0.0.1:$local_port" ;;
-		3100) export TOOLGATE_E2E_LOKI_URL="http://127.0.0.1:$local_port" ;;
-		3200) export TOOLGATE_E2E_TEMPO_URL="http://127.0.0.1:$local_port" ;;
-	esac
-done
+free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 
 # A port-forward to PostgreSQL for the test process, which gives each test
 # principal a user_scopes row with both defaults all through the store package.
@@ -325,6 +320,23 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set embeddings.downloader.image.digest= \
 	--set embeddings.server.cache.accessModes='{ReadWriteOnce}' \
 	--wait --timeout 5m >&2
+
+wait "$flux_pid" || { cat "$work/flux-install.log" >&2; log "installing Flux failed"; exit 1; }
+cat "$work/flux-install.log" >&2
+wait "$lgtm_rollout_pid" || { cat "$work/lgtm-rollout.log" >&2; log "the telemetry backend did not start"; exit 1; }
+
+# Port-forwards to the telemetry test backend, alive until the script exits.
+for lgtm_port in 4318 9090 3100 3200; do
+	local_port="$(free_port)"
+	kubectl -n "$deps_namespace" port-forward --address 127.0.0.1 service/otel-lgtm "$local_port:$lgtm_port" >"$work/lgtm-forward-$lgtm_port.log" 2>&1 &
+	lgtm_forwards+=("$!")
+	case "$lgtm_port" in
+		4318) export TOOLGATE_E2E_OTLP_FORWARD_TO="http://127.0.0.1:$local_port" ;;
+		9090) export TOOLGATE_E2E_PROMETHEUS_URL="http://127.0.0.1:$local_port" ;;
+		3100) export TOOLGATE_E2E_LOKI_URL="http://127.0.0.1:$local_port" ;;
+		3200) export TOOLGATE_E2E_TEMPO_URL="http://127.0.0.1:$local_port" ;;
+	esac
+done
 
 export TOOLGATE_E2E_NAMESPACE="$release_namespace"
 export TOOLGATE_E2E_MCPSERVER_IMAGE="$mcpserver_image"
