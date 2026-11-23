@@ -129,6 +129,7 @@ func (o *jobObservation) observe(t *testing.T, admin *kubernetes.Clientset, stop
 }
 
 func TestSeparateMigrationCredential(t *testing.T) {
+	// Serial: it changes the chart settings.
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

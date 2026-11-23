@@ -15,6 +15,8 @@ import (
 // its status writes, to the catalog namespaces: a TokenExchange decides where
 // the gateway sends users' tokens.
 func TestTokenExchangeRBACConfinedToCatalogNamespaces(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	user := "system:serviceaccount:" + releaseNamespace() + ":" + gatewayServiceAccount
 

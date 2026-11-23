@@ -491,6 +491,8 @@ func requireOneInstance(t *testing.T, admin *kubernetes.Clientset, template stri
 }
 
 func TestEnableAndDisable(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -547,6 +549,8 @@ func TestEnableAndDisable(t *testing.T) {
 }
 
 func TestPerUserScope(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -581,6 +585,8 @@ func TestPerUserScope(t *testing.T) {
 }
 
 func TestSharedScope(t *testing.T) {
+	t.Parallel()
+
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)
@@ -638,6 +644,7 @@ func TestSharedScope(t *testing.T) {
 // the start from the rows and the labelled objects, with no duplicate
 // instance and no orphaned objects.
 func TestLeaderKilledDuringStart(t *testing.T) {
+	// Serial: it kills the leader.
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

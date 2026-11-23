@@ -156,6 +156,8 @@ func TestTemplateSecretSharedInstance(t *testing.T) {
 // Kubernetes RBAC, not only the gateway, limits the gateway's Secret reads to
 // the template secrets namespace.
 func TestTemplateSecretsRBACConfinedToNamespace(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	namespace := templateSecretsNamespace(t)
 

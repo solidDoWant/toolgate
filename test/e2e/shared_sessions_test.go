@@ -49,6 +49,7 @@ func (s *switchableTransport) RoundTrip(request *http.Request) (*http.Response, 
 }
 
 func TestSessionSurvivesGatewayPodDeletion(t *testing.T) {
+	// Serial: it deletes a gateway pod.
 	kube := templateClient(t)
 	admin := adminClient(t)
 	server := revisionTemplate(t, kube, "both")

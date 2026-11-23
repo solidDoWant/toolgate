@@ -142,6 +142,7 @@ func auditEventLinks(t *testing.T, browser context.Context, publicURL, server st
 }
 
 func TestAuditPayloads(t *testing.T) {
+	// Serial: it upgrades the chart with new settings.
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

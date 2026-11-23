@@ -245,6 +245,7 @@ func TestPersistentVolumeKeepsDataAcrossInstances(t *testing.T) {
 // TestPersistentVolumeSurvivesCrash is not parallel: it kills the leader, and
 // every other e2e test that waits on the leader would stall or fail.
 func TestPersistentVolumeSurvivesCrash(t *testing.T) {
+	// Serial: it crashes the instance and counts volumes in the shared storage class.
 	admin := adminClient(t)
 	kube := templateClient(t)
 	name := volumeTemplate(t, kube, "e2e-pv-crash", retainStorageClass)

@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,6 +28,11 @@ import (
 	"github.com/solidDoWant/toolgate/internal/ui"
 )
 
+// webUIAddress serializes the tests that use the web UI: its public URL is
+// one fixed address, and the gateway's sign-in redirect names it. A test holds
+// the lock until it ends, so the others wait in the parallel phase.
+var webUIAddress sync.Mutex
+
 // webUI serves a TLS proxy to a gateway pod at the web UI's public URL
 // (TOOLGATE_E2E_UI_LISTEN) and returns that URL. It skips the test when the
 // harness configured no web UI.
@@ -40,6 +46,9 @@ func webUI(t *testing.T, gatewayEndpoint string) string {
 
 	target, err := url.Parse(strings.TrimSuffix(gatewayEndpoint, gateway.MCPPath))
 	require.NoError(t, err)
+
+	webUIAddress.Lock()
+	t.Cleanup(webUIAddress.Unlock)
 
 	listener, err := net.Listen("tcp", address)
 	require.NoError(t, err)
@@ -75,6 +84,7 @@ func signInToUI(t *testing.T, publicURL string, user testutil.OIDCUser) context.
 }
 
 func TestRestartFromTheUI(t *testing.T) {
+	// Serial: it restarts the gateway.
 	image := mcpServerImage(t)
 	admin := adminClient(t)
 	kube := templateClient(t)

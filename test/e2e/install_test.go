@@ -18,6 +18,7 @@ import (
 const gatewayDeployment = "toolgate"
 
 func TestChartInstall(t *testing.T) {
+	// Serial: it installs the chart.
 	admin := adminClient(t)
 
 	t.Run("the CRDs exist", func(t *testing.T) {

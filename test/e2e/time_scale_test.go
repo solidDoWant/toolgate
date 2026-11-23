@@ -24,6 +24,8 @@ func scaled(d time.Duration) time.Duration {
 // The gateway under test and the test process read the same time scale, so
 // deadlines the tests derive with scaled match the gateway's waits.
 func TestTimeScaleMatchesGateway(t *testing.T) {
+	t.Parallel()
+
 	value := os.Getenv(testtime.EnvVar)
 	if value == "" {
 		t.Skipf("%s is not set (no cluster made by scripts/e2e/run.sh)", testtime.EnvVar)

@@ -44,6 +44,8 @@ func workspaceEnvironment(home string, extra ...string) []string {
 }
 
 func TestDeviceSignInFromAWorkspace(t *testing.T) {
+	t.Parallel()
+
 	provider := oidcProvider(t)
 	image := mcpServerImage(t)
 	admin := adminClient(t)

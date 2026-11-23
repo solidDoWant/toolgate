@@ -110,6 +110,8 @@ func grantNamespaceUpdate(t *testing.T, admin *kubernetes.Clientset, name string
 // tries to run a pod with root on the node, and checks that every step is
 // refused.
 func TestGatewayCannotEscapePodSecurity(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	gateway := gatewayClient(t)
 

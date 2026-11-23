@@ -81,6 +81,8 @@ func refusedWith(message string) require.ErrorAssertionFunc {
 }
 
 func TestGatewayWritesAreConfined(t *testing.T) {
+	t.Parallel()
+
 	admin := adminClient(t)
 	gateway := gatewayClient(t)
 

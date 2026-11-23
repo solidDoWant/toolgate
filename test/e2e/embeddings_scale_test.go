@@ -88,6 +88,7 @@ func searchTools(t *testing.T, session *gatewaySession, query string) gateway.Fi
 }
 
 func TestEmbeddingsServerScalesWithToolSearch(t *testing.T) {
+	// Serial: it watches the one shared embeddings server scale, so no other test may use tool search meanwhile.
 	admin := adminClient(t)
 	kube := templateClient(t)
 	endpoint := forwardToGateway(t, admin, gatewayPods(t, admin)[0])
