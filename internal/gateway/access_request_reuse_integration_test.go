@@ -37,6 +37,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	t.Parallel()
 
 	t.Run("two identical workspace allows give one pending request with one ID and URL", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -49,6 +51,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	})
 
 	t.Run("the order of the servers doesn't matter", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -61,6 +65,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	})
 
 	t.Run("a different change gets its own request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -73,6 +79,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	})
 
 	t.Run("an unverified allow asked again from another session reuses the pending request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("jira", "per-user", aliceAndBob)
@@ -89,6 +97,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	})
 
 	t.Run("concurrent identical requests from two sessions give one request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -124,6 +134,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	})
 
 	t.Run("a denied request isn't reused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -135,6 +147,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	})
 
 	t.Run("after an approval the same change is already in effect and needs no request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -151,6 +165,8 @@ func TestRepeatedAccessRequestReusesPendingOne(t *testing.T) {
 	})
 
 	t.Run("an expired request isn't reused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -170,6 +186,8 @@ func TestApprovalClosesRequestsItMadeRedundant(t *testing.T) {
 	t.Parallel()
 
 	t.Run("approving a scope allow closes a change request for the same servers", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -191,6 +209,8 @@ func TestApprovalClosesRequestsItMadeRedundant(t *testing.T) {
 	})
 
 	t.Run("approving a change request closes a scope request it covers but not one it doesn't", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -209,6 +229,8 @@ func TestApprovalClosesRequestsItMadeRedundant(t *testing.T) {
 	})
 
 	t.Run("approving one unverified allow closes another unverified allow it covers", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("jira", "per-user", aliceAndBob)
@@ -223,6 +245,8 @@ func TestApprovalClosesRequestsItMadeRedundant(t *testing.T) {
 	})
 
 	t.Run("a denial closes nothing else", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 

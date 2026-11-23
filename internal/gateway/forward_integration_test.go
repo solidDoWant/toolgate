@@ -205,6 +205,8 @@ func TestCallForwarding(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a call returns the upstream result and writes tool.decision and tool.result with full identity", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -243,6 +245,8 @@ func TestCallForwarding(t *testing.T) {
 	})
 
 	t.Run("a tool error from upstream is returned as is and recorded", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -257,6 +261,8 @@ func TestCallForwarding(t *testing.T) {
 	})
 
 	t.Run("a call of an allowed server that isn't enabled enables it with first-call and is forwarded", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -283,6 +289,8 @@ func TestCallForwarding(t *testing.T) {
 	})
 
 	t.Run("a call of a server the policy refuses is refused and audited without enabling it", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", v1alpha1.Access{Users: []string{"bob"}, Environments: "any"})
 		fixture.startUpstream(t, "github")
@@ -300,6 +308,8 @@ func TestCallForwarding(t *testing.T) {
 	})
 
 	t.Run("a call whose instance stopped being ready is refused with not-ready and its reason", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -326,6 +336,8 @@ func TestCallForwarding(t *testing.T) {
 	})
 
 	t.Run("a call the policy refuses is audited and never forwarded", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")
@@ -351,6 +363,8 @@ func TestCallLimits(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a result of exactly 16 MiB is forwarded", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -367,6 +381,8 @@ func TestCallLimits(t *testing.T) {
 	})
 
 	t.Run("a result one byte over 16 MiB is refused with a clear error", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -381,6 +397,8 @@ func TestCallLimits(t *testing.T) {
 	})
 
 	t.Run("a request body over 4 MiB is refused with a clear error", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -401,6 +419,8 @@ func TestCallLimits(t *testing.T) {
 	})
 
 	t.Run("a request body just under 4 MiB is forwarded", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -434,6 +454,8 @@ func TestCallInteractions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a disable while a call is in flight lets the call finish, refuses later calls with not-enabled and withdraws the tools", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		upstream := fixture.startUpstream(t, "github")
@@ -489,6 +511,8 @@ func TestCallInteractions(t *testing.T) {
 	})
 
 	t.Run("an upstream tool change sends list_changed with the new list to sessions using the server", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.addEnableTemplate("jira", "per-user", anyone)

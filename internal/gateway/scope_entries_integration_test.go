@@ -112,6 +112,8 @@ func TestScopeEntries(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a workspace deny refuses an enable at once and list_servers shows it denied in this workspace", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 		fixture.addWorkspaceEntry(t, aliceWorkspace, "github", "", policy.EffectDeny)
@@ -127,6 +129,8 @@ func TestScopeEntries(t *testing.T) {
 	})
 
 	t.Run("a session deny refuses an enable at once and list_servers shows it denied in this session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 
@@ -141,6 +145,8 @@ func TestScopeEntries(t *testing.T) {
 	})
 
 	t.Run("an unverified session applies its session's deny entries", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.setUnverifiedDefault(t, "alice", policy.ScopeDefaultAll)
@@ -156,6 +162,8 @@ func TestScopeEntries(t *testing.T) {
 	})
 
 	t.Run("an unverified session ignores its session's allow entries", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -167,6 +175,8 @@ func TestScopeEntries(t *testing.T) {
 	})
 
 	t.Run("a tool deny withdraws only that tool, and an allow entry lists only its tool", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		fixture.addEnableTemplate("k8s", "per-user", aliceAndBob)
 		fixture.startUpstream(t, "k8s")
@@ -196,6 +206,8 @@ func TestScopeEntries(t *testing.T) {
 	})
 
 	t.Run("a server approval deletes no deny entry, and the wait ends approved, but still refused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		client := fixture.connectElicitingAs(t, attestedAlice(), elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -220,6 +232,8 @@ func TestScopeEntries(t *testing.T) {
 	})
 
 	t.Run("without the web UI deny entries do nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixtureWithAuth(t, attestedUsers())
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.startUpstream(t, "github")
@@ -238,6 +252,8 @@ func TestUnverifiedAllowList(t *testing.T) {
 	t.Parallel()
 
 	t.Run("list gives the user's unverified servers", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -252,6 +268,8 @@ func TestUnverifiedAllowList(t *testing.T) {
 	})
 
 	t.Run("list with no servers gives nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.setUnverifiedList(t)
@@ -261,6 +279,8 @@ func TestUnverifiedAllowList(t *testing.T) {
 	})
 
 	t.Run("a verified workspace ignores the unverified list", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		fixture.setUnverifiedList(t, "github")
 

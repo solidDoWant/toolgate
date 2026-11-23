@@ -197,6 +197,8 @@ func TestApprovalElicitation(t *testing.T) {
 
 	for _, revision := range []string{revisionElicitCreate, modernRevision} {
 		t.Run("on "+revision+" the client opens the approval page, an approval from another replica lets the call through", func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newApprovalFixture(t, withApprovalURL)
 			client := fixture.connectEliciting(t, elicitingOptions{revision: revision, answer: "accept"})
 

@@ -78,6 +78,8 @@ func TestConnectorSessions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("an initialize without the session header makes an unverified mcp. session bound to the MCP session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
@@ -93,6 +95,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("the workspace header narrows the mcp. session's claimed workspace", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		client := connectorClient()
@@ -103,6 +107,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("two clients get separate sessions with their own enabled sets", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addTemplate("github", "per-user", v1alpha1.Access{Users: []string{"alice"}, Environments: "any"})
 
@@ -131,6 +137,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("a request without the session header or an MCP session that isn't an initialize gets 400 and makes no session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		response := fixture.post(t, connectorClient(), "", pingMessage())
@@ -139,6 +147,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("an Mcp-Session-Id no replica stored gets 404 and makes no session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		assert.Equal(t, http.StatusNotFound, fixture.pingStatus(t, connectorClient(), "0123456789abcdef0123456789abcdef"))
@@ -146,6 +156,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("a client can't pick another MCP session's session by sending its ID", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		helperMCPSessionID := fixture.initializeRaw(t, alice())
@@ -168,6 +180,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("a session header with the mcp. prefix gets 400", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
@@ -180,6 +194,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("a DELETE of the MCP session ends the session at once with session.end", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())
@@ -199,6 +215,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("a DELETE of a helper's MCP session leaves its session live", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, alice())
@@ -209,6 +227,8 @@ func TestConnectorSessions(t *testing.T) {
 	})
 
 	t.Run("the leader's idle end of the MCP session ends the session with session.end", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 
 		mcpSessionID := fixture.initializeRaw(t, connectorClient())

@@ -117,6 +117,8 @@ func TestSharedMCPSessions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a session served by two replicas round-robin never gets 404", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		other := fixture.replica(t)
 
@@ -149,6 +151,8 @@ func TestSharedMCPSessions(t *testing.T) {
 	})
 
 	t.Run("a replica adopts a session only for the identity it is bound to", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		other := fixture.replica(t)
 
@@ -191,6 +195,8 @@ func TestSharedMCPSessions(t *testing.T) {
 	})
 
 	t.Run("a DELETE on one replica ends the session another replica holds and closes its GET stream", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		other := fixture.replica(t)
 
@@ -217,6 +223,8 @@ func TestSharedMCPSessions(t *testing.T) {
 	})
 
 	t.Run("a helper session idle past the connector idle limit is still served on either replica", func(t *testing.T) {
+		t.Parallel()
+
 		const idleTimeout = 200 * time.Millisecond
 
 		fixture := newMCPFixture(t, withMCPSessionIdleTimeout(idleTimeout))

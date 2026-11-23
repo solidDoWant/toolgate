@@ -83,6 +83,8 @@ func TestBuiltinAllow(t *testing.T) {
 	t.Parallel()
 
 	t.Run("without elicitation an allow inserts one pending scope request, returns its link and changes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		curatedGithub(fixture)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -109,6 +111,8 @@ func TestBuiltinAllow(t *testing.T) {
 	})
 
 	t.Run("an accepted elicitation's round trip finds the named request and waits until it is approved", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		curatedGithub(fixture)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -152,6 +156,8 @@ func TestBuiltinAllow(t *testing.T) {
 		{name: "a request whose approvalTimeout passes is expired by the wait, with access.expire", status: "expired", overdue: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -186,6 +192,8 @@ func TestBuiltinAllow(t *testing.T) {
 	}
 
 	t.Run("a declined elicitation returns pending and keeps the request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		curatedGithub(fixture)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -202,6 +210,8 @@ func TestBuiltinAllow(t *testing.T) {
 	})
 
 	t.Run("a named request that was denied or expired gets the denied or expired messages", func(t *testing.T) {
+		t.Parallel()
+
 		for _, test := range []struct {
 			status  string
 			message string
@@ -229,6 +239,8 @@ func TestBuiltinAllow(t *testing.T) {
 	})
 
 	t.Run("the input and the target are checked and nothing is written for a refused allow", func(t *testing.T) {
+		t.Parallel()
+
 		items := make([]string, 0, 33)
 		for range 33 {
 			items = append(items, "github")
@@ -307,6 +319,8 @@ func TestBuiltinAllow(t *testing.T) {
 	})
 
 	t.Run("an ended session gets the no-open-session message", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		curatedGithub(fixture)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -335,6 +349,8 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 
 	for _, call := range calls {
 		t.Run(call.tool+" works in a session that allows toolgate", func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -351,6 +367,8 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 		})
 
 		t.Run(""+call.tool+" is refused at step 4 where toolgate isn't allowed, with tool.decision", func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			// A verified workspace whose list doesn't hold toolgate.
@@ -370,6 +388,8 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 		})
 
 		t.Run(call.tool+" is refused by a rule naming toolgate", func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -389,6 +409,8 @@ func TestBuiltinToolsAllowed(t *testing.T) {
 
 	for _, tool := range []string{toolAllow, toolDeny} {
 		t.Run(""+tool+" refuses another user's session and writes nothing", func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newBuiltinFixture(t)
 			curatedGithub(fixture)
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)

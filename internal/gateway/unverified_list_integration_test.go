@@ -42,6 +42,8 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 	t.Parallel()
 
 	t.Run("list with two servers: an unverified session lists and enables only those", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		for _, name := range []string{"github", "gitlab", "jira"} {
 			fixture.addEnableTemplate(name, "per-user", aliceAndBob)
@@ -74,6 +76,8 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 	})
 
 	t.Run("adding a server needs an approved request, and an open session sees it within 5 s", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		for _, name := range []string{"github", "jira"} {
 			fixture.addEnableTemplate(name, "per-user", aliceAndBob)
@@ -103,6 +107,8 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 	})
 
 	t.Run("removing a server withdraws it within 5 s, without a request", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.startUpstream(t, "github")
@@ -127,6 +133,8 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 	})
 
 	t.Run("none to list with servers and list to all widen; all to list narrows", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -162,6 +170,8 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 	})
 
 	t.Run("the list holds at most 64 servers", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 
 		servers := make([]string, 0, gateway.MaxUnverifiedServers+1)
@@ -185,6 +195,8 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 	})
 
 	t.Run("an allow needs access to the server and names no tools", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 
@@ -205,6 +217,8 @@ func TestUnverifiedAllowListInGatewayRequests(t *testing.T) {
 	})
 
 	t.Run("a 0.3 write of none leaves unverified_list, so list stays list", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 
 		api.applyChange(t, unverifiedAlice(), unverifiedDefaults("list"))

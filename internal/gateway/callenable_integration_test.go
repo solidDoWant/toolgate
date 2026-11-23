@@ -20,6 +20,8 @@ func TestCallEnables(t *testing.T) {
 	t.Parallel()
 
 	t.Run("two calls at once to a server that isn't enabled write one server.enable", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -59,6 +61,8 @@ func TestCallEnables(t *testing.T) {
 	})
 
 	t.Run("a call of a remote server with its secret missing is refused with the set-secret message and enables nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addRemoteTemplate("mail-archiver")
 
@@ -78,6 +82,8 @@ func TestCallEnables(t *testing.T) {
 	})
 
 	t.Run("a missing secret refuses the call with missing-secret and enables nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		template.Spec.Resources = []k8sruntime.RawExtension{{Raw: []byte(
@@ -100,6 +106,8 @@ func TestCallEnables(t *testing.T) {
 	})
 
 	t.Run("a 33rd server refuses the call with limit", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -123,6 +131,8 @@ func TestCallEnables(t *testing.T) {
 	})
 
 	t.Run("in a verified workspace a call outside the list asks, and an approval lets the next call through", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 
@@ -164,6 +174,8 @@ func TestCallEnables(t *testing.T) {
 	})
 
 	t.Run("in an unverified session a call outside the list is refused at once", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixtureWithAuth(t, attestedUsers(), withWorkspaceScoping, withApprovalURL)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
 		fixture.startUpstream(t, "github")
@@ -184,6 +196,8 @@ func TestCallEnables(t *testing.T) {
 	})
 
 	t.Run("disable drops a server at once, and a verified workspace's enable outside the list asks", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		client := fixture.connectObserved(t, attestedAlice())
 
