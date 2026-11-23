@@ -57,7 +57,7 @@ test-guard: ## Fail if HEAD deletes, unlists or skips a test named on a `Tests:`
 
 .PHONY: test-integration
 test-integration: ## Run the integration-tagged tests (GO_TEST_JSON=file also writes the go test -json events there; PostgreSQL with TLS client certificates and S3 in Docker, a fake OIDC provider and an envtest API server in process; they skip cleanly without Docker or KUBEBUILDER_ASSETS).
-	timeout 30m ./scripts/ci/go-test-json.sh -race -count=1 -tags integration -timeout 25m ./...
+	timeout 13m ./scripts/ci/go-test-json.sh -race -count=1 -tags integration -timeout 10m ./...
 
 UI_SCREENSHOTS_DIR ?= $(BIN_DIR)/ui-screenshots
 
