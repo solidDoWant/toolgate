@@ -87,7 +87,7 @@ release_namespace=toolgate-system
 deps_namespace=toolgate-e2e
 image_tag="e2e-$suffix"
 # The e2e gateway image and the tests scale product waits by this factor.
-export TOOLGATE_TEST_TIME_SCALE="${TOOLGATE_TEST_TIME_SCALE:-0.1}"
+export TOOLGATE_TEST_TIME_SCALE="${TOOLGATE_TEST_TIME_SCALE:-0.05}"
 gateway_repository=ghcr.io/soliddowant/toolgate
 # Kubernetes 1.35 (the chart needs it), through the Docker Hub mirror, pinned by digest.
 kind_node_image=mirror.gcr.io/kindest/node:v1.35.8@sha256:07b2536e30b803ed61d1677a79df6115f798ce64c80f9e22f6ed45afd09323c0

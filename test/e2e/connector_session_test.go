@@ -18,6 +18,7 @@ import (
 
 	"github.com/solidDoWant/toolgate/internal/auth"
 	"github.com/solidDoWant/toolgate/internal/gateway"
+	"github.com/solidDoWant/toolgate/internal/runtime"
 )
 
 // connectorSession is a 2025-11-25 client session with the gateway that
@@ -202,8 +203,9 @@ func TestSessionsWithoutHelper(t *testing.T) {
 	})
 }
 
-// TestIdleConnectorSessionEnds waits out the scaled idle timeout, so it runs
-// beside the other tests; it needs no web UI and uses only its own session.
+// TestIdleConnectorSessionEnds moves the session's last use back past the
+// idle timeout instead of waiting for it, then waits for the gateway to end
+// the session. It needs no web UI and uses only its own session.
 func TestIdleConnectorSessionEnds(t *testing.T) {
 	t.Parallel()
 
@@ -212,10 +214,12 @@ func TestIdleConnectorSessionEnds(t *testing.T) {
 	mcpSessionID := initializeConnector(t, endpoint, "e2e-connector-idle-"+rand.String(6))
 	session := auth.MCPSessionPrefix + mcpSessionID
 
+	gatewayQuery(t, admin, "UPDATE mcp_sessions SET last_seen_at = now() - interval '7 days' WHERE session_id = '"+session+"'")
+
 	require.Eventually(t, func() bool {
 		reason := strings.TrimSpace(gatewayQuery(t, admin, "SELECT details->>'reason' FROM audit_events WHERE session = '"+
 			session+"' AND type = 'session.end'"))
 
 		return reason == "mcp-session-idle"
-	}, scaled(30*time.Minute)+time.Minute, 5*time.Second)
+	}, 2*scaled(runtime.DefaultPassInterval)+30*time.Second, time.Second)
 }

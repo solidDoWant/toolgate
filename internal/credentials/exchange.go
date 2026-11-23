@@ -24,6 +24,7 @@ import (
 	"golang.org/x/oauth2/clientcredentials"
 
 	"github.com/solidDoWant/toolgate/internal/auth"
+	"github.com/solidDoWant/toolgate/internal/testtime"
 )
 
 // Token exchange request values (RFC 8693).
@@ -338,7 +339,7 @@ func (e *Exchanger) checkAnswer(answer *oauth2.Token, issuedAt time.Time) (Excha
 		return Exchanged{}, e.fail(ErrorBadAnswer, false, "the answer has no expiry")
 	}
 
-	if expiresAt.Sub(issuedAt) < MinExchangedTokenLifetime {
+	if expiresAt.Sub(issuedAt) < testtime.Scale(MinExchangedTokenLifetime) {
 		return Exchanged{}, e.fail(ErrorBadAnswer, false, "the answer has an expiry less than 2 minutes away")
 	}
 

@@ -33,19 +33,20 @@ The package `internal/testtime` has the function `Scale(d)`. Gateway code calls 
 - In a normal build, such as the release image from `make build-images`, `Scale` returns `d` unchanged. It never reads an environment variable.
 - In a build with the `e2e` build tag, `Scale` multiplies `d` by the value of `TOOLGATE_TEST_TIME_SCALE`. If the variable is not set, or its value is not a positive number, `Scale` returns `d` unchanged.
 
-The gateway scales the durations that it stores or waits for. It does not scale the values in the configuration, the forms of the web UI, their limits or the messages. For example, a temporary block of "1 minute" from the Blocks page lasts 6 seconds with the scale `0.1`, and the page still shows 1 minute. These durations use the scale:
+The gateway scales the durations that it stores or waits for. It does not scale the values in the configuration, the forms of the web UI, their limits or the messages. For example, a temporary block of "1 minute" from the Blocks page lasts 3 seconds with the scale `0.05`, and the page still shows 1 minute. These durations use the scale:
 
 - The approval timeout (`approvalTimeout`), the interval at which a waiting call reads its approval again, and the 1 minute after which the leader expires a pending approval.
 - The duration of a temporary block and of a grant.
 - `sessionIdleTimeout` and `sessionResumeWindow`.
 
-`scripts/e2e/run.sh` builds the gateway image with the `e2e` tag. It sets `TOOLGATE_TEST_TIME_SCALE` to `0.1` in the chart (through `config.extraEnv`) and for the tests. To use a different value, set `TOOLGATE_TEST_TIME_SCALE` before you run the script. The default values of the chart never set the variable.
+`scripts/e2e/run.sh` builds the gateway image with the `e2e` tag. It sets `TOOLGATE_TEST_TIME_SCALE` to `0.05` in the chart (through `config.extraEnv`) and for the tests. To use a different value, set `TOOLGATE_TEST_TIME_SCALE` before you run the script. The default values of the chart never set the variable.
 
 The runtime in `internal/runtime` scales these waits:
 
 - The 30-second interval between two full passes of the reconciler (`DefaultPassInterval`).
 - The 60 seconds that an object's `Ready` condition must stay `False` before the object counts as failed (`ReadyFailureHold`).
 - The 2-minute minimum validity of a resolved value (`MinResolvedLifetime`), and the 60 seconds before its expiry when the instance is replaced (`ResolverExpiryMargin`).
+- The 2-minute minimum lifetime of an exchanged token (`MinExchangedTokenLifetime`).
 - The interval of a custom health check and of the MCP ping. The health check timeout bounds a real request, so the runtime does not scale it.
 
 The CRD limits for a health check do not change: the `interval` is 10 seconds to 10 minutes, and the `timeout` is 1 second to 60 seconds. The API server enforces them. The tests use the smallest values that the CRD allows, and the e2e gateway then checks every second.
@@ -135,7 +136,7 @@ The chart is in the registry of the cluster at `TOOLGATE_E2E_CHART_REPOSITORY`, 
 `scripts/e2e/run.sh` sets these variables for the tests:
 
 - `KUBECONFIG`: the kubeconfig file of the cluster.
-- `TOOLGATE_TEST_TIME_SCALE`: the factor of the [test time scale](#the-test-time-scale), `0.1` by default.
+- `TOOLGATE_TEST_TIME_SCALE`: the factor of the [test time scale](#the-test-time-scale), `0.05` by default.
 - `TOOLGATE_E2E_NAMESPACE`: the release namespace, `toolgate-system`.
 - `TOOLGATE_E2E_MCPSERVER_IMAGE`: the image of the test MCP server.
 - `TOOLGATE_E2E_OIDC_LISTEN` and `TOOLGATE_E2E_OIDC_ISSUER`: the listen address and the issuer URL of the fake identity provider.

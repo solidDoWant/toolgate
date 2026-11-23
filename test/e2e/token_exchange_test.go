@@ -214,7 +214,7 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 
 	// The shortest lifetime the gateway accepts, so the half-life refresh
 	// and the expiry both happen within the test.
-	lifetime := credentials.MinExchangedTokenLifetime + 10*time.Second
+	lifetime := scaled(credentials.MinExchangedTokenLifetime) + 3*time.Second
 	endpoint := testTokenEndpoint(t, lifetime)
 	endpoint.Refuse("carol", "invalid_grant")
 
