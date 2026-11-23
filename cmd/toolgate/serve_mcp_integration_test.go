@@ -36,7 +36,7 @@ const (
 
 // writeKubeconfig writes a kubeconfig for the envtest API server and points
 // KUBECONFIG at it.
-func writeKubeconfig(t *testing.T, kube *testutil.Envtest) {
+func writeKubeconfig(t *testing.T, env testEnv, kube *testutil.Envtest) {
 	t.Helper()
 
 	config := clientcmdapi.NewConfig()
@@ -49,7 +49,7 @@ func writeKubeconfig(t *testing.T, kube *testutil.Envtest) {
 
 	path := filepath.Join(t.TempDir(), "kubeconfig")
 	require.NoError(t, clientcmd.WriteToFile(*config, path))
-	t.Setenv("KUBECONFIG", path)
+	env.set("KUBECONFIG", path)
 }
 
 // headerTransport adds fixed headers to every request.
@@ -102,12 +102,14 @@ func listServerNames(t *testing.T, session *mcp.ClientSession) []string {
 }
 
 func TestServeServesTheCatalogAndStartsInstances(t *testing.T) {
-	clearConfigEnv(t)
+	t.Parallel()
+
+	env := testEnv{}
 
 	pg := testutil.StartPostgres(t)
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	kube := testutil.StartEnvtest(t)
-	writeKubeconfig(t, kube)
+	writeKubeconfig(t, env, kube)
 
 	for _, name := range []string{serveLeaseNamespace, serveCatalogNamespace} {
 		require.NoError(t, kube.Client.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}))
@@ -126,11 +128,11 @@ func TestServeServesTheCatalogAndStartsInstances(t *testing.T) {
 	}
 	require.NoError(t, kube.Client.Create(t.Context(), template))
 
-	t.Setenv("TOOLGATE_LEASE_NAMESPACE", serveLeaseNamespace)
-	t.Setenv("TOOLGATE_CATALOG_NAMESPACES", serveCatalogNamespace)
-	t.Setenv("TOOLGATE_GATEWAY_POD_LABELS", "app.kubernetes.io/name=toolgate")
+	env.set("TOOLGATE_LEASE_NAMESPACE", serveLeaseNamespace)
+	env.set("TOOLGATE_CATALOG_NAMESPACES", serveCatalogNamespace)
+	env.set("TOOLGATE_GATEWAY_POD_LABELS", "app.kubernetes.io/name=toolgate")
 
-	stdout, stderr, done := startServeWith(t, pg.ConnString(), provider)
+	stdout, stderr, done := startServeWith(t, env, pg.ConnString(), provider)
 	defer stopServe(t, stderr, done)
 
 	endpoint := "http://" + gatewayAddress(t, stdout) + gateway.MCPPath

@@ -44,7 +44,9 @@ type servedGateway struct {
 	url         string
 	stdout      *lockedBuffer
 	stderr      *lockedBuffer
-	done        chan int
+	done        *serveRun
+	// env is the environment the gateway runs with.
+	env testEnv
 }
 
 // startServeWithSecrets starts serve with PostgreSQL, envtest, the fake IdP
@@ -60,12 +62,25 @@ func startServeWithSecrets(t *testing.T) servedGateway {
 // audiences next to the fake IdP's own.
 func startServeWithAudiences(t *testing.T, extraAudiences ...string) servedGateway {
 	t.Helper()
-	clearConfigEnv(t)
+
+	return startServeConfigured(t, nil, extraAudiences...)
+}
+
+// startServeConfigured is startServeWithAudiences with more settings for the
+// gateway's environment.
+func startServeConfigured(t *testing.T, settings map[string]string, extraAudiences ...string) servedGateway {
+	t.Helper()
+
+	env := testEnv{}
+
+	for name, value := range settings {
+		env.set(name, value)
+	}
 
 	pg := testutil.StartPostgres(t)
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 	kube := testutil.StartEnvtest(t)
-	writeKubeconfig(t, kube)
+	writeKubeconfig(t, env, kube)
 
 	for _, name := range []string{serveLeaseNamespace, serveCatalogNamespace} {
 		require.NoError(t, kube.Client.Create(t.Context(), &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}))
@@ -95,22 +110,22 @@ func startServeWithAudiences(t *testing.T, extraAudiences ...string) servedGatew
 	keysetPath := filepath.Join(t.TempDir(), "keyset.json")
 	require.NoError(t, os.WriteFile(keysetPath, buffer.Bytes(), 0o600))
 
-	t.Setenv("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
+	env.set("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
 
 	if len(extraAudiences) > 0 {
-		t.Setenv("TOOLGATE_OIDC_AUDIENCE", strings.Join(append([]string{provider.Audience}, extraAudiences...), ","))
+		env.set("TOOLGATE_OIDC_AUDIENCE", strings.Join(append([]string{provider.Audience}, extraAudiences...), ","))
 	}
 
-	t.Setenv("TOOLGATE_OIDC_CLI_CLIENT_ID", provider.ClientID)
-	t.Setenv("TOOLGATE_LEASE_NAMESPACE", serveLeaseNamespace)
-	t.Setenv("TOOLGATE_CATALOG_NAMESPACES", serveCatalogNamespace)
-	t.Setenv("TOOLGATE_GATEWAY_POD_LABELS", "app.kubernetes.io/name=toolgate")
+	env.set("TOOLGATE_OIDC_CLI_CLIENT_ID", provider.ClientID)
+	env.set("TOOLGATE_LEASE_NAMESPACE", serveLeaseNamespace)
+	env.set("TOOLGATE_CATALOG_NAMESPACES", serveCatalogNamespace)
+	env.set("TOOLGATE_GATEWAY_POD_LABELS", "app.kubernetes.io/name=toolgate")
 
-	stdout, stderr, done := startServeWith(t, pg.ConnString(), provider)
+	stdout, stderr, done := startServeWith(t, env, pg.ConnString(), provider)
 
 	return servedGateway{
 		provider: provider, kube: kube, databaseURL: pg.ConnString(),
-		url: "http://" + gatewayAddress(t, stdout), stdout: stdout, stderr: stderr, done: done,
+		url: "http://" + gatewayAddress(t, stdout), stdout: stdout, stderr: stderr, done: done, env: env,
 	}
 }
 
@@ -178,11 +193,11 @@ func objectsHolding(t *testing.T, kube client.Client, value string) []string {
 }
 
 func TestSecretCommands(t *testing.T) {
-	env := processEnv{t}
+	env := testEnv{}
 
 	isolateUserConfig(t, env)
-	t.Setenv("TOOLGATE_SESSION", "session-cli")
-	t.Setenv("TOOLGATE_WORKSPACE", "laptop-widgets")
+	env.set("TOOLGATE_SESSION", "session-cli")
+	env.set("TOOLGATE_WORKSPACE", "laptop-widgets")
 
 	served := startServeWithSecrets(t)
 	defer stopServe(t, served.stderr, served.done)
@@ -193,8 +208,6 @@ func TestSecretCommands(t *testing.T) {
 	require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 	t.Run("toolgate secret set reads the value from stdin and never echoes it", func(t *testing.T) {
-		env := processEnv{t}
-
 		code, out, errOut := runCLI(t, env, secretValue, "secret", "set", "github-token")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 		assert.Contains(t, out, "github-token")
@@ -202,8 +215,6 @@ func TestSecretCommands(t *testing.T) {
 	})
 
 	t.Run("toolgate secret list shows the name and dates only", func(t *testing.T) {
-		env := processEnv{t}
-
 		code, out, errOut := runCLI(t, env, "", "secret", "list")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 		assert.NotContains(t, out, secretValue)
@@ -217,8 +228,6 @@ func TestSecretCommands(t *testing.T) {
 	})
 
 	t.Run("toolgate servers lists what toolgate_list_servers returns for the CLI user", func(t *testing.T) {
-		env := processEnv{t}
-
 		session := served.connectAs(t, "session-cli", "laptop-widgets")
 
 		require.Eventually(t, func() bool {
@@ -286,8 +295,6 @@ func TestSecretCommands(t *testing.T) {
 	})
 
 	t.Run("toolgate secret delete removes the secret", func(t *testing.T) {
-		env := processEnv{t}
-
 		code, _, errOut := runCLI(t, env, "", "secret", "delete", "github-token")
 		require.Equal(t, 0, code, "stderr: %s", errOut)
 

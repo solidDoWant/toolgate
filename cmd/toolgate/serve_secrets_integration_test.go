@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -23,7 +22,9 @@ import (
 )
 
 func TestServeMountsTheSecretsAPIBehindAuthentication(t *testing.T) {
-	clearConfigEnv(t)
+	t.Parallel()
+
+	env := testEnv{}
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
 
@@ -36,18 +37,14 @@ func TestServeMountsTheSecretsAPIBehindAuthentication(t *testing.T) {
 	keysetPath := filepath.Join(t.TempDir(), "keyset.json")
 	require.NoError(t, os.WriteFile(keysetPath, buffer.Bytes(), 0o600))
 
-	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_DATABASE_URL", testutil.StartPostgres(t).ConnString())
-	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
-	t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
-	t.Setenv("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
+	env.set("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_DATABASE_URL", testutil.StartPostgres(t).ConnString())
+	env.set("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
+	env.set("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
+	env.set("TOOLGATE_SECRETS_KEYSET_FILE", keysetPath)
 
-	stdout := &lockedBuffer{}
-	stderr := &lockedBuffer{}
-	done := make(chan int, 1)
-
-	go func() { done <- run(os.Getenv, []string{"serve"}, stdout, stderr) }()
+	stdout, stderr, serving := startServeCommand(t, env, &lockedBuffer{}, &lockedBuffer{})
 
 	var address string
 
@@ -74,12 +71,5 @@ func TestServeMountsTheSecretsAPIBehindAuthentication(t *testing.T) {
 
 	assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "a request without a token is refused")
 
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGTERM))
-
-	select {
-	case code := <-done:
-		assert.Equal(t, 0, code, "stderr: %s", stderr.String())
-	case <-time.After(30 * time.Second):
-		require.FailNow(t, "serve did not stop after SIGTERM")
-	}
+	stopServe(t, stderr, serving)
 }

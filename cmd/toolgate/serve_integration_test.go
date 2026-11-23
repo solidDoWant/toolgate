@@ -3,8 +3,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"strings"
 	"syscall"
 	"testing"
@@ -28,31 +30,50 @@ func init() {
 	auditTailSettle = time.Second
 }
 
-func startServe(t *testing.T, databaseURL string) (*lockedBuffer, *lockedBuffer, chan int) {
+func startServe(t *testing.T, databaseURL string) (*lockedBuffer, *lockedBuffer, *serveRun) {
 	t.Helper()
-	clearConfigEnv(t)
 
-	return startServeWith(t, databaseURL, testutil.StartOIDCProvider(t, testutil.OIDCOptions{}))
+	return startServeWith(t, testEnv{}, databaseURL, testutil.StartOIDCProvider(t, testutil.OIDCOptions{}))
 }
 
 // startServeWith is startServe with the given identity provider and the
 // rest of the configuration environment left as the caller set it.
-func startServeWith(t *testing.T, databaseURL string, provider *testutil.OIDCProvider) (*lockedBuffer, *lockedBuffer, chan int) {
+func startServeWith(t *testing.T, env testEnv, databaseURL string, provider *testutil.OIDCProvider) (*lockedBuffer, *lockedBuffer, *serveRun) {
 	t.Helper()
-	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_DATABASE_URL", databaseURL)
-	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
+	env.set("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_DATABASE_URL", databaseURL)
+	env.set("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
 
-	if os.Getenv("TOOLGATE_OIDC_AUDIENCE") == "" {
-		t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
+	if env.get("TOOLGATE_OIDC_AUDIENCE") == "" {
+		env.set("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
 	}
 
 	stdout := &lockedBuffer{}
 	stderr := &lockedBuffer{}
+
+	return startServeCommand(t, env, stdout, stderr)
+}
+
+// serveRun is a running `toolgate serve`: the channel gets its exit code and
+// stop ends it the way SIGTERM does.
+type serveRun struct {
+	done chan int
+	stop context.CancelFunc
+}
+
+// startServeCommand runs `toolgate serve` with env until the test stops it,
+// and waits until the gateway logged that it started. A test that does not
+// stop it explicitly stops it when the test ends.
+func startServeCommand(t *testing.T, env testEnv, stdout, stderr *lockedBuffer) (*lockedBuffer, *lockedBuffer, *serveRun) {
+	t.Helper()
+
+	ctx, stop := context.WithCancel(t.Context())
+	t.Cleanup(stop)
+
 	done := make(chan int, 1)
 
-	go func() { done <- run(os.Getenv, []string{"serve"}, stdout, stderr) }()
+	go func() { done <- runContext(ctx, env.get, []string{"serve"}, stdout, stderr) }()
 
 	require.Eventually(t, func() bool {
 		select {
@@ -67,19 +88,19 @@ func startServeWith(t *testing.T, databaseURL string, provider *testutil.OIDCPro
 
 	require.Contains(t, stdout.String(), `"msg":"gateway started"`, "stderr: %s", stderr.String())
 
-	return stdout, stderr, done
+	return stdout, stderr, &serveRun{done: done, stop: stop}
 }
 
-// stopServe sends SIGTERM and asserts that serve exits with 0.
-func stopServe(t *testing.T, stderr *lockedBuffer, done chan int) {
+// stopServe ends serve and asserts that it exits with 0.
+func stopServe(t *testing.T, stderr *lockedBuffer, run *serveRun) {
 	t.Helper()
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGTERM))
+	run.stop()
 
 	select {
-	case code := <-done:
+	case code := <-run.done:
 		assert.Equal(t, 0, code, "stderr: %s", stderr.String())
 	case <-time.After(30 * time.Second):
-		require.FailNow(t, "serve did not stop after SIGTERM")
+		require.FailNow(t, "serve did not stop when its context ended")
 	}
 }
 
@@ -93,7 +114,9 @@ func openPool(t *testing.T, connString string) *pgxpool.Pool {
 	return pool
 }
 
-func TestServeStopsOnSIGTERM(t *testing.T) {
+func TestServeStopsWhenItsContextEnds(t *testing.T) {
+	t.Parallel()
+
 	stdout, stderr, done := startServe(t, testutil.StartPostgres(t).ConnString())
 
 	stopServe(t, stderr, done)
@@ -101,7 +124,49 @@ func TestServeStopsOnSIGTERM(t *testing.T) {
 	assert.Contains(t, stdout.String(), `"msg":"gateway stopped"`)
 }
 
+func TestServeProcessStopsCleanlyOnSIGTERM(t *testing.T) {
+	t.Parallel()
+
+	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
+
+	command := exec.CommandContext(t.Context(), os.Args[0], "serve")
+	command.Env = append(os.Environ(),
+		runAsBinaryEnv+"=1",
+		"TOOLGATE_LISTEN_ADDRESS=127.0.0.1:0",
+		"TOOLGATE_METRICS_LISTEN_ADDRESS=127.0.0.1:0",
+		"TOOLGATE_DATABASE_URL="+testutil.StartPostgres(t).ConnString(),
+		"TOOLGATE_OIDC_ISSUER_URL="+provider.Issuer,
+		"TOOLGATE_OIDC_AUDIENCE="+provider.Audience,
+	)
+
+	stdout := &lockedBuffer{}
+	command.Stdout = stdout
+	command.Stderr = stdout
+
+	require.NoError(t, command.Start())
+
+	waited := make(chan error, 1)
+
+	go func() { waited <- command.Wait() }()
+
+	require.Eventually(t, func() bool { return strings.Contains(stdout.String(), `"msg":"gateway started"`) },
+		2*time.Minute, 10*time.Millisecond, "the gateway did not start: %s", stdout.String())
+
+	require.NoError(t, command.Process.Signal(syscall.SIGTERM))
+
+	select {
+	case err := <-waited:
+		require.NoError(t, err, "the process exits 0 after SIGTERM; output: %s", stdout.String())
+	case <-time.After(30 * time.Second):
+		require.FailNow(t, "the process did not stop after SIGTERM", "output: %s", stdout.String())
+	}
+
+	assert.Contains(t, stdout.String(), `"msg":"gateway stopped"`)
+}
+
 func TestServeAppliesTheMigrationsBeforeItListens(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgresEmpty(t)
 	pool := openPool(t, pg.ConnString())
 
@@ -123,6 +188,8 @@ func TestServeAppliesTheMigrationsBeforeItListens(t *testing.T) {
 }
 
 func TestServeStartsAndWarnsWhenTheDatabaseSchemaIsNewer(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	pool := openPool(t, pg.ConnString())
 	require.NoError(t, store.Migrate(t.Context(), pool))

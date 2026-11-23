@@ -4,7 +4,6 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,13 +14,15 @@ import (
 )
 
 func TestMigrateCommandAppliesMigrationsAndCreatesPartitions(t *testing.T) {
+	t.Parallel()
+
+	env := testEnv{}
 	pg := testutil.StartPostgresEmpty(t)
-	clearConfigEnv(t)
-	t.Setenv("TOOLGATE_DATABASE_URL", pg.ConnString())
+	env.set("TOOLGATE_DATABASE_URL", pg.ConnString())
 
 	var stdout, stderr bytes.Buffer
 
-	require.Equal(t, 0, run(os.Getenv, []string{"migrate"}, &stdout, &stderr), "stderr: %s", stderr.String())
+	require.Equal(t, 0, run(env.get, []string{"migrate"}, &stdout, &stderr), "stderr: %s", stderr.String())
 
 	pool := openPool(t, pg.ConnString())
 	database, binary, err := store.CheckSchemaVersion(t.Context(), pool)
@@ -35,15 +36,19 @@ func TestMigrateCommandAppliesMigrationsAndCreatesPartitions(t *testing.T) {
 }
 
 func TestMigrateCommandExitsOneOnFailure(t *testing.T) {
-	clearConfigEnv(t)
-	t.Setenv("TOOLGATE_DATABASE_URL", "postgres://nobody@127.0.0.1:1/none?connect_timeout=1")
+	t.Parallel()
+
+	env := testEnv{}
+	env.set("TOOLGATE_DATABASE_URL", "postgres://nobody@127.0.0.1:1/none?connect_timeout=1")
 
 	var stdout, stderr bytes.Buffer
 
-	assert.Equal(t, 1, run(os.Getenv, []string{"migrate"}, &stdout, &stderr))
+	assert.Equal(t, 1, run(env.get, []string{"migrate"}, &stdout, &stderr))
 }
 
 func TestServeWithoutMigrateOnStartRefusesAnOlderDatabase(t *testing.T) {
+	t.Parallel()
+
 	t.Run("no goose table counts as version 0 and is not created", func(t *testing.T) {
 		pg := testutil.StartPostgresEmpty(t)
 		pool := openPool(t, pg.ConnString())
@@ -73,13 +78,15 @@ func TestServeWithoutMigrateOnStartRefusesAnOlderDatabase(t *testing.T) {
 }
 
 func TestServeWithoutMigrateOnStartStartsOnACurrentDatabase(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	require.NoError(t, store.Migrate(t.Context(), openPool(t, pg.ConnString())))
 
-	clearConfigEnv(t)
-	t.Setenv("TOOLGATE_MIGRATE_ON_START", "false")
+	env := testEnv{}
+	env.set("TOOLGATE_MIGRATE_ON_START", "false")
 
-	_, stderr, done := startServeWith(t, pg.ConnString(), testutil.StartOIDCProvider(t, testutil.OIDCOptions{}))
+	_, stderr, done := startServeWith(t, env, pg.ConnString(), testutil.StartOIDCProvider(t, testutil.OIDCOptions{}))
 	stopServe(t, stderr, done)
 }
 
@@ -87,18 +94,20 @@ func TestServeWithoutMigrateOnStartStartsOnACurrentDatabase(t *testing.T) {
 // its output once it exits with code 1.
 func runServeExpectingExit(t *testing.T, databaseURL string) (string, string) {
 	t.Helper()
-	clearConfigEnv(t)
+
+	env := testEnv{}
 
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
-	t.Setenv("TOOLGATE_MIGRATE_ON_START", "false")
-	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_DATABASE_URL", databaseURL)
-	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
-	t.Setenv("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
+
+	env.set("TOOLGATE_MIGRATE_ON_START", "false")
+	env.set("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_DATABASE_URL", databaseURL)
+	env.set("TOOLGATE_OIDC_ISSUER_URL", provider.Issuer)
+	env.set("TOOLGATE_OIDC_AUDIENCE", provider.Audience)
 
 	stdout, stderr := &lockedBuffer{}, &lockedBuffer{}
-	code := run(os.Getenv, []string{"serve"}, stdout, stderr)
+	code := runContext(t.Context(), env.get, []string{"serve"}, stdout, stderr)
 
 	assert.Equal(t, 1, code)
 	assert.NotContains(t, stdout.String(), `"msg":"gateway started"`)

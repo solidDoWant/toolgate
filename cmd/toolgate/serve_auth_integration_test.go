@@ -35,11 +35,11 @@ func metricsAddress(t *testing.T, stdout *lockedBuffer) string {
 }
 
 func TestServeRecordsRefusedSignIns(t *testing.T) {
-	clearConfigEnv(t)
+	t.Parallel()
 
 	pg := testutil.StartPostgres(t)
 	provider := testutil.StartOIDCProvider(t, testutil.OIDCOptions{})
-	stdout, stderr, done := startServeWith(t, pg.ConnString(), provider)
+	stdout, stderr, done := startServeWith(t, testEnv{}, pg.ConnString(), provider)
 
 	address := gatewayAddress(t, stdout)
 

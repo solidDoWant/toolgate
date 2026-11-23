@@ -14,7 +14,9 @@ import (
 )
 
 func TestSessionsCommand(t *testing.T) {
-	env := processEnv{t}
+	t.Parallel()
+
+	env := testEnv{}
 
 	isolateUserConfig(t, env)
 
@@ -27,8 +29,6 @@ func TestSessionsCommand(t *testing.T) {
 	require.Equal(t, 0, code, "stderr: %s", signInStderr)
 
 	t.Run("toolgate sessions lists the user's open sessions and their enabled servers", func(t *testing.T) {
-		env := processEnv{t}
-
 		_ = served.connectAs(t, "session-one", "laptop-widgets")
 		_ = served.connectAs(t, "session-two", "")
 

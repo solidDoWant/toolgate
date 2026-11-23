@@ -2,10 +2,10 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -33,30 +33,18 @@ func (b *lockedBuffer) String() string {
 	return b.buffer.String()
 }
 
-func clearConfigEnv(t *testing.T) {
-	t.Helper()
-
-	for _, name := range []string{
-		"TOOLGATE_CONFIG", "TOOLGATE_LISTEN_ADDRESS", "TOOLGATE_METRICS_LISTEN_ADDRESS",
-		"TOOLGATE_DATABASE_URL", "TOOLGATE_MIGRATE_ON_START", "TOOLGATE_SHUTDOWN_TIMEOUT", "TOOLGATE_LOG_LEVEL", "TOOLGATE_OTLP_ENDPOINT",
-		"TOOLGATE_OIDC_ISSUER_URL", "TOOLGATE_OIDC_AUDIENCE", "TOOLGATE_OIDC_EMAIL_CLAIM",
-		"TOOLGATE_OIDC_EMAIL_VERIFIED_CLAIM", "TOOLGATE_OIDC_GROUPS_CLAIM", "TOOLGATE_SECRETS_KEYSET_FILE",
-		"TOOLGATE_LEASE_NAMESPACE", "TOOLGATE_CATALOG_NAMESPACES", "TOOLGATE_GATEWAY_POD_LABELS",
-	} {
-		t.Setenv(name, "")
-	}
-}
-
 func TestServeRejectsInvalidConfiguration(t *testing.T) {
-	clearConfigEnv(t)
+	t.Parallel()
+
+	env := testEnv{}
 
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	require.NoError(t, os.WriteFile(path, []byte("logLevel: loud\n"), 0o600))
-	t.Setenv("TOOLGATE_SHUTDOWN_TIMEOUT", "never")
+	env.set("TOOLGATE_SHUTDOWN_TIMEOUT", "never")
 
 	var stdout, stderr bytes.Buffer
 
-	code := run(os.Getenv, []string{"serve", "--config", path}, &stdout, &stderr)
+	code := run(env.get, []string{"serve", "--config", path}, &stdout, &stderr)
 
 	assert.Equal(t, 1, code)
 	assert.Contains(t, stderr.String(), "databaseURL: required")
@@ -65,25 +53,30 @@ func TestServeRejectsInvalidConfiguration(t *testing.T) {
 }
 
 func TestServeExitsWhenTheDatabaseIsUnreachable(t *testing.T) {
-	clearConfigEnv(t)
-	t.Setenv("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
-	t.Setenv("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate?connect_timeout=5")
-	t.Setenv("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
-	t.Setenv("TOOLGATE_OIDC_AUDIENCE", "toolgate")
+	t.Parallel()
+
+	env := testEnv{}
+	env.set("TOOLGATE_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_METRICS_LISTEN_ADDRESS", "127.0.0.1:0")
+	env.set("TOOLGATE_DATABASE_URL", "postgres://toolgate@127.0.0.1:1/toolgate?connect_timeout=5")
+	env.set("TOOLGATE_OIDC_ISSUER_URL", "https://idp.example")
+	env.set("TOOLGATE_OIDC_AUDIENCE", "toolgate")
 
 	stdout := &lockedBuffer{}
 	stderr := &lockedBuffer{}
 	done := make(chan int, 1)
+	ctx, stop := context.WithCancel(t.Context())
 
-	go func() { done <- run(os.Getenv, []string{"serve"}, stdout, stderr) }()
+	defer stop()
+
+	go func() { done <- runContext(ctx, env.get, []string{"serve"}, stdout, stderr) }()
 
 	select {
 	case code := <-done:
 		assert.Equal(t, 1, code, "stderr: %s", stderr.String())
 	case <-time.After(30 * time.Second):
 		// Stop the gateway that started without its schema.
-		require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGTERM))
+		stop()
 		<-done
 		require.FailNow(t, "serve kept running without its database schema", "stdout: %s", stdout.String())
 	}
