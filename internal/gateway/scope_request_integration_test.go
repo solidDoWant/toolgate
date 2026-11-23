@@ -45,6 +45,8 @@ func (f *mcpFixture) accessRequestRow(t *testing.T, id string) (string, string, 
 }
 
 func TestScopeRequests(t *testing.T) {
+	t.Parallel()
+
 	t.Run("an allow without credentials is refused and writes nothing", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)

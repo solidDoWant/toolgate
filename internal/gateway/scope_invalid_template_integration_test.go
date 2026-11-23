@@ -57,6 +57,8 @@ func assertSayDenied(t *testing.T, client *observedClient) {
 // scope item naming a renamed tool by its exposed name maps to the upstream
 // name with the last valid generation, as calls do.
 func TestScopeItemsOfRenamedToolWhileTemplateInvalid(t *testing.T) {
+	t.Parallel()
+
 	t.Run("an API deny stores the upstream name and refuses the tool", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		api := newWorkspaceAPI(t, fixture, true)

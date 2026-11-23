@@ -38,6 +38,8 @@ func ofKind(manifests []manifest, kind string) []manifest {
 }
 
 func TestPodDisruptionBudgetCoversTheGatewayPods(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t)
 	budget := find[policyv1.PodDisruptionBudget](t, manifests, "PodDisruptionBudget")
 	deployment := find[appsv1.Deployment](t, manifests, "Deployment")
@@ -54,6 +56,8 @@ func TestPodDisruptionBudgetCoversTheGatewayPods(t *testing.T) {
 }
 
 func TestMetricsServiceAndServiceMonitor(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t)
 	deployment := find[appsv1.Deployment](t, manifests, "Deployment")
 
@@ -95,6 +99,8 @@ func TestMetricsServiceAndServiceMonitor(t *testing.T) {
 }
 
 func TestMemoryRequestEqualsLimitAndNoCPULimit(t *testing.T) {
+	t.Parallel()
+
 	deployment := find[appsv1.Deployment](t, renderQuickStart(t), "Deployment")
 	require.Len(t, deployment.Spec.Template.Spec.Containers, 1)
 	resources := deployment.Spec.Template.Spec.Containers[0].Resources
@@ -107,6 +113,8 @@ func TestMemoryRequestEqualsLimitAndNoCPULimit(t *testing.T) {
 }
 
 func TestCRDsAreTemplates(t *testing.T) {
+	t.Parallel()
+
 	names := []string{
 		"mcpservertemplates.toolgate.soliddowant.dev",
 		"toolgaterules.toolgate.soliddowant.dev",
@@ -155,6 +163,8 @@ func TestCRDsAreTemplates(t *testing.T) {
 // ClusterRole, Role, their bindings and the admission policy are the same as
 // with the quick-start values.
 func TestValuesCannotChangeTheSecurityBoundary(t *testing.T) {
+	t.Parallel()
+
 	guarded := map[string]bool{
 		"ClusterRole": true, "ClusterRoleBinding": true, "Role": true, "RoleBinding": true,
 		"ValidatingAdmissionPolicy": true, "ValidatingAdmissionPolicyBinding": true,

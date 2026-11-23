@@ -11,6 +11,8 @@ import (
 )
 
 func TestWorkspaceKeysUpgrade(t *testing.T) {
+	t.Parallel()
+
 	t.Run("change approval rolls back a key request", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 		api := newWorkspaceAPI(t, fixture, true)

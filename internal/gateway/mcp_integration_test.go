@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -297,16 +298,16 @@ func (f *mcpFixture) sessionRow(t *testing.T, principal, session string) db.Sess
 	return row
 }
 
-var instanceCounter int
+var instanceCounter atomic.Int64
 
 // addInstance inserts an instance row for template and scope key and moves
 // it to status ("ready" or "failed").
 func (f *mcpFixture) addInstance(t *testing.T, template *v1alpha1.MCPServerTemplate, scopeKey string, generation int64, status, reason string) {
 	t.Helper()
 
-	instanceCounter++
+	counter := instanceCounter.Add(1)
 	queries := db.New(f.pool)
-	id := fmt.Sprintf("%032x", instanceCounter)
+	id := fmt.Sprintf("%032x", counter)
 
 	_, err := queries.InsertInstance(t.Context(), db.InsertInstanceParams{
 		ID: id, TemplateNs: template.Namespace, TemplateName: template.Name, TemplateUid: string(template.UID),
@@ -349,6 +350,7 @@ func mcpRequestsOf(method string) float64 {
 	return total
 }
 
+// This test is not parallel: it compares process-wide request counters.
 func TestMCPEndpointOffersMetaTools(t *testing.T) {
 	fixture := newMCPFixture(t)
 
@@ -373,6 +375,8 @@ func TestMCPEndpointOffersMetaTools(t *testing.T) {
 }
 
 func TestMCPEndpointRefusesUnauthenticated(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, fixture.server.URL, strings.NewReader(`{}`))
@@ -387,6 +391,8 @@ func TestMCPEndpointRefusesUnauthenticated(t *testing.T) {
 }
 
 func TestListServers(t *testing.T) {
+	t.Parallel()
+
 	t.Run("returns exactly the templates the identity may use, with scope, enabled state and status", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 
@@ -434,6 +440,8 @@ func TestListServers(t *testing.T) {
 }
 
 func TestServerStatus(t *testing.T) {
+	t.Parallel()
+
 	fixture := newMCPFixture(t)
 	template := fixture.addTemplate("by-subject", "per-user", v1alpha1.Access{Users: []string{"alice"}, Environments: "any"})
 	fixture.addTemplate("other-user", "per-user", v1alpha1.Access{Users: []string{"bob"}, Environments: "any"})
@@ -468,6 +476,8 @@ func TestServerStatus(t *testing.T) {
 }
 
 func TestSessions(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a different workspace on a live session gets 400 on a request that starts no MCP session", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 

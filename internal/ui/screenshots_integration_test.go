@@ -156,6 +156,8 @@ var clickCopyButton = chromedp.Func(func(ctx context.Context, target *chromedp.T
 // light and dark themes, on a desktop and a phone, into PNGs for a person
 // to review. It checks nothing else.
 func TestUIScreenshots(t *testing.T) {
+	t.Parallel()
+
 	directory := os.Getenv(screenshotsEnv)
 	if directory == "" {
 		t.Skipf("set %s to a directory to write the web UI screenshots (make ui-screenshots)", screenshotsEnv)

@@ -131,6 +131,8 @@ func (e *uiEnv) approve(t *testing.T, browser *http.Client, id string, user tool
 var dave = toolgatetest.OIDCUser{Subject: "dave", Email: "dave@example.com", EmailVerified: true}
 
 func TestStepUpPagesWithAnIdPSessionNeedOneSignIn(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 
 	t.Run("approval", func(t *testing.T) {
@@ -168,6 +170,8 @@ func TestStepUpPagesWithAnIdPSessionNeedOneSignIn(t *testing.T) {
 }
 
 func TestStepUpWindowCoversApprovalsWithinIt(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name        string
 		maxAge      time.Duration

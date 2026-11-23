@@ -28,6 +28,8 @@ func newStartCountingFixture(t *testing.T) (*mcpFixture, *atomic.Int32) {
 }
 
 func TestToolSearchSessionStartReportsDemand(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a new session with tool search on reports its start once, and its ordinary requests report nothing", func(t *testing.T) {
 		fixture, starts := newStartCountingFixture(t)
 

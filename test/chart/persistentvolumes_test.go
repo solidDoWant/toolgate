@@ -32,6 +32,8 @@ func mentionsVolumes(rules []rbacv1.PolicyRule) bool {
 }
 
 func TestPersistentVolumesAreOffByDefault(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t)
 
 	assert.False(t, mentionsVolumes(gatewayClusterRoleRules(t, manifests)), "no PersistentVolume or StorageClass rule")
@@ -44,6 +46,8 @@ func TestPersistentVolumesAreOffByDefault(t *testing.T) {
 }
 
 func TestPersistentVolumesEnabled(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderQuickStart(t, "--set", "config.persistentVolumes.enabled=true",
 		"--set", "config.persistentVolumes.unusedRetention=48h", "--set", "config.persistentVolumes.limitPerUser=5Gi")
 
@@ -81,6 +85,8 @@ func TestPersistentVolumesEnabled(t *testing.T) {
 }
 
 func TestPersistentVolumeDefaults(t *testing.T) {
+	t.Parallel()
+
 	env := gatewayEnv(t, renderQuickStart(t, "--set", "config.persistentVolumes.enabled=true"))
 	assert.Equal(t, "720h", env["TOOLGATE_PERSISTENT_VOLUMES_UNUSED_RETENTION"])
 	assert.Equal(t, "10Gi", env["TOOLGATE_PERSISTENT_VOLUMES_LIMIT_PER_USER"])

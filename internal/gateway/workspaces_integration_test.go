@@ -278,6 +278,8 @@ func newScopedFixture(t *testing.T) (*mcpFixture, *workspaceAPI) {
 var aliceAndBob = v1alpha1.Access{Users: []string{"alice", "bob"}, Environments: "any"}
 
 func TestWorkspaceLists(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a CLI allow applies only after approval, the list filters servers, tools and calls, and a deny withdraws within 5 s across replicas", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)
@@ -608,6 +610,8 @@ func TestWorkspaceLists(t *testing.T) {
 func ptr[T any](value T) *T { return &value }
 
 func TestWorkspaceDefaults(t *testing.T) {
+	t.Parallel()
+
 	t.Run("the verified default widens only after approval and narrows at once", func(t *testing.T) {
 		fixture, api := newScopedFixture(t)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)

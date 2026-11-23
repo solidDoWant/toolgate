@@ -34,6 +34,8 @@ func (e *uiEnv) requestScope(t *testing.T, target gateway.ScopeTarget, items ...
 // after list and the asking session, and applies it only after a fresh
 // step-up.
 func TestScopeRequestApprovalPage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.addGrantTemplates()
 

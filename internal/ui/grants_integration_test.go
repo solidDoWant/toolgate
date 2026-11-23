@@ -106,6 +106,8 @@ func postWithHeader(t *testing.T, client *http.Client, target string, form url.V
 }
 
 func TestGrantFormIsFilledFromTheLink(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 	env.openSession(t, "dave", "laptop-1")
@@ -130,6 +132,8 @@ func TestGrantFormIsFilledFromTheLink(t *testing.T) {
 }
 
 func TestGrantCreateListAndRevoke(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 	env.openSession(t, "dave", "laptop-1")
@@ -204,6 +208,8 @@ func TestGrantCreateListAndRevoke(t *testing.T) {
 }
 
 func TestGrantRevokeNeedsNoStepUp(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 
@@ -223,6 +229,8 @@ func TestGrantRevokeNeedsNoStepUp(t *testing.T) {
 }
 
 func TestGrantCreateNeedsAFreshSignIn(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 
@@ -250,6 +258,8 @@ func TestGrantCreateNeedsAFreshSignIn(t *testing.T) {
 }
 
 func TestAnotherUsersGrantIsNotFound(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	env.addGrantTemplates()
 
@@ -287,6 +297,8 @@ func TestAnotherUsersGrantIsNotFound(t *testing.T) {
 }
 
 func TestGrantPagesNeedASession(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	browser := env.browser(t)
 
@@ -304,6 +316,8 @@ func TestGrantPagesNeedASession(t *testing.T) {
 // minutes sends the user to the IdP first, and creates the grant only after
 // the fresh sign-in.
 func TestGrantNeedsAFreshSignIn(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 
@@ -349,6 +363,8 @@ func TestGrantNeedsAFreshSignIn(t *testing.T) {
 // The Grants page offers the form in a dialog opened by the header's
 // action, and the form's own page works without JavaScript.
 func TestGrantsPageHasTheFormInADialog(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 	env.openSession(t, "dave", "laptop-1")

@@ -14,6 +14,8 @@ import (
 // A restart of an ended session deletes that session's cached results and no
 // others, even when the session ended without the end transaction's delete.
 func TestSessionRestartDeletesItsCachedResults(t *testing.T) {
+	t.Parallel()
+
 	fixture := newAdditionFixture(t)
 	fixture.setVerifiedDefault(t, policy.ScopeDefaultNone)
 

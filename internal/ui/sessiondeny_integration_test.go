@@ -15,6 +15,8 @@ import (
 )
 
 func TestSessionDenyFromSessionPage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	owner := env.insertSession(t, "deny-owner", nil)
 	other := env.insertSessionOf(t, "erin", "deny-other", nil)

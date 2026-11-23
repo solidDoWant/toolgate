@@ -65,6 +65,8 @@ func (v *secretVolume) certFile() string { return filepath.Join(v.dir, "tls.crt"
 func (v *secretVolume) keyFile() string { return filepath.Join(v.dir, "tls.key") }
 
 func TestGatewayUsesRotatedDatabaseClientCertificate(t *testing.T) {
+	t.Parallel()
+
 	pg := testutil.StartPostgres(t)
 	ctx := t.Context()
 

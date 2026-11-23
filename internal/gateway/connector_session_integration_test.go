@@ -75,6 +75,8 @@ func (f *mcpFixture) endedSessionEvents(t *testing.T, session string) []auditRow
 }
 
 func TestConnectorSessions(t *testing.T) {
+	t.Parallel()
+
 	t.Run("an initialize without the session header makes an unverified mcp. session bound to the MCP session", func(t *testing.T) {
 		fixture := newMCPFixture(t)
 

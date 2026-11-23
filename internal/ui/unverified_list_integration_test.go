@@ -22,6 +22,8 @@ import (
 // checkbox per server. Adding servers needs a fresh sign-in; removing one
 // applies without it.
 func TestUnverifiedAllowListPage(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "")
 	env.addGrantTemplates()
 

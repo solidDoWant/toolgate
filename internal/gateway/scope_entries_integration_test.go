@@ -109,6 +109,8 @@ func assertDeniedEnable(t *testing.T, fixture *mcpFixture, result string, messag
 }
 
 func TestScopeEntries(t *testing.T) {
+	t.Parallel()
+
 	t.Run("a workspace deny refuses an enable at once and list_servers shows it denied in this workspace", func(t *testing.T) {
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -233,6 +235,8 @@ func TestScopeEntries(t *testing.T) {
 }
 
 func TestUnverifiedAllowList(t *testing.T) {
+	t.Parallel()
+
 	t.Run("list gives the user's unverified servers", func(t *testing.T) {
 		fixture := newMCPFixture(t, withWorkspaceScoping)
 		fixture.addEnableTemplate("github", "per-user", aliceAndBob)

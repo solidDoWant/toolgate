@@ -13,6 +13,8 @@ import (
 // A failed row of a deleted template (another UID) with the same name and the
 // same generation number does not block calls of the re-created template.
 func TestFailedRowOfRecreatedTemplateDoesNotBlockCalls(t *testing.T) {
+	t.Parallel()
+
 	const scopeKey = "session:alice:session-1"
 
 	fixture := newMCPFixture(t)

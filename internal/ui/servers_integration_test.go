@@ -14,6 +14,8 @@ import (
 )
 
 func TestServersPageShowsScopeEnvironmentsAndKind(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	browser := env.insertSession(t, "catalog-session", []string{"dev"})
 
@@ -35,6 +37,8 @@ func TestServersPageShowsScopeEnvironmentsAndKind(t *testing.T) {
 }
 
 func TestServersPageShowsWorkspaceAvailability(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		changes  []gateway.WorkspaceChange
@@ -96,6 +100,8 @@ func TestServersPageShowsWorkspaceAvailability(t *testing.T) {
 }
 
 func TestServerDetail(t *testing.T) {
+	t.Parallel()
+
 	env := startUIEnv(t, "admins")
 	browser := env.insertSession(t, "detail-session", []string{"dev"})
 

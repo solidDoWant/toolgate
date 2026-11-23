@@ -33,6 +33,8 @@ func hookOf(t *testing.T, object manifest) (string, string) {
 }
 
 func TestDefaultValuesRenderNoMigrationHook(t *testing.T) {
+	t.Parallel()
+
 	for _, set := range [][]string{
 		nil,
 		// A migration Secret alone changes nothing: the gateway migrates.
@@ -62,6 +64,8 @@ func TestDefaultValuesRenderNoMigrationHook(t *testing.T) {
 }
 
 func TestMigrationHookObjects(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderWith(t, splitValues...)
 
 	weightOf := func(kind string) string {
@@ -125,6 +129,8 @@ func TestMigrationHookObjects(t *testing.T) {
 }
 
 func TestMigrationJobMountsNothingFromTheRelease(t *testing.T) {
+	t.Parallel()
+
 	manifests := renderWith(t, append([]string{
 		`config.resolvers[0].name=billing`,
 		`config.resolvers[0].url=https://billing.example.com`,

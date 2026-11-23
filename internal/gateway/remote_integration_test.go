@@ -243,6 +243,8 @@ func (f *remoteFixture) stopAndNotify(t *testing.T, id string) {
 }
 
 func TestRemoteServers(t *testing.T) {
+	t.Parallel()
+
 	t.Run("with the secret set, a user lists and calls a tool and the call carries the user's key", func(t *testing.T) {
 		fixture := newRemoteFixture(t, "alice-key")
 		fixture.setSecret(t, "alice", "alice-key")
@@ -398,6 +400,8 @@ func TestRemoteServers(t *testing.T) {
 }
 
 func TestSearchModeEnablesAStoppedRemoteServer(t *testing.T) {
+	t.Parallel()
+
 	fixture := newRemoteFixture(t, "alice-key")
 	fixture.setSecret(t, "alice", "alice-key")
 

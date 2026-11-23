@@ -33,6 +33,8 @@ func (f *mcpFixture) failedInstance(t *testing.T, template *v1alpha1.MCPServerTe
 }
 
 func TestLazyStart(t *testing.T) {
+	t.Parallel()
+
 	const scopeKey = "session:alice:session-1"
 
 	t.Run("enable of an onCall server with a catalog list inserts no instance, doesn't wait and lists the catalog tools", func(t *testing.T) {
@@ -335,6 +337,8 @@ func (f *mcpFixture) liveID(t *testing.T, template *v1alpha1.MCPServerTemplate, 
 // A call that enables its server does not retry a start that failed on the
 // current generation: it is refused at once and inserts no instance.
 func TestImplicitEnableDoesNotRetryFailedStart(t *testing.T) {
+	t.Parallel()
+
 	const scopeKey = "session:alice:session-1"
 
 	fixture := newMCPFixture(t)
