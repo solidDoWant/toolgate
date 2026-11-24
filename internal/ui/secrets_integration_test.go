@@ -335,8 +335,19 @@ func TestSecretsInBrowser(t *testing.T) {
 			chromedp.WaitVisible(`#set-secret button`),
 			chromedp.SetValue(`#set-secret input[name="name"]`, "browser-key"),
 			chromedp.SetValue(`#set-secret textarea[name="value"]`, value),
+		))
+		_, err := chromedp.Run(ctx, chromedp.Evaluate[any](`window.beforeSubmit = true`))
+		require.NoError(t, err)
+		require.NoError(t, chromedp.Do(ctx,
 			chromedp.Click(`#set-secret button`),
 		))
+		// The submit starts a page load. Wait for the page it lands on, so
+		// the next navigation doesn't cut that load off.
+		require.Eventually(t, func() bool {
+			loaded, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.readyState === "complete" && window.beforeSubmit === undefined`))
+
+			return err == nil && loaded
+		}, time.Minute, 100*time.Millisecond)
 		require.Eventually(t, func() bool {
 			stored, _, err := env.broker.Get(t.Context(), "dave", "browser-key")
 
