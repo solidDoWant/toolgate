@@ -113,13 +113,30 @@ summary_line() {
 }
 
 # slowest_tests prints the ten top-level tests with the longest wall time from
-# the go test -json events in $GO_TEST_JSON, when the caller wrote them. A
+# the go test -json events the CI stage writes. A
 # parallel test's time includes the time it waited for the serial tests.
 slowest_tests() {
-	[[ -n "${GO_TEST_JSON:-}" && -s "$GO_TEST_JSON" ]] || return 0
-	jq -r -s '[.[] | select((.Action == "pass" or .Action == "fail") and .Test != null and (.Test | contains("/") | not))]
-		| sort_by(-.Elapsed) | .[:10] | map("\(.Test) \(.Elapsed)") | join(", ")
-		| select(. != "") | "e2e: slowest tests (s): " + .' "$GO_TEST_JSON" 2>/dev/null || true
+	# The CI stage script sets GO_TEST_JSON for the test command only, so this
+	# script reads the file CI uses when the variable is not set here.
+	local events="${GO_TEST_JSON:-build/acceptance/results/go-e2e.json}"
+	[[ -s "$events" ]] || return 0
+	python3 -I - "$events" <<'PY' || true
+import json
+import sys
+
+tests = []
+for line in open(sys.argv[1]):
+    try:
+        event = json.loads(line)
+    except ValueError:
+        continue
+    name = event.get("Test", "")
+    if event.get("Action") in ("pass", "fail") and name and "/" not in name:
+        tests.append((event.get("Elapsed", 0), name))
+tests.sort(reverse=True)
+if tests:
+    print("e2e: slowest tests (s): " + ", ".join(f"{name} {elapsed}" for elapsed, name in tests[:10]))
+PY
 }
 
 # Read by cleanup, which can run before the port-forwards start.
