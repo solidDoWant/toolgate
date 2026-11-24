@@ -112,6 +112,16 @@ summary_line() {
 	sort -n "$marks" | awk '{ line = line (line == "" ? "" : ", ") $2 " " $1 } END { print "e2e: step finished at (s): " line }'
 }
 
+# slowest_tests prints the ten top-level tests with the longest wall time from
+# the go test -json events in $GO_TEST_JSON, when the caller wrote them. A
+# parallel test's time includes the time it waited for the serial tests.
+slowest_tests() {
+	[[ -n "${GO_TEST_JSON:-}" && -s "$GO_TEST_JSON" ]] || return 0
+	jq -r -s '[.[] | select((.Action == "pass" or .Action == "fail") and .Test != null and (.Test | contains("/") | not))]
+		| sort_by(-.Elapsed) | .[:10] | map("\(.Test) \(.Elapsed)") | join(", ")
+		| select(. != "") | "e2e: slowest tests (s): " + .' "$GO_TEST_JSON" 2>/dev/null || true
+}
+
 # Read by cleanup, which can run before the port-forwards start.
 lgtm_forwards=()
 
@@ -120,6 +130,8 @@ cleanup() {
 	mark tests-end
 	local summary
 	summary="$(summary_line)"
+	local slowest
+	slowest="$(slowest_tests)"
 	if ((status != 0)); then
 		log "a step failed; cluster state:"
 		kubectl get pods --all-namespaces -o wide >&2 || true
@@ -141,6 +153,7 @@ cleanup() {
 		rm -rf "$work"
 	fi
 	[[ -z "$summary" ]] || echo "$summary" >&2
+	[[ -z "$slowest" ]] || echo "$slowest" >&2
 	exit "$status"
 }
 trap cleanup EXIT
