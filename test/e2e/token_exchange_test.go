@@ -278,6 +278,15 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 		assert.Empty(t, endpoint.Requests(), "the token endpoint receives nothing")
 	})
 
+	// This runs before the short-lived token starts, so its wait cannot
+	// eat into that token's lifetime.
+	t.Run("a refused user gets no instance and the reason names the exchange", func(t *testing.T) {
+		result := awaitEnable(t, startEnable(t, carol, name))
+		assert.Contains(t, result.err, "Token exchange `"+name+"` failed", "tools %v", result.tools)
+		assert.Contains(t, result.err, "invalid_grant")
+		assert.Empty(t, instanceIDs(t, admin, name), "carol has no instance")
+	})
+
 	var aliceInstance string
 
 	t.Run("two users get instances with their own tokens", func(t *testing.T) {
@@ -303,13 +312,6 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 		// not fixed; each user's token carries that user's name.
 		assert.Contains(t, exchangedToken(t, alice, name), "exchanged-alice-")
 		assert.Contains(t, exchangedToken(t, bob, name), "exchanged-bob-")
-	})
-
-	t.Run("a refused user gets no instance and the reason names the exchange", func(t *testing.T) {
-		result := awaitEnable(t, startEnable(t, carol, name))
-		assert.Contains(t, result.err, "Token exchange `"+name+"` failed", "tools %v", result.tools)
-		assert.Contains(t, result.err, "invalid_grant")
-		assert.Len(t, instanceIDs(t, admin, name), 2, "carol has no instance")
 	})
 
 	t.Run("the token is refreshed in place while the user keeps working", func(t *testing.T) {
