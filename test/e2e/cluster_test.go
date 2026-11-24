@@ -26,6 +26,26 @@ const gatewayServiceAccount = "toolgate"
 // install it made for itself with installGateway.
 var ownInstances sync.Map
 
+// ownReplicas maps the name of a top-level test to the number of gateway pods
+// of its own install, when that is not the default.
+var ownReplicas sync.Map
+
+// defaultGatewayReplicas is the number of gateway pods of the harness install.
+const defaultGatewayReplicas = 2
+
+// gatewayReplicas returns how many gateway pods the install the test talks to
+// runs.
+func gatewayReplicas(t testing.TB) int {
+	t.Helper()
+
+	top, _, _ := strings.Cut(t.Name(), "/")
+	if replicas, found := ownReplicas.Load(top); found {
+		return replicas.(int)
+	}
+
+	return defaultGatewayReplicas
+}
+
 // releaseNamespace returns the namespace of the gateway install the test
 // talks to: the one the test installed for itself, or else the harness's.
 func releaseNamespace(t testing.TB) string {

@@ -144,7 +144,7 @@ func auditEventLinks(t *testing.T, browser context.Context, publicURL, server st
 func TestAuditPayloads(t *testing.T) {
 	// It upgrades the chart with new settings, so it runs on its own install.
 	t.Parallel()
-	installGateway(t, gatewayInstallOptions{})
+	installGateway(t, gatewayInstallOptions{Replicas: 1})
 
 	image := mcpServerImage(t)
 	admin := adminClient(t)

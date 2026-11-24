@@ -153,6 +153,14 @@ build_images() {
 	docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
 }
 
+# The e2e test binary and the helper programs compile in the background too,
+# so the build cache is warm when the chart install and the tests need them.
+{
+	go test -tags e2e -c -o /dev/null ./test/e2e
+	go build -o /dev/null ./test/resolver/cmd/resolver ./test/keyset/cmd/keyset
+} >"$work/warm-build.log" 2>&1 &
+warm_pid=$!
+
 # The images build in the background while the kind cluster comes up.
 build_images >"$work/build-images.log" 2>&1 &
 build_pid=$!
@@ -263,6 +271,7 @@ export TOOLGATE_E2E_UI_LISTEN="127.0.0.1:$ui_port"
 # The test resolver runs in the test process too, over HTTPS with a
 # self-signed certificate the gateway trusts through the resolver's caFile.
 resolver_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
+wait "$warm_pid" || { cat "$work/warm-build.log" >&2; log "compiling the test programs failed"; exit 1; }
 mkdir -p "$work/resolver"
 go run ./test/resolver/cmd/resolver -write-cert "$work/resolver" -host "$host_address" >&2
 export TOOLGATE_E2E_RESOLVER_LISTEN="$host_address:$resolver_port"
