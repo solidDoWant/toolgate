@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -28,25 +29,21 @@ var harnessSecrets = []string{"toolgate-resolver-ca", "toolgate-secrets-keyset"}
 // fake identity provider gives every principal a row with both defaults all
 // in each of them, as it does in the harness's database.
 var (
-	extraScopeMutex     sync.Mutex
+	extraScopeMutex     sync.RWMutex
 	extraScopeDatabases = map[string]func(context.Context, string) error{}
 )
 
 // ensureExtraUserScopes is called by the identity provider's hook for every
-// principal.
+// principal. It holds the read lock while the callbacks run, so an install's
+// cleanup, which takes the write lock to remove its callback, waits for calls
+// in flight before it closes the pool.
 func ensureExtraUserScopes(ctx context.Context, subject string) error {
-	extraScopeMutex.Lock()
+	extraScopeMutex.RLock()
+	defer extraScopeMutex.RUnlock()
 
-	ensures := make([]func(context.Context, string) error, 0, len(extraScopeDatabases))
-	for _, ensure := range extraScopeDatabases {
-		ensures = append(ensures, ensure)
-	}
-
-	extraScopeMutex.Unlock()
-
-	for _, ensure := range ensures {
+	for namespace, ensure := range extraScopeDatabases {
 		if err := ensure(ctx, subject); err != nil {
-			return err
+			return fmt.Errorf("ensuring the user scope of a principal in the database of install %q: %w", namespace, err)
 		}
 	}
 
