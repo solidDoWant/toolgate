@@ -233,12 +233,17 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 
 	// The first instance starts with a long lifetime, so a slow start (the
 	// image pull) can't expire its token. Once it is ready the lifetime
-	// drops to just over the shortest one the gateway accepts, so the
-	// half-life refresh and the expiry of the next instance's token both
-	// happen within the test.
+	// drops to a short one, so the half-life refresh and the expiry of the
+	// next instance's token both happen within the test.
 	const startLifetime = 10 * time.Minute
 
-	shortLifetime := scaled(credentials.MinExchangedTokenLifetime) + 5*time.Second
+	// The refresh must land in the second half of the short lifetime: the
+	// next start uses part of it, then the test's next call, the exchange,
+	// the delivery and the reconcile pass that writes the Secret, all on a
+	// loaded cluster. Half of a lifetime just over the minimum (about 8 s
+	// at the e2e time scale) is too little for that, and the instance then
+	// stops at the expiry before the refresh is in the Secret.
+	shortLifetime := scaled(credentials.MinExchangedTokenLifetime) * 5 / 2
 	endpoint := testTokenEndpoint(t, startLifetime)
 	endpoint.Refuse("carol", "invalid_grant")
 
