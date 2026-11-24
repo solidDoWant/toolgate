@@ -141,9 +141,15 @@ PY
 
 # Read by cleanup, which can run before the port-forwards start.
 lgtm_forwards=()
+flux_pid=
 
 cleanup() {
 	local status=$?
+	if [[ -n "$flux_pid" ]] && ! wait "$flux_pid"; then
+		cat "$work/flux-install.log" >&2
+		log "installing Flux failed"
+		((status != 0)) || status=1
+	fi
 	mark tests-end
 	local summary
 	summary="$(summary_line)"
@@ -513,14 +519,8 @@ export TOOLGATE_E2E_S3_ENDPOINT="http://s3.$deps_namespace.svc:7070"
 export TOOLGATE_E2E_CHART_REPOSITORY="oci://registry.$deps_namespace.svc:5000/charts/mcpserver"
 
 # Flux keeps installing while the tests run: only the tests that create
-# HelmReleases need it, and they wait for it themselves.
+# HelmReleases need it, and they wait for it themselves. cleanup fails the
+# run when the install failed.
 mark tests-start
 log "running: $*"
-test_status=0
-"$@" || test_status=$?
-if ! wait "$flux_pid"; then
-	cat "$work/flux-install.log" >&2
-	log "installing Flux failed"
-	((test_status != 0)) || test_status=1
-fi
-exit "$test_status"
+"$@"
