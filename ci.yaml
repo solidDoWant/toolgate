@@ -109,3 +109,4 @@ release:
   charts:
     - deploy/charts/toolgate
   chart-registry: oci://ghcr.io/soliddowant/charts
+# operator probe: verifying the kind image cache (do not merge)
