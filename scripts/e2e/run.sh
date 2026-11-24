@@ -244,10 +244,13 @@ kind_config() {
 	fi
 }
 
-# One kind create attempt; its output goes to stderr and to $1.
+# One kind create attempt; its output goes to stderr and to $1. It does not
+# pass --wait: kubeadm already returns once the API server answers, and every
+# later step (rollout status, Flux and the chart's --wait) waits for the node
+# and the pods it needs, so waiting for node readiness here only adds time.
 create_cluster() {
 	local output="$1"
-	kind_config | kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m --config=- 2>&1 | tee "$output" >&2
+	kind_config | kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --config=- 2>&1 | tee "$output" >&2
 }
 
 # kind gives up when the node's systemd is slow to boot on a busy host. That
