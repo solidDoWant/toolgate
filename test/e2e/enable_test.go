@@ -509,13 +509,14 @@ func TestEnableAndDisable(t *testing.T) {
 		tools := enable(t, session, name)
 		assert.ElementsMatch(t, prefixedTools(name), tools)
 
+		// Progress rides the enable call's own response stream and list_changed
+		// the session's stream, so the client may see them in either order.
+		// Both must arrive.
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
-			assert.Contains(collect, session.recorded(), eventListChanged)
+			events := session.recorded()
+			assert.Contains(collect, events, eventListChanged, "events: %v", events)
+			assert.Contains(collect, events, eventProgress, "events: %v", events)
 		}, time.Minute, 100*time.Millisecond)
-
-		events := session.recorded()
-		first := slices.Index(events, eventListChanged)
-		assert.Contains(t, events[:first], eventProgress, "progress comes before list_changed: %v", events)
 
 		listed := listedTools(t, t.Context(), session.session)
 		assert.Subset(t, listed, prefixedTools(name))
