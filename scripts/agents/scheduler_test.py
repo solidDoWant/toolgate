@@ -883,6 +883,11 @@ class SchedulerTest(unittest.TestCase):
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", marker],
                                 start_new_session=True)
         try:
+            # Reconcile reads the command line; wait until the child has exec'd.
+            deadline = time.monotonic() + 10
+            while marker not in s.proc_cmdline(proc.pid):
+                self.assertLess(time.monotonic(), deadline, "child never showed its marker")
+                time.sleep(0.01)
             log = Path(self.tmp.name) / "dead.jsonl"
             log.write_text(json.dumps({"type": "result", "result": "x\nHANDOFF: done", "is_error": False,
                                        "session_id": "D"}) + "\n")
