@@ -165,18 +165,36 @@ warm_pid=$!
 build_images >"$work/build-images.log" 2>&1 &
 build_pid=$!
 
-# One kind create attempt; its output goes to stderr and to $1.
-create_cluster() {
-	local output="$1"
+# etcd keeps its data in /tmp, which a kind node mounts as tmpfs. On a slow
+# disk every API write waits for an etcd fsync, which makes the tests slow
+# each other down. The cluster lives for one run, so losing etcd's data on a
+# node restart does not matter.
+etcd_patch='kind: ClusterConfiguration
+etcd:
+  local:
+    dataDir: /tmp/etcd'
+
+# The kind configuration: the CI one when ci-kind-config exists, else a plain
+# single-node cluster, with etcd on tmpfs either way.
+kind_config() {
 	if command -v ci-kind-config >/dev/null; then
 		# Tekton CI: the nodes pull through the CI cluster's registrygate and keep
 		# their image cache between builds, keyed by the cluster's name (ci.yaml
 		# gives the e2e stage a fixed one).
 		ci-kind-config --name "$cluster" --image "$kind_node_image" |
-			kind create cluster --kubeconfig "$KUBECONFIG" --wait 3m --config=- 2>&1 | tee "$output" >&2
+			ETCD_PATCH="$etcd_patch" yq '.kubeadmConfigPatches += [strenv(ETCD_PATCH)]'
 	else
-		kind create cluster --image "$kind_node_image" --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m 2>&1 | tee "$output" >&2
+		ETCD_PATCH="$etcd_patch" NODE_IMAGE="$kind_node_image" yq -n '
+			.kind = "Cluster" | .apiVersion = "kind.x-k8s.io/v1alpha4" |
+			.nodes = [{"role": "control-plane", "image": strenv(NODE_IMAGE)}] |
+			.kubeadmConfigPatches = [strenv(ETCD_PATCH)]'
 	fi
+}
+
+# One kind create attempt; its output goes to stderr and to $1.
+create_cluster() {
+	local output="$1"
+	kind_config | kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --wait 3m --config=- 2>&1 | tee "$output" >&2
 }
 
 # kind gives up when the node's systemd is slow to boot on a busy host. That
