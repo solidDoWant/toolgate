@@ -490,8 +490,6 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--wait --timeout 5m >&2
 
 mark gateway
-wait "$flux_pid" || { cat "$work/flux-install.log" >&2; log "installing Flux failed"; exit 1; }
-cat "$work/flux-install.log" >&2
 wait "$lgtm_rollout_pid" || { cat "$work/lgtm-rollout.log" >&2; log "the telemetry backend did not start"; exit 1; }
 
 # Port-forwards to the telemetry test backend, alive until the script exits.
@@ -514,6 +512,15 @@ export TOOLGATE_E2E_TEMPLATE_SECRETS_NAMESPACE="$template_secrets_namespace"
 export TOOLGATE_E2E_S3_ENDPOINT="http://s3.$deps_namespace.svc:7070"
 export TOOLGATE_E2E_CHART_REPOSITORY="oci://registry.$deps_namespace.svc:5000/charts/mcpserver"
 
+# Flux keeps installing while the tests run: only the tests that create
+# HelmReleases need it, and they wait for it themselves.
 mark tests-start
 log "running: $*"
-"$@"
+test_status=0
+"$@" || test_status=$?
+if ! wait "$flux_pid"; then
+	cat "$work/flux-install.log" >&2
+	log "installing Flux failed"
+	((test_status != 0)) || test_status=1
+fi
+exit "$test_status"
