@@ -218,7 +218,10 @@ func monitorStateless(t *testing.T, upstream *statelessUpstream, interval time.D
 
 func TestStatelessMonitorFailsAfterThreeFailedDiscovers(t *testing.T) {
 	upstream := newStatelessUpstream(t)
-	healthRows := monitorStateless(t, upstream, 20*time.Millisecond)
+	// The interval also bounds each health check, so a very short one makes
+	// slow checks on a loaded machine fail the instance before the upstream
+	// refuses.
+	healthRows := monitorStateless(t, upstream, 250*time.Millisecond)
 
 	upstream.refuseDiscover.Store(true)
 
