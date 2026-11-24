@@ -347,7 +347,7 @@ A template without `healthCheck` behaves as in phase 2: `health_check` is null, 
 ### Object health after `ready`
 
 AC-3-14. This is phase 2 §7's readiness rule applied to `ready` instances, which `Starter.checkReady` already does on every step.
-- On each 30 s pass, and on each notification for the row, the reconciler judges every object of a `ready` instance. It uses kstatus, with phase 2's rule first: a `Ready` condition that has been `False` for at least 60 s at its object's current generation (read from the condition's own `observedGeneration`) counts as failed.
+- On each 30 s pass, and on each notification for the row, the reconciler judges every object of a `ready` instance. It uses kstatus, with phase 2's rule first: a `Ready` condition that has been `False` for at least 60 s at its object's current generation (read from the condition's own `observedGeneration`) counts as failed. As in phase 2, the rule doesn't judge core `Pod` objects.
 - A failed object marks the instance unhealthy with the reason "`<Kind>` `<name>` failed: `<Ready message>`", and it's repaired as its template's `healthCheck.onFailure` says, bounded by `maxRepairs` (above). A template without `healthCheck` uses `replace` with the default bound. When the object is ready again, the instance becomes healthy.
 - **Bound:** within 60 s of the condition turning `False`, plus up to one 30 s pass.
 - Objects whose `Ready` condition has no `observedGeneration`, such as Pods, are judged by kstatus alone, as in phase 2. A pod that only restarts is left to the health checks.

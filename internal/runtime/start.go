@@ -763,7 +763,7 @@ func (s *Starter) objectsCurrent(ctx context.Context, instance db.Instance, temp
 		for index := range list.Items {
 			object := &list.Items[index]
 
-			if message, held, ok := readyFalse(object, s.now()); ok && held >= testtime.Scale(ReadyFailureHold) {
+			if message, held, ok := readyFalse(object, s.now()); ok && held >= testtime.Scale(ReadyFailureHold) && kind != podKind {
 				return false, truncate(fmt.Sprintf("%s %s failed: %s", kind.Kind, object.GetName(), message), maxReasonBytes), nil
 			}
 
@@ -810,6 +810,14 @@ func readinessKinds(template *v1alpha1.MCPServerTemplate) []schema.GroupVersionK
 
 	return kinds
 }
+
+// podKind is exempt from the ReadyFailureHold rule. Since Kubernetes 1.33 a
+// Pod's Ready condition carries observedGeneration, and a Pod reports
+// Ready=False from its creation until its containers are ready, so a slow
+// image pull would fail the start long before startTimeout. kstatus judges
+// a Pod's real failures, startTimeout bounds its start, and health checks
+// judge it once the instance is ready.
+var podKind = corev1.SchemeGroupVersion.WithKind("Pod")
 
 // ReadyFailureHold is how long an object's Ready condition must stay False
 // at the object's current generation before the object counts as failed.
