@@ -15,7 +15,11 @@
 # Environment: VERSION (default 0.0.0-dev), IMAGE (default
 # ghcr.io/soliddowant/toolgate), PUSH_ALL (default false), OUT_DIR (default
 # build/images), GO_TAGS (Go build tags, default none; scripts/e2e/run.sh sets
-# e2e for the test-only gateway image, releases never set it).
+# e2e for the test-only gateway image, releases never set it), ARCHS (all, the
+# default, or host for this machine's architecture only) and VULNCHECK (true,
+# the default, or false to skip govulncheck). scripts/e2e/run.sh sets
+# ARCHS=host and VULNCHECK=false for the test image; PUSH_ALL=true refuses
+# both.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
@@ -24,7 +28,29 @@ image="${IMAGE:-ghcr.io/soliddowant/toolgate}"
 push_all="${PUSH_ALL:-false}"
 out_dir="${OUT_DIR:-build/images}"
 go_tags="${GO_TAGS:-}"
-architectures=(amd64 arm64)
+archs="${ARCHS:-all}"
+vulncheck="${VULNCHECK:-true}"
+
+for setting in "VULNCHECK=$vulncheck" "PUSH_ALL=$push_all"; do
+	case "${setting#*=}" in
+	true | false) ;;
+	*)
+		echo "build-images: ${setting%%=*} must be true or false, not '${setting#*=}'" >&2
+		exit 2
+		;;
+	esac
+done
+case "$archs" in
+all | host) ;;
+*)
+	echo "build-images: ARCHS must be all or host, not '$archs'" >&2
+	exit 2
+	;;
+esac
+if [[ "$push_all" == true && ( "$archs" != all || "$vulncheck" != true ) ]]; then
+	echo "build-images: PUSH_ALL=true needs ARCHS=all and VULNCHECK=true" >&2
+	exit 2
+fi
 
 case "$push_all" in
 true | false) ;;
@@ -43,6 +69,12 @@ aarch64 | arm64) host_arch=arm64 ;;
 	;;
 esac
 
+if [[ "$archs" == host ]]; then
+	architectures=("$host_arch")
+else
+	architectures=(amd64 arm64)
+fi
+
 mkdir -p "$out_dir"
 out_dir="$(cd "$out_dir" && pwd)"
 
@@ -55,14 +87,16 @@ for arch in "${architectures[@]}"; do
 		-o "$binary" ./cmd/toolgate
 done
 
-for arch in "${architectures[@]}"; do
-	binary="$out_dir/linux_$arch/toolgate"
-	echo "build-images: govulncheck -mode=binary $binary"
-	if ! govulncheck -mode=binary "$binary"; then
-		echo "build-images: govulncheck failed for $binary; no image was built" >&2
-		exit 1
-	fi
-done
+if [[ "$vulncheck" == true ]]; then
+	for arch in "${architectures[@]}"; do
+		binary="$out_dir/linux_$arch/toolgate"
+		echo "build-images: govulncheck -mode=binary $binary"
+		if ! govulncheck -mode=binary "$binary"; then
+			echo "build-images: govulncheck failed for $binary; no image was built" >&2
+			exit 1
+		fi
+	done
+fi
 
 for arch in "${architectures[@]}"; do
 	echo "build-images: building the linux/$arch image"

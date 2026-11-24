@@ -168,6 +168,21 @@ if crane manifest "$noop_image:$version" >/dev/null 2>&1; then
 	fail "build-images pushed although PUSH_ALL is not set"
 fi
 
+echo "== test mode builds the host architecture only, without govulncheck"
+host_image="127.0.0.1:$port/toolgate-host"
+images+=("$host_image:$version")
+: >"$work/govulncheck-pass.calls"
+PATH="$stub_dir:$PATH" ARCHS=host VULNCHECK=false VERSION="$version" IMAGE="$host_image" OUT_DIR="$work/host" \
+	./scripts/build-images.sh >"$work/host.log" 2>&1 || fail "build-images with ARCHS=host VULNCHECK=false failed"
+[[ $(find "$work/host" -name toolgate -type f | wc -l) -eq 1 ]] || fail "ARCHS=host built more than one binary"
+[[ ! -s "$work/govulncheck-pass.calls" ]] || fail "govulncheck ran although VULNCHECK=false"
+
+echo "== a push refuses test mode"
+if PATH="$stub_dir:$PATH" PUSH_ALL=true ARCHS=host VERSION="$version" IMAGE="$host_image" OUT_DIR="$work/host" \
+	./scripts/build-images.sh >"$work/hostpush.log" 2>&1; then
+	fail "PUSH_ALL=true was accepted with ARCHS=host"
+fi
+
 if ((failures > 0)); then
 	echo "build-images_test: $failures failure(s)" >&2
 	exit 1
