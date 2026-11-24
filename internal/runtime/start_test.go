@@ -913,15 +913,39 @@ func atGeneration(condition map[string]any, generation int64) map[string]any {
 	return condition
 }
 
+// notReadyPodAtGeneration is a running pod whose Ready condition has been
+// False for age at the pod's generation, as Kubernetes 1.33 and later
+// report it while the pod's containers start.
+func notReadyPodAtGeneration(age time.Duration) *corev1.Pod {
+	pod := readyPod()
+	pod.Generation = 1
+	pod.Status.ObservedGeneration = 1
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodReady, Status: corev1.ConditionFalse, Reason: "ContainersNotReady",
+		Message: "containers with unready status: [mcp]", ObservedGeneration: 1,
+		LastTransitionTime: metav1.NewTime(time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC).Add(-age)),
+	}}
+
+	return pod
+}
+
 func TestStarterReadyConditionRule(t *testing.T) {
 	const message = "Helm install failed for release tg/server: the value image is required"
 
 	tests := []struct {
-		name       string
-		release    *unstructured.Unstructured
+		name    string
+		release *unstructured.Unstructured
+		// pod defaults to a ready pod.
+		pod        *corev1.Pod
 		wantStatus string
 		wantReason string
 	}{
+		{
+			name:       "a starting pod whose Ready has been False for 5 min at its generation waits for startTimeout",
+			pod:        notReadyPodAtGeneration(5 * time.Minute),
+			release:    helmRelease(2, atGeneration(condition("Ready", "True", "InstallSucceeded", "installed", time.Hour), 2)),
+			wantStatus: "starting",
+		},
 		{
 			name:       "Ready False for exactly 60 s at the current generation fails with the Ready message",
 			release:    helmRelease(-1, atGeneration(condition("Ready", "False", "InstallFailed", message, 60*time.Second), 2)),
@@ -967,7 +991,12 @@ func TestStarterReadyConditionRule(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "starting", readyPod(), test.release)
+			pod := test.pod
+			if pod == nil {
+				pod = readyPod()
+			}
+
+			fixture := newStarterFixture(t, testTemplate(helmReleaseResource), "starting", pod, test.release)
 
 			require.NoError(t, fixture.starter.Step(t.Context(), fixture.instance))
 
@@ -984,7 +1013,7 @@ func TestStarterReadyObjectHealth(t *testing.T) {
 	customCheck := []byte(`{"http":{"service":"mcp","port":8080,"path":"/healthz"}}`)
 
 	// notReadyPod is a running pod whose Ready condition has been False for
-	// an hour; a pod's conditions carry no observedGeneration.
+	// an hour, without observedGeneration, as Kubernetes before 1.33 reports it.
 	notReadyPod := readyPod()
 	notReadyPod.Status.Conditions = []corev1.PodCondition{{
 		Type: corev1.PodReady, Status: corev1.ConditionFalse, Reason: "ContainersNotReady",
@@ -1022,6 +1051,11 @@ func TestStarterReadyObjectHealth(t *testing.T) {
 		{
 			name:    "a pod without observedGeneration is judged by kstatus alone: not ready for an hour is only in progress",
 			pod:     notReadyPod,
+			release: helmRelease(2, atGeneration(condition("Ready", "True", "UpgradeSucceeded", "upgraded", time.Hour), 2)),
+		},
+		{
+			name:    "a pod whose Ready has been False for an hour at its generation is judged by kstatus alone",
+			pod:     notReadyPodAtGeneration(time.Hour),
 			release: helmRelease(2, atGeneration(condition("Ready", "True", "UpgradeSucceeded", "upgraded", time.Hour), 2)),
 		},
 		{
