@@ -112,6 +112,18 @@ summary_line() {
 	sort -n "$marks" | awk '{ line = line (line == "" ? "" : ", ") $2 " " $1 } END { print "e2e: step finished at (s): " line }'
 }
 
+# kind_error_summary prints the lines of kind's output that say why it failed
+# (its ERROR lines and the failed steps), for each attempt. A CI check run
+# keeps only the end of the log, so cleanup prints this last.
+kind_error_summary() {
+	local attempt_log label
+	for label in first second; do
+		attempt_log="$work/kind-create-$label.log"
+		[[ -s "$attempt_log" ]] || continue
+		echo "e2e: kind $label attempt: $(grep -E '^ERROR|^Command Output|✗' "$attempt_log" | cut -c1-300 | head -n 6 | tr '\n' '|')"
+	done
+}
+
 # slowest_tests prints the five top-level tests with the longest wall time from
 # the go test -json events the CI stage writes. A
 # parallel test's time includes the time it waited for the serial tests.
@@ -149,6 +161,11 @@ cleanup() {
 	summary="$(summary_line)"
 	local slowest
 	slowest="$(slowest_tests)"
+	local kind_errors=""
+	if ((status != 0)) && ! grep -qx '[0-9]* kind' "$marks" 2>/dev/null; then
+		cp "$work/kind-create.log" "$work/kind-create-second.log" 2>/dev/null || true
+		kind_errors="$(kind_error_summary)"
+	fi
 	if ((status != 0)) && ! grep -qx '[0-9]* kind' "$marks" 2>/dev/null; then
 		# No cluster came up: kubectl has nothing to talk to, so show what kind
 		# said and what the node logged. The check run keeps only the end of the
@@ -186,6 +203,7 @@ cleanup() {
 	# run keeps only the end of a long log, and the step times matter most.
 	[[ -z "$slowest" ]] || echo "$slowest" >&2
 	[[ -z "$summary" ]] || echo "$summary" >&2
+	[[ -z "$kind_errors" ]] || echo "$kind_errors" >&2
 	exit "$status"
 }
 trap cleanup EXIT
