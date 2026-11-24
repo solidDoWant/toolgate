@@ -116,10 +116,28 @@ summary_line() {
 # the go test -json events in $GO_TEST_JSON, when the caller wrote them. A
 # parallel test's time includes the time it waited for the serial tests.
 slowest_tests() {
-	[[ -n "${GO_TEST_JSON:-}" && -s "$GO_TEST_JSON" ]] || return 0
-	jq -r -s '[.[] | select((.Action == "pass" or .Action == "fail") and .Test != null and (.Test | contains("/") | not))]
-		| sort_by(-.Elapsed) | .[:10] | map("\(.Test) \(.Elapsed)") | join(", ")
-		| select(. != "") | "e2e: slowest tests (s): " + .' "$GO_TEST_JSON" 2>/dev/null || true
+	[[ -n "${GO_TEST_JSON:-}" ]] || return 0
+	if [[ ! -s "$GO_TEST_JSON" ]]; then
+		echo "e2e: no go test events in $GO_TEST_JSON"
+		return 0
+	fi
+	python3 -I - "$GO_TEST_JSON" <<'PY' || true
+import json
+import sys
+
+tests = []
+for line in open(sys.argv[1]):
+    try:
+        event = json.loads(line)
+    except ValueError:
+        continue
+    name = event.get("Test", "")
+    if event.get("Action") in ("pass", "fail") and name and "/" not in name:
+        tests.append((event.get("Elapsed", 0), name))
+tests.sort(reverse=True)
+if tests:
+    print("e2e: slowest tests (s): " + ", ".join(f"{name} {elapsed}" for elapsed, name in tests[:10]))
+PY
 }
 
 # Read by cleanup, which can run before the port-forwards start.
