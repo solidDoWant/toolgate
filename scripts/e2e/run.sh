@@ -185,7 +185,7 @@ s3_image="$(pinned_image S3Image internal/testutil/s3.go)"
 
 build_images() {
 	log "building the e2e gateway image $gateway_repository:$image_tag"
-	GO_TAGS=e2e VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
+	ARCHS=host VULNCHECK=false GO_TAGS=e2e VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
 	mark gw-image
 
 	log "building the test MCP server image $mcpserver_image"
