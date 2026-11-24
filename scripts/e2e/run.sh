@@ -311,19 +311,8 @@ if ! create_cluster "$work/kind-create.log"; then
 fi
 mark kind
 touch "$work/cluster-ready"
-# Flux and the dependencies (PostgreSQL, S3, the registry, the telemetry
-# backend) pull their own images, so they start as soon as the cluster is up,
-# while the gateway images still build and then load. Nothing before the tests
-# needs Flux.
-log "installing Flux"
-{
-	flux install --timeout 5m
-	status=$?
-	mark flux
-	exit "$status"
-} >"$work/flux-install.log" 2>&1 &
-flux_pid=$!
-
+# PostgreSQL, S3 and the registry pull their own images, so they start as soon
+# as the cluster is up, while the gateway images still build and then load.
 log "installing PostgreSQL and S3"
 postgres_password="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
 s3_access_key="e2e$suffix"
@@ -337,7 +326,6 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 	(select(.kind == "Deployment" and .metadata.name == "postgres") | .spec.template.spec.containers[0].image) = strenv(POSTGRES_IMAGE) |
 	(select(.kind == "Deployment" and .metadata.name == "s3") | .spec.template.spec.containers[0].image) = strenv(S3_IMAGE)
 ' test/e2e/manifests/dependencies.yaml | kubectl -n "$deps_namespace" apply -f - >&2
-kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
 kubectl apply -f test/e2e/manifests/storageclass.yaml >&2
 for index in "${!image_names[@]}"; do
 	if ! wait "${image_pids[$index]}"; then
@@ -348,8 +336,25 @@ for index in "${!image_names[@]}"; do
 	cat "$work/build-${image_names[$index]}.log" >&2
 done
 mark loaded
-kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry --timeout 5m >&2
+kubectl wait --for=condition=Ready node --all --timeout 5m >&2
+mark node-ready
+for deployment in postgres s3 registry; do
+	kubectl -n "$deps_namespace" rollout status "deployment/$deployment" --timeout 5m >&2
+	mark "$deployment"
+done
 mark deps
+# Flux and the telemetry backend are big images and only the tests need them.
+# They start once PostgreSQL, S3 and the registry are ready, so their pulls
+# do not slow the pulls the gateway install waits for.
+kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
+log "installing Flux"
+{
+	flux install --timeout 5m
+	status=$?
+	mark flux
+	exit "$status"
+} >"$work/flux-install.log" 2>&1 &
+flux_pid=$!
 # The telemetry backend is only needed by the tests; it finishes starting
 # while the chart installs.
 {
