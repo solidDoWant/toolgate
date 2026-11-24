@@ -148,7 +148,7 @@ DEFAULT_CONFIG = {
     # Stages whose failures are almost always real: they go straight to the worker
     # instead of costing a full CI re-run first. Other stages (e2e) are re-run once unless
     # their failure report shows a test assertion failure (is_assertion_failure).
-    "no_rerun_jobs": ["stage: lint", "stage: unit", "stage: generate", "stage: integration", "stage: docs", "stage: test-guard"],
+    "no_rerun_jobs": ["stage: lint", "stage: unit", "stage: scripts", "stage: generate", "stage: integration", "stage: docs", "stage: test-guard"],
     "failure_backoff_s": 120,
     "failure_backoff_max_s": 1800,
     "max_consecutive_failures": 3,
