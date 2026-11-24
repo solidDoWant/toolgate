@@ -99,6 +99,9 @@ export KUBECONFIG="$work/kubeconfig"
 
 log() { echo "e2e: [$(date +%T)] $*" >&2; }
 
+# Read by cleanup, which can run before the port-forwards start.
+lgtm_forwards=()
+
 cleanup() {
 	local status=$?
 	if ((status != 0)); then
@@ -199,7 +202,6 @@ kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 de
 kubectl -n "$deps_namespace" rollout status deployment/otel-lgtm --timeout 5m >"$work/lgtm-rollout.log" 2>&1 &
 lgtm_rollout_pid=$!
 
-lgtm_forwards=()
 free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
 
 # A port-forward to PostgreSQL for the test process, which gives each test
