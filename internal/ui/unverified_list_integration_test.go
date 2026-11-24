@@ -64,6 +64,15 @@ func TestUnverifiedAllowListPage(t *testing.T) {
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.Navigate(env.server.URL+ui.WorkspacesPath)))
 		require.NoError(t, chromedp.Do(ctx, toolgatetest.SignInToOIDC(user), chromedp.WaitVisible(save)))
 
+		// The page text depends on the stylesheet, which hides the server
+		// list. The form shows before the stylesheet has loaded, and the
+		// load event waits for it.
+		require.Eventually(t, func() bool {
+			loaded, err := chromedp.Run(ctx, chromedp.Evaluate[bool](`document.readyState === "complete"`))
+
+			return err == nil && loaded
+		}, time.Minute, 50*time.Millisecond)
+
 		assert.True(t, pageShows(ctx, "Only these servers"))
 		assert.False(t, pageShows(ctx, "optin-server"), "the servers show only when \"Only these servers\" is picked")
 
