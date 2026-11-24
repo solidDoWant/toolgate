@@ -156,9 +156,10 @@ func TestGrants(t *testing.T) {
 
 		client := fixture.connectObserved(t, alice())
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
-		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+		before := listChangedAfterEnable(t, client)
+		require.True(t, time.Now().Before(expiresAt), "the grant expired before the enable's list_changed settled")
 
-		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, time.Until(expiresAt)+policyChangeBound, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return client.listChangedCount() == before+1 }, time.Until(expiresAt)+policyChangeBound, 10*time.Millisecond,
 			"no list_changed within 5 s of the grant's expiry")
 		assert.Less(t, time.Since(expiresAt), policyChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
@@ -180,17 +181,13 @@ func TestGrants(t *testing.T) {
 
 		client := fixture.connectObserved(t, alice())
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
-		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
 
 		bobs := fixture.connectObserved(t, bob())
 		fixture.enableWithTools(t, bobs, "open", "user:bob", "echo")
-		require.Eventually(t, func() bool { return bobs.listChangedCount() >= 1 }, waitTimeout, 10*time.Millisecond)
 
-		// An enable can send a second list_changed a moment after the first,
-		// when its tools and the discovery descriptions change in separate
-		// syncs. Count only what the revoke causes: wait until bob's count
-		// holds still, then compare against it.
-		bobsBefore := settledListChangedCount(t, bobs)
+		// Count only what the revoke causes.
+		before := listChangedAfterEnable(t, client)
+		bobsBefore := listChangedAfterEnable(t, bobs)
 
 		revoked := time.Now()
 
@@ -199,7 +196,7 @@ func TestGrants(t *testing.T) {
 		refused := callTool(t, client.session, "github__echo", map[string]any{"text": "x"})
 		assert.True(t, refused.IsError, "the next decision loads fresh state")
 
-		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, policyChangeBound, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return client.listChangedCount() == before+1 }, policyChangeBound, 10*time.Millisecond)
 		assert.Less(t, time.Since(revoked), policyChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
 		assert.Equal(t, bobsBefore, bobs.listChangedCount(), "bob's stream got a list_changed for alice's revoked grant")
@@ -247,7 +244,6 @@ func TestTemporaryBlocks(t *testing.T) {
 
 		first := fixture.connectObserved(t, alice())
 		fixture.enableWithTools(t, first, "github", "user:alice", "echo")
-		require.Eventually(t, func() bool { return first.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
 
 		other := fixture.replica(t)
 		second := fixture.connectObservedTo(t, other.URL, bob())
@@ -255,7 +251,10 @@ func TestTemporaryBlocks(t *testing.T) {
 		bobInstance := fixture.awaitInstance(t, fixture.catalogTemplate(t, "github"), "user:bob")
 		fixture.markReady(t, bobInstance.ID, "echo")
 		require.Empty(t, awaitEnable(t, results).err)
-		require.Eventually(t, func() bool { return second.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+
+		// Count only what the block causes.
+		firstBefore := listChangedAfterEnable(t, first)
+		secondBefore := listChangedAfterEnable(t, second)
 
 		created := time.Now()
 		block, expiresAt := fixture.insertBlock(t, v1alpha1.RuleMatch{Servers: []string{"github"}}, "Incident 7.", time.Hour, true)
@@ -263,8 +262,8 @@ func TestTemporaryBlocks(t *testing.T) {
 		// Exactly one list_changed per session: the block changes both the
 		// proxied tools and the discovery meta tools' descriptions in one sync.
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
-			assert.Equal(collect, 2, first.listChangedCount(), "list_changed on the replica the block was made on")
-			assert.Equal(collect, 2, second.listChangedCount(), "list_changed on the other replica")
+			assert.Equal(collect, firstBefore+1, first.listChangedCount(), "list_changed on the replica the block was made on")
+			assert.Equal(collect, secondBefore+1, second.listChangedCount(), "list_changed on the other replica")
 		}, policyChangeBound, 10*time.Millisecond, "not every replica sent exactly one list_changed within 5 s")
 		assert.Less(t, time.Since(created), policyChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, first.session))
@@ -287,13 +286,13 @@ func TestTemporaryBlocks(t *testing.T) {
 
 		client := fixture.connectObserved(t, alice())
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
-		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+		before := listChangedAfterEnable(t, client)
 
 		_, expiresAt := fixture.insertBlock(t, v1alpha1.RuleMatch{Tools: []string{"github__echo"}}, "Short freeze.", 3*time.Second, true)
-		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, policyChangeBound, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return client.listChangedCount() == before+1 }, policyChangeBound, 10*time.Millisecond)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
 
-		require.Eventually(t, func() bool { return client.listChangedCount() == 3 }, time.Until(expiresAt)+policyChangeBound, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return client.listChangedCount() == before+2 }, time.Until(expiresAt)+policyChangeBound, 10*time.Millisecond,
 			"no list_changed within 5 s of the block's expiry")
 		assert.Less(t, time.Since(expiresAt), policyChangeBound)
 		assert.ElementsMatch(t, append(metaToolNames, "github__echo"), toolNames(t, client.session))
@@ -309,7 +308,7 @@ func TestTemporaryBlocks(t *testing.T) {
 
 		client := fixture.connectObserved(t, alice())
 		fixture.enableWithTools(t, client, "github", "user:alice", "echo")
-		require.Eventually(t, func() bool { return client.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+		before := listChangedAfterEnable(t, client)
 
 		// The block's notification is lost: only the reconnect tells the
 		// replica about it.
@@ -320,14 +319,28 @@ func TestTemporaryBlocks(t *testing.T) {
 			"SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query LIKE 'LISTEN%' AND pid <> pg_backend_pid()) AS t").Scan(&terminated))
 		require.Positive(t, terminated)
 
-		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, policyChangeBound, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return client.listChangedCount() == before+1 }, policyChangeBound, 10*time.Millisecond,
 			"no list_changed after the LISTEN reconnect")
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
 
-		require.Eventually(t, func() bool { return client.listChangedCount() == 3 }, time.Until(expiresAt)+policyChangeBound, 10*time.Millisecond,
+		require.Eventually(t, func() bool { return client.listChangedCount() == before+2 }, time.Until(expiresAt)+policyChangeBound, 10*time.Millisecond,
 			"the expiry timer wasn't reset after the reconnect")
 		assert.ElementsMatch(t, append(metaToolNames, "github__echo"), toolNames(t, client.session))
 	})
+}
+
+// listChangedAfterEnable waits for the list_changed of an enable that
+// returned, then returns the client's count once it holds still. An enable
+// can send a second list_changed a moment after the first: the enable's own
+// sync and the sync for its instance's notification run at the same time,
+// and each can change the list. Counting from the settled value counts only
+// what the next change causes.
+func listChangedAfterEnable(t *testing.T, client *observedClient) int {
+	t.Helper()
+
+	require.Eventually(t, func() bool { return client.listChangedCount() >= 1 }, waitTimeout, 10*time.Millisecond, "no list_changed after the enable")
+
+	return settledListChangedCount(t, client)
 }
 
 // settledListChangedCount returns the client's list_changed count once it
