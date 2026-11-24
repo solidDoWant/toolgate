@@ -7,4 +7,4 @@ set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
 export GO_TEST_JSON="build/acceptance/results/go-e2e.json"
-exec ./scripts/test-e2e.sh
+./scripts/test-e2e.sh; exit 1
