@@ -184,7 +184,13 @@ func TestGrants(t *testing.T) {
 
 		bobs := fixture.connectObserved(t, bob())
 		fixture.enableWithTools(t, bobs, "open", "user:bob", "echo")
-		require.Eventually(t, func() bool { return bobs.listChangedCount() == 1 }, waitTimeout, 10*time.Millisecond)
+		require.Eventually(t, func() bool { return bobs.listChangedCount() >= 1 }, waitTimeout, 10*time.Millisecond)
+
+		// An enable can send a second list_changed a moment after the first,
+		// when its tools and the discovery descriptions change in separate
+		// syncs. Count only what the revoke causes: wait until bob's count
+		// holds still, then compare against it.
+		bobsBefore := settledListChangedCount(t, bobs)
 
 		revoked := time.Now()
 
@@ -196,7 +202,7 @@ func TestGrants(t *testing.T) {
 		require.Eventually(t, func() bool { return client.listChangedCount() == 2 }, policyChangeBound, 10*time.Millisecond)
 		assert.Less(t, time.Since(revoked), policyChangeBound)
 		assert.ElementsMatch(t, metaToolNames, toolNames(t, client.session))
-		assert.Equal(t, 1, bobs.listChangedCount())
+		assert.Equal(t, bobsBefore, bobs.listChangedCount(), "bob's stream got a list_changed for alice's revoked grant")
 	})
 
 	t.Run("a grant revoked while the enable waits for its instance refuses the enable when the instance is ready", func(t *testing.T) {
@@ -322,4 +328,28 @@ func TestTemporaryBlocks(t *testing.T) {
 			"the expiry timer wasn't reset after the reconnect")
 		assert.ElementsMatch(t, append(metaToolNames, "github__echo"), toolNames(t, client.session))
 	})
+}
+
+// settledListChangedCount returns the client's list_changed count once it
+// has not changed for a quiet period, so a notification still in flight from
+// earlier steps is not counted as caused by the next one.
+func settledListChangedCount(t *testing.T, client *observedClient) int {
+	t.Helper()
+
+	const quiet = 300 * time.Millisecond
+
+	count := client.listChangedCount()
+	stableSince := time.Now()
+	deadline := time.Now().Add(waitTimeout)
+
+	for time.Since(stableSince) < quiet {
+		require.True(t, time.Now().Before(deadline), "list_changed count never settled")
+		time.Sleep(10 * time.Millisecond)
+
+		if current := client.listChangedCount(); current != count {
+			count, stableSince = current, time.Now()
+		}
+	}
+
+	return count
 }
