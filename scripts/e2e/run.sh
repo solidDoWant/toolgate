@@ -99,11 +99,24 @@ export KUBECONFIG="$work/kubeconfig"
 
 log() { echo "e2e: [$(date +%T)] $*" >&2; }
 
+# mark records that a step finished, with the seconds since the script
+# started; steps that run at the same time record their own marks. The table
+# printed at the end shows where the time goes, also for a passing run.
+started_at=$SECONDS
+marks="$work/marks"
+mark() { printf '%6ds  %s\n' "$((SECONDS - started_at))" "$*" >>"$marks"; }
+print_marks() {
+	[[ -f "$marks" ]] || return 0
+	echo "e2e: seconds since the start, in the order the steps finished:" >&2
+	sort -n "$marks" >&2
+}
+
 # Read by cleanup, which can run before the port-forwards start.
 lgtm_forwards=()
 
 cleanup() {
 	local status=$?
+	mark "tests finished (status $status)"
 	if ((status != 0)); then
 		log "a step failed; cluster state:"
 		kubectl get pods --all-namespaces -o wide >&2 || true
@@ -112,11 +125,13 @@ cleanup() {
 		kubectl -n flux-system logs --all-containers --prefix --tail=20 --previous -l app.kubernetes.io/part-of=flux >&2 || true
 		kubectl -n kube-system logs --all-containers --prefix --tail=20 --previous -l k8s-app=kube-proxy >&2 || true
 	fi
+	print_marks
 	((${#lgtm_forwards[@]} == 0)) || kill "${lgtm_forwards[@]}" 2>/dev/null || true
 	if [[ "${E2E_KEEP_CLUSTER:-false}" == true ]]; then
 		log "keeping cluster $cluster (KUBECONFIG=$KUBECONFIG); delete it with: kind delete cluster --name $cluster"
 	else
 		kind delete cluster --name "$cluster" >&2 || true
+		log "the cluster is deleted, $((SECONDS - started_at)) s after the start"
 		# The images are tagged for this run only; without this they pile up
 		# in the Docker storage (and in CI's cached volume).
 		docker image rm "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >/dev/null 2>&1 || true
@@ -137,12 +152,14 @@ s3_image="$(pinned_image S3Image internal/testutil/s3.go)"
 build_images() {
 	log "building the e2e gateway image $gateway_repository:$image_tag"
 	GO_TAGS=e2e VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
+	mark "gateway image built"
 
 	log "building the test MCP server image $mcpserver_image"
 	mkdir -p "$work/mcpserver"
 	CGO_ENABLED=0 go build -trimpath -o "$work/mcpserver/mcpserver" ./test/mcpserver
 	printf 'FROM scratch\nCOPY mcpserver /mcpserver\nUSER 65532:65532\nEXPOSE 8080\nENTRYPOINT ["/mcpserver"]\n' >"$work/mcpserver/Dockerfile"
 	docker build --quiet --tag "$mcpserver_image" "$work/mcpserver" >&2
+	mark "test MCP server image built"
 
 	# The embeddings server stands in for text-embeddings-inference. The same
 	# binary is also installed as uvx, so it passes as the model download Job.
@@ -151,6 +168,7 @@ build_images() {
 	CGO_ENABLED=0 go build -trimpath -o "$work/embeddingsserver/embeddingsserver" ./test/embeddingsserver
 	printf 'FROM scratch\nCOPY embeddingsserver /embeddingsserver\nCOPY embeddingsserver /usr/local/bin/uvx\nUSER 1000:1000\nEXPOSE 80\nENTRYPOINT ["/embeddingsserver"]\n' >"$work/embeddingsserver/Dockerfile"
 	docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
+	mark "embeddings server image built"
 }
 
 # The e2e test binary and the helper programs compile in the background too,
@@ -158,6 +176,7 @@ build_images() {
 {
 	go test -tags e2e -c -o /dev/null ./test/e2e
 	go build -o /dev/null ./test/resolver/cmd/resolver ./test/keyset/cmd/keyset
+	mark "test binary and helpers compiled"
 } >"$work/warm-build.log" 2>&1 &
 warm_pid=$!
 
@@ -211,6 +230,7 @@ if ! create_cluster "$work/kind-create.log"; then
 		exit 1
 	fi
 fi
+mark "kind cluster created"
 if ! wait "$build_pid"; then
 	cat "$work/build-images.log" >&2
 	log "building the images failed"
@@ -221,7 +241,12 @@ cat "$work/build-images.log" >&2
 # Flux installs while the images load and the dependencies start; nothing
 # before the tests needs it.
 log "installing Flux"
-flux install --timeout 5m >"$work/flux-install.log" 2>&1 &
+{
+	flux install --timeout 5m
+	status=$?
+	mark "flux installed"
+	exit "$status"
+} >"$work/flux-install.log" 2>&1 &
 flux_pid=$!
 
 log "installing PostgreSQL and S3"
@@ -240,10 +265,17 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
 kubectl apply -f test/e2e/manifests/storageclass.yaml >&2
 kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
+mark "images loaded into the cluster"
 kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry --timeout 5m >&2
+mark "postgres, s3 and registry ready"
 # The telemetry backend is only needed by the tests; it finishes starting
 # while the chart installs.
-kubectl -n "$deps_namespace" rollout status deployment/otel-lgtm --timeout 5m >"$work/lgtm-rollout.log" 2>&1 &
+{
+	kubectl -n "$deps_namespace" rollout status deployment/otel-lgtm --timeout 5m
+	status=$?
+	mark "telemetry backend ready"
+	exit "$status"
+} >"$work/lgtm-rollout.log" 2>&1 &
 lgtm_rollout_pid=$!
 
 free_port() { python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])'; }
@@ -266,6 +298,7 @@ for _ in $(seq 60); do
 done
 helm push "$work/charts/mcpserver-0.1.0.tgz" "oci://127.0.0.1:$registry_port/charts" --plain-http >&2
 kill "$registry_forward"
+mark "test chart pushed"
 
 # The fake identity provider runs in the test process, on the host's address
 # in the kind Docker network, so both the tests and the gateway pods reach it
@@ -290,6 +323,7 @@ export TOOLGATE_E2E_UI_LISTEN="127.0.0.1:$ui_port"
 # self-signed certificate the gateway trusts through the resolver's caFile.
 resolver_port="$(python3 -c 'import socket; s = socket.socket(); s.bind(("", 0)); print(s.getsockname()[1])')"
 wait "$warm_pid" || { cat "$work/warm-build.log" >&2; log "compiling the test programs failed"; exit 1; }
+mark "waited for the compile of the test programs"
 mkdir -p "$work/resolver"
 go run ./test/resolver/cmd/resolver -write-cert "$work/resolver" -host "$host_address" >&2
 export TOOLGATE_E2E_RESOLVER_LISTEN="$host_address:$resolver_port"
@@ -368,6 +402,7 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--set embeddings.server.cache.accessModes='{ReadWriteOnce}' \
 	--wait --timeout 5m >&2
 
+mark "gateway chart installed and ready"
 wait "$flux_pid" || { cat "$work/flux-install.log" >&2; log "installing Flux failed"; exit 1; }
 cat "$work/flux-install.log" >&2
 wait "$lgtm_rollout_pid" || { cat "$work/lgtm-rollout.log" >&2; log "the telemetry backend did not start"; exit 1; }
@@ -392,5 +427,6 @@ export TOOLGATE_E2E_TEMPLATE_SECRETS_NAMESPACE="$template_secrets_namespace"
 export TOOLGATE_E2E_S3_ENDPOINT="http://s3.$deps_namespace.svc:7070"
 export TOOLGATE_E2E_CHART_REPOSITORY="oci://registry.$deps_namespace.svc:5000/charts/mcpserver"
 
+mark "tests start"
 log "running: $*"
 "$@"
