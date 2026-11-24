@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -15,6 +16,10 @@ import (
 
 	"github.com/solidDoWant/toolgate/api/v1alpha1"
 )
+
+// envtestControlPlaneTimeout bounds how long the API server and etcd may take
+// to become ready or to stop.
+const envtestControlPlaneTimeout = 2 * time.Minute
 
 // Envtest is a running kube-apiserver and etcd (controller-runtime's envtest)
 // with toolgate's CRDs installed. No controllers run: the API server stores
@@ -57,6 +62,10 @@ func StartEnvtest(tb testing.TB) *Envtest {
 
 	environment := &envtest.Environment{
 		Scheme: scheme,
+		// The defaults (20 s to start, 20 s to stop) are too short for a
+		// loaded CI node running many API servers at once.
+		ControlPlaneStartTimeout: envtestControlPlaneTimeout,
+		ControlPlaneStopTimeout:  envtestControlPlaneTimeout,
 		CRDInstallOptions: envtest.CRDInstallOptions{
 			Paths:              []string{crdDirectory(tb)},
 			ErrorIfPathMissing: true,
@@ -64,6 +73,15 @@ func StartEnvtest(tb testing.TB) *Envtest {
 	}
 
 	config, err := environment.Start()
+	if err != nil {
+		// One retry: a slow start can leave the first control plane half up.
+		tb.Logf("start envtest failed, retrying once: %v", err)
+
+		_ = environment.Stop()
+
+		config, err = environment.Start()
+	}
+
 	require.NoError(tb, err, "start envtest")
 	tb.Cleanup(func() {
 		if err := environment.Stop(); err != nil {
