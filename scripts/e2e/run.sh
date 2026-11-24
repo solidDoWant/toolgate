@@ -149,7 +149,20 @@ cleanup() {
 	summary="$(summary_line)"
 	local slowest
 	slowest="$(slowest_tests)"
-	if ((status != 0)); then
+	if ((status != 0)) && ! grep -qx '[0-9]* kind' "$marks" 2>/dev/null; then
+		# No cluster came up: kubectl has nothing to talk to, so show what kind
+		# said and what the node logged. The check run keeps only the end of the
+		# log, so this goes last.
+		log "the kind cluster was not created; the end of the kind output:"
+		tail -n 30 "$work/kind-create.log" >&2 2>/dev/null || true
+		kind export logs "$work/kind-logs" --name "$cluster" >/dev/null 2>&1 || true
+		local node_log
+		for node_log in "$work"/kind-logs/*/journal.log "$work"/kind-logs/*/kubelet.log "$work"/kind-logs/*/containerd.log; do
+			[[ -f "$node_log" ]] || continue
+			log "end of $(basename "$(dirname "$node_log")")/$(basename "$node_log"):"
+			tail -n 15 "$node_log" >&2
+		done
+	elif ((status != 0)); then
 		log "a step failed; cluster state:"
 		kubectl get pods --all-namespaces -o wide >&2 || true
 		kubectl -n "$release_namespace" logs --all-containers --prefix --tail=100 -l app.kubernetes.io/name=toolgate >&2 || true
@@ -253,17 +266,18 @@ create_cluster() {
 	kind_config | kind create cluster --name "$cluster" --kubeconfig "$KUBECONFIG" --config=- 2>&1 | tee "$output" >&2
 }
 
-# kind gives up when the node's systemd is slow to boot on a busy host. That
-# failure is transient: delete the half-made cluster and try once more. Any
-# other error fails at once.
-boot_timeout_pattern='could not find a log line that matches "Reached target'
+# kind can fail on a busy host (for example when the node's systemd is slow to
+# boot). Delete the half-made cluster and try once more. The first error is
+# kept in its own file and printed again if the retry fails too.
 log "creating kind cluster $cluster"
 if ! create_cluster "$work/kind-create.log"; then
-	if grep -q "$boot_timeout_pattern" "$work/kind-create.log"; then
-		log "the kind node did not boot in time; deleting the cluster and retrying once"
-		kind delete cluster --name "$cluster" --kubeconfig "$KUBECONFIG" >&2 || true
-		create_cluster "$work/kind-create.log"
-	else
+	log "kind failed to create the cluster; deleting it and retrying once"
+	cp "$work/kind-create.log" "$work/kind-create-first.log"
+	kind export logs "$work/kind-logs" --name "$cluster" >/dev/null 2>&1 || true
+	kind delete cluster --name "$cluster" --kubeconfig "$KUBECONFIG" >&2 || true
+	if ! create_cluster "$work/kind-create.log"; then
+		log "the first kind error was:"
+		tail -n 30 "$work/kind-create-first.log" >&2
 		exit 1
 	fi
 fi
