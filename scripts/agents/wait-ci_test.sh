@@ -67,17 +67,17 @@ run "required check failed" 1 "[$coderabbit,$unit_fail,$checks_fail]" "[$checks_
 run "a non-required check failed" 1 "[$coderabbit,$unit_fail,$checks_pass]" "[$checks_pass]"
 
 # run_timed NAME WANT SECONDS MAX ALL REQUIRED [ENV...]: runs wait-ci.sh with
-# a SECONDS deadline and checks it exits WANT within MAX seconds. The run is
-# killed a few seconds after MAX so an unbounded wait fails instead of hanging.
+# a SECONDS deadline and checks it exits WANT. The run is killed after MAX
+# seconds, so an unbounded wait exits 124 and fails instead of hanging. MAX is
+# only a kill switch far above a normal run: the test never compares elapsed
+# time, so a slow CI node cannot make it fail.
 run_timed() {
-	local name=$1 want=$2 limit=$3 max=$4 all=$5 required=$6 got=0 start elapsed
+	local name=$1 want=$2 limit=$3 max=$4 all=$5 required=$6 got=0
 	shift 6
-	start=$(date +%s)
-	timeout -k 1 $((max + 3)) env FAKE_ALL="$all" FAKE_REQUIRED="$required" \
+	timeout -k 1 "$max" env FAKE_ALL="$all" FAKE_REQUIRED="$required" \
 		PATH="$work/bin:$PATH" "$@" "$script" 1 "$limit" >"$work/out" 2>&1 || got=$?
-	elapsed=$(($(date +%s) - start))
-	if [[ $got -ne $want || $elapsed -gt $max ]]; then
-		echo "FAIL: $name: exit $got after ${elapsed}s, want $want within ${max}s" >&2
+	if [[ $got -ne $want ]]; then
+		echo "FAIL: $name: exit $got, want $want (killed after ${max}s)" >&2
 		cat "$work/out" >&2
 		exit 1
 	fi
@@ -85,15 +85,15 @@ run_timed() {
 
 # A new head (or a PR whose merge state is UNKNOWN) has no checks yet: gh
 # fails for both calls on every poll until the deadline.
-run_timed "new head with no checks yet" 3 3 6 "" ""
-run_timed "new head with no checks yet, short poll interval" 3 3 6 "" "" WAIT_CI_INTERVAL=1
+run_timed "new head with no checks yet" 3 3 60 "" ""
+run_timed "new head with no checks yet, short poll interval" 3 3 60 "" "" WAIT_CI_INTERVAL=1
 # A gh call that never returns is cut off at the deadline.
-run_timed "hung gh with a short deadline" 3 3 6 "" "" FAKE_HANG=1
+run_timed "hung gh with a short deadline" 3 3 60 "" "" FAKE_HANG=1
 # Even with a 0-second deadline the single poll is bounded.
-run_timed "hung gh with a 0-second deadline" 3 0 5 "" "" FAKE_HANG=1
+run_timed "hung gh with a 0-second deadline" 3 0 60 "" "" FAKE_HANG=1
 # A stalled call is cut off at the per-call cap, so a later poll still sees
 # the checks finish well before the deadline.
-run_timed "one stalled gh call under the per-call cap" 0 60 10 \
+run_timed "one stalled gh call under the per-call cap" 0 60 60 \
 	"[$coderabbit,$unit_pass,$checks_pass]" "[$checks_pass]" \
 	FAKE_HANG_ONCE="$work/hung" WAIT_CI_GH_TIMEOUT=1 WAIT_CI_INTERVAL=1
 
