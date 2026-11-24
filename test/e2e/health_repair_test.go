@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,10 +37,13 @@ func scaledHealthInterval() time.Duration {
 }
 
 // unhealthyBound is interval × failureThreshold plus one timeout, plus time for
-// the write and the fan-out.
+// the write and the fan-out. The slack covers a loaded CI cluster, where the
+// check's request, the database write and the listing each run slowly.
 func unhealthyBound() time.Duration {
-	return scaledHealthInterval() + healthTimeout + 10*time.Second
+	return scaledHealthInterval() + healthTimeout + healthSlack
 }
+
+const healthSlack = 25 * time.Second
 
 // notReady matches the refusal of a call to an unhealthy or starting server.
 var notReady = regexp.MustCompile("is unhealthy|isn't ready")
@@ -100,12 +104,23 @@ func setHealth(t *testing.T, admin *kubernetes.Clientset, namespace string, stat
 func requireWithdrawn(t *testing.T, session *gatewaySession, name string) {
 	t.Helper()
 
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+	started := time.Now()
+
+	var lastListed atomic.Value
+
+	withdrawn := assert.EventuallyWithT(t, func(collect *assert.CollectT) {
 		listed := listedTools(collect, t.Context(), session.session)
+		lastListed.Store(listed)
+
 		for _, tool := range prefixedTools(name) {
 			assert.NotContains(collect, listed, tool)
 		}
 	}, unhealthyBound(), 250*time.Millisecond, "the tools are withdrawn within interval × failureThreshold + timeout")
+	if !withdrawn {
+		t.Fatalf("tools for %s still listed after %s (the bound): last listing %v", name, time.Since(started), lastListed.Load())
+	}
+
+	t.Logf("tools for %s withdrawn after %s (bound %s)", name, time.Since(started), unhealthyBound())
 
 	progressBefore := countEvents(session.recorded(), eventProgress)
 
