@@ -112,7 +112,7 @@ summary_line() {
 	sort -n "$marks" | awk '{ line = line (line == "" ? "" : ", ") $2 " " $1 } END { print "e2e: step finished at (s): " line }'
 }
 
-# slowest_tests prints the ten top-level tests with the longest wall time from
+# slowest_tests prints the five top-level tests with the longest wall time from
 # the go test -json events the CI stage writes. A
 # parallel test's time includes the time it waited for the serial tests.
 slowest_tests() {
@@ -135,7 +135,7 @@ for line in open(sys.argv[1]):
         tests.append((event.get("Elapsed", 0), name))
 tests.sort(reverse=True)
 if tests:
-    print("e2e: slowest tests (s): " + ", ".join(f"{name} {elapsed}" for elapsed, name in tests[:10]))
+    print("e2e: slowest tests (s): " + ", ".join(f"{name} {elapsed}" for elapsed, name in tests[:5]))
 PY
 }
 
@@ -169,8 +169,10 @@ cleanup() {
 		docker image rm "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >/dev/null 2>&1 || true
 		rm -rf "$work"
 	fi
-	[[ -z "$summary" ]] || echo "$summary" >&2
+	# The step times come last and the slowest tests before them: a CI check
+	# run keeps only the end of a long log, and the step times matter most.
 	[[ -z "$slowest" ]] || echo "$slowest" >&2
+	[[ -z "$summary" ]] || echo "$summary" >&2
 	exit "$status"
 }
 trap cleanup EXIT
@@ -183,26 +185,48 @@ postgres_image="$(pinned_image PostgresImage internal/testutil/postgres.go)"
 s3_image="$(pinned_image S3Image internal/testutil/s3.go)"
 [[ -n "$postgres_image" && -n "$s3_image" ]] || { log "cannot read the pinned images in internal/testutil"; exit 1; }
 
-build_images() {
+# Each image builds on its own and loads into the kind cluster as soon as
+# both the image and the cluster exist ($work/cluster-ready appears when kind
+# create is done).
+load_image() {
+	local image="$1"
+	until [[ -f "$work/cluster-ready" ]]; do
+		kill -0 $$ 2>/dev/null || return 1
+		sleep 0.5
+	done
+	kind load docker-image --name "$cluster" "$image" >&2
+}
+
+build_gateway_image() {
 	log "building the e2e gateway image $gateway_repository:$image_tag"
 	ARCHS=host VULNCHECK=false GO_TAGS=e2e VERSION="$image_tag" IMAGE="$gateway_repository" PUSH_ALL=false OUT_DIR="$work/images" ./scripts/build-images.sh >&2
 	mark gw-image
+	load_image "$gateway_repository:$image_tag"
+	mark gw-loaded
+}
 
+build_mcpserver_image() {
 	log "building the test MCP server image $mcpserver_image"
 	mkdir -p "$work/mcpserver"
 	CGO_ENABLED=0 go build -trimpath -o "$work/mcpserver/mcpserver" ./test/mcpserver
 	printf 'FROM scratch\nCOPY mcpserver /mcpserver\nUSER 65532:65532\nEXPOSE 8080\nENTRYPOINT ["/mcpserver"]\n' >"$work/mcpserver/Dockerfile"
 	docker build --quiet --tag "$mcpserver_image" "$work/mcpserver" >&2
 	mark mcp-image
+	load_image "$mcpserver_image"
+	mark mcp-loaded
+}
 
-	# The embeddings server stands in for text-embeddings-inference. The same
-	# binary is also installed as uvx, so it passes as the model download Job.
+# The embeddings server stands in for text-embeddings-inference. The same
+# binary is also installed as uvx, so it passes as the model download Job.
+build_embeddings_image() {
 	log "building the test embeddings server image $embeddings_image"
 	mkdir -p "$work/embeddingsserver"
 	CGO_ENABLED=0 go build -trimpath -o "$work/embeddingsserver/embeddingsserver" ./test/embeddingsserver
 	printf 'FROM scratch\nCOPY embeddingsserver /embeddingsserver\nCOPY embeddingsserver /usr/local/bin/uvx\nUSER 1000:1000\nEXPOSE 80\nENTRYPOINT ["/embeddingsserver"]\n' >"$work/embeddingsserver/Dockerfile"
 	docker build --quiet --tag "$embeddings_image" "$work/embeddingsserver" >&2
 	mark emb-image
+	load_image "$embeddings_image"
+	mark emb-loaded
 }
 
 # The e2e test binary and the helper programs compile in the background too,
@@ -215,8 +239,12 @@ build_images() {
 warm_pid=$!
 
 # The images build in the background while the kind cluster comes up.
-build_images >"$work/build-images.log" 2>&1 &
-build_pid=$!
+image_names=(gateway mcpserver embeddings)
+image_pids=()
+for image_name in "${image_names[@]}"; do
+	"build_${image_name}_image" >"$work/build-$image_name.log" 2>&1 &
+	image_pids+=("$!")
+done
 
 # etcd keeps its data in /tmp, which a kind node mounts as tmpfs. On a slow
 # disk every API write waits for an etcd fsync, which makes the tests slow
@@ -268,6 +296,7 @@ if ! create_cluster "$work/kind-create.log"; then
 	fi
 fi
 mark kind
+touch "$work/cluster-ready"
 # Flux and the dependencies (PostgreSQL, S3, the registry, the telemetry
 # backend) pull their own images, so they start as soon as the cluster is up,
 # while the gateway images still build and then load. Nothing before the tests
@@ -296,14 +325,14 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 ' test/e2e/manifests/dependencies.yaml | kubectl -n "$deps_namespace" apply -f - >&2
 kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
 kubectl apply -f test/e2e/manifests/storageclass.yaml >&2
-if ! wait "$build_pid"; then
-	cat "$work/build-images.log" >&2
-	log "building the images failed"
-	exit 1
-fi
-cat "$work/build-images.log" >&2
-
-kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
+for index in "${!image_names[@]}"; do
+	if ! wait "${image_pids[$index]}"; then
+		cat "$work/build-${image_names[$index]}.log" >&2
+		log "building or loading the ${image_names[$index]} image failed"
+		exit 1
+	fi
+	cat "$work/build-${image_names[$index]}.log" >&2
+done
 mark loaded
 kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry --timeout 5m >&2
 mark deps
