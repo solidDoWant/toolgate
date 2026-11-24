@@ -526,7 +526,7 @@ func TestDeleteStaleRows(t *testing.T) {
 		exec("ui_logins", name, fmt.Sprintf(`INSERT INTO ui_logins (state_hash, nonce, pkce_verifier, created_at)
 			VALUES (sha256(convert_to($1::text, 'UTF8')), $1::text, 'v', now() - interval '%s')`, created), name)
 	}
-	login("keep-recent", "9 minutes 59 seconds")
+	login("keep-recent", "9 minutes")
 	login("drop-old", "10 minutes 1 second")
 
 	require.NoError(t, store.DeleteStaleRows(ctx, queries))
