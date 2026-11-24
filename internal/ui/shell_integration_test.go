@@ -244,10 +244,19 @@ func TestBlocksPageOnAPhone(t *testing.T) {
 	})
 
 	t.Run("the dialog's buttons stay on screen while its form scrolls", func(t *testing.T) {
-		require.NoError(t, chromedp.Do(ctx,
-			chromedp.Click(`main a[data-dialog="new-block"]`),
-			chromedp.WaitVisible(`#new-block #field-reason`),
-		))
+		// Each step has its own deadline so a failure names the step that
+		// hung instead of burning the whole browser context.
+		step := func(name string, action chromedp.Action[chromedp.Void]) {
+			stepCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+			defer cancel()
+
+			require.NoError(t, chromedp.Do(stepCtx, action), name)
+		}
+
+		// The page script is deferred; the link only opens the dialog once it ran.
+		step("wait for the page scripts", chromedp.Poll[chromedp.Void](`document.readyState === "complete"`))
+		step("click the new block link", chromedp.Click(`main a[data-dialog="new-block"]`))
+		step("wait for the dialog", chromedp.WaitVisible(`#new-block #field-reason`))
 
 		layout, err := chromedp.Run(ctx, chromedp.Evaluate[map[string]bool](`(() => {
 			const dialog = document.getElementById("new-block");
