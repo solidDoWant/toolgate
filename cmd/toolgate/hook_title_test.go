@@ -262,7 +262,15 @@ func TestStopHookGivesUpOnASlowGatewayWithinItsTimeout(t *testing.T) {
 	env.set("XDG_RUNTIME_DIR", t.TempDir())
 
 	release := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
+	arrived := make(chan time.Time, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		select {
+		case arrived <- time.Now():
+		default:
+		}
+
+		<-release
+	}))
 
 	t.Cleanup(func() {
 		close(release)
@@ -278,9 +286,21 @@ func TestStopHookGivesUpOnASlowGatewayWithinItsTimeout(t *testing.T) {
 	transcript := filepath.Join(t.TempDir(), "t.jsonl")
 	require.NoError(t, os.WriteFile(transcript, []byte(titleRecord("ai-title", "aiTitle", "Slow")+"\n"), 0o600))
 
-	started := time.Now()
-
 	runTitleHook(t, env, "stop", hookStdin(hookSession, transcript))
 
-	assert.Less(t, time.Since(started), titleSendTimeout+2*time.Second)
+	returned := time.Now()
+
+	select {
+	case requestAt := <-arrived:
+		// The clock starts when the request reaches the gateway, so the hook's own startup work is not counted.
+		assert.Less(t, returned.Sub(requestAt), titleSendTimeout+2*time.Second)
+	default:
+		require.Fail(t, "the hook never sent the title request")
+	}
+
+	select {
+	case <-release:
+		require.Fail(t, "the gateway was released before the hook returned")
+	default:
+	}
 }
