@@ -246,6 +246,8 @@ func TestRemoteServers(t *testing.T) {
 	t.Parallel()
 
 	t.Run("with the secret set, a user lists and calls a tool and the call carries the user's key", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixture(t, "alice-key")
 		fixture.setSecret(t, "alice", "alice-key")
 
@@ -262,6 +264,8 @@ func TestRemoteServers(t *testing.T) {
 	})
 
 	t.Run("an enable with the secret missing gets the set-secret message and starts nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixture(t, "alice-key")
 
 		client := fixture.connectObserved(t, alice())
@@ -273,6 +277,8 @@ func TestRemoteServers(t *testing.T) {
 	})
 
 	t.Run("a call with a refused credential says the credential was refused and how to set it", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixture(t, "alice-key")
 		fixture.setSecret(t, "alice", "wrong-key")
 
@@ -290,6 +296,8 @@ func TestRemoteServers(t *testing.T) {
 	})
 
 	t.Run("stopping the instance after a disable closes the forwarding session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixture(t, "alice-key")
 		fixture.setSecret(t, "alice", "alice-key")
 
@@ -311,6 +319,8 @@ func TestRemoteServers(t *testing.T) {
 	})
 
 	t.Run("a second user's call uses the second user's key, never the first user's", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixture(t, "alice-key", "bob-key")
 		fixture.setSecret(t, "alice", "alice-key")
 		fixture.setSecret(t, "bob", "bob-key")
@@ -331,6 +341,8 @@ func TestRemoteServers(t *testing.T) {
 	})
 
 	t.Run("a remote server without per-user headers is shared: two users use one upstream session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixture(t, "static-key")
 
 		template := fixture.catalogTemplate(t, remoteServer).DeepCopy()
@@ -358,6 +370,8 @@ func TestRemoteServers(t *testing.T) {
 	})
 
 	t.Run("a remote server's instance counts toward no instance limit", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixtureWith(t, func(options *gateway.MCPOptions) { options.InstanceLimitPerUser = 1 }, "alice-key")
 		fixture.setSecret(t, "alice", "alice-key")
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -368,6 +382,8 @@ func TestRemoteServers(t *testing.T) {
 	})
 
 	t.Run("header values appear in no log line, audit line or audit row", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newRemoteFixture(t, "alice-key")
 		fixture.setSecret(t, "alice", "alice-key")
 		fixture.setSecret(t, "bob", "bob-wrong-key")

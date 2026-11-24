@@ -37,7 +37,9 @@ hostssl all all all cert
 // postgresStart initialises a database cluster, creates the database, copies
 // the TLS files to a directory the postgres user owns (PostgreSQL refuses a
 // key file readable by others; the test files are readable by the
-// container user, which is not root) and starts the server with TLS on. The image
+// container user, which is not root) and starts the server with TLS on, with
+// durability settings off (the data is thrown away) and room for many test
+// connections. The image
 // has no entrypoint script, so this does what the official image's does.
 const postgresStart = `set -eu
 mkdir -p ` + postgresTLSDir + `
@@ -51,6 +53,10 @@ createdb -U ` + postgresUser + ` ` + postgresDatabase + `
 pg_ctl -D "$PGDATA" -w stop >/dev/null
 exec postgres -D "$PGDATA" \
   -c listen_addresses='*' \
+  -c fsync=off \
+  -c synchronous_commit=off \
+  -c full_page_writes=off \
+  -c max_connections=300 \
   -c ssl=on \
   -c ssl_cert_file=` + postgresTLSDir + `/server.crt \
   -c ssl_key_file=` + postgresTLSDir + `/server.key \

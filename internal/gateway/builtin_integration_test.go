@@ -65,6 +65,8 @@ func TestBuiltinServer(t *testing.T) {
 	t.Parallel()
 
 	t.Run("without the web UI the server isn't in the catalog and its tools are refused with not-offered", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newAdditionFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 		client := fixture.connectObserved(t, attestedAlice())
@@ -84,6 +86,8 @@ func TestBuiltinServer(t *testing.T) {
 	})
 
 	t.Run("a call where toolgate isn't allowed reaches the call path and writes tool.decision", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		// alice's unverified session: the default for unverified sessions
 		// is none, so step 4 refuses every server.
@@ -103,6 +107,8 @@ func TestBuiltinServer(t *testing.T) {
 	})
 
 	t.Run("a rule naming toolgate refuses its tools", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 		require.NoError(t, fixture.rules.Set(blockServer(gateway.BuiltinServerName)))
@@ -117,6 +123,8 @@ func TestBuiltinServer(t *testing.T) {
 	})
 
 	t.Run("toolgate_list_scopes lists only the caller's own scope, tools by exposed name, through the full call path", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		fixture.curate(t, "github", func(spec *v1alpha1.MCPServerTemplateSpec) {
 			spec.Tools = map[string]v1alpha1.ToolOverride{"create_issue": {Name: "open_issue"}}
@@ -181,6 +189,8 @@ func TestBuiltinServer(t *testing.T) {
 	})
 
 	t.Run("toolgate_list_scopes shows at most 200 workspaces and 200 sessions", func(t *testing.T) {
+		t.Parallel()
+
 		for _, test := range []struct {
 			name      string
 			count     int
@@ -210,6 +220,8 @@ func TestBuiltinServerSearchRows(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a new leader writes the built-in server's search rows and the cleanup keeps them", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		queries := db.New(fixture.pool)
 

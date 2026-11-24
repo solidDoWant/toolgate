@@ -107,6 +107,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	t.Parallel()
 
 	t.Run("workspace, server: removes it from the list, inserts a deny entry and deletes its allow entries", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -129,6 +131,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("workspace, tool: maps the exposed name, inserts a deny entry and deletes its allow entry", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -149,6 +153,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("session, server: deletes its session addition and allow entries and inserts a session deny entry", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -175,6 +181,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("session, tool: inserts a session deny entry for the upstream tool", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -195,6 +203,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("a deny may target the caller's unverified session", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -206,6 +216,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("another user's session gets no open session, and nothing is written", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -220,6 +232,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("a deny with the default all and no list inserts a deny entry and refuses the server", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		api.widen(t, attestedAlice(), workspacesapi.Change{Action: "defaults", Verified: "all"})
@@ -235,6 +249,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("a deny applies when the principal has 500 allow entries", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -251,6 +267,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("clear deletes the list and the allow entries and keeps the deny entries", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -269,6 +287,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("with the default all, clear widens through a change request and keeps the deny entries", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 		fixture.addEnableTemplate("slack", "per-user", aliceAndBob)
@@ -289,6 +309,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("a deny item with an empty tool is refused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 
@@ -299,6 +321,8 @@ func TestScopeDenyThroughTheAPI(t *testing.T) {
 	})
 
 	t.Run("an unauthenticated deny is refused and writes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture, api := newScopedFixture(t)
 		curatedGithub(fixture)
 

@@ -323,6 +323,8 @@ func TestEnableServer(t *testing.T) {
 	t.Parallel()
 
 	t.Run("a per-session enable gets progress, then list_changed, and tools named server__tool", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-session", anyone)
 
@@ -358,6 +360,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("a namespace: shared template's instance is in the configured shared namespace", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t, func(options *gateway.MCPOptions) { options.SharedNamespace = "toolgate-shared" })
 		template := fixture.addEnableTemplate("shared-ns", "shared", anyone)
 		template.Spec.Namespace = "shared"
@@ -374,6 +378,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("a missing secret fails naming the secret and the command, and writes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		template.Spec.Resources = []k8sruntime.RawExtension{{Raw: []byte(
@@ -391,6 +397,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("a remote server with its header secret missing is refused with the set-secret message and starts nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addRemoteTemplate("mail-archiver")
 
@@ -403,6 +411,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("a set secret lets the enable go ahead", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		template.Spec.Resources = []k8sruntime.RawExtension{{Raw: []byte(
@@ -424,6 +434,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("a refused enable names the rule and is audited", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 		require.NoError(t, fixture.rules.Set(blockServer("github")))
@@ -441,6 +453,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("a failed instance returns its reason and leaves the server enabled", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -455,6 +469,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("a 33rd server is refused", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -472,6 +488,8 @@ func TestEnableServer(t *testing.T) {
 	})
 
 	t.Run("the 32nd server is allowed", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -540,6 +558,8 @@ func TestEnableInteractions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("two sessions of one user enabling a per-user server at once share one instance", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -582,6 +602,8 @@ func TestEnableInteractions(t *testing.T) {
 	})
 
 	t.Run("the same session enabling twice waits on one instance and both get the same result", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 
@@ -604,6 +626,8 @@ func TestEnableInteractions(t *testing.T) {
 	})
 
 	t.Run("a disable while an enable waits makes the enable return disabled while starting", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-session", anyone)
 
@@ -630,6 +654,8 @@ func TestEnableInteractions(t *testing.T) {
 		{scope: "shared", scopeKey: "shared", other: new(bob())},
 	} {
 		t.Run("a session that ends while an enable waits ends the wait and keeps the server, "+test.scope, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newMCPFixture(t)
 			template := fixture.addEnableTemplate("github", test.scope, anyone)
 
@@ -666,6 +692,8 @@ func TestEnableInteractions(t *testing.T) {
 	}
 
 	t.Run("a rule added while an enable waits refuses it when the instance is ready", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -691,6 +719,8 @@ func TestDisableServer(t *testing.T) {
 	t.Parallel()
 
 	t.Run("disable removes the tools and sends list_changed to that session only", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		template := fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -719,6 +749,8 @@ func TestDisableServer(t *testing.T) {
 	})
 
 	t.Run("disabling a server that isn't enabled succeeds and changes nothing", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 
@@ -733,6 +765,8 @@ func TestProxiedToolList(t *testing.T) {
 	t.Parallel()
 
 	t.Run("tools/list leaves out tools the policy refuses and servers without a ready instance", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		github := fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.addEnableTemplate("jira", "per-user", anyone)
@@ -785,6 +819,8 @@ func TestTemplateChange(t *testing.T) {
 	t.Parallel()
 
 	t.Run("new instances use the edited template and server_status shows the running one as outdated", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		original := fixture.addEnableTemplate("github", "per-session", anyone)
 

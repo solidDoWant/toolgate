@@ -55,6 +55,8 @@ func TestBuiltinToolsDenied(t *testing.T) {
 		},
 	} {
 		t.Run(test.name+" withdraws the tools and refuses calls within 5 s across two replicas", func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newBuiltinFixture(t)
 			// Default all with no list: the deny still narrows.
 			fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
@@ -123,6 +125,8 @@ func TestBuiltinToolsDenied(t *testing.T) {
 	}
 
 	t.Run("toolgate__deny names the built-in tool by its upstream name", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		fixture.setVerifiedDefault(t, policy.ScopeDefaultAll)
 		client := fixture.connectObserved(t, attestedAlice())
@@ -136,6 +140,8 @@ func TestBuiltinToolsDenied(t *testing.T) {
 	})
 
 	t.Run("the input is checked and nothing is written for a refused deny", func(t *testing.T) {
+		t.Parallel()
+
 		items := make([]string, 0, 33)
 		for index := range 33 {
 			items = append(items, "server-"+string(rune('a'+index%26))+string(rune('a'+index/26)))
@@ -180,6 +186,8 @@ func TestBuiltinToolsDenied(t *testing.T) {
 	})
 
 	t.Run("an unverified session may deny in itself, and only narrows", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newBuiltinFixture(t)
 		fixture.setUnverifiedList(t, gateway.BuiltinServerName, "github")
 		client := fixture.connectObserved(t, alice())

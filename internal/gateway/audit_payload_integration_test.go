@@ -76,6 +76,8 @@ func TestCallAuditPayloads(t *testing.T) {
 	t.Parallel()
 
 	t.Run("with payloads on, small arguments and results are stored inline", func(t *testing.T) {
+		t.Parallel()
+
 		server := toolgatetest.StartS3(t)
 		fixture := newMCPFixture(t, withPayloads(newPayloads(t, server.Client(), server.Bucket)))
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -99,6 +101,8 @@ func TestCallAuditPayloads(t *testing.T) {
 	})
 
 	t.Run("with payloads on, a large result is stored in S3 and referenced from the row", func(t *testing.T) {
+		t.Parallel()
+
 		server := toolgatetest.StartS3(t)
 		fixture := newMCPFixture(t, withPayloads(newPayloads(t, server.Client(), server.Bucket)))
 		fixture.addEnableTemplate("github", "per-user", anyone)
@@ -135,6 +139,8 @@ func TestCallAuditPayloads(t *testing.T) {
 	})
 
 	t.Run("with payloads off, nothing is stored", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newMCPFixture(t)
 		fixture.addEnableTemplate("github", "per-user", anyone)
 		fixture.startUpstream(t, "github")
@@ -153,6 +159,8 @@ func TestCallAuditPayloads(t *testing.T) {
 	})
 
 	t.Run("arguments that can't be stored refuse the call before it is forwarded", func(t *testing.T) {
+		t.Parallel()
+
 		server := toolgatetest.StartS3(t)
 		payloads := newPayloads(t, failingPuts{server.Client()}, server.Bucket)
 		fixture := newMCPFixture(t, withPayloads(payloads))
@@ -176,6 +184,8 @@ func TestCallAuditPayloads(t *testing.T) {
 	})
 
 	t.Run("a result that can't be stored is still returned and the row records payload_error", func(t *testing.T) {
+		t.Parallel()
+
 		server := toolgatetest.StartS3(t)
 		payloads := newPayloads(t, failingPuts{server.Client()}, server.Bucket)
 		fixture := newMCPFixture(t, withPayloads(payloads))

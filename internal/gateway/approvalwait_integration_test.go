@@ -197,6 +197,8 @@ func TestApprovalElicitation(t *testing.T) {
 
 	for _, revision := range []string{revisionElicitCreate, modernRevision} {
 		t.Run("on "+revision+" the client opens the approval page, an approval from another replica lets the call through", func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newApprovalFixture(t, withApprovalURL)
 			client := fixture.connectEliciting(t, elicitingOptions{revision: revision, answer: "accept"})
 
@@ -280,9 +282,15 @@ func TestApprovalElicitation(t *testing.T) {
 	})
 }
 
-// Runs serially: it sets a process-wide wait interval that parallel tests also read.
+// Runs serially at the top level: it sets a process-wide wait interval that parallel tests also read.
 func TestApprovalWait(t *testing.T) {
+	// Set before the subtests start: they run in parallel, and no other test
+	// runs while this function is still serial.
+	t.Cleanup(gateway.SetApprovalWaitInterval(100 * time.Millisecond))
+
 	t.Run("a denial fails the waiting call", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -303,7 +311,7 @@ func TestApprovalWait(t *testing.T) {
 	})
 
 	t.Run("when expires_at passes, the waiting call expires the approval and fails with the timeout in words", func(t *testing.T) {
-		t.Cleanup(gateway.SetApprovalWaitInterval(100 * time.Millisecond))
+		t.Parallel()
 
 		fixture := newApprovalFixture(t, withApprovalURL, func(options *gateway.MCPOptions) { options.ApprovalTimeout = time.Minute })
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
@@ -331,6 +339,8 @@ func TestApprovalWait(t *testing.T) {
 	})
 
 	t.Run("when the leader's pass expired the approval, the waiting call refuses without approval.expire", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
@@ -351,6 +361,8 @@ func TestApprovalWait(t *testing.T) {
 	})
 
 	t.Run("rows 41 and 42: every write is a compare-and-set on pending, and the first commit wins", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 		callTool(t, fixture.client.session, "github__echo", map[string]any{"text": "hi"})
 		id := fixture.approvals(t)[0].ID
@@ -373,7 +385,7 @@ func TestApprovalWait(t *testing.T) {
 	})
 
 	t.Run("a rule that refuses the call ends the wait with the refusal", func(t *testing.T) {
-		t.Cleanup(gateway.SetApprovalWaitInterval(100 * time.Millisecond))
+		t.Parallel()
 
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
@@ -397,6 +409,8 @@ func TestApprovalWait(t *testing.T) {
 	})
 
 	t.Run("a cancelled wait writes nothing, and a retry uses the approval once approved", func(t *testing.T) {
+		t.Parallel()
+
 		fixture := newApprovalFixture(t, withApprovalURL)
 		client := fixture.connectEliciting(t, elicitingOptions{revision: revisionElicitCreate, answer: "accept"})
 
