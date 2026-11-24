@@ -54,6 +54,7 @@ test-scripts: ## Run the tests of the agent scheduler and wait-ci, the test guar
 	./scripts/acceptance-scoreboard_test.py
 	./scripts/check-images_test.py
 	./scripts/check-tracking-ids_test.py
+	./scripts/chart-deps_test.sh
 
 .PHONY: test-release
 test-release: ## Run the image build and release script tests (a release dry run builds the chart package and the CLI binaries, so it is slow; CI runs it only when release files change).
