@@ -31,6 +31,8 @@ func TestToolCatalog(t *testing.T) {
 	endpoint := forwardToGateway(t, admin, pods[0])
 
 	t.Run("declared tools are listed while the instance starts; the real list follows with list_changed", func(t *testing.T) {
+		t.Parallel()
+
 		name := createTemplate(t, kube, "e2e-catalog-declared", "per-user", testServerResources(t, mcpServerImage(t), startDelay, nil))
 
 		require.EventuallyWithT(t, func(collect *assert.CollectT) {
@@ -66,6 +68,8 @@ func TestToolCatalog(t *testing.T) {
 	})
 
 	t.Run("a learned list is listed to another user while their instance starts", func(t *testing.T) {
+		t.Parallel()
+
 		name := createTemplate(t, kube, "e2e-catalog-learned", "per-user", testServerResources(t, mcpServerImage(t), startDelay, nil))
 		requireTemplateStartsOnEnable(t, kube, name)
 
