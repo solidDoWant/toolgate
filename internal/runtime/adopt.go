@@ -17,6 +17,10 @@ import (
 // session ID.
 const sessionIDHeader = "Mcp-Session-Id"
 
+// protocolVersionHeader is the Streamable HTTP header that carries the
+// negotiated MCP revision.
+const protocolVersionHeader = "MCP-Protocol-Version"
+
 // errAdoptNeedsSessions refuses Adopt on a revision that has no sessions.
 var errAdoptNeedsSessions = errors.New("an adopted upstream session needs an MCP revision before " + RevisionStateless)
 
@@ -60,6 +64,11 @@ type forwardingTransport struct {
 	base          http.RoundTripper
 	adopt         *AdoptedSession
 	deleteOnClose *atomic.Bool
+	// protocolVersion, once set, is sent in the MCP-Protocol-Version header
+	// of requests that have none, as the go-sdk sends it after initialize.
+	// prefixedConnection sets it, since the go-sdk can't see the
+	// initialize result through that wrapper.
+	protocolVersion *atomic.Pointer[string]
 }
 
 // RoundTrip implements http.RoundTripper.
@@ -73,6 +82,13 @@ func (f *forwardingTransport) RoundTrip(request *http.Request) (*http.Response, 
 	if f.adopt != nil && request.Method == http.MethodPost {
 		if response, handled := f.answerHandshake(request); handled {
 			return response, nil
+		}
+	}
+
+	if f.protocolVersion != nil && request.Header.Get(protocolVersionHeader) == "" {
+		if version := f.protocolVersion.Load(); version != nil {
+			request = request.Clone(request.Context())
+			request.Header.Set(protocolVersionHeader, *version)
 		}
 	}
 

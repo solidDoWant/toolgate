@@ -195,17 +195,31 @@ func connectOn(ctx context.Context, endpoint, revision string, options UpstreamO
 	}
 
 	disableSSE := options.DisableStandaloneSSE
+	forwarding := options.Adopt != nil || options.DeleteOnClose != nil
+	protocolVersion := &atomic.Pointer[string]{}
 
-	if options.Adopt != nil || options.DeleteOnClose != nil {
-		forwarding := *httpClient
-		forwarding.Transport = &forwardingTransport{base: httpClient.Transport, adopt: options.Adopt, deleteOnClose: options.DeleteOnClose}
-		httpClient = &forwarding
+	if forwarding {
+		forwardingClient := *httpClient
+		forwardingClient.Transport = &forwardingTransport{
+			base: httpClient.Transport, adopt: options.Adopt, deleteOnClose: options.DeleteOnClose, protocolVersion: protocolVersion,
+		}
+		httpClient = &forwardingClient
 		disableSSE = true
 	}
 
-	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
+	var transport mcp.Transport = &mcp.StreamableClientTransport{
 		Endpoint: endpoint, HTTPClient: httpClient, DisableStandaloneSSE: disableSSE,
-	}, &mcp.ClientSessionOptions{ProtocolVersion: revision})
+	}
+
+	// An adopted copy shares its upstream session with the copy that
+	// initialized it and with other adopted copies, so its request IDs carry
+	// a prefix of its own. The initializing copy keeps the go-sdk's numbers,
+	// so its requests are sent as they are.
+	if options.Adopt != nil {
+		transport = &prefixedTransport{Transport: transport, protocolVersion: protocolVersion}
+	}
+
+	session, err := client.Connect(ctx, transport, &mcp.ClientSessionOptions{ProtocolVersion: revision})
 	if err != nil {
 		return nil, fmt.Errorf("connect %s: %w", endpoint, err)
 	}
