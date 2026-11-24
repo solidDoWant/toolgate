@@ -265,15 +265,10 @@ if ! create_cluster "$work/kind-create.log"; then
 	fi
 fi
 mark kind
-if ! wait "$build_pid"; then
-	cat "$work/build-images.log" >&2
-	log "building the images failed"
-	exit 1
-fi
-cat "$work/build-images.log" >&2
-
-# Flux installs while the images load and the dependencies start; nothing
-# before the tests needs it.
+# Flux and the dependencies (PostgreSQL, S3, the registry, the telemetry
+# backend) pull their own images, so they start as soon as the cluster is up,
+# while the gateway images still build and then load. Nothing before the tests
+# needs Flux.
 log "installing Flux"
 {
 	flux install --timeout 5m
@@ -298,6 +293,13 @@ POSTGRES_IMAGE="$postgres_image" S3_IMAGE="$s3_image" yq '
 ' test/e2e/manifests/dependencies.yaml | kubectl -n "$deps_namespace" apply -f - >&2
 kubectl -n "$deps_namespace" apply -f test/e2e/manifests/otel-lgtm.yaml >&2
 kubectl apply -f test/e2e/manifests/storageclass.yaml >&2
+if ! wait "$build_pid"; then
+	cat "$work/build-images.log" >&2
+	log "building the images failed"
+	exit 1
+fi
+cat "$work/build-images.log" >&2
+
 kind load docker-image --name "$cluster" "$gateway_repository:$image_tag" "$mcpserver_image" "$embeddings_image" >&2
 mark loaded
 kubectl -n "$deps_namespace" rollout status deployment/postgres deployment/s3 deployment/registry --timeout 5m >&2
