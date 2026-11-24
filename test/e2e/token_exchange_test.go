@@ -231,10 +231,15 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 	admin := adminClient(t)
 	kube := templateClient(t)
 
-	// The shortest lifetime the gateway accepts, so the half-life refresh
-	// and the expiry both happen within the test.
-	lifetime := scaled(credentials.MinExchangedTokenLifetime) + 45*time.Second
-	endpoint := testTokenEndpoint(t, lifetime)
+	// The first instance starts with a long lifetime, so a slow start (the
+	// image pull) can't expire its token. Once it is ready the lifetime
+	// drops to just over the shortest one the gateway accepts, so the
+	// half-life refresh and the expiry of the next instance's token both
+	// happen within the test.
+	const startLifetime = 10 * time.Minute
+
+	shortLifetime := scaled(credentials.MinExchangedTokenLifetime) + 5*time.Second
+	endpoint := testTokenEndpoint(t, startLifetime)
 	endpoint.Refuse("carol", "invalid_grant")
 
 	name := "e2e-exchange-" + rand.String(5)
@@ -276,11 +281,23 @@ func TestTokenExchangeEndToEnd(t *testing.T) {
 	var aliceInstance string
 
 	t.Run("two users get instances with their own tokens", func(t *testing.T) {
-		require.ElementsMatch(t, exchangeTools(name), enable(t, alice, name))
-		aliceInstance = requireOneInstance(t, admin, name).Labels[runtime.LabelInstance]
-
 		require.ElementsMatch(t, exchangeTools(name), enable(t, bob, name))
+		require.Len(t, instanceIDs(t, admin, name), 1)
+
+		// Bob's instance is ready and the image is on the node, so the
+		// next start is quick: alice's token gets the short lifetime.
+		endpoint.SetLifetime(shortLifetime)
+
+		require.ElementsMatch(t, exchangeTools(name), enable(t, alice, name))
 		require.Len(t, instanceIDs(t, admin, name), 2)
+
+		for _, id := range instanceIDs(t, admin, name) {
+			if instanceToken(t, admin, name, id) != "" && strings.Contains(instanceToken(t, admin, name, id), "alice") {
+				aliceInstance = id
+			}
+		}
+
+		require.NotEmpty(t, aliceInstance, "alice's instance")
 
 		// A slow start can let a refresh happen first, so the counter is
 		// not fixed; each user's token carries that user's name.
