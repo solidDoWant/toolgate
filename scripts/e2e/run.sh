@@ -153,9 +153,15 @@ PY
 
 # Read by cleanup, which can run before the port-forwards start.
 lgtm_forwards=()
+flux_pid=
 
 cleanup() {
 	local status=$?
+	if [[ -n "$flux_pid" ]] && ! wait "$flux_pid"; then
+		cat "$work/flux-install.log" >&2
+		log "installing Flux failed"
+		((status != 0)) || status=1
+	fi
 	mark tests-end
 	local summary
 	summary="$(summary_line)"
@@ -508,8 +514,6 @@ helm install toolgate deploy/charts/toolgate --namespace "$release_namespace" \
 	--wait --timeout 5m >&2
 
 mark gateway
-wait "$flux_pid" || { cat "$work/flux-install.log" >&2; log "installing Flux failed"; exit 1; }
-cat "$work/flux-install.log" >&2
 wait "$lgtm_rollout_pid" || { cat "$work/lgtm-rollout.log" >&2; log "the telemetry backend did not start"; exit 1; }
 
 # Port-forwards to the telemetry test backend, alive until the script exits.
@@ -532,6 +536,9 @@ export TOOLGATE_E2E_TEMPLATE_SECRETS_NAMESPACE="$template_secrets_namespace"
 export TOOLGATE_E2E_S3_ENDPOINT="http://s3.$deps_namespace.svc:7070"
 export TOOLGATE_E2E_CHART_REPOSITORY="oci://registry.$deps_namespace.svc:5000/charts/mcpserver"
 
+# Flux keeps installing while the tests run: only the tests that create
+# HelmReleases need it, and they wait for it themselves. cleanup fails the
+# run when the install failed.
 mark tests-start
 log "running: $*"
 "$@"

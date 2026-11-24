@@ -33,11 +33,37 @@ func chartRepository(t *testing.T) string {
 	return repository
 }
 
+// fluxControllers are the Flux deployments in flux-system that reconcile
+// OCIRepositories and HelmReleases.
+var fluxControllers = []string{"source-controller", "helm-controller"}
+
+// requireFluxReady waits until Flux's controllers are available. The harness
+// installs Flux while the tests already run, so a test that needs it waits
+// here.
+func requireFluxReady(t *testing.T) {
+	t.Helper()
+
+	admin := adminClient(t)
+
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		for _, name := range fluxControllers {
+			deployment, err := admin.AppsV1().Deployments("flux-system").Get(t.Context(), name, metav1.GetOptions{})
+			if !assert.NoError(collect, err, name) {
+				return
+			}
+
+			assert.Positive(collect, deployment.Status.AvailableReplicas, "%s is available", name)
+		}
+	}, 5*time.Minute, 2*time.Second, "Flux is installed")
+}
+
 // helmReleaseResources are an OCIRepository with the test chart and a
 // HelmRelease that installs it with values. The chart runs the test MCP
 // server as the Service mcp, and refuses to install without the value image.
 func helmReleaseResources(t *testing.T, values map[string]any) []k8sruntime.RawExtension {
 	t.Helper()
+
+	requireFluxReady(t)
 
 	repository := map[string]any{
 		"apiVersion": "source.toolkit.fluxcd.io/v1",
