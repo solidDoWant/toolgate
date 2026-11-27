@@ -7,8 +7,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.33.21
 	github.com/aws/aws-sdk-go-v2/credentials v1.21.3
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.116.0
-	github.com/aws/smithy-go v1.28.9
-	github.com/chromedp/cdproto v0.160.8
+	github.com/aws/smithy-go v1.28.10
+	github.com/chromedp/cdproto v0.160.9
 	github.com/chromedp/chromedp v0.24.0
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/go-jose/go-jose/v4 v4.1.9
@@ -32,8 +32,8 @@ require (
 	github.com/testcontainers/testcontainers-go v0.45.0
 	github.com/tink-crypto/tink-go/v2 v2.9.0
 	github.com/zalando/go-keyring v0.2.8
-	github.com/zitadel/oidc/v3 v3.52.0
-	go.opentelemetry.io/collector/pdata v1.71.0
+	github.com/zitadel/oidc/v3 v3.53.0
+	go.opentelemetry.io/collector/pdata v1.72.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
@@ -160,7 +160,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zitadel/schema v1.3.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/collector/featuregate v1.71.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.72.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.47.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
